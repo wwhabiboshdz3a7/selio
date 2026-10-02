@@ -1,0 +1,125 @@
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+
+/*
+ * Selio — design tokens derives de la charte graphique officielle.
+ * Primaire #204868 / Secondaire #204860 / Accent #184060
+ * Fond clair #FFFFFF / Fond sombre #0F172A
+ * Titres: Playfair Display (serif) — Corps: Source Sans Pro (Source Sans 3)
+ */
+@theme {
+  --font-display: "Playfair Display", Georgia, "Times New Roman", serif;
+  --font-body: "Source Sans 3", "Source Sans Pro", system-ui, -apple-system, sans-serif;
+
+  --color-selio-primary: #204868;
+  --color-selio-secondary: #204860;
+  --color-selio-accent: #184060;
+  --color-selio-primary-light: #7394ae;
+  --color-selio-primary-dark: #0c1b27;
+  --color-selio-tertiary: #205068;
+  --color-selio-light: #ffffff;
+  --color-selio-dark: #0f172a;
+
+  --color-selio-surface: #f6f8fa;
+  --color-selio-border: #e2e8f0;
+  --color-selio-text: #10202c;
+  --color-selio-text-muted: #51677a;
+  --color-selio-success: #1a7f5a;
+  --color-selio-danger: #b3261e;
+}
+
+:root {
+  --radius: 0.75rem;
+}
+
+html {
+  background-color: var(--color-selio-light);
+  color: var(--color-selio-text);
+}
+
+body {
+  min-height: 100vh;
+  background-color: var(--color-selio-light);
+  color: var(--color-selio-text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  color: var(--color-selio-primary-dark);
+}
+
+a {
+  color: inherit;
+}
+
+::selection {
+  background-color: var(--color-selio-primary-light);
+  color: #ffffff;
+}
+
+.selio-container {
+  max-width: 72rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+
+.selio-card {
+  background: #ffffff;
+  border: 1px solid var(--color-selio-border);
+  border-radius: var(--radius);
+}
+
+.selio-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.65rem 1.25rem;
+  transition: all 0.15s ease;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  border: none;
+  cursor: pointer;
+}
+
+.selio-btn-primary {
+  background: var(--color-selio-primary);
+  color: #ffffff;
+}
+.selio-btn-primary:hover { background: var(--color-selio-accent); }
+.selio-btn-primary:disabled { background: #9fb1bd; cursor: not-allowed; }
+
+.selio-btn-outline {
+  background: transparent;
+  color: var(--color-selio-primary);
+  border: 1.5px solid var(--color-selio-primary);
+}
+.selio-btn-outline:hover { background: var(--color-selio-surface); }
+
+.selio-input {
+  width: 100%;
+  border: 1.5px solid var(--color-selio-border);
+  border-radius: 0.6rem;
+  padding: 0.6rem 0.85rem;
+  font-size: 0.95rem;
+  background: #ffffff;
+  color: var(--color-selio-text);
+}
+.selio-input:focus {
+  outline: none;
+  border-color: var(--color-selio-primary);
+  box-shadow: 0 0 0 3px rgba(32, 72, 104, 0.15);
+}
+
+.selio-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-selio-text-muted);
+  margin-bottom: 0.3rem;
+  display: block;
+}
