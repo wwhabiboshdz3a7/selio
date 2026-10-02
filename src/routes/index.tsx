@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { ListingCard, type ListingSummary } from "../components/listing/ListingCard";
 import { FilterBar, type Filters } from "../components/listing/FilterBar";
+import { HeroScene } from "../components/three/HeroScene";
 
 const searchSchema = z.object({ q: z.string().optional() });
 
@@ -41,13 +42,17 @@ function Index() {
 
   return (
     <div className="selio-container py-8">
-      <section className="mb-8 rounded-2xl bg-[var(--color-selio-primary)] px-6 py-10 text-white sm:px-10">
-        <h1 className="max-w-xl text-3xl font-semibold sm:text-4xl" style={{ fontFamily: "var(--font-display)" }}>
-          Donnez une seconde vie a votre dressing
-        </h1>
-        <p className="mt-3 max-w-lg text-white/85">
-          Achetez et vendez des vetements et accessoires de seconde main, selectionnes par une communaute qui aime la mode responsable.
-        </p>
+      <section className="selio-hero-gradient relative mb-8 overflow-hidden rounded-3xl px-6 py-14 text-white sm:px-10 sm:py-20">
+        <HeroScene className="pointer-events-none absolute inset-0 opacity-70" />
+        <div className="relative">
+          <span className="selio-chip bg-white/15 text-white border-white/20 backdrop-blur">Mode de seconde main</span>
+          <h1 className="mt-4 max-w-xl text-4xl font-semibold leading-tight sm:text-5xl" style={{ fontFamily: "var(--font-display)" }}>
+            Donnez une seconde vie a votre dressing
+          </h1>
+          <p className="mt-4 max-w-lg text-white/85">
+            Achetez et vendez des vetements et accessoires de seconde main, selectionnes par une communaute qui aime la mode responsable.
+          </p>
+        </div>
       </section>
 
       {q && (

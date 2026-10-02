@@ -123,3 +123,55 @@ a {
   margin-bottom: 0.3rem;
   display: block;
 }
+
+/* ---- Direction premium : verre, degrades, ombres douces, mouvement 3D ---- */
+
+.selio-glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.selio-hero-gradient {
+  background:
+    radial-gradient(60% 90% at 15% 20%, rgba(115, 148, 174, 0.55), transparent 60%),
+    radial-gradient(70% 90% at 85% 15%, rgba(24, 64, 96, 0.5), transparent 55%),
+    linear-gradient(135deg, var(--color-selio-primary-dark) 0%, var(--color-selio-primary) 55%, var(--color-selio-secondary) 100%);
+}
+
+.selio-card-premium {
+  background: #ffffff;
+  border: 1px solid var(--color-selio-border);
+  border-radius: 1.1rem;
+  box-shadow:
+    0 1px 2px rgba(12, 27, 39, 0.04),
+    0 12px 28px -14px rgba(12, 27, 39, 0.22);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.selio-card-premium:hover {
+  border-color: var(--color-selio-primary-light);
+  box-shadow:
+    0 1px 2px rgba(12, 27, 39, 0.06),
+    0 20px 40px -16px rgba(12, 27, 39, 0.3);
+}
+
+.selio-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--color-selio-surface);
+  color: var(--color-selio-primary-dark);
+  border: 1px solid var(--color-selio-border);
+}
+
+.selio-stat {
+  border-radius: 1rem;
+  padding: 1.1rem 1.25rem;
+  background: linear-gradient(160deg, #ffffff 0%, var(--color-selio-surface) 100%);
+  border: 1px solid var(--color-selio-border);
+}

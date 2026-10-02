@@ -29,7 +29,7 @@ export function Header() {
   );
 
   return (
-    <header className="sticky top-0 z-40 border-b border-[var(--color-selio-border)] bg-white/95 backdrop-blur">
+    <header className="selio-glass sticky top-0 z-40 border-b border-[var(--color-selio-border)]">
       <div className="selio-container flex flex-wrap items-center gap-3 py-3">
         <Link to="/" className="shrink-0"><Logo size="md" /></Link>
 
@@ -42,6 +42,7 @@ export function Header() {
           {navLink("/", "Explorer")}
           {navLink("/favorites", "Favoris")}
           {navLink("/messages", "Messages")}
+          {user && navLink("/pro", "Espace Pro")}
         </nav>
 
         <div className="flex shrink-0 items-center gap-2">

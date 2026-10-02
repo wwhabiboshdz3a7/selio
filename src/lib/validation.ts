@@ -71,3 +71,63 @@ export const conversationStartSchema = z.object({
 export const messageSendSchema = z.object({
   body: z.string().trim().min(1).max(2000),
 });
+
+// ---- Extension "Vendeur Pro" ----
+export const AUTOMATION_TYPES = [
+  "message_on_favorite",
+  "relance",
+  "negotiation",
+  "post_sale_message",
+  "auto_relist",
+] as const;
+
+export const salesAccountCreateSchema = z.object({
+  platform: z.enum(["vinted", "selio"]).default("vinted"),
+  label: z.string().trim().min(1).max(60),
+});
+
+export const wardrobeCreateSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  brand: z.string().trim().max(60).optional().nullable(),
+  purchasePriceCents: z.number().int().min(0).max(100_000_000).optional().nullable(),
+  purchaseDate: z.string().optional().nullable(),
+  category: z.string().trim().max(60).optional().nullable(),
+  notes: z.string().trim().max(2000).optional().nullable(),
+  listingId: z.string().optional().nullable(),
+});
+
+export const wardrobeUpdateSchema = wardrobeCreateSchema.partial().extend({
+  status: z.enum(["in_stock", "listed", "sold", "archived"]).optional(),
+});
+
+export const saleCreateSchema = z.object({
+  listingId: z.string().optional().nullable(),
+  wardrobeItemId: z.string().optional().nullable(),
+  title: z.string().trim().min(1).max(120),
+  salePriceCents: z.number().int().min(0).max(100_000_000),
+  platformFeeCents: z.number().int().min(0).max(100_000_000).default(0),
+  shippingCostCents: z.number().int().min(0).max(100_000_000).default(0),
+  purchasePriceCents: z.number().int().min(0).max(100_000_000).default(0),
+  buyerUsername: z.string().trim().max(60).optional().nullable(),
+  soldAt: z.string().optional().nullable(),
+});
+
+export const automationRuleSchema = z.object({
+  type: z.enum(AUTOMATION_TYPES),
+  enabled: z.boolean().default(true),
+  config: z.record(z.any()).default({}),
+});
+
+export const automationRuleUpdateSchema = automationRuleSchema.partial();
+
+export const communitySpaceCreateSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(500).optional().nullable(),
+});
+
+export const communityPostCreateSchema = z.object({
+  spaceId: z.string().min(1),
+  kind: z.enum(["doc", "gift", "announcement"]).default("doc"),
+  title: z.string().trim().min(1).max(160),
+  body: z.string().trim().min(1).max(8000),
+});
