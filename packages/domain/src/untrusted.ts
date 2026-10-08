@@ -4,6 +4,7 @@
  * on les borne et on repère les tentatives d'injection pour l'audit.
  */
 
+// eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F​-‏‪-‮⁦-⁩]/g;
 
 export function sanitizeUntrustedText(input: string, maxLength = 4000): string {

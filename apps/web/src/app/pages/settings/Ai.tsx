@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AI_STATUS } from "@selio/contracts";
+import type { AI_STATUS } from "@selio/contracts";
 import { can } from "@selio/domain";
 import { Alert, Button, Card, DescriptionList, Field, Input, Select, StatusBadge, Table, TableWrap, Td, Th, Toggle, Tr, formatDateTime, formatNumber, type StatusTone } from "@selio/ui";
 import { useClient, useData, useRequiredSession } from "../../../lib/data/provider";

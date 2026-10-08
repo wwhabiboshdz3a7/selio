@@ -2,7 +2,7 @@ import { automationRule, inventoryItem, marginRules, order as orderSchema, organ
 import { addDays, comparablesFromSales, estimateResale, evaluateOffer, extractOfferCents, newId, orderDedupeKey, scoreOpportunity, seededRandom, suggestFloorPrice } from "@selio/domain";
 import { getConnector } from "@selio/connectors";
 import { DEMO_STATE_VERSION, type DemoState } from "./state";
-import { PLAN_QUOTAS } from "../plans";
+import { PLAN_QUOTAS } from "./plans";
 
 const BRANDS: { name: string; category: ItemCategory; sizes: string[]; buy: [number, number]; sell: [number, number] }[] = [
   { name: "Levi's", category: "men", sizes: ["W30", "W32", "W34"], buy: [800, 1800], sell: [2800, 4500] },

@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "lib": ["ES2022", "DOM"], "noEmit": false, "outDir": "dist", "rootDir": "../..", "types": ["node"], "declaration": false, "declarationMap": false },
+  "include": ["src", "../../packages/*/src"],
+  "exclude": ["**/*.test.ts", "../../packages/**/*.test.ts", "../../packages/ui/**", "../../packages/*/scripts/**"]
+}

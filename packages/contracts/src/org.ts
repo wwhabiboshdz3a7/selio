@@ -98,6 +98,13 @@ export const planQuotas = z.object({
 });
 export type PlanQuotas = z.infer<typeof planQuotas>;
 
+/** Quotas par plan (partagés web, API, worker). */
+export const PLAN_QUOTAS: Record<Plan, PlanQuotas> = {
+  free: { items: 50, aiRequestsPerMonth: 50, automationActionsPerDay: 10, connections: 1, members: 1 },
+  starter: { items: 500, aiRequestsPerMonth: 500, automationActionsPerDay: 100, connections: 2, members: 3 },
+  pro: { items: 5000, aiRequestsPerMonth: 3000, automationActionsPerDay: 500, connections: 5, members: 10 },
+};
+
 export const SUBSCRIPTION_STATUSES = ["none", "trialing", "active", "past_due", "canceled", "incomplete"] as const;
 export const subscription = z.object({
   id,
