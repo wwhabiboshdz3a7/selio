@@ -1,36 +1,51 @@
 {
-  "name": "selio",
+  "name": "selio-monorepo",
   "private": true,
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite dev",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.12"
   },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.45.4",
-    "@tanstack/react-query": "^5.59.0",
-    "@tanstack/react-router": "^1.58.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "zod": "^3.23.8",
-    "xlsx": "^0.18.5",
-    "sharp": "^0.33.5",
-    "three": "^0.169.0"
+  "scripts": {
+    "dev": "pnpm --filter @selio/web dev",
+    "dev:api": "pnpm --filter @selio/api dev",
+    "dev:worker": "pnpm --filter @selio/worker dev",
+    "build": "pnpm -r --filter './packages/*' build && pnpm -r --filter './apps/*' build",
+    "build:web": "pnpm --filter @selio/web build",
+    "build:api": "pnpm --filter @selio/api build",
+    "build:worker": "pnpm --filter @selio/worker build",
+    "build:extension": "pnpm --filter @selio/extension build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:unit": "vitest run --project domain --project contracts --project ai --project connectors --project ui --project web --project extension",
+    "test:integration": "vitest run --project api --project worker --project db",
+    "test:e2e": "pnpm --filter @selio/web test:e2e",
+    "db:migrate": "pnpm --filter @selio/db migrate",
+    "db:seed:demo": "pnpm --filter @selio/db seed:demo",
+    "ai:diagnose": "pnpm --filter @selio/ai diagnose",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
-    "@netlify/functions": "^2.8.1",
-    "@tailwindcss/vite": "^4.0.0",
-    "@tanstack/router-plugin": "^1.58.0",
-    "@types/node": "^22.7.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^4.3.2",
-    "tailwindcss": "^4.0.0",
-    "typescript": "^5.6.2",
-    "vite": "^5.4.8",
-    "@types/three": "^0.169.0"
+    "@eslint/js": "^9.39.0",
+    "@types/node": "^22.20.5",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^6.1.1",
+    "globals": "^16.4.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.1",
+    "vitest": "^3.2.7"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@tailwindcss/oxide",
+      "sharp",
+      "argon2",
+      "msgpackr-extract",
+      "@parcel/watcher",
+      "unrs-resolver"
+    ]
   }
 }

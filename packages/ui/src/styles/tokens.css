@@ -1,0 +1,166 @@
+/* ==========================================================================
+   Selio — Design tokens v2.0 (octobre 2026)
+   Direction : minimaliste, noir & blanc, un seul accent orange « Braise ».
+   Importer ce fichier une fois, à la racine de l'app. Ne jamais coder une
+   couleur en dur dans un composant : toujours passer par une variable.
+
+   Corrections appliquées par rapport au fichier livré (docs/DECISIONS.md) :
+   - La police Inter n'est plus chargée depuis Google Fonts (requête tierce,
+     hors-ligne PWA impossible, CSP) : elle est auto-hébergée via
+     @fontsource/inter (graisses 400/500/600 uniquement) dans base.css.
+   - Ajout de `color-scheme` pour que les contrôles natifs suivent le mode.
+   - Les sélecteurs de mode sombre sont inchangés.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* ---- Palette brute (ne pas utiliser directement dans les composants) -- */
+  --gray-0:   #FFFFFF;
+  --gray-25:  #FCFCFC;
+  --gray-50:  #FAFAFA;
+  --gray-100: #F4F4F5;
+  --gray-200: #E4E4E7;
+  --gray-300: #D4D4D8;
+  --gray-400: #A1A1AA;
+  --gray-500: #71717A;
+  --gray-600: #52525B;
+  --gray-700: #3F3F46;
+  --gray-800: #27272A;
+  --gray-900: #18181B;
+  --gray-950: #0B0B0C;
+
+  --braise-50:  #FEF3EC;
+  --braise-100: #FDE3D3;
+  --braise-200: #FAC4A5;
+  --braise-500: #EA6A2A; /* décoratif, graphiques, accent sur fond sombre */
+  --braise-600: #C4501B; /* texte, boutons avec texte blanc (contraste 4.7:1) */
+  --braise-700: #A3410F; /* hover / pressed */
+
+  --green-600: #15803D;
+  --amber-600: #B45309;
+  --red-600:   #B91C1C;
+
+  /* ---- Rôles (à utiliser dans les composants) -------------------------- */
+  --bg:             var(--gray-50);   /* fond de page */
+  --surface:        var(--gray-0);    /* cartes, panneaux, modales */
+  --surface-muted:  var(--gray-100);  /* zones secondaires, hover de ligne */
+  --border:         var(--gray-200);
+  --border-strong:  var(--gray-300);
+
+  --text:           var(--gray-950);  /* titres, texte principal */
+  --text-muted:     var(--gray-500);  /* légendes, métadonnées */
+  --text-subtle:    var(--gray-400);  /* placeholders, désactivé */
+  --text-inverse:   var(--gray-0);
+
+  --primary:        var(--gray-950);  /* bouton principal = noir */
+  --primary-hover:  var(--gray-800);
+  --on-primary:     var(--gray-0);
+
+  --accent:         var(--braise-600); /* 1 action forte par écran max */
+  --accent-hover:   var(--braise-700);
+  --accent-soft:    var(--braise-50);  /* fond de badge, sélection */
+  --accent-vivid:   var(--braise-500); /* graphiques, points, indicateurs */
+  --on-accent:      var(--gray-0);
+
+  --success: var(--green-600);
+  --warning: var(--amber-600);
+  --danger:  var(--red-600);
+
+  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--braise-500);
+
+  /* ---- Typographie ----------------------------------------------------- */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --text-xs:   12px;  /* labels, badges */
+  --text-sm:   13px;  /* tableaux, métadonnées */
+  --text-base: 14px;  /* texte d'interface par défaut */
+  --text-md:   16px;  /* paragraphes, champs sur mobile */
+  --text-lg:   20px;  /* titres de carte */
+  --text-xl:   24px;  /* titre de page */
+  --text-2xl:  32px;  /* chiffres clés */
+  --text-3xl:  48px;  /* marketing uniquement */
+
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --weight-semibold: 600;
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --tracking-tight: -0.02em; /* titres ≥ 20px */
+
+  /* ---- Espacement (grille de 4px) -------------------------------------- */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+  --space-12: 48px; --space-16: 64px;
+
+  /* ---- Formes ---------------------------------------------------------- */
+  --radius-sm: 6px;    /* badges, inputs compacts */
+  --radius-md: 8px;    /* boutons, inputs */
+  --radius-lg: 12px;   /* cartes */
+  --radius-xl: 16px;   /* modales, feuilles mobiles */
+  --radius-full: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(11, 11, 12, 0.04);
+  --shadow-md: 0 4px 16px rgba(11, 11, 12, 0.06);   /* popovers, menus */
+  --shadow-lg: 0 12px 40px rgba(11, 11, 12, 0.10);  /* modales seulement */
+
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  --sidebar-width: 232px;
+  --content-max: 1280px;
+}
+
+/* ---- Mode sombre -------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: var(--gray-950);
+    --surface: var(--gray-900);
+    --surface-muted: var(--gray-800);
+    --border: var(--gray-800);
+    --border-strong: var(--gray-700);
+    --text: var(--gray-50);
+    --text-muted: var(--gray-400);
+    --text-subtle: var(--gray-600);
+    --text-inverse: var(--gray-950);
+    --primary: var(--gray-50);
+    --primary-hover: var(--gray-200);
+    --on-primary: var(--gray-950);
+    --accent: var(--braise-500);
+    --accent-hover: var(--braise-200);
+    --accent-soft: rgba(234, 106, 42, 0.14);
+    --on-accent: var(--gray-950);
+    --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--braise-500);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: var(--gray-950);
+  --surface: var(--gray-900);
+  --surface-muted: var(--gray-800);
+  --border: var(--gray-800);
+  --border-strong: var(--gray-700);
+  --text: var(--gray-50);
+  --text-muted: var(--gray-400);
+  --text-subtle: var(--gray-600);
+  --text-inverse: var(--gray-950);
+  --primary: var(--gray-50);
+  --primary-hover: var(--gray-200);
+  --on-primary: var(--gray-950);
+  --accent: var(--braise-500);
+  --accent-hover: var(--braise-200);
+  --accent-soft: rgba(234, 106, 42, 0.14);
+  --on-accent: var(--gray-950);
+}
+
+/* ---- Base --------------------------------------------------------------- */
+html { font-family: var(--font-sans); font-size: var(--text-base); color: var(--text); background: var(--bg);
+  -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01"; }
+h1, h2, h3 { font-weight: var(--weight-semibold); letter-spacing: var(--tracking-tight); line-height: var(--leading-tight); }
+.num, td.num, [data-num] { font-variant-numeric: tabular-nums; }
+:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
