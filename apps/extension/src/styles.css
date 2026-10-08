@@ -1,0 +1,4 @@
+@import "@selio/ui/styles/base.css";
+@source "../../../packages/ui/src";
+body { width: 360px; min-height: 200px; }
+body.options { width: auto; max-width: 720px; margin: 0 auto; padding: 24px 16px; }
