@@ -2,7 +2,7 @@ import type {
   AiRequest, AuditLog, AutomationRule, Conversation, Customer, ExtensionToken, InventoryEvent, InventoryItem, Job, MarketplaceConnection, Membership, Message, Opportunity, Order, Organization, PurchaseRequest, RadarSearch, Shipment, Subscription, UsageEvent, User,
 } from "@selio/contracts";
 
-export const DEMO_STATE_VERSION = 3;
+export const DEMO_STATE_VERSION = 4;
 export const DEMO_STORAGE_KEY = "selio.demo.v1";
 
 export interface DemoState {
