@@ -1,11 +1,7 @@
-import type { Plan, PlanQuotas } from "@selio/contracts";
+import type { Plan } from "@selio/contracts";
+export { PLAN_QUOTAS } from "@selio/contracts";
 
-/** Quotas par plan. Les montants de la vitrine sont indicatifs et configurables (VITE_SHOW_INDICATIVE_PRICING). */
-export const PLAN_QUOTAS: Record<Plan, PlanQuotas> = {
-  free: { items: 50, aiRequestsPerMonth: 50, automationActionsPerDay: 10, connections: 1, members: 1 },
-  starter: { items: 500, aiRequestsPerMonth: 500, automationActionsPerDay: 100, connections: 2, members: 3 },
-  pro: { items: 5000, aiRequestsPerMonth: 3000, automationActionsPerDay: 500, connections: 5, members: 10 },
-};
+/** Les montants de la vitrine sont indicatifs et configurables (VITE_SHOW_INDICATIVE_PRICING). */
 
 export interface PlanCard {
   plan: Plan;

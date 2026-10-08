@@ -73,7 +73,7 @@ export class DemoConnector implements Connector {
     return { ok: true, data: [conv], simulated: true };
   }
 
-  async syncOrders(ctx: ConnectorContext): Promise<CapabilityResult<ExternalOrder[]>> {
+  async syncOrders(_ctx: ConnectorContext): Promise<CapabilityResult<ExternalOrder[]>> {
     return { ok: true, data: [], simulated: true };
   }
 

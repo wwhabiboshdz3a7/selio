@@ -1,0 +1,22 @@
+{
+  "name": "@selio/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@selio/ai": "workspace:*",
+    "@selio/connectors": "workspace:*",
+    "@selio/contracts": "workspace:*",
+    "@selio/db": "workspace:*",
+    "@selio/demo-data": "workspace:*",
+    "@selio/domain": "workspace:*",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": { "@types/node": "^22.20.5", "typescript": "^5.9.3", "vitest": "^3.2.7" }
+}

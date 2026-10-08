@@ -47,5 +47,6 @@
       "@parcel/watcher",
       "unrs-resolver"
     ]
-  }
+  },
+  "type": "module"
 }

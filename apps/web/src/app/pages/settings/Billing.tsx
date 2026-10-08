@@ -3,7 +3,7 @@ import { PLAN_LABELS } from "@selio/contracts";
 import { can } from "@selio/domain";
 import { Alert, Button, Card, DescriptionList, ProgressBar, StatusBadge, Tag, formatCents, formatDate, formatNumber } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../../lib/data/provider";
-import { PLAN_CARDS } from "../../../lib/plans";
+import { PLAN_CARDS } from "@selio/demo-data";
 import { QueryBoundary } from "../../components/common";
 import { useAppMutation } from "../../components/hooks";
 

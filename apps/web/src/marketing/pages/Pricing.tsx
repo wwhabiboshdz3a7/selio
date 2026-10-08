@@ -2,7 +2,7 @@ import { Link } from "react-router";
 import { Alert, Button, formatCents } from "@selio/ui";
 import { usePageMeta } from "../../lib/seo";
 import { CheckList, Container, MarketingSection } from "../components";
-import { PLAN_CARDS } from "../../lib/plans";
+import { PLAN_CARDS } from "@selio/demo-data";
 import { showIndicativePricing } from "../../lib/env";
 
 export default function Pricing() {

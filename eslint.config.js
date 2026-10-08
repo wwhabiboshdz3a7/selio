@@ -30,6 +30,7 @@ export default tseslint.config(
       ],
       "@typescript-eslint/consistent-type-imports": ["error", { prefer: "type-imports" }],
       "no-console": ["warn", { allow: ["warn", "error", "info"] }],
+      "no-irregular-whitespace": ["error", { skipStrings: true, skipRegExps: true, skipTemplates: true, skipComments: true }],
     },
   },
   {

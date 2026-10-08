@@ -7,9 +7,9 @@ import {
 } from "@selio/domain";
 import { getConnector, describeConnectors } from "@selio/connectors";
 import { AIService, MockAIProvider } from "@selio/ai";
-import { buildDemoState } from "./seed";
-import { LocalDemoStorage, type DemoState, type DemoStorage } from "./state";
-import { PLAN_QUOTAS } from "../plans";
+import { buildDemoState } from "@selio/demo-data";
+import { LocalDemoStorage, type DemoState, type DemoStorage } from "@selio/demo-data";
+import { PLAN_QUOTAS } from "@selio/demo-data";
 import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutomationState, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
 
 function paginate<T>(items: T[], page = 1, pageSize = 25): Page<T> {
