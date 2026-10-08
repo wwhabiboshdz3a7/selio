@@ -35,6 +35,8 @@ export interface NegotiationResult {
  * Politique de négociation déterministe. L'IA peut proposer un texte, mais
  * c'est cette fonction qui décide accept / contre / refus / escalade.
  */
+const eur = (c: number) => (c / 100).toFixed(2).replace(".", ",") + " €";
+
 export function evaluateOffer(ctx: NegotiationContext): NegotiationResult {
   const { item, offerCents, rules } = ctx;
   const reasons: string[] = [];
@@ -71,7 +73,7 @@ export function evaluateOffer(ctx: NegotiationContext): NegotiationResult {
   }
 
   if (offerCents >= listed) {
-    reasons.push(`Offre (${offerCents}) ≥ prix affiché (${listed}).`);
+    reasons.push(`Offre (${eur(offerCents)}) supérieure ou égale au prix affiché (${eur(listed)}).`);
     return { ...base, decision: "accept", counterCents: null, requiresApproval: false, reasons };
   }
 
@@ -79,23 +81,23 @@ export function evaluateOffer(ctx: NegotiationContext): NegotiationResult {
   const maxDiscountCents = listed - applyRate(listed, rules.maxDiscountRate);
 
   if (check.ok && discountRate <= rules.maxDiscountRate) {
-    reasons.push(`Offre au-dessus du plancher (${floorCents}) et remise ${(discountRate * 100).toFixed(0)} % ≤ ${(rules.maxDiscountRate * 100).toFixed(0)} % autorisés.`);
-    reasons.push(`Marge conservée : ${check.marginCents} c (${(check.marginRate * 100).toFixed(0)} %).`);
+    reasons.push(`Offre au-dessus du plancher (${eur(floorCents)}) et remise de ${(discountRate * 100).toFixed(0)} % dans la limite autorisée (${(rules.maxDiscountRate * 100).toFixed(0)} %).`);
+    reasons.push(`Marge conservée : ${eur(check.marginCents)} (${(check.marginRate * 100).toFixed(0)} %).`);
     return { ...base, decision: "accept", counterCents: null, requiresApproval: false, reasons };
   }
 
   if (!check.ok) {
     const label =
       check.reason === "below_floor"
-        ? `Offre sous le prix plancher (${floorCents}).`
+        ? `Offre sous le prix plancher (${eur(floorCents)}).`
         : check.reason === "below_min_margin"
-          ? `Marge absolue insuffisante (${check.marginCents} c < ${rules.minMarginCents} c).`
+          ? `Marge absolue insuffisante (${eur(check.marginCents)} < ${eur(rules.minMarginCents)}).`
           : check.reason === "below_min_rate"
             ? `Taux de marge insuffisant (${(check.marginRate * 100).toFixed(0)} % < ${(rules.minMarginRate * 100).toFixed(0)} %).`
             : "Aucun prix.";
     reasons.push(label);
   } else {
-    reasons.push(`Remise demandée ${(discountRate * 100).toFixed(0)} % > ${(rules.maxDiscountRate * 100).toFixed(0)} % autorisés.`);
+    reasons.push(`Remise demandée de ${(discountRate * 100).toFixed(0)} %, au-delà des ${(rules.maxDiscountRate * 100).toFixed(0)} % autorisés.`);
   }
 
   if (ctx.roundsSoFar >= rules.maxRoundsPerCustomer) {
@@ -115,7 +117,7 @@ export function evaluateOffer(ctx: NegotiationContext): NegotiationResult {
     }
     return { ...base, decision: "accept", counterCents: null, requiresApproval: false, reasons };
   }
-  reasons.push(`Contre-proposition à ${counter} c (plancher ${floorCents} c, remise max ${maxDiscountCents} c).`);
+  reasons.push(`Contre-proposition à ${eur(counter)} (plancher ${eur(floorCents)}, remise maximale jusqu'à ${eur(maxDiscountCents)}).`);
   return { ...base, decision: "counter", counterCents: counter, requiresApproval: false, reasons };
 }
 

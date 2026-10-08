@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Selio — Gestion pour revendeurs Vinted</title>
+    <meta name="description" content="Selio centralise stock, conversations, clients, commandes et marges des revendeurs Vinted. Assistant de rédaction, règles de marge, automatisations transparentes." />
+    <meta name="theme-color" content="#0B0B0C" />
+    <meta name="application-name" content="Selio" />
+    <meta name="apple-mobile-web-app-title" content="Selio" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta property="og:title" content="Selio — Gestion pour revendeurs Vinted" />
+    <meta property="og:description" content="Stock, conversations, clients, commandes et marges au même endroit." />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="fr_FR" />
+    <script>
+      // Applique le thème avant le premier rendu pour éviter un flash.
+      try {
+        var t = localStorage.getItem("selio.theme");
+        if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
