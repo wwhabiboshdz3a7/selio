@@ -17,7 +17,7 @@ export default function Faq() {
   usePageMeta("FAQ", "Questions fréquentes sur Selio : indépendance vis-à-vis de Vinted, extension, automatisations, IA, calcul de marge, données et démonstration.");
   return (
     <>
-      <MarketingSection eyebrow="FAQ" title="Questions fréquentes">
+      <MarketingSection level={1} eyebrow="FAQ" title="Questions fréquentes">
         <dl className="grid gap-3 md:grid-cols-2">
           {FAQ.map((f) => (
             <div key={f.q} className="card p-5">

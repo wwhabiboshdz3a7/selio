@@ -1,0 +1,10 @@
+# Reverse proxy TLS devant l'API (Let's Encrypt automatique). Remplacer le domaine.
+api.exemple.fr {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:8787
+  header {
+    Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+  }
+}

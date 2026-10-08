@@ -19,7 +19,7 @@ export default function Features() {
   usePageMeta("Fonctionnalités", "Tous les modules de Selio : stock, messagerie, clients, commandes, analyses, automatisations, radar, achat assisté, paramètres et sécurité.");
   return (
     <>
-      <MarketingSection eyebrow="Fonctionnalités" title="Un module par problème concret de revendeur" lead="Chaque module indique honnêtement son état : disponible, démontré en simulation, expérimental ou en préparation.">
+      <MarketingSection level={1} eyebrow="Fonctionnalités" title="Un module par problème concret de revendeur" lead="Chaque module indique honnêtement son état : disponible, démontré en simulation, expérimental ou en préparation.">
         <div className="grid gap-4 md:grid-cols-2">
           {MODULES.map((m) => (
             <article key={m.title} className="card p-5">

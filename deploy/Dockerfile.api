@@ -1,0 +1,22 @@
+# API Selio — image de production (Node 22, pnpm, build TypeScript)
+FROM node:22-alpine AS build
+RUN corepack enable
+WORKDIR /repo
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc tsconfig.base.json ./
+COPY apps/api/package.json apps/api/
+COPY packages ./packages
+RUN find packages -name node_modules -prune -o -type f -print >/dev/null
+RUN pnpm install --frozen-lockfile --filter @selio/api... --ignore-scripts
+COPY apps/api ./apps/api
+RUN pnpm --filter @selio/api build && pnpm --filter @selio/api --prod deploy /out
+
+FROM node:22-alpine
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=build /out /app
+COPY --from=build /repo/apps/api/dist /app/dist
+COPY --from=build /repo/packages/db/migrations /app/migrations
+ENV MIGRATIONS_DIR=/app/migrations
+USER node
+EXPOSE 8787
+CMD ["node", "dist/main.js"]

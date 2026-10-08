@@ -19,14 +19,15 @@ export function Lead({ children, className }: { children: ReactNode; className?:
   return <p className={cn("text-md text-text-muted", className)}>{children}</p>;
 }
 
-export function MarketingSection({ eyebrow, title, lead, children, className, id }: { eyebrow?: string; title?: ReactNode; lead?: ReactNode; children?: ReactNode; className?: string; id?: string }) {
+export function MarketingSection({ eyebrow, title, lead, children, className, id, level = 2 }: { eyebrow?: string; title?: ReactNode; lead?: ReactNode; children?: ReactNode; className?: string; id?: string; level?: 1 | 2 }) {
+  const Heading = level === 1 ? "h1" : "h2";
   return (
     <section id={id} className={cn("py-12 md:py-16", className)}>
       <Container>
         {eyebrow || title ? (
           <div className="max-w-2xl">
             {eyebrow ? <Eyebrow>{eyebrow}</Eyebrow> : null}
-            {title ? <h2 className="mt-2 text-xl font-semibold text-text md:text-[28px] md:leading-[34px]">{title}</h2> : null}
+            {title ? <Heading className="mt-2 text-xl font-semibold text-text md:text-[28px] md:leading-[34px]">{title}</Heading> : null}
             {lead ? <Lead className="mt-3">{lead}</Lead> : null}
           </div>
         ) : null}

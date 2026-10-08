@@ -7,7 +7,7 @@ export default function Extension() {
   usePageMeta("Extension navigateur", "L'extension Selio capture un article visible vers votre stock et aide à rédiger une réponse depuis une conversation ouverte, avec confirmation avant toute action.");
   return (
     <>
-      <MarketingSection eyebrow="Extension navigateur" title="Votre navigateur reste le seul endroit où votre session existe" lead="Selio n'a jamais votre mot de passe Vinted. L'extension lit la page que vous avez ouverte, vous montre ce qu'elle a compris, et n'agit qu'après votre confirmation.">
+      <MarketingSection level={1} eyebrow="Extension navigateur" title="Votre navigateur reste le seul endroit où votre session existe" lead="Selio n'a jamais votre mot de passe Vinted. L'extension lit la page que vous avez ouverte, vous montre ce qu'elle a compris, et n'agit qu'après votre confirmation.">
         <div className="grid gap-4 md:grid-cols-3">
           <FeatureCard title="Capture d'article" availability="experimental">Depuis une page article visible, envoyez titre, marque, taille, état, prix et photos vers votre stock, avec prévisualisation.</FeatureCard>
           <FeatureCard title="Aide à la rédaction" availability="experimental">Depuis une conversation ouverte, obtenez un brouillon conforme à vos règles de marge, pré-rempli dans le champ de réponse. Vous relisez, vous envoyez.</FeatureCard>

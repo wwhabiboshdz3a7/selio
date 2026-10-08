@@ -1,0 +1,20 @@
+[Unit]
+Description=Selio worker (automatisations, synchronisations, rétention)
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=selio
+WorkingDirectory=/opt/selio
+EnvironmentFile=/etc/selio/worker.env
+ExecStart=/usr/bin/node /opt/selio/apps/worker/dist/main.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

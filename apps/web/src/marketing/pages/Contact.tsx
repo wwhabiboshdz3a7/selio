@@ -18,7 +18,7 @@ export default function Contact() {
     if (Object.keys(errs).length === 0) setSent(true);
   };
   return (
-    <MarketingSection eyebrow="Contact" title="Parlons de votre activité" lead="Ce formulaire ne transmet rien pour l'instant : l'envoi d'email n'est pas encore configuré (aucun service tiers n'est branché). Utilisez l'adresse indiquée dans les mentions légales une fois renseignée.">
+    <MarketingSection level={1} eyebrow="Contact" title="Parlons de votre activité" lead="Ce formulaire ne transmet rien pour l'instant : l'envoi d'email n'est pas encore configuré (aucun service tiers n'est branché). Utilisez l'adresse indiquée dans les mentions légales une fois renseignée.">
       <div className="grid gap-8 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         {sent ? (
           <Alert tone="success" title="Message préparé">Votre message a été validé localement. L'envoi réel sera activé lorsque le service d'email sera configuré.</Alert>

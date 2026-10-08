@@ -5,8 +5,8 @@ import type { Services } from "@selio/core";
 import { automationTick, processJobs, retentionTick, systemContext } from "./tasks";
 import { messaging } from "@selio/core";
 
-const OWNER_URL = process.env.TEST_DATABASE_URL ?? "postgres://selio:selio@127.0.0.1:5432/selio_test";
-const APP_URL = process.env.TEST_DATABASE_URL_APP ?? "postgres://selio_app:selio_app@127.0.0.1:5432/selio_test";
+const OWNER_URL = process.env.TEST_DATABASE_URL ?? "postgres://selio:selio@127.0.0.1:5432/selio_test_worker";
+const APP_URL = process.env.TEST_DATABASE_URL_APP ?? "postgres://selio_app:selio_app@127.0.0.1:5432/selio_test_worker";
 let services: Services;
 let available = true;
 let orgId = "";

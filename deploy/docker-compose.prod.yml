@@ -1,0 +1,57 @@
+# Déploiement du serveur métier (API + worker + Postgres + Redis) sur une machine Linux.
+# Les secrets viennent d'un fichier .env NON versionné (voir apps/api/.env.example).
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: selio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?défini dans .env}
+      POSTGRES_DB: selio
+    volumes:
+      - pg:/var/lib/postgresql/data
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U selio"], interval: 10s, retries: 10 }
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redis:/data]
+
+  migrate:
+    build: { context: .., dockerfile: deploy/Dockerfile.api }
+    command: ["node", "dist/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://selio:${POSTGRES_PASSWORD}@postgres:5432/selio
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?défini dans .env}
+      MIGRATIONS_DIR: /app/migrations
+    depends_on: { postgres: { condition: service_healthy } }
+
+  api:
+    build: { context: .., dockerfile: deploy/Dockerfile.api }
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgres://selio_app:${APP_DB_PASSWORD}@postgres:5432/selio
+      REDIS_URL: redis://redis:6379
+      HOST: 0.0.0.0
+      PORT: "8787"
+      TRUST_PROXY: "true"
+      COOKIE_SECURE: "true"
+      NODE_ENV: production
+    ports: ["127.0.0.1:8787:8787"]
+    depends_on: { migrate: { condition: service_completed_successfully }, redis: { condition: service_started } }
+
+  worker:
+    build: { context: .., dockerfile: deploy/Dockerfile.worker }
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgres://selio_app:${APP_DB_PASSWORD}@postgres:5432/selio
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: production
+    depends_on: { migrate: { condition: service_completed_successfully } }
+
+volumes:
+  pg:
+  redis:
