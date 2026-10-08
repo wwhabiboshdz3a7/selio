@@ -10,7 +10,7 @@ export function Card({ selected, padding = "md", className, ...rest }: CardProps
   return (
     <div
       className={cn(
-        "card",
+        "card min-w-0",
         selected && "border-accent",
         padding === "md" && "p-4 md:p-5",
         padding === "sm" && "p-3 md:p-4",

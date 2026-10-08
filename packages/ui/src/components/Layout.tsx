@@ -17,7 +17,7 @@ export function PageHeader({ title, description, actions, eyebrow, className }: 
 
 export function Section({ title, description, actions, children, className }: { title?: ReactNode; description?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className={cn("flex flex-col gap-3", className)}>
+    <section className={cn("flex min-w-0 flex-col gap-3", className)}>
       {title ? (
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>

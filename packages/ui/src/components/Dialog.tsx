@@ -88,7 +88,7 @@ export function Dialog({ open, onClose, title, description, children, footer, si
 export interface ConfirmDialogProps {
   open: boolean;
   onClose: () => void;
-  onConfirm: () => void | Promise<void>;
+  onConfirm: () => unknown;
   title: ReactNode;
   description?: ReactNode;
   confirmLabel?: string;
