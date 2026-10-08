@@ -4,8 +4,8 @@ import { computeSignature } from "@selio/connectors/stripe";
 import { loadEnv } from "../src/config";
 import { buildServer, type BuiltServer } from "../src/server";
 
-const OWNER_URL = process.env.TEST_DATABASE_URL ?? "postgres://selio:selio@127.0.0.1:5432/selio_test";
-const APP_URL = process.env.TEST_DATABASE_URL_APP ?? "postgres://selio_app:selio_app@127.0.0.1:5432/selio_test";
+const OWNER_URL = process.env.TEST_DATABASE_URL ?? "postgres://selio:selio@127.0.0.1:5432/selio_test_api";
+const APP_URL = process.env.TEST_DATABASE_URL_APP ?? "postgres://selio_app:selio_app@127.0.0.1:5432/selio_test_api";
 
 let built: BuiltServer;
 let available = true;
@@ -22,7 +22,8 @@ async function call(method: "GET" | "POST" | "PATCH" | "DELETE", url: string, bo
   const text = res.body;
   let json: unknown = null;
   try { json = text ? JSON.parse(text) : null; } catch { json = text; }
-  return { status: res.statusCode, json: json as never, text, res };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return { status: res.statusCode, json: json as any, text, res };
 }
 
 beforeAll(async () => {

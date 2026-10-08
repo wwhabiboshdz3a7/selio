@@ -37,6 +37,18 @@ export class DemoClient implements DataClient {
   constructor(private readonly storage: DemoStorage = new LocalDemoStorage(), private readonly clock: () => Date = () => new Date()) {
     this.state = storage.load();
     this.ai = new AIService({ provider: new MockAIProvider({ latencyMs: 250 }), concurrency: 2, maxPending: 20, circuitFailures: 3, circuitCooldownMs: 30_000, timeoutMs: 5000, allowFallback: true });
+    // Toute valeur renvoyée est un instantané : l'état interne est muté en place, le cache de
+    // requêtes ne doit jamais en partager les références (sinon les changements sont invisibles).
+    return new Proxy(this, {
+      get(target, prop, receiver) {
+        const value = Reflect.get(target, prop, receiver);
+        if (typeof value !== "function" || prop === "subscribe" || prop === "constructor") return value;
+        return (...args: unknown[]) => {
+          const result = (value as (...a: unknown[]) => unknown).apply(target, args);
+          return result instanceof Promise ? result.then((v) => (v !== null && typeof v === "object" && !(v instanceof Blob) ? structuredClone(v) : v)) : result;
+        };
+      },
+    });
   }
 
   subscribe(fn: () => void): () => void {
@@ -850,7 +862,8 @@ export class DemoClient implements DataClient {
       }
     }
     let actions = actionsToday;
-    let lastActionAt: Date | null = null;
+    const previous = st.jobs.filter((j) => j.ruleId === rule.id && j.status !== "cancelled" && localDayKey(new Date(j.createdAt), rule.schedule.timezone) === today).map((j) => new Date(j.createdAt).getTime());
+    let lastActionAt: Date | null = previous.length ? new Date(Math.max(...previous)) : null;
     for (const t of targets) {
       const customerId = typeof t.payload.customerId === "string" ? t.payload.customerId : null;
       const actionsForCustomer = customerId ? st.jobs.filter((j) => j.ruleId === rule.id && j.payload.customerId === customerId && localDayKey(new Date(j.createdAt), rule.schedule.timezone) === today && j.status !== "cancelled").length : undefined;

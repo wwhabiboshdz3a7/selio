@@ -150,7 +150,8 @@ export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): 
     }
   }
   let actions = await repos.jobs.countForRuleSince(tx, rule.id, dayStart.toISOString());
-  let lastActionAt: Date | null = null;
+  const lastJob = await tx.maybeOne<{ createdAt: string }>("select created_at from jobs where org_id = $1 and rule_id = $2 and status <> 'cancelled' and created_at >= $3 order by created_at desc limit 1", [ctx.orgId, rule.id, dayStart.toISOString()]);
+  let lastActionAt: Date | null = lastJob ? new Date(lastJob.createdAt) : null;
   for (const t of targets) {
     const customerId = typeof t.payload.customerId === "string" ? t.payload.customerId : undefined;
     const perCustomer = customerId ? await repos.jobs.countForRuleSince(tx, rule.id, dayStart.toISOString(), customerId) : undefined;

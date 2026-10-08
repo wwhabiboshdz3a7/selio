@@ -38,4 +38,4 @@ export async function runMigrations(pool: PgPool, dir: string, opts: { appPasswo
   return applied;
 }
 
-export const MIGRATIONS_DIR = new URL("../migrations", import.meta.url).pathname;
+export const MIGRATIONS_DIR = process.env.MIGRATIONS_DIR ?? new URL("../migrations", import.meta.url).pathname;

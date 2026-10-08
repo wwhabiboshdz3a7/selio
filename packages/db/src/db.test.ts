@@ -35,7 +35,7 @@ describe("base de données", () => {
     const blob = box.encrypt("token-vinted", "conn-1");
     expect(box.decrypt(blob, "conn-1")).toBe("token-vinted");
     expect(() => box.decrypt(blob, "conn-2")).toThrow();
-    blob[blob.length - 1] ^= 0xff;
+    blob[blob.length - 1] = (blob[blob.length - 1] ?? 0) ^ 0xff;
     expect(() => box.decrypt(blob, "conn-1")).toThrow();
     expect(() => new SecretBox("court")).toThrow();
   });

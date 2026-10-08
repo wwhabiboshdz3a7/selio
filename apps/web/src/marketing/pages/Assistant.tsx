@@ -5,7 +5,7 @@ export default function Assistant() {
   usePageMeta("Assistant IA", "L'assistant Selio rédige, vos règles décident : prix plancher, marge minimale, horaires et limites par acheteur restent déterministes. Fonctionne avec un serveur Ollama privé.");
   return (
     <>
-      <MarketingSection eyebrow="Assistant IA" title="L'IA propose un texte. Vos règles décident." lead="Avant toute suggestion, une politique déterministe évalue l'offre : au-dessus du plancher, dans la remise autorisée, dans les horaires, sous la limite par acheteur. L'assistant ne fait que rédiger la réponse correspondant à cette décision, puis cette réponse est vérifiée.">
+      <MarketingSection level={1} eyebrow="Assistant IA" title="L'IA propose un texte. Vos règles décident." lead="Avant toute suggestion, une politique déterministe évalue l'offre : au-dessus du plancher, dans la remise autorisée, dans les horaires, sous la limite par acheteur. L'assistant ne fait que rédiger la réponse correspondant à cette décision, puis cette réponse est vérifiée.">
         <div className="grid gap-4 md:grid-cols-3">
           <FeatureCard title="Politique métier d'abord" availability="available">Prix plancher, marge minimale, remise maximale, nombre de tours, horaires, escalade. Chaque décision est expliquée ligne par ligne.</FeatureCard>
           <FeatureCard title="Sortie validée" availability="available">La réponse est contrôlée par un schéma puis par les règles : pas de prix différent du prix imposé, pas de lien, pas de HTML, pas de fuite du prix d'achat.</FeatureCard>

@@ -9,7 +9,7 @@ export default function Pricing() {
   usePageMeta("Tarifs", "Structure tarifaire de Selio : plans Découverte, Essentiel et Pro avec quotas d'articles, de suggestions IA et d'automatisations. Montants indicatifs.");
   return (
     <>
-      <MarketingSection eyebrow="Tarifs" title="Trois plans, des quotas clairs" lead="La structure est définie ; les montants affichés sont indicatifs et pourront évoluer avant l'ouverture des abonnements. Aucun paiement n'est encaissé à ce stade.">
+      <MarketingSection level={1} eyebrow="Tarifs" title="Trois plans, des quotas clairs" lead="La structure est définie ; les montants affichés sont indicatifs et pourront évoluer avant l'ouverture des abonnements. Aucun paiement n'est encaissé à ce stade.">
         <Alert tone="info" title="Montants indicatifs">Les prix ci-dessous servent à illustrer la structure. Ils ne constituent pas une offre ferme. Les abonnements réels seront activés après validation de l'intégration de paiement (mode test uniquement pour l'instant).</Alert>
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           {PLAN_CARDS.map((p) => (
