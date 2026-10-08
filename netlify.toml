@@ -1,17 +1,16 @@
+# Déploiement Netlify de la vitrine + application web (apps/web).
+# L'API et le worker se déploient séparément (voir docs/DEPLOYMENT.md).
 [build]
-  command = "npm run build"
-  publish = "dist"
-  functions = "netlify/functions"
+  base = "/"
+  command = "corepack enable && pnpm install --frozen-lockfile && pnpm build:web"
+  publish = "apps/web/dist"
 
 [build.environment]
-  NODE_VERSION = "20"
+  NODE_VERSION = "22"
+  PNPM_FLAGS = "--frozen-lockfile"
+  # URL publique de l'API en mode connecté. Vide = mode démonstration seul.
+  # VITE_API_BASE_URL = "https://api.exemple.fr"
 
-# Les Netlify Functions ci-dessous declarent elles-memes leur chemin (ex:
-# "/api/auth/login") via `export const config = { path: ... }` dans chaque
-# fichier — elles sont donc prioritaires sur la regle SPA ci-dessous.
-
-# Repli SPA : toute route "page" (non-API, non-fichier statique existant)
-# sert index.html pour laisser React Router gerer la navigation cote client.
 [[redirects]]
   from = "/*"
   to = "/index.html"
@@ -20,14 +19,19 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; media-src 'self' https:; connect-src 'self' https:; base-uri 'self'; form-action 'self'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https:; worker-src 'self'; manifest-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
     Strict-Transport-Security = "max-age=63072000; includeSubDomains; preload"
     X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
-    X-XSS-Protection = "0"
 
 [[headers]]
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"

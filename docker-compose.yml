@@ -1,0 +1,35 @@
+# Services locaux pour le mode connecté (API + worker).
+# Le mode démonstration de l'application web n'en a pas besoin.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: selio
+      POSTGRES_PASSWORD: selio
+      POSTGRES_DB: selio
+    ports:
+      - "5432:5432"
+    volumes:
+      - selio_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U selio"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - selio_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  selio_pg:
+  selio_redis:
