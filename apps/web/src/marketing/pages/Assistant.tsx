@@ -2,7 +2,7 @@ import { usePageMeta } from "../../lib/seo";
 import { CheckList, CtaBand, FeatureCard, MarketingSection, PlannedList } from "../components";
 
 export default function Assistant() {
-  usePageMeta("Assistant IA", "L'assistant Selio rédige, vos règles décident : prix plancher, marge minimale, horaires et limites par acheteur restent déterministes. Fonctionne avec un serveur Ollama privé.");
+  usePageMeta("Assistant IA", "L'assistant Selio rédige, vos règles décident : prix plancher, marge minimale, horaires et limites par acheteur restent déterministes. Fonctionne avec mon modèle perso, hébergé sur un serveur privé.");
   return (
     <>
       <MarketingSection level={1} eyebrow="Assistant IA" title="L'IA propose un texte. Vos règles décident." lead="Avant toute suggestion, une politique déterministe évalue l'offre : au-dessus du plancher, dans la remise autorisée, dans les horaires, sous la limite par acheteur. L'assistant ne fait que rédiger la réponse correspondant à cette décision, puis cette réponse est vérifiée.">
@@ -20,7 +20,7 @@ export default function Assistant() {
           </div>
           <div>
             <h3 className="text-md font-semibold text-text">Où en est-on</h3>
-            <div className="mt-3"><PlannedList items={["Provider Ollama écrit et testé sur HTTP simulé ; serveur matériel à raccorder", "Aucune latence ni capacité annoncée tant que le matériel cible n'a pas été mesuré", "La démonstration utilise un simulateur déterministe, clairement signalé", "Un autre fournisseur pourra être ajouté via la même interface, sans appel payant automatique"]} /></div>
+            <div className="mt-3"><PlannedList items={["Connexion à mon modèle perso écrite et testée sur HTTP simulé ; serveur matériel à raccorder", "Aucune latence ni capacité annoncée tant que le matériel cible n'a pas été mesuré", "La démonstration utilise un simulateur déterministe, clairement signalé", "Un autre fournisseur pourra être ajouté via la même interface, sans appel payant automatique"]} /></div>
           </div>
         </div>
       </MarketingSection>

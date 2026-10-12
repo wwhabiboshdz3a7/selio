@@ -69,7 +69,7 @@ export default function Home() {
           <div className="card p-5">
             <h3 className="text-md font-semibold text-text">En préparation ou à valider</h3>
             <div className="mt-4">
-              <PlannedList items={["Lecture et envoi via l'extension sur le site Vinted : construit sur des fixtures, à valider dans un navigateur réel", "Assistant IA sur serveur Ollama dédié : intégration prête, matériel à raccorder", "Achat assisté réel : désactivé par défaut, simulation de bout en bout disponible", "Abonnements : adaptateur de paiement en mode test uniquement", "Vinted ne propose pas d'API publique pour les vendeurs : Selio ne promet aucune compatibilité officielle"]} />
+              <PlannedList items={["Lecture et envoi via l'extension sur le site Vinted : construit sur des fixtures, à valider dans un navigateur réel", "Assistant IA sur mon modèle perso, hébergé sur un serveur dédié : intégration prête, matériel à raccorder", "Achat assisté réel : désactivé par défaut, simulation de bout en bout disponible", "Abonnements : adaptateur de paiement en mode test uniquement", "Vinted ne propose pas d'API publique pour les vendeurs : Selio ne promet aucune compatibilité officielle"]} />
             </div>
           </div>
         </div>
