@@ -30,7 +30,7 @@ export default function Ai() {
             </div>
             <p className="mt-1 text-sm text-text-muted">{s.message}</p>
             <DescriptionList className="mt-4" columns={2} items={[{ label: "Fournisseur", value: s.provider }, { label: "Modèle", value: s.model }, { label: "Latence du dernier contrôle", value: s.latencyMs === null ? "—" : `${s.latencyMs} ms`, numeric: true }, { label: "File", value: `${s.queue.pending} en attente · ${s.queue.running}/${s.queue.concurrency} en cours`, numeric: true }, { label: "Disjoncteur", value: `${s.circuit.state} (${s.circuit.failures} échec(s))` }, { label: "Vérifié", value: formatDateTime(s.checkedAt) }]} />
-            {mode === "demo" ? <Alert tone="info" className="mt-4">En démonstration, l'assistant est un simulateur déterministe : il n'y a pas de modèle réel. En mode connecté, le serveur appelle un Ollama privé ; le navigateur n'y accède jamais directement.</Alert> : null}
+            {mode === "demo" ? <Alert tone="info" className="mt-4">En démonstration, l'assistant est un simulateur déterministe : il n'y a pas de modèle réel. En mode connecté, le serveur appelle mon modèle perso, hébergé en privé ; le navigateur n'y accède jamais directement.</Alert> : null}
             {s.status === "unavailable" || s.status === "circuit_open" ? <Alert tone="warning" className="mt-4" title="Repli actif">Les automatisations utilisent des gabarits déterministes tant que l'IA est indisponible. Aucune réponse simulée n'est présentée comme venant du modèle.</Alert> : null}
           </Card>
         )}
