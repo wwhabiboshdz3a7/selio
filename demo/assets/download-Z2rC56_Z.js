@@ -1,0 +1,1 @@
+function l(c,o,a="text/csv;charset=utf-8"){const d=o instanceof Blob?o:new Blob([o],{type:a}),t=URL.createObjectURL(d),e=document.createElement("a");e.href=t,e.download=c,document.body.appendChild(e),e.click(),e.remove(),setTimeout(()=>URL.revokeObjectURL(t),1e3)}export{l as d};

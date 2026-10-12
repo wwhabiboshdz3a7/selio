@@ -1,0 +1,1 @@
+import{j as a}from"./query-BT2q_YnU.js";import{f as n}from"./index-BJ9ESnsZ.js";import{f as x}from"./format-CaLYk-Im.js";function p({cents:t,signed:o,className:r,compact:e}){const s=o?t>0?"text-success":t<0?"text-danger":"text-text-muted":void 0,m=x(t,{compact:e});return a.jsx("span",{className:n("num",s,o&&t!==0&&"font-medium",r),children:o&&t>0?`+${m}`:m})}export{p as M};

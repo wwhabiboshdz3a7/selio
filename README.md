@@ -1,3 +1,5 @@
+> **Branche `demo`** : la démonstration en ligne de Selio est dans le dossier `demo/`. Mise en ligne sur Netlify : voir [DEMO.md](DEMO.md).
+
 # Selio — stack "maison" (GitHub + Netlify + Supabase)
 
 Code 100% possede par toi : aucun outil tiers ne liste ou n'heberge ce site
