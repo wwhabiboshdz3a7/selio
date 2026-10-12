@@ -17,13 +17,7 @@
     <meta property="og:description" content="Stock, conversations, clients, commandes et marges au même endroit." />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="fr_FR" />
-    <script>
-      // Applique le thème avant le premier rendu pour éviter un flash.
-      try {
-        var t = localStorage.getItem("selio.theme");
-        if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
-      } catch (e) {}
-    </script>
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>
