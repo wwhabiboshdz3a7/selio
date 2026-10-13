@@ -1,1 +1,0 @@
-import{j as t}from"./query-BT2q_YnU.js";import{f as a}from"./index-BJ9ESnsZ.js";function d({selected:r,padding:m="md",className:s,...o}){return t.jsx("div",{className:a("card min-w-0",r&&"border-accent",m==="md"&&"p-4 md:p-5",m==="sm"&&"p-3 md:p-4",s),...o})}export{d as C};
