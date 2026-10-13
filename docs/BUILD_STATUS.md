@@ -1,6 +1,6 @@
 # État de construction
 
-Dernière mise à jour : 8 octobre 2026 (session cloud, branche `claude/jolly-knuth-5bu1el`).
+Dernière mise à jour : 13 octobre 2026.
 
 ## Classification des modules
 

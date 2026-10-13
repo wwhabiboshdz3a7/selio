@@ -1,6 +1,6 @@
 # Rapport de tests
 
-Environnement : session cloud Linux, Node 22.22, pnpm 10.28, PostgreSQL 16.15 local (rôle `selio_app` créé par migration), Redis 7.0 local, Chromium Playwright 1.64.
+Environnement : Linux de développement, Node 22.22, pnpm 10.28, PostgreSQL 16.15 local (rôle `selio_app` créé par migration), Redis 7.0 local, Chromium Playwright 1.64.
 
 Toute vérification non exécutée est marquée **non exécutée**.
 
@@ -75,3 +75,17 @@ Captures prises à 375 px, 768 px et 1 280 px, clair et sombre (`apps/web/script
 - Parcours Stripe en mode test avec de vraies clés.
 - Exécution longue du planificateur BullMQ (les tâches sont testées directement ; le scheduler répétable n'a pas tourné plusieurs heures).
 - Tests de charge.
+
+## Vérifications du 13 octobre 2026
+
+Après trois modifications de l'interface web (libellé de l'assistant IA, script de thème sorti du HTML pour respecter la CSP, libellé français du rôle dans les paramètres) et la correction des Dockerfiles :
+
+| Vérification | Résultat |
+|---|---|
+| `pnpm lint` et `pnpm typecheck` (tout le dépôt) | ✔ 0 erreur |
+| `pnpm test:e2e` (8 scénarios × desktop, tablette, mobile) | ✔ 24/24 |
+| Démo servie avec les règles Netlify (`_headers`, `_redirects`) : en-têtes, liens directs, rechargement des pages de l'application, thème enregistré, absence de violation CSP et d'erreur console | ✔ 21/21 |
+| Test négatif : un script inline est bien signalé comme violation CSP | ✔ |
+| `pnpm deploy --legacy` de l'API et du worker, puis démarrage depuis le dossier déployé | ✔ (API : `/api/health` répond ; worker : démarrage et arrêt propre) |
+| Construction des images Docker | **non exécutée** (client Docker présent, démon injoignable dans l'environnement de test) |
+| `pnpm test` complet (PostgreSQL 16 et Redis 7 locaux) | ✔ 109/109 |
