@@ -151,6 +151,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
         <AiStatusRow />
         <Menu
           align="start"
+          side="top"
           className="block w-full"
           trigger={({ toggle, open: o, id }) => (
             <button type="button" onClick={toggle} aria-haspopup="menu" aria-expanded={o} aria-controls={id} className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left hover:bg-surface-muted">
