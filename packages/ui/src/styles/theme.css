@@ -15,6 +15,24 @@
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-muted: var(--surface-muted);
+  --color-surface-sidebar: var(--surface-sidebar);
+  --color-porcelain: var(--porcelain);
+  --color-tone-braise: var(--tone-braise);
+  --color-tone-teal: var(--tone-teal);
+  --color-tone-indigo: var(--tone-indigo);
+  --color-tone-amber: var(--tone-amber);
+  --color-tone-rose: var(--tone-rose);
+  --color-tone-emerald: var(--tone-emerald);
+  --color-tone-sky: var(--tone-sky);
+  --color-tone-slate: var(--tone-slate);
+  --color-tone-braise-soft: var(--tone-braise-soft);
+  --color-tone-teal-soft: var(--tone-teal-soft);
+  --color-tone-indigo-soft: var(--tone-indigo-soft);
+  --color-tone-amber-soft: var(--tone-amber-soft);
+  --color-tone-rose-soft: var(--tone-rose-soft);
+  --color-tone-emerald-soft: var(--tone-emerald-soft);
+  --color-tone-sky-soft: var(--tone-sky-soft);
+  --color-tone-slate-soft: var(--tone-slate-soft);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-text: var(--text);
@@ -85,8 +103,8 @@
 
   /* Grille de 4 px indépendante de la taille de police racine (14 px). */
   --spacing: 4px;
-  --spacing-sidebar: 232px;
-  --container-content: 1280px;
+  --spacing-sidebar: 264px;
+  --container-content: 1600px;
 
   --ease-selio: cubic-bezier(0.2, 0, 0, 1);
   --default-transition-duration: 120ms;

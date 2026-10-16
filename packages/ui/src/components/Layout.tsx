@@ -1,14 +1,51 @@
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
 
-/** En-tête de page : un seul titre 24 px par écran, description, actions à droite. */
-export function PageHeader({ title, description, actions, eyebrow, className }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; eyebrow?: ReactNode; className?: string }) {
+/** Tons des fonctionnalités : repères visuels (tuiles d'icônes, graphiques), jamais pour du texte long. */
+export type Tone = "braise" | "teal" | "indigo" | "amber" | "rose" | "emerald" | "sky" | "slate";
+
+export const TONE_TILE: Record<Tone, string> = {
+  braise: "bg-tone-braise-soft text-tone-braise",
+  teal: "bg-tone-teal-soft text-tone-teal",
+  indigo: "bg-tone-indigo-soft text-tone-indigo",
+  amber: "bg-tone-amber-soft text-tone-amber",
+  rose: "bg-tone-rose-soft text-tone-rose",
+  emerald: "bg-tone-emerald-soft text-tone-emerald",
+  sky: "bg-tone-sky-soft text-tone-sky",
+  slate: "bg-tone-slate-soft text-tone-slate",
+};
+
+export const TONE_VAR: Record<Tone, string> = {
+  braise: "var(--tone-braise)",
+  teal: "var(--tone-teal)",
+  indigo: "var(--tone-indigo)",
+  amber: "var(--tone-amber)",
+  rose: "var(--tone-rose)",
+  emerald: "var(--tone-emerald)",
+  sky: "var(--tone-sky)",
+  slate: "var(--tone-slate)",
+};
+
+/** Tuile d'icône colorée (identité visuelle de chaque fonctionnalité). */
+export function IconTile({ icon, tone = "slate", size = 40, className }: { icon: ReactNode; tone?: Tone; size?: number; className?: string }) {
+  return (
+    <span aria-hidden className={cn("inline-flex shrink-0 items-center justify-center rounded-lg", TONE_TILE[tone], className)} style={{ width: size, height: size }}>
+      <span className="inline-flex [&>svg]:size-[55%]" style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>{icon}</span>
+    </span>
+  );
+}
+
+/** En-tête de page : un seul titre par écran, tuile d'icône facultative, description, actions à droite. */
+export function PageHeader({ title, description, actions, eyebrow, className, icon, tone }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; eyebrow?: ReactNode; className?: string; icon?: ReactNode; tone?: Tone }) {
   return (
     <div className={cn("mb-6 flex flex-wrap items-start justify-between gap-3", className)}>
-      <div className="min-w-0">
-        {eyebrow ? <div className="mb-1 text-xs font-medium text-text-muted">{eyebrow}</div> : null}
-        <h1 className="text-xl font-semibold text-text">{title}</h1>
-        {description ? <p className="mt-1 max-w-2xl text-sm text-text-muted">{description}</p> : null}
+      <div className="flex min-w-0 items-start gap-3.5">
+        {icon ? <IconTile icon={icon} tone={tone} size={44} className="mt-0.5 hidden sm:inline-flex" /> : null}
+        <div className="min-w-0">
+          {eyebrow ? <div className="mb-1 text-xs font-medium text-text-muted">{eyebrow}</div> : null}
+          <h1 className="text-xl font-semibold text-text">{title}</h1>
+          {description ? <p className="mt-1 max-w-3xl text-sm text-text-muted">{description}</p> : null}
+        </div>
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
@@ -46,7 +83,9 @@ export function DescriptionList({ items, className, columns = 1 }: { items: { la
   );
 }
 
-export function Avatar({ name, size = 32, className }: { name: string; size?: number; className?: string }) {
+const AVATAR_TONES: Tone[] = ["braise", "teal", "indigo", "amber", "rose", "emerald", "sky"];
+
+export function Avatar({ name, size = 32, className, colored = false }: { name: string; size?: number; className?: string; colored?: boolean }) {
   const initials = name
     .split(/\s+/)
     .filter(Boolean)
@@ -56,7 +95,7 @@ export function Avatar({ name, size = 32, className }: { name: string; size?: nu
   return (
     <span
       aria-hidden
-      className={cn("inline-flex shrink-0 items-center justify-center rounded-full bg-surface-muted font-medium text-text-muted", className)}
+      className={cn("inline-flex shrink-0 items-center justify-center rounded-full font-medium", colored ? TONE_TILE[AVATAR_TONES[[...name].reduce((h, c) => h + c.charCodeAt(0), 0) % AVATAR_TONES.length]!] : "bg-surface-muted text-text-muted", className)}
       style={{ width: size, height: size, fontSize: Math.max(10, Math.round(size * 0.38)) }}
     >
       {initials || "?"}

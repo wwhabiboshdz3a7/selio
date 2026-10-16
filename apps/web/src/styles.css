@@ -8,9 +8,9 @@
 }
 
 .sidebar-link[aria-current="page"] {
-  background: var(--surface-muted);
+  background: var(--surface);
   color: var(--text);
-  box-shadow: inset 2px 0 0 0 var(--accent);
+  box-shadow: 0 0 0 1px var(--border), var(--shadow-sm);
 }
 
 .prose-selio p + p {

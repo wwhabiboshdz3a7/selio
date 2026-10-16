@@ -41,14 +41,28 @@
   --amber-600: #B45309;
   --red-600:   #B91C1C;
 
-  /* ---- Rôles (à utiliser dans les composants) -------------------------- */
-  --bg:             var(--gray-50);   /* fond de page */
-  --surface:        var(--gray-0);    /* cartes, panneaux, modales */
-  --surface-muted:  var(--gray-100);  /* zones secondaires, hover de ligne */
-  --border:         var(--gray-200);
-  --border-strong:  var(--gray-300);
+  /* Porcelaine : fond de page (retour démo du 13/10 : le blanc pur est trop dur). */
+  --porcelain: #F5F5F7;
 
-  --text:           var(--gray-950);  /* titres, texte principal */
+  /* Tons de fonctionnalités et de graphiques (repères visuels, jamais pour du texte long). */
+  --tone-braise:  #EA6A2A;
+  --tone-teal:    #138A84;
+  --tone-indigo:  #5A5BD4;
+  --tone-amber:   #D4951B;
+  --tone-rose:    #D2457A;
+  --tone-emerald: #2E9A68;
+  --tone-sky:     #2F7FC4;
+  --tone-slate:   #6B6F7B;
+
+  /* ---- Rôles (à utiliser dans les composants) -------------------------- */
+  --bg:             var(--porcelain); /* fond de page : porcelaine #F5F5F7 */
+  --surface:        #FFFFFF;          /* cartes, panneaux, modales */
+  --surface-sidebar:#FBFBFC;          /* barre latérale, à peine teintée */
+  --surface-muted:  #EEEEF1;          /* zones secondaires, hover de ligne */
+  --border:         #E3E3E8;
+  --border-strong:  #D2D2D9;
+
+  --text:           #1D1D1F;          /* titres, texte principal */
   --text-muted:     var(--gray-500);  /* légendes, métadonnées */
   --text-subtle:    var(--gray-400);  /* placeholders, désactivé */
   --text-inverse:   var(--gray-0);
@@ -62,6 +76,16 @@
   --accent-soft:    var(--braise-50);  /* fond de badge, sélection */
   --accent-vivid:   var(--braise-500); /* graphiques, points, indicateurs */
   --on-accent:      var(--gray-0);
+
+  /* Fonds doux des tons (pastilles, tuiles de fonctionnalités). */
+  --tone-braise-soft:  #FDEBDF;
+  --tone-teal-soft:    #DFF2F0;
+  --tone-indigo-soft:  #E7E7FB;
+  --tone-amber-soft:   #FBF0D9;
+  --tone-rose-soft:    #FBE4EC;
+  --tone-emerald-soft: #DFF3E8;
+  --tone-sky-soft:     #E1EEF9;
+  --tone-slate-soft:   #ECEDF0;
 
   --success: var(--green-600);
   --warning: var(--amber-600);
@@ -102,7 +126,8 @@
   --radius-xl: 16px;   /* modales, feuilles mobiles */
   --radius-full: 999px;
 
-  --shadow-sm: 0 1px 2px rgba(11, 11, 12, 0.04);
+  --shadow-sm: 0 1px 2px rgba(11, 11, 12, 0.05);
+  --shadow-card: 0 1px 2px rgba(11, 11, 12, 0.04), 0 4px 14px rgba(11, 11, 12, 0.035);
   --shadow-md: 0 4px 16px rgba(11, 11, 12, 0.06);   /* popovers, menus */
   --shadow-lg: 0 12px 40px rgba(11, 11, 12, 0.10);  /* modales seulement */
 
@@ -110,51 +135,84 @@
   --duration-base: 200ms;
   --ease: cubic-bezier(0.2, 0, 0, 1);
 
-  --sidebar-width: 232px;
-  --content-max: 1280px;
+  --sidebar-width: 264px;
+  --content-max: 1600px;
 }
 
 /* ---- Mode sombre -------------------------------------------------------- */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: var(--gray-950);
-    --surface: var(--gray-900);
-    --surface-muted: var(--gray-800);
-    --border: var(--gray-800);
-    --border-strong: var(--gray-700);
-    --text: var(--gray-50);
-    --text-muted: var(--gray-400);
-    --text-subtle: var(--gray-600);
-    --text-inverse: var(--gray-950);
-    --primary: var(--gray-50);
-    --primary-hover: var(--gray-200);
-    --on-primary: var(--gray-950);
-    --accent: var(--braise-500);
+    /* Sombre éclairci (retour démo : « on ne voit rien ») et blanc cassé pour le texte. */
+    --bg: #1B1B1F;
+    --surface: #24242A;
+    --surface-sidebar: #202025;
+    --surface-muted: #2F2F36;
+    --border: #36363E;
+    --border-strong: #474750;
+    --text: #ECE9E4;
+    --text-muted: #B7B4AE;
+    --text-subtle: #87857F;
+    --text-inverse: #1B1B1F;
+    --primary: #ECE9E4;
+    --primary-hover: #D9D6D0;
+    --on-primary: #1B1B1F;
+    --accent: #F08A55;
     --accent-hover: var(--braise-200);
-    --accent-soft: rgba(234, 106, 42, 0.14);
-    --on-accent: var(--gray-950);
+    --accent-soft: rgba(240, 138, 85, 0.16);
+    --accent-vivid: #F08A55;
+    --on-accent: #1B1B1F;
+    --success: #5CC98A;
+    --warning: #E8B04F;
+    --danger: #F07A6E;
+    --tone-braise-soft: rgba(234, 106, 42, 0.18);
+    --tone-teal-soft: rgba(19, 138, 132, 0.22);
+    --tone-indigo-soft: rgba(90, 91, 212, 0.24);
+    --tone-amber-soft: rgba(212, 149, 27, 0.2);
+    --tone-rose-soft: rgba(210, 69, 122, 0.2);
+    --tone-emerald-soft: rgba(46, 154, 104, 0.22);
+    --tone-sky-soft: rgba(47, 127, 196, 0.22);
+    --tone-slate-soft: rgba(107, 111, 123, 0.25);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+    --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.35);
     --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--braise-500);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: var(--gray-950);
-  --surface: var(--gray-900);
-  --surface-muted: var(--gray-800);
-  --border: var(--gray-800);
-  --border-strong: var(--gray-700);
-  --text: var(--gray-50);
-  --text-muted: var(--gray-400);
-  --text-subtle: var(--gray-600);
-  --text-inverse: var(--gray-950);
-  --primary: var(--gray-50);
-  --primary-hover: var(--gray-200);
-  --on-primary: var(--gray-950);
-  --accent: var(--braise-500);
+  /* Sombre éclairci (retour démo : « on ne voit rien ») et blanc cassé pour le texte. */
+  --bg: #1B1B1F;
+  --surface: #24242A;
+  --surface-sidebar: #202025;
+  --surface-muted: #2F2F36;
+  --border: #36363E;
+  --border-strong: #474750;
+  --text: #ECE9E4;
+  --text-muted: #B7B4AE;
+  --text-subtle: #87857F;
+  --text-inverse: #1B1B1F;
+  --primary: #ECE9E4;
+  --primary-hover: #D9D6D0;
+  --on-primary: #1B1B1F;
+  --accent: #F08A55;
   --accent-hover: var(--braise-200);
-  --accent-soft: rgba(234, 106, 42, 0.14);
-  --on-accent: var(--gray-950);
+  --accent-soft: rgba(240, 138, 85, 0.16);
+  --accent-vivid: #F08A55;
+  --on-accent: #1B1B1F;
+  --success: #5CC98A;
+  --warning: #E8B04F;
+  --danger: #F07A6E;
+  --tone-braise-soft: rgba(234, 106, 42, 0.18);
+  --tone-teal-soft: rgba(19, 138, 132, 0.22);
+  --tone-indigo-soft: rgba(90, 91, 212, 0.24);
+  --tone-amber-soft: rgba(212, 149, 27, 0.2);
+  --tone-rose-soft: rgba(210, 69, 122, 0.2);
+  --tone-emerald-soft: rgba(46, 154, 104, 0.22);
+  --tone-sky-soft: rgba(47, 127, 196, 0.22);
+  --tone-slate-soft: rgba(107, 111, 123, 0.25);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.35);
+  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--braise-500);
 }
 
 /* ---- Base --------------------------------------------------------------- */
