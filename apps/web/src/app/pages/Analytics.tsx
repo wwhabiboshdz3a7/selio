@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ClipboardList, Download } from "lucide-react";
+import { Download } from "lucide-react";
 import { ITEM_CATEGORIES, ITEM_CATEGORY_LABELS } from "@selio/contracts";
 import type { PeriodPreset } from "@selio/domain";
-import { Button, Card, KpiCard, Money, PageHeader, Select, Table, TableWrap, Td, Th, Tr, formatCents, formatNumber, formatPercent } from "@selio/ui";
+import { Button, Card, Money, PageHeader, StatStrip, Select, Table, TableWrap, Td, Th, Tr, formatCents, formatNumber, formatPercent } from "@selio/ui";
 import { useClient } from "../../lib/data/provider";
 import { downloadFile } from "../../lib/download";
 import { BarChart, HorizontalBars } from "../../components/charts";
@@ -21,7 +21,7 @@ export default function Analytics() {
   const exportCsv = useAppMutation(() => client.exportAnalyticsCsv(filters), { success: "Export généré", onSuccess: (csv) => downloadFile(`selio-analyses-${period}.csv`, csv) });
   return (
     <>
-      <PageHeader icon={<ClipboardList />} tone="sky" title="Analyses" description="Chaque indicateur est calculé depuis vos commandes et votre stock. Les conventions sont affichées en bas de page." actions={<><PeriodPicker value={period} onChange={setPeriod} /><Button variant="secondary" icon={<Download />} onClick={() => exportCsv.mutate()} loading={exportCsv.isPending}>Exporter CSV</Button></>} />
+      <PageHeader title="Analyses" description="Chaque indicateur est calculé depuis vos commandes et votre stock. Les conventions sont affichées en bas de page." actions={<><PeriodPicker value={period} onChange={setPeriod} /><Button variant="secondary" icon={<Download />} onClick={() => exportCsv.mutate()} loading={exportCsv.isPending}>Exporter CSV</Button></>} />
       <div className="mb-4 grid gap-2 sm:grid-cols-2 md:max-w-lg">
         <Select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Catégorie"><option value="">Toutes catégories</option>{ITEM_CATEGORIES.map((c) => <option key={c} value={c}>{ITEM_CATEGORY_LABELS[c]}</option>)}</Select>
         <Select value={channel} onChange={(e) => setChannel(e.target.value)} aria-label="Canal"><option value="">Tous canaux</option><option value="demo">Simulateur</option><option value="vinted">Vinted</option></Select>
@@ -29,12 +29,15 @@ export default function Analytics() {
       <QueryBoundary query={q}>
         {(d) => (
           <div className="flex flex-col gap-6">
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <KpiCard label="Chiffre d'affaires" value={formatCents(d.sales.revenueCents)} delta={{ value: <Delta current={d.sales.revenueCents} previous={d.previousSales.revenueCents} format={formatCents} />, tone: "neutral" }} />
-              <KpiCard label="Marge brute" value={formatCents(d.sales.marginCents)} delta={{ value: <Delta current={d.sales.marginCents} previous={d.previousSales.marginCents} format={formatCents} />, tone: "neutral" }} hint={`${formatPercent(d.sales.marginRate)} du CA`} />
-              <KpiCard label="Panier moyen" value={formatCents(d.sales.averageBasketCents)} hint={`${formatNumber(d.sales.orderCount)} vente(s)`} />
-              <KpiCard label="Rotation du stock" value={d.stock.averageDaysToSell === null ? "—" : `${d.stock.averageDaysToSell} j`} hint={`Taux d'écoulement ${formatPercent(d.stock.sellThroughRate)}`} />
-            </div>
+            <StatStrip
+              className="grid-cols-2 xl:grid-cols-4"
+              items={[
+                { label: "Chiffre d'affaires", value: formatCents(d.sales.revenueCents), sub: <Delta current={d.sales.revenueCents} previous={d.previousSales.revenueCents} format={formatCents} /> },
+                { label: "Marge brute", value: formatCents(d.sales.marginCents), sub: <Delta current={d.sales.marginCents} previous={d.previousSales.marginCents} format={formatCents} /> },
+                { label: "Panier moyen", value: formatCents(d.sales.averageBasketCents), sub: <>{formatNumber(d.sales.orderCount)} vente(s)</> },
+                { label: "Rotation du stock", value: d.stock.averageDaysToSell === null ? "—" : `${d.stock.averageDaysToSell} j`, sub: <>Taux d'écoulement {formatPercent(d.stock.sellThroughRate)}</> },
+              ]}
+            />
             <Card>
               <h2 className="text-md font-semibold">CA et marge brute</h2>
               <BarChart className="mt-4" data={d.series.map((s) => ({ label: s.label, primary: s.revenueCents, secondary: s.marginCents }))} primaryLabel="CA" secondaryLabel="Marge brute" />

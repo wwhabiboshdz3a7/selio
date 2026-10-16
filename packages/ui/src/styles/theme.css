@@ -62,6 +62,8 @@
   --color-gold: var(--gold);
   --color-gold-soft: var(--gold-soft);
   --color-gold-text: var(--gold-text);
+  /* Or clair : icônes posées sur le fond de marque (améthyste profond), en clair comme en sombre. */
+  --color-gold-300: var(--gold-300);
   --color-violet-50: var(--violet-50);
   --color-violet-100: var(--violet-100);
   --color-violet-300: var(--violet-300);

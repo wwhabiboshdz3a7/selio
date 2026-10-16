@@ -5,7 +5,7 @@ import { Archive, Lightbulb, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { ITEM_CATEGORY_LABELS, ITEM_CONDITION_LABELS, ITEM_STATUS_LABELS, type ItemStatus } from "@selio/contracts";
 import { ITEM_TRANSITIONS, daysInStock, projectedMargin } from "@selio/domain";
 import { Button, Card, ConfirmDialog, DescriptionList, Menu, Money, PageHeader, Tag, cn, formatDate, formatDateTime, formatPercent } from "@selio/ui";
-import { ScoreRing, scoreTone } from "../../components/charts";
+import { ScoreRing, scoreTextTone } from "../../components/charts";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { ItemStatusBadge, OrderStatusBadge, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
@@ -102,14 +102,14 @@ export default function ItemDetail() {
                   <Card>
                     <div className="mb-3 flex items-center justify-between gap-2"><h2 className="text-md font-semibold">Rendement de l'annonce</h2><Link to="/app/dressing" className="text-xs font-medium text-accent">Dressing →</Link></div>
                     <div className="flex items-center gap-4">
-                      <ScoreRing score={dressing.data.performance.score} size={72} stroke={7} />
+                      <ScoreRing score={dressing.data.performance.score} size={64} stroke={6} scale="listing" />
                       <div className="text-sm">
-                        <p className="font-semibold" style={{ color: scoreTone(dressing.data.performance.score) }}>{dressing.data.performance.band.label}</p>
+                        <p className="font-semibold" style={{ color: scoreTextTone(dressing.data.performance.score, "listing") }}>{dressing.data.performance.band.label}</p>
                         <p className="num text-xs text-text-muted">{dressing.data.performance.daysOnline} j en ligne · {dressing.data.performance.views} vues · {dressing.data.performance.favorites} favoris · {dressing.data.performance.offers} offre(s)</p>
                         <p className="num text-xs text-text-muted">{dressing.data.plan.usedCount}/{dressing.data.plan.variants.length} variantes de republication utilisées</p>
                       </div>
                     </div>
-                    {dressing.data.performance.tips.length ? <ul className="mt-3 flex flex-col gap-1.5 text-xs">{dressing.data.performance.tips.slice(0, 3).map((t) => <li key={t.key} className="flex gap-1.5"><Lightbulb className="mt-0.5 size-3.5 shrink-0 text-tone-amber" aria-hidden /><span><span className="font-medium text-text">{t.label}</span> <span className="text-text-muted">— {t.detail}</span></span></li>)}</ul> : null}
+                    {dressing.data.performance.tips.length ? <ul className="mt-3 flex flex-col gap-1.5 text-xs">{dressing.data.performance.tips.slice(0, 3).map((t) => <li key={t.key} className="flex gap-1.5"><Lightbulb className="mt-0.5 size-3.5 shrink-0 text-text-muted" aria-hidden /><span><span className="font-medium text-text">{t.label}</span> <span className="text-text-muted">— {t.detail}</span></span></li>)}</ul> : null}
                     {dressing.data.performance.republishDue ? <Link to="/app/dressing?filter=due"><Button size="sm" variant="accent" className="mt-3" fullWidth>Republier avec la variante {dressing.data.plan.next?.index}</Button></Link> : null}
                   </Card>
                 ) : null}

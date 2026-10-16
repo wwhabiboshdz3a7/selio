@@ -38,7 +38,7 @@ export function Tabs<T extends string>({
             )}
           >
             {it.label}
-            {typeof it.count === "number" ? <span className="num rounded-sm bg-surface-muted px-1.5 text-xs text-text-muted">{it.count}</span> : null}
+            {typeof it.count === "number" ? <span className={cn("num text-xs", active ? "text-accent" : "text-text-muted")}>{it.count}</span> : null}
           </button>
         );
       })}
@@ -46,7 +46,7 @@ export function Tabs<T extends string>({
   );
 }
 
-/** Contrôle segmenté compact (filtres rapides, périodes). */
+/** Contrôle segmenté compact (filtres rapides, périodes) : sélection en améthyste. */
 export function Segmented<T extends string>({
   value,
   onChange,
@@ -76,7 +76,7 @@ export function Segmented<T extends string>({
             className={cn(
               "shrink-0 rounded-sm px-2.5 font-medium whitespace-nowrap transition-colors",
               size === "sm" ? "h-7 text-xs" : "h-8 text-sm",
-              active ? "bg-surface-muted text-text" : "text-text-muted hover:text-text",
+              active ? "bg-accent-soft text-accent" : "text-text-muted hover:text-text",
             )}
           >
             {it.label}
@@ -84,5 +84,46 @@ export function Segmented<T extends string>({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Puce de filtre (listes d'articles, dressing) : sans bordure au repos,
+ * sélection en améthyste douce. `role` = « tab » (aria-selected) ou « radio » (aria-checked).
+ */
+export function FilterChip({
+  active,
+  count,
+  icon,
+  children,
+  onClick,
+  role = "radio",
+  className,
+}: {
+  active: boolean;
+  count?: number | null;
+  icon?: ReactNode;
+  children: ReactNode;
+  onClick: () => void;
+  role?: "radio" | "tab";
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role={role}
+      aria-checked={role === "radio" ? active : undefined}
+      aria-selected={role === "tab" ? active : undefined}
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium whitespace-nowrap transition-colors [&_svg]:size-3.5",
+        active ? "bg-accent-soft text-accent" : "text-text-muted hover:bg-surface-muted hover:text-text",
+        className,
+      )}
+    >
+      {icon ? <span className="inline-flex" aria-hidden>{icon}</span> : null}
+      {children}
+      {typeof count === "number" ? <span className={cn("num text-xs font-normal", active ? "text-accent" : "text-text-muted")}>{count}</span> : null}
+    </button>
   );
 }

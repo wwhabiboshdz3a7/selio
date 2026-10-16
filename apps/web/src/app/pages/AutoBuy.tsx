@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Bot, Check, Clock, Play, ShieldCheck, X } from "lucide-react";
 import { purchaseCost, scoreBand } from "@selio/domain";
 import type { AutoBuySettings, BuyerFees } from "@selio/contracts";
-import { Alert, Button, Card, EmptyState, Field, IconTile, Input, PageHeader, Select, StatusBadge, Toggle, cn, formatCents, formatDateTime } from "@selio/ui";
+import { Alert, Button, Card, EmptyState, Field, Input, PageHeader, Select, StatusBadge, Toggle, cn, formatCents, formatDateTime } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { MoneyInput, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
@@ -44,8 +44,6 @@ export default function AutoBuy() {
   return (
     <>
       <PageHeader
-        icon={<Bot />}
-        tone="emerald"
         title="Achat auto"
         description="Réglez un seuil de note (par exemple 85/100). Au-dessus, l'application achète seule les affaires repérées par le radar, dans la limite d'un plafond par jour. Vous vérifiez ensuite l'achat, et vous pouvez l'annuler pendant un court délai."
         actions={<Button variant="secondary" icon={<Play />} onClick={() => run.mutate(undefined)} loading={run.isPending} disabled={!canBuy || !session.org.settings.autoBuy.enabled}>Lancer maintenant</Button>}
@@ -84,7 +82,7 @@ export default function AutoBuy() {
             </div>
           </Card>
           <Card>
-            <div className="mb-2 flex items-center gap-2"><IconTile icon={<ShieldCheck />} tone="emerald" size={30} /><h2 className="text-md font-semibold">Garde-fous</h2></div>
+            <div className="mb-3 flex items-center gap-2"><ShieldCheck className="size-4 text-text-muted" aria-hidden /><h2 className="text-md font-semibold">Garde-fous</h2></div>
             <ul className="grid gap-1.5 text-sm text-text-muted sm:grid-cols-2">
               {["Seuil de note réglable", "Plafond de dépense par jour", "Prix maximal par article", "Délai d'annulation après achat", "Jamais deux achats pour la même annonce", "Marge estimée positive obligatoire"].map((g) => <li key={g} className="flex items-center gap-1.5"><Check className="size-3.5 text-success" aria-hidden />{g}</li>)}
             </ul>
@@ -97,7 +95,7 @@ export default function AutoBuy() {
               <h2 className="text-md font-semibold">Dépensé aujourd'hui</h2>
               <span className="num text-sm text-text-muted">{formatCents(spentToday)} / {formatCents(session.org.settings.autoBuy.dailyCapCents)}</span>
             </div>
-            <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full bg-tone-emerald" style={{ width: `${Math.min(100, (spentToday / Math.max(1, session.org.settings.autoBuy.dailyCapCents)) * 100)}%` }} /></div>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full bg-accent-vivid" style={{ width: `${Math.min(100, (spentToday / Math.max(1, session.org.settings.autoBuy.dailyCapCents)) * 100)}%` }} /></div>
             {lastRun ? (
               <div className="mt-3 rounded-md bg-surface-muted p-3 text-sm">
                 <p className="font-medium text-text">Dernier passage : {lastRun.evaluated} affaire(s) examinée(s), {lastRun.bought} achetée(s).</p>
@@ -115,14 +113,14 @@ export default function AutoBuy() {
                     const cancelable = (p.status === "simulated" || p.status === "executed") && left > 0;
                     const o = p.opportunity;
                     return (
-                      <li key={p.id} className={cn("card flex flex-wrap items-center gap-3 p-3", cancelable && "border-tone-amber")}>
+                      <li key={p.id} className={cn("card flex flex-wrap items-center gap-3 p-3", cancelable && "border-accent/50")}>
                         {o?.observed.photoUrl ? <img src={o.observed.photoUrl} alt="" className="size-16 rounded-md object-cover" /> : <span className="size-16 rounded-md bg-surface-muted" />}
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-medium text-text">{o?.title ?? "Affaire supprimée"}</p>
                           <p className="num text-xs text-text-muted">{formatDateTime(p.createdAt)} · total {formatCents(p.maxPriceCents)}{o ? ` · bénéfice estimé ${formatCents(o.estimate.marginCents)}` : ""}</p>
                           <div className="mt-1 flex flex-wrap items-center gap-2">
                             <StatusBadge tone={p.status === "cancelled" ? "muted" : p.status === "blocked" ? "danger" : "success"}>{p.status === "cancelled" ? "Annulé" : p.status === "blocked" ? "Bloqué" : "Acheté (simulé)"}</StatusBadge>
-                            {cancelable ? <span className="num inline-flex items-center gap-1 text-xs font-medium text-tone-amber"><Clock className="size-3.5" aria-hidden />Annulable encore {left} min</span> : null}
+                            {cancelable ? <span className="num inline-flex items-center gap-1 text-xs font-medium text-accent"><Clock className="size-3.5" aria-hidden />Annulable encore {left} min</span> : null}
                           </div>
                         </div>
                         {o ? <ScoreRing score={o.score} size={44} /> : null}

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Pause, Play, Plus, RefreshCw, Workflow } from "lucide-react";
+import { Pause, Play, Plus, RefreshCw } from "lucide-react";
 import { JOB_STATUSES, JOB_STATUS_LABELS, RULE_KINDS, RULE_KIND_LABELS, type AutomationRule, type AutomationRuleCreate, type Job, type JobStatus, type RuleKind } from "@selio/contracts";
 import { RULE_RUN_LOCATION } from "@selio/domain";
 import { Alert, Button, Card, Checkbox, ConfirmDialog, Dialog, EmptyState, Field, Input, PageHeader, Pagination, Select, Table, TableEmpty, TableWrap, Tabs, Td, Th, Toggle, Tr, Tag, Textarea, formatDateTime, formatRelative } from "@selio/ui";
@@ -22,7 +22,7 @@ export default function Automations() {
   const canWrite = session.role === "owner" || session.role === "admin";
   return (
     <>
-      <PageHeader icon={<Workflow />} tone="amber" title="Automatisations" description="Règles explicites, horaires, limites et file de tâches visible. Les actions sensibles attendent votre validation par défaut." actions={state.data ? (state.data.globalPaused ? <Button variant="secondary" icon={<Play />} onClick={() => pause.mutate(false)} loading={pause.isPending} disabled={!canWrite}>Reprendre</Button> : <Button variant="danger" icon={<Pause />} onClick={() => setConfirmPause(true)} disabled={!canWrite}>Arrêt global</Button>) : null} />
+      <PageHeader title="Automatisations" description="Règles explicites, horaires, limites et file de tâches visible. Les actions sensibles attendent votre validation par défaut." actions={state.data ? (state.data.globalPaused ? <Button variant="secondary" icon={<Play />} onClick={() => pause.mutate(false)} loading={pause.isPending} disabled={!canWrite}>Reprendre</Button> : <Button variant="danger" icon={<Pause />} onClick={() => setConfirmPause(true)} disabled={!canWrite}>Arrêt global</Button>) : null} />
       {state.data?.globalPaused ? <Alert tone="warning" title="Arrêt global actif" className="mb-4">Aucune règle ne s'exécute depuis le {state.data.pausedAt ? formatDateTime(state.data.pausedAt) : "—"}. Les tâches en attente restent visibles.</Alert> : null}
       <Alert tone="info" className="mb-4" title="Où s'exécutent les règles">Les actions qui lisent ou écrivent sur Vinted passent par l'extension et exigent un navigateur ouvert : elles ne sont jamais promises 24 h/24. Les calculs (décision de négociation, baisse de prix dans Selio) tournent sur le serveur.</Alert>
       <Tabs ariaLabel="Sections" value={tab} onChange={(t) => { const p = new URLSearchParams(params); p.set("tab", t); setParams(p, { replace: true }); }} items={[{ value: "rules", label: "Règles" }, { value: "jobs", label: "File et historique" }]} className="mb-4" />
@@ -70,7 +70,7 @@ function Rules({ canWrite }: { canWrite: boolean }) {
                     <span className="flex gap-1">
                       <Button size="sm" variant="secondary" icon={<RefreshCw />} onClick={() => run.mutate(r)} loading={run.isPending && run.variables?.id === r.id} disabled={!canWrite}>Exécuter maintenant</Button>
                       <Button size="sm" variant="ghost" onClick={() => setEditing(r)} disabled={!canWrite}>Modifier</Button>
-                      <Button size="sm" variant="danger" onClick={() => setDel(r)} disabled={!canWrite}>Supprimer</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setDel(r)} disabled={!canWrite}>Supprimer</Button>
                     </span>
                   </div>
                 </Card>

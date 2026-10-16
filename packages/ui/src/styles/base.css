@@ -28,11 +28,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Carte : une seule séparation (filet), jamais filet + ombre cumulés. */
 @utility card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card, none);
+}
+
+/* Fond de marque des appels à l'action « premium » (bouton du menu, générateur) :
+   améthyste profond → améthyste, identique en clair et en sombre (texte blanc ≥ 4,5:1). */
+@utility bg-brand {
+  background-color: var(--violet-600);
+  background-image: linear-gradient(135deg, var(--violet-700) 0%, var(--violet-600) 50%, var(--violet-500) 100%);
 }
 
 @utility th-label {

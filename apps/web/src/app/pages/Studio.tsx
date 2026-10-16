@@ -129,8 +129,6 @@ export default function Studio() {
   return (
     <>
       <PageHeader
-        icon={<Sparkles />}
-        tone="braise"
         title="Générateur d'annonces"
         description="Ajoutez seulement vos photos : l'IA reconnaît l'article et rédige l'annonce (titre, description, marque, taille, état, couleurs). Vous relisez, puis vous enregistrez en brouillon ou publiez directement sur le compte choisi."
         actions={draft ? <Button variant="secondary" icon={<ArrowLeft />} onClick={reset}>Nouvelle annonce</Button> : undefined}
@@ -140,18 +138,18 @@ export default function Studio() {
         <Alert tone="info" className="mb-5" title="Démonstration : IA simulée">Le simulateur ne voit pas réellement vos photos : il s'appuie sur la marque, la taille, les notes et le nom des fichiers (ex. « ralph-lauren-pull-bleu-M.jpg »). Avec votre modèle IA branché (Ollama + modèle de vision), l'analyse des photos est réelle. Le prix conseillé vient toujours des ventes comparables, jamais de l'IA.</Alert>
       ) : null}
 
-      <ol className="mb-6 grid gap-3 md:grid-cols-3">
+      <ol className="mb-8 grid gap-4 sm:grid-cols-3" aria-label="Étapes">
         {[
-          { n: 1, t: "Ajoutez vos photos", d: "Face, dos, étiquette, défauts : 3 à 8 photos idéalement.", icon: <Camera /> },
-          { n: 2, t: "L'IA rédige l'annonce", d: "Titre optimisé, description honnête, attributs Vinted.", icon: <Wand2 /> },
-          { n: 3, t: "Brouillon ou publication", d: "Vous relisez et choisissez : brouillon ou mise en vente.", icon: <Send /> },
+          { n: 1, t: "Ajoutez vos photos", d: "Face, dos, étiquette, défauts : 3 à 8 photos idéalement." },
+          { n: 2, t: "L'IA rédige l'annonce", d: "Titre optimisé, description honnête, attributs Vinted." },
+          { n: 3, t: "Brouillon ou publication", d: "Vous relisez et choisissez : brouillon ou mise en vente." },
         ].map((s) => {
           const done = (s.n === 1 && photos.length > 0) || (s.n === 2 && Boolean(draft)) || (s.n === 3 && Boolean(saved));
           return (
-            <li key={s.n} className={cn("card flex items-start gap-3 p-4", done && "border-tone-emerald")}>
-              <IconTile icon={done ? <Check /> : s.icon} tone={done ? "emerald" : "braise"} size={36} />
-              <div>
-                <p className="text-sm font-semibold text-text">{s.n}. {s.t}</p>
+            <li key={s.n} className="flex items-start gap-3">
+              <span className={cn("num inline-flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold", done ? "bg-accent text-accent-on" : "bg-surface text-text-muted ring-1 ring-border")} aria-hidden>{done ? <Check className="size-3.5" /> : s.n}</span>
+              <div className="min-w-0">
+                <p className={cn("text-sm font-medium", done ? "text-text" : "text-text")}>{s.t}{done ? <span className="sr-only"> (fait)</span> : null}</p>
                 <p className="text-xs text-text-muted">{s.d}</p>
               </div>
             </li>
@@ -170,11 +168,11 @@ export default function Studio() {
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
               onDrop={(e) => { e.preventDefault(); setDragOver(false); void addFiles(e.dataTransfer.files); }}
-              className={cn("rounded-xl border-2 border-dashed p-4 transition-colors", dragOver ? "border-accent bg-accent-soft" : "border-border-strong bg-surface-muted/40")}
+              className={cn("rounded-xl border border-dashed p-4 transition-colors", dragOver ? "border-accent bg-accent-soft" : "border-border-strong bg-surface-muted/40")}
             >
               {photos.length === 0 ? (
                 <div className="flex flex-col items-center gap-3 py-8 text-center">
-                  <IconTile icon={<ImagePlus />} tone="braise" size={52} />
+                  <IconTile icon={<ImagePlus />} tone="accent" size={48} />
                   <div>
                     <p className="text-base font-medium text-text">Glissez vos photos ici</p>
                     <p className="text-sm text-text-muted">ou choisissez-les depuis l'ordinateur ou le téléphone</p>
@@ -225,7 +223,7 @@ export default function Studio() {
               <Field label="Prix d'achat" hint="Pour calculer votre marge et le prix plancher.">{(p) => <MoneyInput id={p.id} aria-describedby={p.describedBy} value={hints.purchasePriceCents} onChange={(v) => setHints({ ...hints, purchasePriceCents: v })} />}</Field>
               <Field label="Notes pour l'IA" hint="Défaut, matière, mesures…">{(p) => <Input id={p.id} aria-describedby={p.describedBy} value={hints.notes} onChange={(e) => setHints({ ...hints, notes: e.target.value })} placeholder="ex. pull torsadé, porté 2 fois" maxLength={500} />}</Field>
             </div>
-            <Button variant="accent" size="lg" fullWidth className="mt-4" icon={<Sparkles />} disabled={photos.length === 0 || !canWrite} loading={generate.isPending} onClick={() => generate.mutate(undefined)}>
+            <Button variant="brand" size="lg" fullWidth className="mt-4" icon={<Sparkles />} disabled={photos.length === 0 || !canWrite} loading={generate.isPending} onClick={() => generate.mutate(undefined)}>
               {draft ? "Régénérer l'annonce" : "Générer l'annonce"}
             </Button>
             {photos.length === 0 ? <p className="mt-2 text-center text-xs text-text-muted">Ajoutez au moins une photo pour lancer la génération.</p> : null}
@@ -235,7 +233,7 @@ export default function Studio() {
         <div>
           {saved ? (
             <Card className="flex flex-col items-center gap-4 py-10 text-center">
-              <IconTile icon={<Check />} tone="emerald" size={56} />
+              <IconTile icon={<Check />} tone="accent" size={52} />
               <div>
                 <h2 className="text-lg font-semibold">{saved.published ? "Annonce mise en vente" : "Brouillon enregistré"}</h2>
                 <p className="mt-1 text-sm text-text-muted">{saved.published ? `« ${saved.item.title} » est en vente${account ? ` sur ${account.label}` : ""}${mode === "demo" ? " (simulation)" : ""}. Elle apparaît dans votre dressing intelligent.` : `« ${saved.item.title} » est enregistré en brouillon (statut « En stock »). Publiez-le quand vous voulez.`}</p>
@@ -248,7 +246,7 @@ export default function Studio() {
             </Card>
           ) : !form || !draft ? (
             <Card className="flex h-full min-h-[420px] flex-col items-center justify-center gap-3 text-center">
-              <IconTile icon={<Wand2 />} tone="slate" size={52} />
+              <IconTile icon={<Wand2 />} size={48} />
               <h2 className="text-md font-semibold">Votre annonce apparaîtra ici</h2>
               <p className="max-w-md text-sm text-text-muted">Titre optimisé pour la recherche, description claire et honnête, attributs (marque, taille, état, couleurs), prix conseillé à partir des ventes comparables. Tout reste modifiable avant publication.</p>
               {generate.isPending ? <p className="text-sm font-medium text-accent">Analyse des photos en cours…</p> : null}
@@ -286,7 +284,7 @@ export default function Studio() {
                   <div className="rounded-lg bg-surface-muted p-3">
                     <Field label="Prix de vente">{(p) => <MoneyInput id={p.id} value={form.priceCents} onChange={(v) => setForm({ ...form, priceCents: v })} />}</Field>
                     <p className="mt-2 text-xs text-text-muted">Conseillé : <button type="button" className="font-semibold text-text underline underline-offset-2" onClick={() => setForm({ ...form, priceCents: draft.suggestedPriceCents })}><Money cents={draft.suggestedPriceCents} /></button></p>
-                    <div className="mt-2 h-1.5 rounded-full" style={{ background: "linear-gradient(90deg, var(--tone-amber), var(--tone-emerald), var(--tone-amber))" }} aria-hidden />
+                    <div className="mt-2 h-1.5 rounded-full" style={{ background: "linear-gradient(90deg, var(--violet-200), var(--accent-vivid), var(--violet-200))" }} aria-hidden />
                     <p className="num mt-1 flex justify-between text-[11px] text-text-muted"><span>{formatCents(draft.priceLowCents)}</span><span>{formatCents(draft.priceHighCents)}</span></p>
                     <p className="mt-1 text-[11px] text-text-muted">{draft.priceMethod} · {draft.comparableCount} vente(s) comparable(s)</p>
                     {hints.purchasePriceCents && form.priceCents ? <p className="num mt-2 text-sm">Marge : <span className={form.priceCents - hints.purchasePriceCents >= 0 ? "font-semibold text-success" : "font-semibold text-danger"}>{formatCents(form.priceCents - hints.purchasePriceCents)}</span></p> : null}

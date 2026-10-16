@@ -50,53 +50,45 @@ export default function Radar() {
   return (
     <>
       <PageHeader
-        icon={<RadarIcon />}
-        tone="indigo"
         eyebrow="Radar"
         title="Bonnes affaires"
         description="Grâce à vos filtres, le radar repère les articles sur Vinted et note chacun sur 100 : bonne ou mauvaise affaire. Exemple : un pull torsadé Ralph Lauren à 20 €, très bon état, reçoit 80/100 et apparaît dans « À valider »."
         actions={canWrite ? <Button icon={<Plus />} onClick={() => { setPrefill(null); setEditing("new"); }}>Nouvelle recherche</Button> : undefined}
       />
 
-      <Card className="mb-5">
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-          <div>
-            <h2 className="mb-1 text-md font-semibold">Comment lire la note</h2>
-            <p className="mb-3 text-sm text-text-muted">À partir de 75, l'affaire est à valider ; à partir du seuil de l'achat auto ({session.org.settings.autoBuy.threshold}), l'application peut acheter seule{session.org.settings.autoBuy.enabled ? "" : " (achat auto désactivé)"}.</p>
-            <ScoreLegend threshold={session.org.settings.autoBuy.enabled ? session.org.settings.autoBuy.threshold : undefined} />
-          </div>
-          <div>
-            <h2 className="mb-2 text-md font-semibold">Les critères de la note</h2>
-            <ul className="flex flex-col gap-1.5">
-              {SCORE_CRITERIA.map((c) => (
-                <li key={c.label} className="flex items-start gap-3 text-sm">
-                  <span className="num w-12 shrink-0 rounded-md bg-tone-indigo-soft py-0.5 text-center text-xs font-semibold text-tone-indigo">{c.max} pts</span>
-                  <span><span className="font-medium text-text">{c.label}</span> <span className="text-text-muted">— {c.detail}</span></span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
+      <Card className="mb-6">
+        <h2 className="mb-1 text-md font-semibold">Comment lire la note</h2>
+        <p className="mb-4 text-sm text-text-muted">À partir de 75, l'affaire est à valider ; à partir du seuil de l'achat auto ({session.org.settings.autoBuy.threshold}), l'application peut acheter seule{session.org.settings.autoBuy.enabled ? "" : " (achat auto désactivé)"}.</p>
+        <ScoreLegend threshold={session.org.settings.autoBuy.enabled ? session.org.settings.autoBuy.threshold : undefined} />
+        <h2 className="mt-6 mb-3 border-t border-border pt-5 text-md font-semibold">Les critères de la note</h2>
+        <ul className="grid gap-x-8 gap-y-2.5 md:grid-cols-2 2xl:grid-cols-3">
+          {SCORE_CRITERIA.map((c) => (
+            <li key={c.label} className="flex items-start gap-3 text-sm">
+              <span className="num w-12 shrink-0 rounded-md bg-surface-muted py-0.5 text-center text-xs font-medium text-text">{c.max} pts</span>
+              <span><span className="font-medium text-text">{c.label}</span> <span className="text-text-muted">— {c.detail}</span></span>
+            </li>
+          ))}
+        </ul>
       </Card>
 
       {mode === "demo" ? <p className="mb-4 text-xs text-text-muted">Démonstration : les annonces proviennent d'un simulateur déterministe (aucune source réelle). En mode connecté, l'extension Selio capte les annonces vues sur Vinted.</p> : null}
 
       <div className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
         <aside className="flex flex-col gap-2">
-          <p className="text-xs font-semibold tracking-wide text-text-subtle uppercase">Vos filtres</p>
+          <p className="px-1 text-xs font-medium tracking-wide text-text-muted uppercase">Vos filtres</p>
           <QueryBoundary query={searches} empty={(d) => d.length === 0 ? <EmptyState title="Aucune recherche" description="Créez une recherche avec marques, tailles, prix maximal et marge cible." /> : null}>
             {(list) => (
               <>
-                <button type="button" onClick={() => setSelected(null)} className={cn("card p-3 text-left text-sm font-medium hover:bg-surface-muted", selected === null && "border-accent")}>Toutes les recherches</button>
+                <button type="button" onClick={() => setSelected(null)} aria-pressed={selected === null} className={cn("rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors", selected === null ? "bg-accent-soft text-accent" : "text-text-muted hover:bg-surface-muted hover:text-text")}>Toutes les recherches</button>
                 {list.map((s) => (
-                  <div key={s.id} className={cn("card p-3 text-sm", selected === s.id && "border-accent")}>
+                  <div key={s.id} className={cn("card p-3 text-sm transition-colors", selected === s.id && "border-accent ring-1 ring-accent")}>
                     <button type="button" className="w-full text-left" onClick={() => setSelected(s.id)}>
                       <span className="block font-medium">{s.name}</span>
                       <span className="mt-1 flex flex-wrap gap-1">{[...s.criteria.brands, ...s.criteria.sizes.map((x) => `T. ${x}`)].slice(0, 6).map((t) => <Tag key={t}>{t}</Tag>)}</span>
                       <span className="mt-1 block text-xs text-text-muted">Prix max <Money cents={s.criteria.maxPriceCents} /> · marge cible <Money cents={s.targetMarginCents} /> ou {formatPercent(s.targetMarginRate)}</span>
                       <span className="block text-xs text-text-muted">{s.lastRunAt ? `Analysée ${formatRelative(s.lastRunAt)}` : "Jamais exécutée"}</span>
                     </button>
-                    {canWrite ? <div className="mt-2 flex gap-1"><Button size="sm" variant="secondary" icon={<RefreshCw />} onClick={() => run.mutate(s.id)} loading={run.isPending && run.variables === s.id}>Analyser</Button><Button size="sm" variant="ghost" onClick={() => { setPrefill(null); setEditing(s); }}>Modifier</Button><Button size="sm" variant="danger" onClick={() => setDel(s)}>Supprimer</Button></div> : null}
+                    {canWrite ? <div className="mt-2 flex gap-1"><Button size="sm" variant="secondary" icon={<RefreshCw />} onClick={() => run.mutate(s.id)} loading={run.isPending && run.variables === s.id}>Analyser</Button><Button size="sm" variant="ghost" onClick={() => { setPrefill(null); setEditing(s); }}>Modifier</Button><Button size="sm" variant="ghost" onClick={() => setDel(s)}>Supprimer</Button></div> : null}
                   </div>
                 ))}
               </>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Check, History, Images, ShoppingCart, User, X } from "lucide-react";
+import { Bot, Check, Images, User, X } from "lucide-react";
 import type { PurchaseRequest } from "@selio/contracts";
 import { REVIEW_THRESHOLD, dealEconomics } from "@selio/domain";
 import { Alert, Button, Card, ConfirmDialog, EmptyState, PageHeader, StatusBadge, Tag, formatCents, formatDateTime } from "@selio/ui";
@@ -32,8 +32,6 @@ export default function Purchase() {
   return (
     <>
       <PageHeader
-        icon={<ShoppingCart />}
-        tone="amber"
         eyebrow="Achat assisté"
         title="À valider"
         description={`La liste des bonnes affaires repérées par le radar (note de ${REVIEW_THRESHOLD}/100 ou plus). Vérifiez le calcul achat → revente → bénéfice, puis validez l'achat en un clic, suivez ou écartez. L'historique des achats est en bas de page.`}
@@ -41,7 +39,7 @@ export default function Purchase() {
       />
       <Alert tone="warning" className="mb-5" title="Achat réel désactivé">Valider déclenche un achat SIMULÉ, avec tous les contrôles (prix maximal, budget, plafond du jour, doublon, marge positive). Aucun paiement ni commande chez un vendeur tant qu'un connecteur d'achat autorisé n'existe pas.</Alert>
 
-      <section className="mb-8">
+      <section className="mb-10">
         <div className="mb-3 flex items-center justify-between gap-2">
           <h2 className="text-md font-semibold">Affaires à valider <span className="num text-text-muted">({toReview.data?.length ?? 0})</span></h2>
         </div>
@@ -55,7 +53,7 @@ export default function Purchase() {
       </section>
 
       <section>
-        <div className="mb-3 flex items-center gap-2"><History className="size-4 text-text-muted" aria-hidden /><h2 className="text-md font-semibold">Historique des achats</h2></div>
+        <h2 className="mb-3 text-md font-semibold">Historique des achats</h2>
         <QueryBoundary query={purchases} empty={(d) => d.length === 0 ? <EmptyState title="Aucun achat pour l'instant" description="Les achats validés à la main et les achats automatiques apparaissent ici." /> : null}>
           {(list) => (
             <Card padding="none" className="overflow-x-auto">
@@ -81,7 +79,7 @@ export default function Purchase() {
                         <td className="px-4 py-3"><StatusBadge tone={STATUS[p.status].tone}>{STATUS[p.status].label}</StatusBadge>{p.checks.some((c) => !c.ok) ? <span className="mt-1 block text-[11px] text-danger">{p.checks.filter((c) => !c.ok && c.code !== "connector_authorized").map((c) => c.label).join(" · ")}</span> : null}</td>
                         <td className="px-4 py-3 text-right">
                           {canBuy && p.status === "awaiting_confirmation" ? <span className="inline-flex gap-1"><Button size="sm" onClick={() => setConfirm(p)}>Confirmer</Button><Button size="sm" variant="ghost" icon={<X />} onClick={() => cancel.mutate(p.id)}>Annuler</Button></span> : null}
-                          {p.mode === "auto" && p.cancelableUntil && new Date(p.cancelableUntil) > new Date() && p.status === "simulated" ? <Link to="/app/auto-buy" className="text-xs font-medium text-tone-amber underline underline-offset-2">Annulable</Link> : null}
+                          {p.mode === "auto" && p.cancelableUntil && new Date(p.cancelableUntil) > new Date() && p.status === "simulated" ? <Link to="/app/auto-buy" className="text-xs font-medium text-accent underline-offset-2 hover:underline">Annulable</Link> : null}
                         </td>
                       </tr>
                     );

@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Archive, Boxes, CalendarClock, Download, LayoutGrid, List, Plus, Search, Sparkles, Upload } from "lucide-react";
+import { Archive, CalendarClock, Download, LayoutGrid, List, Plus, Search, Sparkles, Upload } from "lucide-react";
 import { ITEM_CATEGORY_LABELS, ITEM_CATEGORIES, type InventoryItem, type InventoryQuery, type ItemStatus } from "@selio/contracts";
 import { daysInStock, daysOnline, projectedMargin } from "@selio/domain";
-import { Button, Checkbox, ConfirmDialog, EmptyState, Input, Money, PageHeader, Pagination, Select, Table, TableEmpty, TableWrap, Td, Th, Tr, cn, formatCents, formatPercent } from "@selio/ui";
+import { Button, Checkbox, ConfirmDialog, EmptyState, FilterChip, Input, Money, PageHeader, Pagination, Select, Table, TableEmpty, TableWrap, Td, Th, Tr, cn, formatCents, formatPercent } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { downloadFile } from "../../lib/download";
 import { ItemStatusBadge, ItemThumb, QueryBoundary } from "../components/common";
@@ -52,8 +52,6 @@ export default function Items() {
   return (
     <>
       <PageHeader
-        icon={<Boxes />}
-        tone="slate"
         title="Articles et stock"
         description="Tout votre stock en un coup d'œil : brouillons, articles en vente, réservés et vendus. Prix d'achat, prix affiché, plancher et marge projetée sont calculés avec vos règles."
         actions={
@@ -61,20 +59,14 @@ export default function Items() {
             <Button variant="secondary" icon={<Download />} onClick={() => exportCsv.mutate(undefined)} loading={exportCsv.isPending}>Exporter CSV</Button>
             {canWrite ? <Link to="/app/items/import"><Button variant="secondary" icon={<Upload />}>Importer</Button></Link> : null}
             {canWrite ? <Link to="/app/items/new"><Button variant="secondary" icon={<Plus />}>Nouvel article</Button></Link> : null}
-            {canWrite ? <Link to="/app/studio"><Button variant="accent" icon={<Sparkles />}>Générer avec l'IA</Button></Link> : null}
+            {canWrite ? <Link to="/app/studio"><Button variant="brand" icon={<Sparkles />}>Générer avec l'IA</Button></Link> : null}
           </>
         }
       />
-      <div role="tablist" aria-label="Statut" className="mb-4 flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
-        {([["", "Tous actifs"], ["in_stock", "Brouillons / en stock"], ["listed", "En vente"], ["reserved", "Réservés"], ["sold", "Vendus"], ["archived", "Archivés"]] as const).map(([value, label]) => {
-          const active = (query.status ?? "") === value;
-          return (
-            <button key={value || "all"} role="tab" type="button" aria-selected={active} onClick={() => set("status", value)} className={cn("inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors", active ? "border-transparent bg-primary text-primary-on" : "border-border bg-surface text-text-muted hover:text-text")}>
-              {label}
-              {counts.data ? <span className={cn("num rounded-full px-1.5 text-[11px]", active ? "bg-white/20" : "bg-surface-muted")}>{counts.data[value || "all"] ?? 0}</span> : null}
-            </button>
-          );
-        })}
+      <div role="tablist" aria-label="Statut" className="mb-4 flex gap-1 overflow-x-auto pb-1 scrollbar-thin">
+        {([["", "Tous actifs"], ["in_stock", "Brouillons / en stock"], ["listed", "En vente"], ["reserved", "Réservés"], ["sold", "Vendus"], ["archived", "Archivés"]] as const).map(([value, label]) => (
+          <FilterChip key={value || "all"} role="tab" active={(query.status ?? "") === value} onClick={() => set("status", value)} count={counts.data ? counts.data[value || "all"] ?? 0 : null}>{label}</FilterChip>
+        ))}
       </div>
       <div className="mb-4 grid gap-2 md:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))_auto]">
         <Input placeholder="Rechercher titre, marque, SKU, tag…" prefix={<Search />} value={query.q ?? ""} onChange={(e) => set("q", e.target.value)} aria-label="Recherche" />
@@ -102,8 +94,8 @@ export default function Items() {
           <option value="margin_desc">Marge projetée</option>
         </Select>
         <div className="inline-flex rounded-md border border-border bg-surface p-0.5" role="radiogroup" aria-label="Affichage">
-          <button type="button" role="radio" aria-checked={view === "grid"} aria-label="Grille" title="Grille" onClick={() => setView("grid")} className={cn("inline-flex h-8 w-9 items-center justify-center rounded-sm", view === "grid" ? "bg-surface-muted text-text" : "text-text-muted")}><LayoutGrid className="size-4" /></button>
-          <button type="button" role="radio" aria-checked={view === "table"} aria-label="Liste" title="Liste" onClick={() => setView("table")} className={cn("inline-flex h-8 w-9 items-center justify-center rounded-sm", view === "table" ? "bg-surface-muted text-text" : "text-text-muted")}><List className="size-4" /></button>
+          <button type="button" role="radio" aria-checked={view === "grid"} aria-label="Grille" title="Grille" onClick={() => setView("grid")} className={cn("inline-flex h-8 w-9 items-center justify-center rounded-sm", view === "grid" ? "bg-accent-soft text-accent" : "text-text-muted hover:text-text")}><LayoutGrid className="size-4" /></button>
+          <button type="button" role="radio" aria-checked={view === "table"} aria-label="Liste" title="Liste" onClick={() => setView("table")} className={cn("inline-flex h-8 w-9 items-center justify-center rounded-sm", view === "table" ? "bg-accent-soft text-accent" : "text-text-muted hover:text-text")}><List className="size-4" /></button>
         </div>
       </div>
       {selected.size > 0 ? (
@@ -192,11 +184,11 @@ function ItemCard({ item, rules, selected, canWrite, onSelect }: { item: Invento
   const now = new Date();
   const online = daysOnline(item, now);
   return (
-    <article className={cn("card group relative flex flex-col overflow-hidden", selected && "ring-2 ring-accent")}>
+    <article className={cn("card group relative flex flex-col overflow-hidden transition-colors hover:border-border-strong", selected && "border-accent ring-1 ring-accent")}>
       <Link to={`/app/items/${item.id}`} className="relative block aspect-[4/5] bg-surface-muted">
         {item.photos[0] ? <img src={item.photos[0].url} alt={item.photos[0].alt || item.title} loading="lazy" className="size-full object-cover" /> : null}
         <span className="absolute top-2.5 left-2.5"><ItemStatusBadge status={item.status} /></span>
-        {online !== null && (item.status === "listed" || item.status === "reserved") ? <span className={cn("absolute right-2.5 bottom-2.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold", online >= 7 ? "bg-tone-amber text-white" : "bg-black/60 text-white")}><CalendarClock className="size-3" aria-hidden />{online} j en ligne</span> : null}
+        {online !== null && (item.status === "listed" || item.status === "reserved") ? <span className={cn("absolute right-2.5 bottom-2.5 inline-flex items-center gap-1 rounded-full bg-surface/95 px-2 py-0.5 text-[11px] font-medium shadow-sm", online >= 7 ? "text-accent" : "text-text-muted")}><CalendarClock className="size-3" aria-hidden />{online} j en ligne</span> : null}
       </Link>
       {canWrite ? <span className={cn("absolute top-2.5 right-2.5 rounded-md bg-surface/90 p-1 transition-opacity", selected ? "opacity-100" : "opacity-100 md:opacity-0 md:group-hover:opacity-100")}><Checkbox aria-label={`Sélectionner ${item.title}`} checked={selected} onChange={(e) => onSelect(e.target.checked)} /></span> : null}
       <div className="flex flex-1 flex-col gap-1 p-3">
@@ -204,7 +196,7 @@ function ItemCard({ item, rules, selected, canWrite, onSelect }: { item: Invento
         <p className="truncate text-xs text-text-muted">{[item.brand, item.size, item.sku].filter(Boolean).join(" · ")}</p>
         <div className="mt-auto flex items-end justify-between gap-2 pt-2">
           <span className="num text-base font-semibold">{item.listedPriceCents !== null ? formatCents(item.listedPriceCents) : <span className="text-sm font-normal text-text-muted">Sans prix</span>}</span>
-          {m ? <span className={cn("num text-xs font-semibold", m.marginCents >= 0 ? "text-success" : "text-danger")}>{m.marginCents >= 0 ? "+" : ""}{formatCents(m.marginCents)} · {formatPercent(m.marginRate)}</span> : null}
+          {m ? <span className={cn("num text-xs font-medium", m.marginCents >= 0 ? "text-success" : "text-danger")}>{m.marginCents >= 0 ? "+" : ""}{formatCents(m.marginCents)} · {formatPercent(m.marginRate)}</span> : null}
         </div>
         <p className="num text-[11px] text-text-muted">Achat <Money cents={item.purchasePriceCents + item.purchaseFeesCents} /> · {daysInStock(item, now)} j en stock</p>
       </div>
