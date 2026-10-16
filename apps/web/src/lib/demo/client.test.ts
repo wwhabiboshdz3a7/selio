@@ -77,3 +77,64 @@ describe("client de démonstration", () => {
     expect(page.total).toBe(0);
   });
 });
+
+describe("nouveaux modules (démonstration)", () => {
+  it("générateur : photos → annonce simulée, prix issu des comparables, brouillon puis publication", async () => {
+    const photo = { id: "p1", url: "data:image/jpeg;base64," + btoa("photo"), alt: "nike-air-max-blanche-42.jpg" };
+    const draft = await client.generateListing({ photos: [photo], hints: {} });
+    expect(draft.simulated).toBe(true);
+    expect(draft.brand).toBe("Nike");
+    expect(draft.category).toBe("shoes");
+    expect(draft.suggestedPriceCents).toBeGreaterThan(0);
+    expect(draft.priceLowCents).toBeLessThanOrEqual(draft.suggestedPriceCents);
+    await expect(client.generateListing({ photos: [], hints: {} })).rejects.toMatchObject({ code: "validation" });
+    const ai = await client.listAiRequests();
+    expect(ai[0]!.kind).toBe("listing_generation");
+  });
+
+  it("dressing : filtre « en ligne depuis 7 j+ », republication avec variante marquée utilisée", async () => {
+    const due = await client.getDressing({ filter: "due" });
+    expect(due.listings.length).toBeGreaterThan(0);
+    expect(due.listings.every((l) => l.performance.daysOnline >= due.republishAfterDays)).toBe(true);
+    const target = due.listings[0]!;
+    expect(target.plan.variants.length).toBeGreaterThanOrEqual(8);
+    const next = target.plan.next!;
+    const after = await client.republishItem(target.item.id, next.id);
+    expect(after.title).toBe(next.title);
+    expect(after.republications.at(-1)).toMatchObject({ variantId: next.id, mode: "manual" });
+    const again = await client.getDressing({});
+    const l = again.listings.find((x) => x.item.id === target.item.id)!;
+    expect(l.performance.republishDue).toBe(false);
+    expect(l.plan.variants.find((v) => v.id === next.id)!.uses).toBeGreaterThan(0);
+    expect(l.plan.next!.id).not.toBe(next.id);
+    const sorted = await client.listItems({ sort: "online_desc", minDaysOnline: 7 });
+    expect(sorted.items.every((i) => i.status === "listed" || i.status === "reserved")).toBe(true);
+  });
+
+  it("bonnes affaires : validation en un clic, achat auto annulable dans le délai", async () => {
+    const opps = await client.listOpportunities({ status: "new" });
+    const good = opps.find((o) => o.score >= 75)!;
+    const p = await client.quickBuy(good.id);
+    expect(["simulated", "blocked"]).toContain(p.status);
+    expect(p.mode).toBe("manual");
+    await expect(client.quickBuy(good.id)).rejects.toMatchObject({ status: 409 });
+    const run = await client.runAutoBuy();
+    expect(run.evaluated).toBeGreaterThan(0);
+    const purchases = await client.listPurchaseRequests();
+    const auto = purchases.find((x) => x.mode === "auto" && x.status === "simulated" && x.cancelableUntil)!;
+    const cancelled = await client.cancelPurchaseRequest(auto.id);
+    expect(cancelled.status).toBe("cancelled");
+  });
+
+  it("marché : top revendeurs et niches ; vue d'ensemble « ce mois-ci »", async () => {
+    const m = await client.getMarketInsights({ windowDays: 30 });
+    expect(m.source).toBe("demo_simulator");
+    expect(m.sellers.length).toBeGreaterThan(5);
+    expect(m.sellers[0]!.revenueCents).toBeGreaterThanOrEqual(m.sellers[1]!.revenueCents);
+    expect(m.niches[0]!.demand).toBeGreaterThan(0);
+    const ov = await client.getOverview("month");
+    expect(ov.periodLabel).toBe("octobre 2026");
+    expect(ov.dashboard.weekday).toHaveLength(7);
+    expect(ov.dressing.listed).toBeGreaterThan(0);
+  });
+});

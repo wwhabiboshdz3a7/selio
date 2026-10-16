@@ -65,6 +65,11 @@ const WIDGETS: WidgetDef[] = [
 
 const DEFAULT_WIDGETS: WidgetId[] = ["sales", "goal", "cumulative", "categoryMix", "weekday", "dressing", "stockAging", "brandMargin"];
 
+const ALERT_ORDER = { danger: 0, warning: 1, info: 2 } as const;
+function sortAlerts(list: OverviewData["alerts"]): OverviewData["alerts"] {
+  return [...list].sort((a, b) => ALERT_ORDER[a.tone] - ALERT_ORDER[b.tone]);
+}
+
 function Empty({ text }: { text: string }) {
   return <p className="py-8 text-center text-sm text-text-muted">{text}</p>;
 }
@@ -118,7 +123,7 @@ export default function Overview() {
       <QueryBoundary query={q}>
         {(d) => (
           <div className="flex flex-col gap-6">
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
               <Kpi label="Chiffre d'affaires" value={formatCents(d.sales.revenueCents)} sub={<Delta current={d.sales.revenueCents} previous={d.previousSales.revenueCents} format={(v) => formatCents(v)} />} spark={d.series.map((s) => s.revenueCents)} tone="braise" icon={<Coins />} />
               <Kpi label="Bénéfice (marge brute)" value={formatCents(d.sales.marginCents)} sub={<span className={d.sales.marginCents >= 0 ? "text-success" : "text-danger"}>{formatPercent(d.sales.marginRate)} du CA</span>} spark={d.dashboard.cumulativeMargin.map((x) => x.value)} tone="emerald" icon={<TrendingUp />} />
               <Kpi label="Ventes" value={formatNumber(d.sales.orderCount)} sub={<span className="text-text-muted">Panier moyen {formatCents(d.sales.averageBasketCents)}</span>} spark={d.series.map((s) => s.orderCount)} tone="indigo" icon={<ShoppingBag />} />
@@ -128,7 +133,7 @@ export default function Overview() {
 
             {d.alerts.length > 0 ? (
               <div className="flex flex-col gap-2">
-                {(showAlerts ? d.alerts : d.alerts.slice(0, 2)).map((a) => (
+                {(showAlerts ? sortAlerts(d.alerts) : sortAlerts(d.alerts).slice(0, 2)).map((a) => (
                   <Alert key={a.id} tone={a.tone} title={a.title} action={<Link to={a.to}><Button size="sm" variant="secondary" iconRight={<ArrowRight />}>Voir</Button></Link>}>{a.description}</Alert>
                 ))}
                 {d.alerts.length > 2 ? <button type="button" className="self-start text-sm font-medium text-text-muted hover:text-text" onClick={() => setShowAlerts(!showAlerts)}>{showAlerts ? "Masquer" : `Voir les ${d.alerts.length - 2} autre(s) alerte(s)`}</button> : null}
@@ -223,11 +228,11 @@ function Kpi({ label, value, sub, spark, tone, icon }: { label: string; value: s
     <div className="card flex flex-col p-4">
       <div className="flex items-center gap-2">
         <IconTile icon={icon} tone={tone} size={26} />
-        <p className="min-w-0 flex-1 truncate text-sm text-text-muted">{label}</p>
-        {spark && spark.some((v) => v !== 0) ? <Sparkline values={spark} className="h-6 w-16 shrink-0" /> : null}
+        <p className="min-w-0 flex-1 text-sm text-text-muted">{label}</p>
       </div>
       <p className="num mt-2 text-2xl font-semibold text-text">{value}</p>
       <p className="num mt-1 text-xs">{sub}</p>
+      {spark && spark.some((v) => v !== 0) ? <Sparkline values={spark} className="mt-auto h-7 w-full pt-2" /> : null}
     </div>
   );
 }

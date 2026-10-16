@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Download } from "lucide-react";
+import { ClipboardList, Download } from "lucide-react";
 import { ITEM_CATEGORIES, ITEM_CATEGORY_LABELS } from "@selio/contracts";
 import type { PeriodPreset } from "@selio/domain";
 import { Button, Card, KpiCard, Money, PageHeader, Select, Table, TableWrap, Td, Th, Tr, formatCents, formatNumber, formatPercent } from "@selio/ui";
@@ -21,7 +21,7 @@ export default function Analytics() {
   const exportCsv = useAppMutation(() => client.exportAnalyticsCsv(filters), { success: "Export généré", onSuccess: (csv) => downloadFile(`selio-analyses-${period}.csv`, csv) });
   return (
     <>
-      <PageHeader title="Analyses" description="Chaque indicateur est calculé depuis vos commandes et votre stock. Les conventions sont affichées en bas de page." actions={<><PeriodPicker value={period} onChange={setPeriod} /><Button variant="secondary" icon={<Download />} onClick={() => exportCsv.mutate()} loading={exportCsv.isPending}>Exporter CSV</Button></>} />
+      <PageHeader icon={<ClipboardList />} tone="sky" title="Analyses" description="Chaque indicateur est calculé depuis vos commandes et votre stock. Les conventions sont affichées en bas de page." actions={<><PeriodPicker value={period} onChange={setPeriod} /><Button variant="secondary" icon={<Download />} onClick={() => exportCsv.mutate()} loading={exportCsv.isPending}>Exporter CSV</Button></>} />
       <div className="mb-4 grid gap-2 sm:grid-cols-2 md:max-w-lg">
         <Select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Catégorie"><option value="">Toutes catégories</option>{ITEM_CATEGORIES.map((c) => <option key={c} value={c}>{ITEM_CATEGORY_LABELS[c]}</option>)}</Select>
         <Select value={channel} onChange={(e) => setChannel(e.target.value)} aria-label="Canal"><option value="">Tous canaux</option><option value="demo">Simulateur</option><option value="vinted">Vinted</option></Select>

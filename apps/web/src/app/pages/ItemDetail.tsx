@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Archive, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, Lightbulb, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { ITEM_CATEGORY_LABELS, ITEM_CONDITION_LABELS, ITEM_STATUS_LABELS, type ItemStatus } from "@selio/contracts";
 import { ITEM_TRANSITIONS, daysInStock, projectedMargin } from "@selio/domain";
-import { Button, Card, ConfirmDialog, DescriptionList, Menu, Money, PageHeader, Tag, formatDate, formatDateTime, formatPercent } from "@selio/ui";
+import { Button, Card, ConfirmDialog, DescriptionList, Menu, Money, PageHeader, Tag, cn, formatDate, formatDateTime, formatPercent } from "@selio/ui";
+import { ScoreRing, scoreTone } from "../../components/charts";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { ItemStatusBadge, OrderStatusBadge, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
@@ -18,6 +19,8 @@ export default function ItemDetail() {
   const history = useQuery({ queryKey: ["item", id, "history"], queryFn: () => client.itemHistory(id) });
   const convs = useQuery({ queryKey: ["conversations", { itemId: id }], queryFn: () => client.listConversations({ itemId: id, pageSize: 10 }) });
   const orders = useQuery({ queryKey: ["orders", { itemId: id }], queryFn: () => client.listOrders({ itemId: id, pageSize: 10 }) });
+  const dressing = useQuery({ queryKey: ["dressing", "item", id], queryFn: async () => (await client.getDressing({})).listings.find((l) => l.item.id === id) ?? null });
+  const [photoIndex, setPhotoIndex] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [typed, setTyped] = useState("");
   const setStatus = useAppMutation((status: ItemStatus) => client.setItemStatus(id, status), { invalidate: ["item", "items", "overview"], success: "Statut mis à jour" });
@@ -49,9 +52,14 @@ export default function ItemDetail() {
             <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
               <div className="flex flex-col gap-4">
                 <Card>
-                  <div className="grid gap-4 sm:grid-cols-[160px_minmax(0,1fr)]">
-                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-1">
-                      {it.photos.length === 0 ? <div className="aspect-square rounded-md bg-surface-muted" aria-label="Aucune photo" /> : it.photos.map((p) => <img key={p.id} src={p.url} alt={p.alt || it.title} className="aspect-square rounded-md bg-surface-muted object-cover" />)}
+                  <div className="grid gap-5 md:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
+                    <div>
+                      {it.photos.length === 0 ? <div className="flex aspect-[4/5] items-center justify-center rounded-lg bg-surface-muted text-sm text-text-muted" aria-label="Aucune photo">Aucune photo</div> : <img src={it.photos[Math.min(photoIndex, it.photos.length - 1)]!.url} alt={it.photos[Math.min(photoIndex, it.photos.length - 1)]!.alt || it.title} className="aspect-[4/5] w-full rounded-lg bg-surface-muted object-cover" />}
+                      {it.photos.length > 1 ? (
+                        <div className="mt-2 grid grid-cols-5 gap-1.5">
+                          {it.photos.map((p, i) => <button key={p.id} type="button" onClick={() => setPhotoIndex(i)} aria-label={`Photo ${i + 1}`} className={cn("overflow-hidden rounded-md ring-offset-2 ring-offset-surface", i === photoIndex && "ring-2 ring-accent")}><img src={p.url} alt="" className="aspect-square w-full object-cover" /></button>)}
+                        </div>
+                      ) : null}
                     </div>
                     <div>
                       <DescriptionList columns={2} items={[
@@ -61,6 +69,8 @@ export default function ItemDetail() {
                         { label: "État", value: ITEM_CONDITION_LABELS[it.condition] },
                         { label: "Acheté le", value: it.purchasedAt ? formatDate(it.purchasedAt) : "—" },
                         { label: "En stock depuis", value: `${daysInStock(it, new Date())} j`, numeric: true },
+                        { label: "Couleurs", value: it.attributes.colors.join(", ") || "—" },
+                        { label: "Matière", value: it.attributes.material ?? "—" },
                       ]} />
                       {it.description ? <p className="mt-4 text-sm whitespace-pre-line text-text-muted">{it.description}</p> : null}
                     </div>
@@ -88,6 +98,21 @@ export default function ItemDetail() {
                 </Card>
               </div>
               <div className="flex flex-col gap-4">
+                {dressing.data ? (
+                  <Card>
+                    <div className="mb-3 flex items-center justify-between gap-2"><h2 className="text-md font-semibold">Rendement de l'annonce</h2><Link to="/app/dressing" className="text-xs font-medium text-accent">Dressing →</Link></div>
+                    <div className="flex items-center gap-4">
+                      <ScoreRing score={dressing.data.performance.score} size={72} stroke={7} />
+                      <div className="text-sm">
+                        <p className="font-semibold" style={{ color: scoreTone(dressing.data.performance.score) }}>{dressing.data.performance.band.label}</p>
+                        <p className="num text-xs text-text-muted">{dressing.data.performance.daysOnline} j en ligne · {dressing.data.performance.views} vues · {dressing.data.performance.favorites} favoris · {dressing.data.performance.offers} offre(s)</p>
+                        <p className="num text-xs text-text-muted">{dressing.data.plan.usedCount}/{dressing.data.plan.variants.length} variantes de republication utilisées</p>
+                      </div>
+                    </div>
+                    {dressing.data.performance.tips.length ? <ul className="mt-3 flex flex-col gap-1.5 text-xs">{dressing.data.performance.tips.slice(0, 3).map((t) => <li key={t.key} className="flex gap-1.5"><Lightbulb className="mt-0.5 size-3.5 shrink-0 text-tone-amber" aria-hidden /><span><span className="font-medium text-text">{t.label}</span> <span className="text-text-muted">— {t.detail}</span></span></li>)}</ul> : null}
+                    {dressing.data.performance.republishDue ? <Link to="/app/dressing?filter=due"><Button size="sm" variant="accent" className="mt-3" fullWidth>Republier avec la variante {dressing.data.plan.next?.index}</Button></Link> : null}
+                  </Card>
+                ) : null}
                 <Card>
                   <h2 className="mb-3 text-md font-semibold">Prix et marge</h2>
                   <DescriptionList items={[

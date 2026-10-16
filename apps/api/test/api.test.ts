@@ -231,6 +231,91 @@ describe("API Selio (mode connecté, base réelle)", () => {
     expect(JSON.parse(health2.body).status).toBe("mock");
   });
 
+  it("générateur d'annonces, dressing intelligent, republication, bonnes affaires, achat auto, marché", async () => {
+    if (!available) return;
+    const { repos } = await import("@selio/db");
+    // Générateur : photos → annonce (simulateur IA côté serveur de test), prix issu des comparables.
+    const photo = "data:image/jpeg;base64," + Buffer.from("photo-de-test-ralph-lauren").toString("base64");
+    const gen = await call("POST", "/api/studio/generate", { photos: [{ id: "p1", url: photo, alt: "ralph-lauren-pull-bleu-marine-M.jpg" }], hints: { notes: "pull torsadé" } });
+    expect(gen.status).toBe(200);
+    expect(gen.json.source).toBe("ai");
+    expect(gen.json.brand).toBe("Ralph Lauren");
+    expect(gen.json.suggestedPriceCents).toBeGreaterThan(0);
+    const badGen = await call("POST", "/api/studio/generate", { photos: [] });
+    expect(badGen.status).toBe(400);
+
+    // Dressing : annonce en ligne depuis 10 jours → à republier, 10 variantes prêtes.
+    const it0 = await call("POST", "/api/items", { title: "Pull torsadé Ralph Lauren", brand: "Ralph Lauren", size: "M", category: "men", purchasePriceCents: 1200, listedPriceCents: 4500, floorPriceCents: 3000, status: "listed", listingStats: { views: 50, favorites: 6, offers: 0 } });
+    expect(it0.status).toBe(201);
+    await built.services.db.withOrg(a_org(), (tx) => tx.query("update inventory_items set listed_at = now() - interval '10 days' where id = $1", [it0.json.id]));
+    const due = await call("GET", "/api/dressing?filter=due");
+    expect(due.status).toBe(200);
+    const listing = due.json.listings.find((l: { item: { id: string } }) => l.item.id === it0.json.id);
+    expect(listing.performance.republishDue).toBe(true);
+    expect(listing.performance.score).toBeGreaterThan(0);
+    expect(listing.plan.variants.length).toBeGreaterThanOrEqual(8);
+    const online = await call("GET", "/api/items?minDaysOnline=7&sort=online_desc");
+    expect(online.json.items.some((i: { id: string }) => i.id === it0.json.id)).toBe(true);
+    const v2 = listing.plan.variants.find((v: { id: string }) => v.id === "v2");
+    const rep = await call("POST", `/api/items/${it0.json.id}/republish`, { variantId: "v2" });
+    expect(rep.status).toBe(200);
+    expect(rep.json.title).toBe(v2.title);
+    expect(rep.json.republications).toHaveLength(1);
+    expect(rep.json.republications[0]).toMatchObject({ variantId: "v2", mode: "manual", before: { views: 50, favorites: 6 } });
+    expect(rep.json.listingStats.views).toBe(0);
+    const after = await call("GET", "/api/dressing?filter=due");
+    expect(after.json.listings.some((l: { item: { id: string } }) => l.item.id === it0.json.id)).toBe(false);
+    const all = await call("GET", "/api/dressing");
+    expect(all.json.listings.find((l: { item: { id: string } }) => l.item.id === it0.json.id).plan.variants.find((v: { id: string }) => v.id === "v2").uses).toBe(1);
+    expect((await call("POST", `/api/items/${it0.json.id}/republish`, { variantId: "v99" })).status).toBe(404);
+    expect((await call("POST", `/api/items/${it0.json.id}/republish`, { variantId: "x" })).status).toBe(400);
+    expect((await call("POST", `/api/items/${it0.json.id}/republish`, { variantId: "v1" }, "v")).status).toBe(403);
+
+    // Bonnes affaires : validation en un clic (achat simulé), sans doublon.
+    const search = await call("POST", "/api/radar/searches", { name: "Pulls", criteria: { brands: ["Ralph Lauren"], categories: ["men"], maxPriceCents: 3000 }, budgetCents: 20000, targetMarginRate: 0.3, targetMarginCents: 1000 });
+    expect(search.status).toBe(201);
+    const mk = (title: string, score: number) => built.services.db.withOrg(a_org(), (tx) => repos.opportunities.create(tx, { searchId: search.json.id, title, observed: { priceCents: 2000, shippingCents: 450, brand: "Ralph Lauren", size: "M", condition: "very_good", category: "men", sellerHandle: "vendeur_1", sellerRating: 4.9, sellerReviews: 50, photoUrl: null, photoCount: 6, url: null, seenAt: new Date().toISOString(), source: "extension_capture" }, estimate: { resalePriceCents: 6000, expectedFeesCents: 0, marginCents: 3380, marginRate: 0.56, confidence: "high", method: "test", comparableCount: 3 }, score, reasons: [], breakdown: [], status: "new" }));
+    const manual = await mk("Pull torsadé à valider", 80);
+    const bought = await call("POST", `/api/radar/opportunities/${manual.id}/buy`);
+    expect(bought.status).toBe(200);
+    expect(bought.json.status).toBe("simulated");
+    expect(bought.json.mode).toBe("manual");
+    expect(bought.json.maxPriceCents).toBe(2620);
+    expect((await call("POST", `/api/radar/opportunities/${manual.id}/buy`)).status).toBe(409);
+    expect((await call("POST", `/api/purchases/${bought.json.id}/cancel`)).status).toBe(409);
+
+    // Achat auto : désactivé par défaut, puis seuil 85 avec délai d'annulation.
+    const auto = await mk("Pull exceptionnel", 92);
+    const off = await call("POST", "/api/purchases/auto-run");
+    expect(off.json.bought).toBe(0);
+    const cfg = await call("PATCH", "/api/org", { settings: { autoBuy: { enabled: true, threshold: 85, dailyCapCents: 20000, maxItemCents: 8000, cancelWindowMinutes: 30 } } });
+    expect(cfg.status).toBe(200);
+    const on = await call("POST", "/api/purchases/auto-run");
+    expect(on.json.bought).toBe(1);
+    const list = await call("GET", "/api/purchases");
+    const autoBuy = list.json.find((x: { opportunityId: string }) => x.opportunityId === auto.id);
+    expect(autoBuy.mode).toBe("auto");
+    expect(new Date(autoBuy.cancelableUntil).getTime()).toBeGreaterThan(Date.now());
+    const cancelled = await call("POST", `/api/purchases/${autoBuy.id}/cancel`);
+    expect(cancelled.json.status).toBe("cancelled");
+    const oppAfter = await call("GET", "/api/radar/opportunities");
+    expect(oppAfter.json.find((o: { id: string }) => o.id === auto.id).status).toBe("dismissed");
+
+    // Marché : uniquement des annonces réellement observées (ici 2 captures de test).
+    const market = await call("GET", "/api/market/insights?windowDays=30");
+    expect(market.status).toBe(200);
+    expect(market.json.source).toBe("observations");
+    expect(market.json.observedCount).toBe(2);
+
+    // Vue d'ensemble « ce mois-ci » avec graphiques et rendement du dressing.
+    const ov = await call("GET", "/api/analytics/overview?period=month");
+    expect(ov.status).toBe(200);
+    expect(ov.json.period).toBe("month");
+    expect(ov.json.periodLabel).toMatch(/20\d\d/);
+    expect(ov.json.dashboard.weekday).toHaveLength(7);
+    expect(ov.json.dressing.listed).toBeGreaterThan(0);
+  });
+
   it("export, suppression avec confirmation et déconnexion", async () => {
     if (!available) return;
     const exp = await call("GET", "/api/data/export", undefined, "b");

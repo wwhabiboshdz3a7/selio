@@ -1,3 +1,4 @@
+import { Settings as SettingsIcon } from "lucide-react";
 import { NavLink, Outlet } from "react-router";
 import { ROLE_LABELS } from "@selio/contracts";
 import { PageHeader, cn } from "@selio/ui";
@@ -19,7 +20,7 @@ export default function Settings() {
   const session = useRequiredSession();
   return (
     <>
-      <PageHeader title="Paramètres" description={`${session.org.name} · votre rôle : ${ROLE_LABELS[session.role].toLowerCase()}`} />
+      <PageHeader icon={<SettingsIcon />} tone="slate" title="Paramètres" description={`${session.org.name} · votre rôle : ${ROLE_LABELS[session.role].toLowerCase()}`} />
       <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
         <nav aria-label="Sections des paramètres" className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
           <ul className="flex gap-1 md:flex-col">

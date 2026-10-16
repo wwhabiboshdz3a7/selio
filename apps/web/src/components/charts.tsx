@@ -111,7 +111,7 @@ export function Sparkline({ values, className }: { values: number[]; className?:
   const max = Math.max(1, ...values);
   const pts = values.map((v, i) => `${(i / Math.max(1, values.length - 1)) * w},${h - (v / max) * (h - 4) - 2}`).join(" ");
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className={cn("h-8 w-30", className)} aria-hidden>
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={className ?? "h-8 w-30"} aria-hidden>
       <polyline points={pts} fill="none" stroke="var(--accent-vivid)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   );
