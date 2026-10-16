@@ -35,6 +35,20 @@ export interface DemoState {
   passwordHint: string;
 }
 
+/** Au-delà de cette taille, une data URL est une photo importée (les illustrations SVG de la démo pèsent quelques Ko). */
+const IMPORTED_PHOTO_MIN_CHARS = 20_000;
+
+/** Copie de l'état sans les photos importées des articles (toutes, ou toutes sauf la couverture). */
+export function lightenDemoState(state: DemoState, keepCover: boolean): DemoState {
+  return {
+    ...state,
+    items: state.items.map((item) => {
+      const photos = item.photos.filter((p, i) => (keepCover && i === 0) || !(p.url.startsWith("data:") && p.url.length >= IMPORTED_PHOTO_MIN_CHARS));
+      return photos.length === item.photos.length ? item : { ...item, photos };
+    }),
+  };
+}
+
 export interface DemoStorage {
   load(): DemoState | null;
   save(state: DemoState): void;
@@ -55,10 +69,18 @@ export class LocalDemoStorage implements DemoStorage {
     }
   }
   save(state: DemoState): void {
-    try {
-      localStorage.setItem(this.key, JSON.stringify(state));
-    } catch {
-      // Quota ou stockage indisponible : la démo continue en mémoire.
+    // Le stockage du navigateur est limité (~5 Mo) : un ou deux articles du générateur avec leurs
+    // photos suffisent à le remplir. Sans repli, chaque enregistrement suivant échouait en silence et
+    // toutes les modifications étaient perdues au rechargement. On enregistre alors une copie allégée
+    // (photos importées retirées, couverture gardée si possible) : le reste de la démo est conservé.
+    const candidates = [() => state, () => lightenDemoState(state, true), () => lightenDemoState(state, false)];
+    for (const candidate of candidates) {
+      try {
+        localStorage.setItem(this.key, JSON.stringify(candidate()));
+        return;
+      } catch {
+        // Quota dépassé ou stockage indisponible : on essaie plus léger, sinon la démo continue en mémoire.
+      }
     }
   }
   clear(): void {
