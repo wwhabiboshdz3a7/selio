@@ -193,7 +193,9 @@ function mockGeneratedListing(h: Hints): Record<string, unknown> {
   const size = h.size?.trim() || (sizeMatch ? sizeMatch[1]!.toUpperCase() : null);
   const colorWord = COLORS.find((c) => haystack.includes(c));
   const color = colorWord ? colorWord.charAt(0).toUpperCase() + colorWord.slice(1) : spec.colors[Math.floor(rnd() * spec.colors.length)]!;
-  const condition = /etiquette/.test(haystack) ? "new_with_tags" : /\bneuf\b/.test(haystack) ? "new_without_tags" : /defaut|tache|trou|use/.test(haystack) ? "satisfactory" : rnd() < 0.6 ? "very_good" : "good";
+  // Les notes du vendeur priment sur les noms de fichiers (« etiquette.jpg » n'est pas « neuf avec étiquette »).
+  const notes = simplify(h.notes ?? "");
+  const condition = /defaut|tache|trou|use/.test(notes) ? "satisfactory" : /porte/.test(notes) ? (rnd() < 0.7 ? "very_good" : "good") : /neuf avec etiquette|avec etiquette/.test(notes) ? "new_with_tags" : /\bneuf\b/.test(notes) ? "new_without_tags" : rnd() < 0.6 ? "very_good" : "good";
   const conditionText: Record<string, string> = {
     new_with_tags: "Neuf avec étiquette, jamais porté.",
     new_without_tags: "Neuf sans étiquette, jamais porté.",

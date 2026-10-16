@@ -22,6 +22,17 @@ Variables Netlify (publiques, préfixe `VITE_`) :
 
 Côté API, ajouter l'origine Netlify à `CORS_ORIGINS` et `PUBLIC_WEB_URL`.
 
+### Déploiement manuel (glisser-déposer)
+
+```bash
+deploy/netlify/pack.sh                    # build + archive : livraison/selio-demo-netlify.zip
+VITE_API_BASE_URL=https://api.exemple.fr deploy/netlify/pack.sh livraison/selio-connecte.zip   # variante mode connecté
+```
+
+L'archive contient `apps/web/dist` plus `_headers` (CSP, HSTS, cache) et `_redirects` (SPA) pris dans `deploy/netlify/`, puisque `netlify.toml` n'est pas lu lors d'un glisser-déposer. Décompresser, puis glisser le dossier sur https://app.netlify.com/drop (nouveau site) ou dans l'onglet *Deploys* d'un site existant.
+
+La liste complète des clés et variables (Netlify, serveur, IA, Stripe) est dans [CLES-ET-CONFIGURATION.md](CLES-ET-CONFIGURATION.md).
+
 ## 2. Serveur métier (Linux)
 
 ### Option A — Docker Compose (recommandée)
