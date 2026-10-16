@@ -1,9 +1,9 @@
 import type {
-  AiRequest, AiStatus, AuditLog, AutomationRule, AutomationRuleCreate, BulkItemAction, ConnectionCreate, ConnectionTestResult, Conversation, ConversationQuery, Customer, CustomerCreate, CustomerQuery, CustomerUpdate, ExtensionToken, InventoryEvent, InventoryItem, InventoryItemCreate, InventoryItemUpdate, InventoryQuery, Job, JobQuery, MarketplaceConnection, Membership, Message, Opportunity, Order, OrderCreate, OrderQuery, OrderStatus, Organization, OrgSettings, Page, Plan, PurchaseRequest, RadarSearch, RadarSearchCreate, Role, Shipment, Subscription, UsageEvent, User,
+  AiRequest, AiStatus, AuditLog, ListingDraft, ListingGenerationInput, AutomationRule, AutomationRuleCreate, BulkItemAction, ConnectionCreate, ConnectionTestResult, Conversation, ConversationQuery, Customer, CustomerCreate, CustomerQuery, CustomerUpdate, ExtensionToken, InventoryEvent, InventoryItem, InventoryItemCreate, InventoryItemUpdate, InventoryQuery, Job, JobQuery, MarketplaceConnection, Membership, Message, Opportunity, Order, OrderCreate, OrderQuery, OrderStatus, Organization, OrgSettings, Page, Plan, PurchaseRequest, RadarSearch, RadarSearchCreate, Role, Shipment, Subscription, UsageEvent, User,
 } from "@selio/contracts";
 import type { ConnectorDescriptor } from "@selio/connectors";
 import type { NegotiationResult, PeriodPreset } from "@selio/domain";
-import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutomationState, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
+import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
 
 type Query = Record<string, string | number | boolean | undefined | null>;
 
@@ -134,6 +134,12 @@ export class ApiClient implements DataClient {
   listOpportunities(query: { searchId?: string; status?: Opportunity["status"] }) { return this.get<Opportunity[]>("/api/radar/opportunities", query); }
   setOpportunityStatus(id: string, status: Opportunity["status"]) { return this.post<Opportunity>(`/api/radar/opportunities/${id}/status`, { status }); }
 
+  quickBuy(opportunityId: string) { return this.post<PurchaseRequest>(`/api/radar/opportunities/${opportunityId}/buy`); }
+  runAutoBuy() { return this.post<AutoBuyRunResult>("/api/purchases/auto-run"); }
+  generateListing(input: ListingGenerationInput) { return this.post<ListingDraft>("/api/studio/generate", input); }
+  getDressing(query: DressingQuery) { return this.get<DressingData>("/api/dressing", query as Query); }
+  republishItem(id: string, variantId: string) { return this.post<InventoryItem>(`/api/items/${id}/republish`, { variantId }); }
+  getMarketInsights(query: MarketQuery) { return this.get<MarketData>("/api/market/insights", query as Query); }
   listPurchaseRequests() { return this.get<(PurchaseRequest & { opportunity: Opportunity | null })[]>("/api/purchases"); }
   createPurchaseRequest(input: { opportunityId: string; maxPriceCents: number; budgetCents: number }) { return this.post<PurchaseRequest>("/api/purchases", input); }
   confirmPurchaseRequest(id: string) { return this.post<PurchaseRequest>(`/api/purchases/${id}/confirm`); }

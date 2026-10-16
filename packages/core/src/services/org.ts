@@ -25,6 +25,9 @@ export async function updateOrg(ctx: OrgContext, raw: unknown): Promise<Organiza
       margin: { ...org.settings.margin, ...(input.margin ?? {}) },
       ai: { ...org.settings.ai, ...(input.ai ?? {}) },
       notifications: { ...org.settings.notifications, ...(input.notifications ?? {}) },
+      buyerFees: { ...org.settings.buyerFees, ...(input.buyerFees ?? {}) },
+      autoBuy: { ...org.settings.autoBuy, ...(input.autoBuy ?? {}) },
+      dressing: { ...org.settings.dressing, ...(input.dressing ?? {}) },
       retentionDays: { ...org.settings.retentionDays, ...(input.retentionDays ?? {}) },
       onboarding: { ...org.settings.onboarding, ...(input.onboarding ?? {}) },
     });

@@ -1,8 +1,9 @@
-import type { AiStatus, ReplySuggestion } from "@selio/contracts";
+import type { AiStatus, ListingGenerationOutput, ReplySuggestion } from "@selio/contracts";
+import { scanForInjection } from "@selio/domain";
 import { CircuitBreaker } from "./circuit-breaker";
 import { AIMetrics } from "./metrics";
 import { AIQueue } from "./queue";
-import { buildListingRequest, buildReplyRequest, type ListingContext, type ReplyContext } from "./prompts";
+import { buildListingGenerationRequest, buildListingRequest, buildReplyRequest, type ListingContext, type ListingGenerationContext, type ReplyContext } from "./prompts";
 import { fallbackReply, validateReplySuggestion } from "./policy/validate";
 import { AIError, toAIError, type AIProvider, type GenerateOptions, type HealthResult } from "./types";
 
@@ -37,6 +38,16 @@ export interface SuggestReplyResult {
   usage: { promptTokens: number; outputTokens: number };
   validated: boolean;
   rejectionReason: string | null;
+}
+
+export interface GenerateListingResult {
+  data: ListingGenerationOutput;
+  source: "ai" | "fallback";
+  provider: string;
+  model: string;
+  latencyMs: number;
+  usage: { promptTokens: number; outputTokens: number };
+  warnings: string[];
 }
 
 /** Passerelle IA : file, disjoncteur, quotas, métriques, validation. */
@@ -124,6 +135,31 @@ export class AIService {
       return fallback(`Sortie IA rejetée (${v.code}) : gabarit déterministe utilisé`, { provider: res.provider, model: res.model, latencyMs: res.latencyMs, usage: res.usage });
     }
     return { suggestion: v.suggestion, source: "ai", provider: res.provider, model: res.model, latencyMs: res.latencyMs, usage: res.usage, validated: true, rejectionReason: null };
+  }
+
+  /**
+   * Générateur d'annonces : photos (+ indications) → annonce structurée.
+   * Le texte est contrôlé (pas de HTML, de lien ni de motif d'injection).
+   * Sans repli autorisé (production), toute défaillance remonte une AIError.
+   */
+  async generateListing(orgId: string, ctx: ListingGenerationContext, opts: { signal?: AbortSignal; allowFallback?: boolean; fallback?: () => ListingGenerationOutput } = {}): Promise<GenerateListingResult> {
+    const allowFallback = opts.allowFallback ?? this.opts.allowFallback;
+    const req = buildListingGenerationRequest(ctx);
+    const warnings: string[] = [];
+    try {
+      const res = await this.run(orgId, "listing_generation", (o) => this.opts.provider.generateStructured(req, o), opts.signal);
+      const text = `${res.data.title}\n${res.data.description}`;
+      if (/<[a-z!/][^>]*>|https?:\/\/|www\./i.test(text)) throw new AIError("invalid_output", "L'annonce générée contient du HTML ou un lien", false);
+      if (scanForInjection(text).suspicious) throw new AIError("invalid_output", "L'annonce générée reprend un motif suspect", false);
+      if (ctx.images.length > 0 && this.opts.provider.name === "ollama" && !(this.opts.provider as { visionModel?: string | null }).visionModel) warnings.push("Aucun modèle de vision configuré : l'annonce est rédigée sans lire les photos (OLLAMA_VISION_MODEL).");
+      if (res.data.confidence < 0.5) warnings.push("Confiance faible : vérifiez la marque, la taille et l'état avant de publier.");
+      return { data: res.data, source: "ai", provider: res.provider, model: res.model, latencyMs: res.latencyMs, usage: res.usage, warnings };
+    } catch (err) {
+      const e = toAIError(err);
+      if (e.code === "quota_exceeded" || e.code === "cancelled" || !allowFallback || !opts.fallback) throw e;
+      warnings.push(`IA indisponible (${e.code}) : gabarit déterministe utilisé, relisez l'annonce.`);
+      return { data: opts.fallback(), source: "fallback", provider: this.opts.provider.name, model: this.opts.provider.model, latencyMs: 0, usage: { promptTokens: 0, outputTokens: 0 }, warnings };
+    }
   }
 
   async describeListing(orgId: string, ctx: ListingContext, signal?: AbortSignal) {

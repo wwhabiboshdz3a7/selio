@@ -147,7 +147,10 @@ export const items = {
     if (q.category) { params.push(q.category); where.push(`category = $${params.length}`); }
     if (q.brand) { params.push(q.brand); where.push(`lower(brand) = lower($${params.length})`); }
     if (q.q) { params.push(like(q.q)); where.push(`(title ilike $${params.length} or coalesce(brand,'') ilike $${params.length} or coalesce(sku,'') ilike $${params.length} or tags::text ilike $${params.length})`); }
-    const order = { updated_desc: "updated_at desc", created_desc: "created_at desc", title_asc: "title asc", price_asc: "listed_price_cents asc nulls first", price_desc: "listed_price_cents desc nulls last", margin_desc: "(coalesce(listed_price_cents, 0) - purchase_price_cents - purchase_fees_cents) desc" }[q.sort ?? "updated_desc"];
+    // Dernière mise en ligne : republication la plus récente, sinon mise en vente.
+    const onlineSince = "greatest(listed_at, (select max((r->>'at')::timestamptz) from jsonb_array_elements(republications) r))";
+    if (q.minDaysOnline !== undefined) { params.push(String(q.minDaysOnline)); where.push(`status in ('listed','reserved') and ${onlineSince} <= now() - ($${params.length} || ' days')::interval`); }
+    const order = { updated_desc: "updated_at desc", created_desc: "created_at desc", title_asc: "title asc", price_asc: "listed_price_cents asc nulls first", price_desc: "listed_price_cents desc nulls last", margin_desc: "(coalesce(listed_price_cents, 0) - purchase_price_cents - purchase_fees_cents) desc", online_desc: `${onlineSince} asc nulls last` }[q.sort ?? "updated_desc"];
     const pageSize = q.pageSize ?? 25;
     const p = q.page ?? 1;
     const total = await tx.count(`select count(*) from inventory_items where ${where.join(" and ")}`, params);

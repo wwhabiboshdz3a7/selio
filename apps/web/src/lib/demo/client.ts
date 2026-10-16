@@ -1,16 +1,18 @@
 import {
   type AiRequest, type AuditLog, type AutomationRule, type AutomationRuleCreate, type BulkItemAction, type ConnectionCreate, type ConnectionTestResult, type Conversation, type ConversationQuery, type Customer, type CustomerCreate, type CustomerQuery, type CustomerUpdate, type ExtensionToken, type InventoryEvent, type InventoryItem, type InventoryItemCreate, type InventoryItemUpdate, type InventoryQuery, type Job, type JobQuery, type MarketplaceConnection, type Membership, type Message, type Opportunity, type Order, type OrderCreate, type OrderQuery, type OrderStatus, type Organization, type OrgSettings, type Page, type Plan, type PurchaseRequest, type RadarSearch, type RadarSearchCreate, type Role, type Shipment, type Subscription, type UsageEvent, type User,
+  type ListingDraft, type ListingGenerationInput, type ListingGenerationOutput, listingGenerationInput as listingGenerationInputSchema,
   automationRuleCreate as automationRuleCreateSchema, inventoryItemCreate as inventoryItemCreateSchema, inventoryItemUpdate as inventoryItemUpdateSchema, customerCreate as customerCreateSchema, orderCreate as orderCreateSchema, radarSearchCreate as radarSearchCreateSchema, orgSettings as orgSettingsSchema, connectionCreate as connectionCreateSchema,
 } from "@selio/contracts";
 import {
+  analyzeMarket, applyVariant, autoBuyDecision, buildDashboard, buildDressing, canStillCancel, cancelableUntil, comparablesFromMarket, daysOnline, granularityFor, periodLabel, priceListingDraft, purchaseCost, recordRepublication, republicationPlan, type Comparable,
   ItemTransitionError, OrderTransitionError, breakdownBy, canChangeItemStatus, comparablesFromSales, daysInStock, diffItem, estimateResale, evaluateOffer, extractOfferCents, gateRule, itemStatusForOrder, jobDedupeKey, newId, orderDedupeKey, orderMargin, periodFromPreset, previousPeriod, purchaseOutcome, rankOpportunities, renderTemplate, runPurchaseChecks, salesKpis, salesSeries, sanitizeUntrustedText, scanForInjection, scoreOpportunity, stockKpis, transitionOrder, toCsv, EXPORT_HEADERS, inventoryToCsvRow, nextSku, seededRandom, hashString, localDayKey, type NegotiationResult, type PeriodPreset,
 } from "@selio/domain";
 import { getConnector, describeConnectors } from "@selio/connectors";
 import { AIService, MockAIProvider } from "@selio/ai";
 import { buildDemoState } from "@selio/demo-data";
-import { LocalDemoStorage, type DemoState, type DemoStorage } from "@selio/demo-data";
+import { LocalDemoStorage, buildMarketObservations, illustrationUrl, silhouetteFor, type DemoState, type DemoStorage } from "@selio/demo-data";
 import { PLAN_QUOTAS } from "@selio/demo-data";
-import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutomationState, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
+import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
 
 function paginate<T>(items: T[], page = 1, pageSize = 25): Page<T> {
   const total = items.length;
@@ -112,6 +114,21 @@ export class DemoClient implements DataClient {
     if (!item || !lastInbound?.offerCents) return null;
     return { offerCents: lastInbound.offerCents, evaluation: evaluateOffer({ item, offerCents: lastInbound.offerCents, rules: this.margin(), roundsSoFar: conv.negotiationRounds, now: this.clock() }) };
   }
+  /** Ventes comparables : celles de l'atelier + celles observées sur le marché simulé. */
+  private comparables(): Comparable[] {
+    const own = comparablesFromSales(this.s.orders, new Map(this.s.items.map((i) => [i.id, i])));
+    return [...own, ...comparablesFromMarket(this.market())];
+  }
+  private marketCache: { key: string; data: ReturnType<typeof buildMarketObservations> } | null = null;
+  private market() {
+    const key = this.s.seededAt;
+    if (this.marketCache?.key !== key) this.marketCache = { key, data: buildMarketObservations(key) };
+    return this.marketCache.data;
+  }
+  private spentToday(): number {
+    const today = localDayKey(this.clock(), this.s.org.settings.timezone);
+    return this.s.purchases.filter((x) => (x.status === "simulated" || x.status === "executed") && localDayKey(new Date(x.executedAt ?? x.createdAt), this.s.org.settings.timezone) === today).reduce((s, x) => s + x.maxPriceCents, 0);
+  }
   private delay(ms: number): Promise<void> {
     return new Promise((r) => setTimeout(r, ms));
   }
@@ -159,6 +176,9 @@ export class DemoClient implements DataClient {
       margin: { ...st.org.settings.margin, ...(input.settings?.margin ?? {}) },
       ai: { ...st.org.settings.ai, ...(input.settings?.ai ?? {}) },
       notifications: { ...st.org.settings.notifications, ...(input.settings?.notifications ?? {}) },
+      buyerFees: { ...st.org.settings.buyerFees, ...(input.settings?.buyerFees ?? {}) },
+      autoBuy: { ...st.org.settings.autoBuy, ...(input.settings?.autoBuy ?? {}) },
+      dressing: { ...st.org.settings.dressing, ...(input.settings?.dressing ?? {}) },
       retentionDays: { ...st.org.settings.retentionDays, ...(input.settings?.retentionDays ?? {}) },
       onboarding: { ...st.org.settings.onboarding, ...(input.settings?.onboarding ?? {}) },
     });
@@ -212,6 +232,7 @@ export class DemoClient implements DataClient {
     else list = list.filter((i) => i.status !== "archived");
     if (query.category) list = list.filter((i) => i.category === query.category);
     if (query.brand) list = list.filter((i) => norm(i.brand) === norm(query.brand));
+    if (query.minDaysOnline !== undefined) list = list.filter((i) => (i.status === "listed" || i.status === "reserved") && (daysOnline(i, this.clock()) ?? -1) >= query.minDaysOnline!);
     if (query.q) {
       const q = norm(query.q);
       list = list.filter((i) => norm(i.title).includes(q) || norm(i.brand).includes(q) || norm(i.sku).includes(q) || i.tags.some((t) => norm(t).includes(q)));
@@ -223,6 +244,7 @@ export class DemoClient implements DataClient {
       case "price_asc": list.sort((a, b) => (a.listedPriceCents ?? 0) - (b.listedPriceCents ?? 0)); break;
       case "price_desc": list.sort((a, b) => (b.listedPriceCents ?? 0) - (a.listedPriceCents ?? 0)); break;
       case "margin_desc": list.sort((a, b) => projected(b) - projected(a)); break;
+      case "online_desc": list.sort((a, b) => (daysOnline(b, this.clock()) ?? -1) - (daysOnline(a, this.clock()) ?? -1)); break;
       default: list.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     }
     return paginate(list, query.page, query.pageSize);
@@ -669,11 +691,11 @@ export class DemoClient implements DataClient {
     const st = this.s;
     const now = this.clock();
     const p = periodFromPreset(period, now);
-    const prev = previousPeriod(p);
+    const prev = previousPeriod(p, period);
     const sales = salesKpis(st.orders, p);
     const previousSales = salesKpis(st.orders, prev);
     const stock = stockKpis(st.items, now);
-    const series = salesSeries(st.orders, p, period === "7d" || period === "30d" ? "day" : period === "90d" ? "week" : "month");
+    const series = salesSeries(st.orders, p, granularityFor(period));
     const open = st.conversations.filter((c) => c.status === "open");
     const alerts: OverviewData["alerts"] = [];
     for (const c of st.connections) {
@@ -693,18 +715,21 @@ export class DemoClient implements DataClient {
       recentOrders: [...st.orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5),
       recentConversations: [...open].sort((a, b) => (b.lastMessageAt ?? "").localeCompare(a.lastMessageAt ?? "")).slice(0, 5),
       staleItems,
+      periodLabel: periodLabel(period, now),
+      dashboard: buildDashboard(st.items, st.orders, p, now, { timezone: st.org.settings.timezone, granularity: granularityFor(period) }),
+      dressing: this.dressing().summary,
     };
   }
   async getAnalytics(filters: AnalyticsFilters): Promise<AnalyticsData> {
     const st = this.s;
     const now = this.clock();
     const p = periodFromPreset(filters.period, now);
-    const prev = previousPeriod(p);
+    const prev = previousPeriod(p, filters.period);
     const itemMap = new Map(st.items.map((i) => [i.id, i]));
     let orders = st.orders;
     if (filters.category) orders = orders.filter((o) => itemMap.get(o.itemId)?.category === filters.category);
     if (filters.channel) orders = orders.filter((o) => o.provider === filters.channel);
-    const granularity = filters.granularity ?? (filters.period === "7d" || filters.period === "30d" ? "day" : filters.period === "90d" ? "week" : "month");
+    const granularity = filters.granularity ?? granularityFor(filters.period);
     const inPeriod = orders.filter((o) => new Date(o.createdAt) >= p.from && new Date(o.createdAt) < p.to && (o.status !== "cancelled" && o.status !== "refunded"));
     return {
       period: filters.period,
@@ -949,7 +974,7 @@ export class DemoClient implements DataClient {
     this.audit("radar.search_deleted", "radar_search", id, {});
     this.persist();
   }
-  async runSearch(id: string): Promise<{ found: number }> {
+  async runSearch(id: string): Promise<{ found: number; autoBought: number }> {
     const st = this.s;
     const search = st.searches.find((x) => x.id === id);
     if (!search) throw new DataError("not_found", "Recherche introuvable", 404);
@@ -958,7 +983,8 @@ export class DemoClient implements DataClient {
     const rnd = seededRandom(hashString(search.id + localDayKey(now, st.org.settings.timezone) + st.opportunities.length));
     const brands = search.criteria.brands.length ? search.criteria.brands : ["Nike", "Zara", "Levi's"];
     const cats = search.criteria.categories.length ? search.criteria.categories : (["shoes", "men", "women"] as const);
-    const comps = comparablesFromSales(st.orders, new Map(st.items.map((i) => [i.id, i])));
+    const comps = this.comparables();
+    const colors = ["Noir", "Blanc", "Bleu marine", "Beige", "Gris", "Vert", "Camel"];
     const count = 1 + Math.floor(rnd() * 3);
     let found = 0;
     for (let i = 0; i < count; i++) {
@@ -970,19 +996,24 @@ export class DemoClient implements DataClient {
       const shippingCents = 450 + Math.floor(rnd() * 3) * 100;
       const size = search.criteria.sizes.length ? search.criteria.sizes[Math.floor(rnd() * search.criteria.sizes.length)]! : "M";
       const seenAt = new Date(now.getTime() - Math.floor(rnd() * 20) * 3_600_000).toISOString();
+      const photoCount = 1 + Math.floor(rnd() * 8);
+      const sellerRating = Math.round((3.6 + rnd() * 1.4) * 10) / 10;
+      const sellerReviews = Math.floor(rnd() * 180);
       const est = estimateResale({ priceCents, brand, category, condition }, comps);
-      const scored = scoreOpportunity({ priceCents, shippingCents, seenAt }, est, search, 0, now);
+      const scored = scoreOpportunity({ priceCents, shippingCents, seenAt }, est, search, 0, now, { condition, photoCount, sellerRating, sellerReviews, fees: st.org.settings.buyerFees });
       const title = `${brand} ${search.criteria.keywords[0] ?? (category === "shoes" ? "sneakers" : "pièce")} ${size}`;
       const dedupe = `${search.id}:${title}:${priceCents}`;
       if (st.opportunities.some((o) => o.searchId === search.id && `${search.id}:${o.title}:${o.observed.priceCents}` === dedupe)) continue;
-      st.opportunities.unshift({ id: newId(), orgId: st.org.id, searchId: search.id, title, observed: { priceCents, shippingCents, brand, size, condition, category, sellerHandle: `vendeur_${Math.floor(rnd() * 900 + 100)}`, url: `https://demo.invalid/items/${Math.floor(rnd() * 90000)}`, seenAt, source: "demo_simulator" }, estimate: { resalePriceCents: est.resalePriceCents, expectedFeesCents: 0, marginCents: scored.marginCents, marginRate: scored.marginRate, confidence: est.confidence, method: est.method, comparableCount: est.comparableCount }, score: scored.score, reasons: scored.reasons, status: "new", createdAt: seenAt, updatedAt: this.now() });
+      const photoUrl = illustrationUrl({ silhouette: silhouetteFor(title, category), color: colors[Math.floor(rnd() * colors.length)]!, brand, view: 0, seed: Math.floor(rnd() * 1000) });
+      st.opportunities.unshift({ id: newId(), orgId: st.org.id, searchId: search.id, title, observed: { priceCents, shippingCents, brand, size, condition, category, sellerHandle: `vendeur_${Math.floor(rnd() * 900 + 100)}`, sellerRating, sellerReviews, photoUrl, photoCount, url: `https://demo.invalid/items/${Math.floor(rnd() * 90000)}`, seenAt, source: "demo_simulator" }, estimate: { resalePriceCents: est.resalePriceCents, expectedFeesCents: 0, marginCents: scored.marginCents, marginRate: scored.marginRate, confidence: est.confidence, method: est.method, comparableCount: est.comparableCount }, score: scored.score, reasons: scored.reasons, breakdown: scored.breakdown, status: "new", createdAt: seenAt, updatedAt: this.now() });
       found++;
     }
     search.lastRunAt = this.now();
     this.usage("connector.sync", { kind: "radar", searchId: id });
     this.audit("radar.run", "radar_search", id, { found });
     this.persist();
-    return { found };
+    const auto = st.org.settings.autoBuy.enabled ? await this.runAutoBuy() : null;
+    return { found, autoBought: auto?.bought ?? 0 };
   }
   async listOpportunities(query: { searchId?: string; status?: Opportunity["status"] }): Promise<Opportunity[]> {
     let list = this.s.opportunities;
@@ -1010,7 +1041,7 @@ export class DemoClient implements DataClient {
     const existing = this.s.purchases.find((p) => p.dedupeKey === dedupeKey && p.status !== "cancelled" && p.status !== "blocked");
     if (existing) throw new DataError("conflict", "Une demande d'achat existe déjà pour cette opportunité (prévention des doublons).", 409, { existingId: existing.id });
     const now = this.now();
-    const p: PurchaseRequest = { id: newId(), orgId: this.s.org.id, opportunityId: opp.id, dedupeKey, maxPriceCents: input.maxPriceCents, budgetCents: input.budgetCents, status: "awaiting_confirmation", checks: [], realPurchaseEnabled: false, confirmedAt: null, executedAt: null, resultNote: null, createdAt: now, updatedAt: now };
+    const p: PurchaseRequest = { id: newId(), orgId: this.s.org.id, opportunityId: opp.id, dedupeKey, maxPriceCents: input.maxPriceCents, budgetCents: input.budgetCents, status: "awaiting_confirmation", mode: "manual", cancelableUntil: null, checks: [], realPurchaseEnabled: false, confirmedAt: null, executedAt: null, resultNote: null, createdAt: now, updatedAt: now };
     this.s.purchases.unshift(p);
     this.audit("purchase.requested", "purchase_request", p.id, {});
     this.persist();
@@ -1022,9 +1053,8 @@ export class DemoClient implements DataClient {
     if (p.status !== "awaiting_confirmation") throw new DataError("conflict", "Cette demande n'est plus en attente de confirmation.", 409);
     const opp = this.s.opportunities.find((o) => o.id === p.opportunityId)!;
     p.confirmedAt = this.now();
-    const today = localDayKey(this.clock(), this.s.org.settings.timezone);
-    const spentToday = this.s.purchases.filter((x) => x.id !== p.id && (x.status === "simulated" || x.status === "executed") && (x.executedAt ?? "").startsWith(today)).reduce((s, x) => s + x.maxPriceCents, 0);
-    const checks = runPurchaseChecks({ opportunity: opp, request: p, spentTodayCents: spentToday, dailyBudgetCents: 50_000, duplicateExists: this.s.purchases.some((x) => x.id !== p.id && x.opportunityId === p.opportunityId && (x.status === "simulated" || x.status === "executed")), connectorAllowsPurchase: false });
+    const spentToday = this.spentToday();
+    const checks = runPurchaseChecks({ opportunity: opp, request: p, spentTodayCents: spentToday, dailyBudgetCents: this.s.org.settings.autoBuy.dailyCapCents, duplicateExists: this.s.purchases.some((x) => x.id !== p.id && x.opportunityId === p.opportunityId && (x.status === "simulated" || x.status === "executed")), connectorAllowsPurchase: false, fees: this.s.org.settings.buyerFees });
     p.checks = checks.map(({ code, ok, label }) => ({ code, ok, label }));
     const outcome = purchaseOutcome(checks, p.realPurchaseEnabled);
     p.status = outcome;
@@ -1039,10 +1069,120 @@ export class DemoClient implements DataClient {
   async cancelPurchaseRequest(id: string): Promise<PurchaseRequest> {
     const p = this.s.purchases.find((x) => x.id === id);
     if (!p) throw new DataError("not_found", "Demande introuvable", 404);
+    if (p.status === "cancelled") return p;
+    if (p.status === "simulated" || p.status === "executed") {
+      if (p.mode !== "auto") throw new DataError("conflict", "Cet achat a déjà été effectué : il ne peut plus être annulé depuis Selio.", 409);
+      if (!canStillCancel(p.cancelableUntil, this.clock())) throw new DataError("conflict", "Le délai d'annulation de cet achat automatique est dépassé.", 409);
+      const opp = this.s.opportunities.find((o) => o.id === p.opportunityId);
+      if (opp) { opp.status = "dismissed"; opp.updatedAt = this.now(); }
+      p.resultNote = "Achat automatique annulé dans le délai prévu (simulation).";
+    }
     p.status = "cancelled";
     p.updatedAt = this.now();
+    this.audit("purchase.cancelled", "purchase_request", id, { mode: p.mode });
     this.persist();
     return p;
+  }
+
+  /** « À valider » : un clic crée la demande et la confirme (contrôles compris). */
+  async quickBuy(opportunityId: string): Promise<PurchaseRequest> {
+    const opp = this.s.opportunities.find((o) => o.id === opportunityId);
+    if (!opp) throw new DataError("not_found", "Affaire introuvable", 404);
+    const total = purchaseCost(opp.observed, this.s.org.settings.buyerFees).totalCents;
+    const budget = this.s.searches.find((x) => x.id === opp.searchId)?.budgetCents ?? total;
+    const req = await this.createPurchaseRequest({ opportunityId, maxPriceCents: total, budgetCents: budget });
+    return this.confirmPurchaseRequest(req.id);
+  }
+
+  /** Achat automatique : toutes les affaires nouvelles au-dessus du seuil, dans les garde-fous. */
+  async runAutoBuy(): Promise<AutoBuyRunResult> {
+    const st = this.s;
+    const settings = st.org.settings.autoBuy;
+    const skipped = new Map<string, number>();
+    let evaluated = 0, bought = 0, spentCents = 0;
+    const candidates = [...st.opportunities].filter((o) => o.status === "new").sort((a, b) => b.score - a.score);
+    for (const opp of candidates) {
+      evaluated++;
+      const decision = autoBuyDecision({ opportunity: opp, settings, fees: st.org.settings.buyerFees, spentTodayCents: this.spentToday(), alreadyPurchased: st.purchases.some((x) => x.opportunityId === opp.id && x.status !== "cancelled" && x.status !== "blocked") });
+      if (!decision.buy) {
+        const reason = /sous le seuil/.test(decision.reason) ? `Note sous le seuil de ${settings.threshold}` : decision.reason;
+        skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
+        continue;
+      }
+      const now = this.clock();
+      const search = st.searches.find((x) => x.id === opp.searchId);
+      const checks = runPurchaseChecks({ opportunity: opp, request: { maxPriceCents: decision.totalCents, budgetCents: search?.budgetCents ?? decision.totalCents, realPurchaseEnabled: false, confirmedAt: now.toISOString() }, spentTodayCents: this.spentToday(), dailyBudgetCents: settings.dailyCapCents, duplicateExists: false, connectorAllowsPurchase: false, fees: st.org.settings.buyerFees });
+      const outcome = purchaseOutcome(checks, false);
+      const p: PurchaseRequest = { id: newId(), orgId: st.org.id, opportunityId: opp.id, dedupeKey: `purchase:${opp.id}`, maxPriceCents: decision.totalCents, budgetCents: search?.budgetCents ?? decision.totalCents, status: outcome, mode: "auto", cancelableUntil: outcome === "blocked" ? null : cancelableUntil(now, settings), checks: checks.map(({ code, ok, label }) => ({ code, ok, label })), realPurchaseEnabled: false, confirmedAt: now.toISOString(), executedAt: outcome === "blocked" ? null : now.toISOString(), resultNote: outcome === "blocked" ? "Achat automatique bloqué par les contrôles." : `Achat automatique SIMULÉ : ${decision.reason}. Annulable pendant ${settings.cancelWindowMinutes} min.`, createdAt: now.toISOString(), updatedAt: now.toISOString() };
+      st.purchases.unshift(p);
+      if (outcome !== "blocked") { opp.status = "purchased"; opp.updatedAt = this.now(); bought++; spentCents += decision.totalCents; }
+      this.audit("purchase.auto", "purchase_request", p.id, { outcome, score: opp.score });
+    }
+    this.persist();
+    return { evaluated, bought, spentCents, skipped: [...skipped.entries()].map(([reason, count]) => ({ reason, count })) };
+  }
+
+  // ---------- générateur d'annonces ----------
+  async generateListing(input: ListingGenerationInput): Promise<ListingDraft> {
+    const st = this.s;
+    const parsed = listingGenerationInputSchema.safeParse(input);
+    if (!parsed.success) throw new DataError("validation", parsed.error.issues[0]?.message ?? "Demande invalide", 400, parsed.error.flatten());
+    if (!st.org.settings.ai.enabled) throw new DataError("ai_unavailable", "L'assistant IA est désactivé dans les paramètres.", 409);
+    const monthKey = this.now().slice(0, 7);
+    const quota = Math.min(st.subscription.quotas.aiRequestsPerMonth, st.org.settings.ai.monthlyRequestQuota || Infinity);
+    if (st.aiRequests.filter((r) => r.createdAt.startsWith(monthKey)).length >= quota) throw new DataError("quota_exceeded", `Quota IA mensuel atteint (${quota}).`, 402);
+    const { photos, hints } = parsed.data;
+    const images = photos.map((p) => p.url.slice(p.url.indexOf(",") + 1));
+    const req: AiRequest = { id: newId(), orgId: st.org.id, kind: "listing_generation", provider: "mock", model: "selio-mock-v1", status: "running", conversationId: null, itemId: null, promptTokens: 0, outputTokens: 0, latencyMs: 0, validated: false, rejectionReason: null, error: null, createdAt: this.now(), finishedAt: null };
+    st.aiRequests.unshift(req);
+    const fallback = (): ListingGenerationOutput => ({ title: [hints.brand, "Article", hints.size].filter(Boolean).join(" ") || "Article", description: "Article d'occasion en bon état. Complétez la marque, la taille et les mesures. Envoi soigné sous 48 h.", brand: hints.brand ?? null, category: "other", size: hints.size ?? null, condition: "good", colors: [], material: null, hashtags: [], confidence: 0.2 });
+    const res = await this.ai.generateListing(st.org.id, { images, fileNames: photos.map((p) => p.alt), hints }, { fallback });
+    req.status = "succeeded";
+    req.validated = true;
+    req.promptTokens = res.usage.promptTokens;
+    req.outputTokens = res.usage.outputTokens;
+    req.latencyMs = res.latencyMs;
+    req.finishedAt = this.now();
+    this.usage("ai.request", { requestId: req.id, kind: "listing_generation" });
+    this.persist();
+    return this.priceDraft(res.data, { source: res.source, provider: res.provider, model: res.model, latencyMs: res.latencyMs, warnings: res.warnings, purchasePriceCents: hints.purchasePriceCents ?? null, simulated: true });
+  }
+  /** Prix conseillé : ventes comparables (jamais inventé par l'IA). */
+  private priceDraft(data: ListingGenerationOutput, meta: { source: "ai" | "fallback"; provider: string; model: string; latencyMs: number; warnings: string[]; purchasePriceCents: number | null; simulated: boolean }): ListingDraft {
+    const pricing = priceListingDraft(data, this.comparables(), meta.purchasePriceCents);
+    const warnings = [...meta.warnings, ...(pricing.lowConfidence ? ["Peu de ventes comparables : le prix conseillé est une estimation prudente, ajustez-le."] : [])];
+    const { lowConfidence: _low, ...price } = pricing;
+    return { ...data, ...price, source: meta.source, provider: meta.provider, model: meta.model, latencyMs: meta.latencyMs, simulated: meta.simulated, warnings };
+  }
+
+  // ---------- dressing intelligent ----------
+  private dressing(query: DressingQuery = {}) {
+    return buildDressing(this.s.items, this.comparables(), { now: this.clock(), rules: this.margin(), republishAfterDays: this.s.org.settings.dressing.republishAfterDays }, query);
+  }
+  async getDressing(query: DressingQuery): Promise<DressingData> {
+    return this.dressing(query);
+  }
+  async republishItem(id: string, variantId: string): Promise<InventoryItem> {
+    const item = this.itemById(id);
+    if (item.status !== "listed" && item.status !== "reserved") throw new DataError("validation", "Seule une annonce en ligne peut être republiée.", 400);
+    const plan = republicationPlan(item, { now: this.clock(), republishAfterDays: this.s.org.settings.dressing.republishAfterDays });
+    const variant = plan.variants.find((v) => v.id === variantId);
+    if (!variant) throw new DataError("not_found", "Variante inconnue", 404);
+    const patch = applyVariant(item, variant);
+    const record = recordRepublication(item, variant.id, "manual", this.now(), newId());
+    const after = await this.updateItem(id, { ...patch, ...record });
+    this.logEvent(id, "updated", {}, `Republication — variante ${variant.index} « ${variant.name} »`);
+    this.audit("item.republished", "inventory_item", id, { variantId });
+    this.persist();
+    return after;
+  }
+
+  // ---------- analyse des revendeurs ----------
+  async getMarketInsights(query: MarketQuery): Promise<MarketData> {
+    let obs = this.market();
+    if (query.category) obs = obs.filter((o) => o.category === query.category);
+    const windowDays = [7, 30, 90].includes(query.windowDays ?? 30) ? (query.windowDays ?? 30) : 30;
+    return { ...analyzeMarket(obs, this.clock(), windowDays), source: "demo_simulator", observedCount: obs.length, generatedAt: this.now() };
   }
 
   // ---------- connexions ----------

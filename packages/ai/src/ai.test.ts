@@ -220,3 +220,68 @@ describe("config", () => {
     t.clear();
   });
 });
+
+describe("générateur d'annonces", () => {
+  const img = Buffer.from("fausse-photo-jpeg").toString("base64");
+  const ctx = { images: [img, img], fileNames: ["ralph-lauren-pull-bleu-marine-M.jpg"], hints: { notes: "pull torsadé, porté deux fois" } };
+
+  it("le simulateur produit une annonce conforme au schéma, sans prix", async () => {
+    const svc = new AIService({ provider: new MockAIProvider(), concurrency: 1, maxPending: 5, circuitFailures: 3, circuitCooldownMs: 1000, timeoutMs: 1000, allowFallback: true });
+    const res = await svc.generateListing("org", ctx);
+    expect(res.source).toBe("ai");
+    expect(res.data.brand).toBe("Ralph Lauren");
+    expect(res.data.title).toMatch(/Ralph Lauren Pull en maille/);
+    expect(res.data.size).toBe("M");
+    expect(res.data.colors[0]).toBe("Bleu marine");
+    expect(JSON.stringify(res.data)).not.toMatch(/€/);
+    const again = await svc.generateListing("org", ctx);
+    expect(again.data).toEqual(res.data);
+  });
+
+  it("Ollama envoie les photos au modèle de vision", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.model).toBe("qwen2.5vl:7b");
+      expect(body.images).toEqual([img, img]);
+      expect(body.format).toBe("json");
+      return jsonResponse({ response: JSON.stringify({ title: "Pull Ralph Lauren bleu marine M", description: "Pull torsadé en coton bleu marine, très bon état. Envoi soigné sous 48 h.", brand: "Ralph Lauren", category: "men", size: "M", condition: "very_good", colors: ["Bleu marine"], material: "Coton", hashtags: [], confidence: 0.9 }), prompt_eval_count: 900, eval_count: 120, model: "qwen2.5vl:7b" });
+    });
+    const provider = new OllamaProvider({ baseUrl: "http://ollama.local:11434", model: "qwen2.5:7b-instruct", visionModel: "qwen2.5vl:7b", timeoutMs: 500, contextLimit: 4096, maxOutputTokens: 700, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const svc = new AIService({ provider, concurrency: 1, maxPending: 5, circuitFailures: 3, circuitCooldownMs: 1000, timeoutMs: 1000, allowFallback: false });
+    const res = await svc.generateListing("org", ctx);
+    expect(res.model).toBe("qwen2.5vl:7b");
+    expect(res.data.condition).toBe("very_good");
+    expect(res.warnings).toEqual([]);
+  });
+
+  it("sans modèle de vision, les photos ne sont pas envoyées et un avertissement est rendu", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.images).toBeUndefined();
+      expect(body.model).toBe("qwen2.5:7b-instruct");
+      return jsonResponse({ response: JSON.stringify({ title: "Pull torsadé bleu marine", description: "Pull torsadé bleu marine en très bon état. Envoi soigné sous 48 h.", brand: null, category: "men", size: null, condition: "very_good", colors: [], material: null, hashtags: [], confidence: 0.4 }) });
+    });
+    const provider = new OllamaProvider({ baseUrl: "http://ollama.local:11434", model: "qwen2.5:7b-instruct", timeoutMs: 500, contextLimit: 4096, maxOutputTokens: 700, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const svc = new AIService({ provider, concurrency: 1, maxPending: 5, circuitFailures: 3, circuitCooldownMs: 1000, timeoutMs: 1000, allowFallback: false });
+    const res = await svc.generateListing("org", ctx);
+    expect(res.warnings.join(" ")).toMatch(/OLLAMA_VISION_MODEL/);
+    expect(res.warnings.join(" ")).toMatch(/Confiance faible/);
+  });
+
+  it("rejette une annonce contenant un lien, ou se replie si autorisé", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ response: JSON.stringify({ title: "Pull à voir sur https://exemple.fr", description: "Description assez longue pour passer le schéma, avec un lien.", category: "men", condition: "good" }) }));
+    const provider = new OllamaProvider({ baseUrl: "http://o:11434", model: "m", timeoutMs: 500, contextLimit: 4096, maxOutputTokens: 700, fetchImpl: fetchImpl as unknown as typeof fetch });
+    const strict = new AIService({ provider, concurrency: 1, maxPending: 5, circuitFailures: 3, circuitCooldownMs: 1000, timeoutMs: 1000, allowFallback: false });
+    await expect(strict.generateListing("org", ctx)).rejects.toMatchObject({ code: "invalid_output" });
+    const lenient = new AIService({ provider, concurrency: 1, maxPending: 5, circuitFailures: 3, circuitCooldownMs: 1000, timeoutMs: 1000, allowFallback: true });
+    const res = await lenient.generateListing("org", ctx, { fallback: () => ({ title: "Pull", description: "Gabarit déterministe de secours.", brand: null, category: "other", size: null, condition: "good", colors: [], material: null, hashtags: [], confidence: 0.2 }) });
+    expect(res.source).toBe("fallback");
+  });
+
+  it("lit le modèle de vision et l'en-tête de passerelle dans la configuration", () => {
+    const cfg = loadAIConfig({ AI_PROVIDER: "ollama", OLLAMA_VISION_MODEL: "llama3.2-vision", OLLAMA_AUTH_HEADER: "Bearer x" });
+    expect(cfg.OLLAMA_VISION_MODEL).toBe("llama3.2-vision");
+    expect(cfg.OLLAMA_AUTH_HEADER).toBe("Bearer x");
+    expect(loadAIConfig({}).OLLAMA_VISION_MODEL).toBeUndefined();
+  });
+});

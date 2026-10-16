@@ -10,6 +10,8 @@ export default async function radarRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>("/api/radar/searches/:id/run", async (req) => radar.runSearch(app.requireCtx(req), req.params.id));
   app.get("/api/radar/opportunities", async (req) => radar.listOpportunities(app.requireCtx(req), req.query as { searchId?: string; status?: string }));
   app.post<{ Params: { id: string } }>("/api/radar/opportunities/:id/status", async (req) => radar.setOpportunityStatus(app.requireCtx(req), req.params.id, (req.body as { status: Opportunity["status"] }).status));
+  app.post<{ Params: { id: string } }>("/api/radar/opportunities/:id/buy", async (req) => radar.quickBuy(app.requireCtx(req), req.params.id));
+  app.post("/api/purchases/auto-run", async (req) => radar.runAutoBuy(app.requireCtx(req)));
   app.get("/api/purchases", async (req) => radar.listPurchases(app.requireCtx(req)));
   app.post("/api/purchases", async (req, reply) => { reply.status(201); return radar.createPurchase(app.requireCtx(req), (req.body ?? {}) as { opportunityId?: string; maxPriceCents?: number; budgetCents?: number }); });
   app.post<{ Params: { id: string } }>("/api/purchases/:id/confirm", async (req) => radar.confirmPurchase(app.requireCtx(req), req.params.id));

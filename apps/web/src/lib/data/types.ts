@@ -1,9 +1,11 @@
 import type {
-  AiRequest, AiStatus, AuditLog, AutomationRule, AutomationRuleCreate, BulkItemAction, ConnectionCreate, ConnectionTestResult, Conversation, ConversationQuery, Customer, CustomerCreate, CustomerQuery, CustomerUpdate, ExtensionToken, InventoryEvent, InventoryItem, InventoryItemCreate, InventoryItemUpdate, InventoryQuery, Job, JobQuery, MarketplaceConnection, Membership, Message, Opportunity, Order, OrderCreate, OrderQuery, OrderStatus, Organization, OrgSettings, Page, Plan, PurchaseRequest, RadarSearch, RadarSearchCreate, Role, Shipment, Subscription, UsageEvent, User,
+  AiRequest, AiStatus, AuditLog, ListingDraft, ListingGenerationInput, AutomationRule, AutomationRuleCreate, BulkItemAction, ConnectionCreate, ConnectionTestResult, Conversation, ConversationQuery, Customer, CustomerCreate, CustomerQuery, CustomerUpdate, ExtensionToken, InventoryEvent, InventoryItem, InventoryItemCreate, InventoryItemUpdate, InventoryQuery, Job, JobQuery, MarketplaceConnection, Membership, Message, Opportunity, Order, OrderCreate, OrderQuery, OrderStatus, Organization, OrgSettings, Page, Plan, PurchaseRequest, RadarSearch, RadarSearchCreate, Role, Shipment, Subscription, UsageEvent, User,
 } from "@selio/contracts";
 import type { ConnectorDescriptor } from "@selio/connectors";
 import type { ReplySuggestion } from "@selio/contracts";
-import type { BreakdownRow, NegotiationResult, PeriodPreset, SalesKpis, SeriesPoint, StockKpis } from "@selio/domain";
+import type { BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
+
+export type VariantLeaderboardRow = ReturnType<typeof variantLeaderboard>[number];
 
 export type Mode = "demo" | "connected";
 
@@ -26,6 +28,12 @@ export interface OverviewData {
   recentOrders: Order[];
   recentConversations: Conversation[];
   staleItems: InventoryItem[];
+  /** Libellé humain de la période (« octobre 2026 » pour ce mois-ci). */
+  periodLabel: string;
+  /** Données des graphiques ajoutables. */
+  dashboard: DashboardData;
+  /** Rendement du dressing (note moyenne, annonces à republier). */
+  dressing: DressingSummary;
 }
 
 export interface AnalyticsData {
@@ -114,6 +122,42 @@ export interface AdminOverview {
   plans: { plan: Plan; quotas: Subscription["quotas"]; orgCount: number }[];
 }
 
+/** Dressing intelligent : annonces en ligne avec note, rendement et plan de republication. */
+export interface DressingListing {
+  item: InventoryItem;
+  performance: ListingPerformance;
+  plan: RepublicationPlan;
+}
+export interface DressingQuery {
+  /** due = à republier ; 7/14/30 = en ligne depuis au moins N jours ; weak = note < 60. */
+  filter?: "all" | "due" | "7" | "14" | "30" | "weak";
+  sort?: "online_desc" | "score_asc" | "score_desc" | "views_desc" | "favorites_desc";
+  q?: string;
+  connectionId?: string;
+}
+export interface DressingData {
+  listings: DressingListing[];
+  summary: DressingSummary;
+  leaderboard: VariantLeaderboardRow[];
+  republishAfterDays: number;
+}
+export interface MarketQuery {
+  windowDays?: number;
+  category?: string;
+}
+export interface MarketData extends MarketInsights {
+  /** demo_simulator : marché fictif ; observations : annonces observées par le radar et l'extension. */
+  source: "demo_simulator" | "observations";
+  observedCount: number;
+  generatedAt: string;
+}
+export interface AutoBuyRunResult {
+  evaluated: number;
+  bought: number;
+  spentCents: number;
+  skipped: { reason: string; count: number }[];
+}
+
 export interface DataClient {
   readonly mode: Mode;
   // Session
@@ -188,9 +232,19 @@ export interface DataClient {
   createSearch(input: RadarSearchCreate): Promise<RadarSearch>;
   updateSearch(id: string, input: Partial<RadarSearchCreate>): Promise<RadarSearch>;
   deleteSearch(id: string): Promise<void>;
-  runSearch(id: string): Promise<{ found: number }>;
+  runSearch(id: string): Promise<{ found: number; autoBought?: number }>;
   listOpportunities(query: { searchId?: string; status?: Opportunity["status"] }): Promise<Opportunity[]>;
   setOpportunityStatus(id: string, status: Opportunity["status"]): Promise<Opportunity>;
+  // Bonnes affaires : validation en un clic et achat automatique
+  quickBuy(opportunityId: string): Promise<PurchaseRequest>;
+  runAutoBuy(): Promise<AutoBuyRunResult>;
+  // Générateur d'annonces (IA)
+  generateListing(input: ListingGenerationInput): Promise<ListingDraft>;
+  // Dressing intelligent
+  getDressing(query: DressingQuery): Promise<DressingData>;
+  republishItem(id: string, variantId: string): Promise<InventoryItem>;
+  // Analyse des revendeurs et des niches
+  getMarketInsights(query: MarketQuery): Promise<MarketData>;
   // Achat assisté
   listPurchaseRequests(): Promise<(PurchaseRequest & { opportunity: Opportunity | null })[]>;
   createPurchaseRequest(input: { opportunityId: string; maxPriceCents: number; budgetCents: number }): Promise<PurchaseRequest>;

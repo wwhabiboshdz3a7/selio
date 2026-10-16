@@ -23,6 +23,7 @@ import aiRoutes from "./routes/ai";
 import billingRoutes from "./routes/billing";
 import miscRoutes from "./routes/misc";
 import extRoutes from "./routes/ext";
+import studioRoutes from "./routes/studio";
 import { createQueues, type QueueHandle } from "./queue";
 
 export const API_VERSION = "0.1.0";
@@ -79,6 +80,7 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(billingRoutes, { config: billingConfig });
   await app.register(miscRoutes, { queues: queues.stats, redisPing: queues.ping, version: API_VERSION });
   await app.register(extRoutes);
+  await app.register(studioRoutes);
 
   app.addHook("onClose", async () => {
     await queues.close();

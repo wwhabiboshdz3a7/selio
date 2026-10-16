@@ -164,8 +164,14 @@ export function breakdownBy(orders: Iterable<Order>, keyFn: (o: Order) => string
     .sort((a, b) => b.revenueCents - a.revenueCents);
 }
 
-export type PeriodPreset = "7d" | "30d" | "90d" | "12m" | "ytd" | "all";
+export type PeriodPreset = "7d" | "30d" | "month" | "last_month" | "90d" | "12m" | "ytd" | "all";
 
+export const PERIOD_PRESETS: readonly PeriodPreset[] = ["7d", "30d", "month", "last_month", "90d", "12m", "ytd", "all"];
+
+/**
+ * Périodes glissantes (7 j, 30 j…) ou calendaires (« ce mois-ci » du 1er à
+ * aujourd'hui, « mois dernier » complet). Bornes en UTC : `to` exclusif.
+ */
 export function periodFromPreset(preset: PeriodPreset, now: Date): Period {
   const to = new Date(now);
   to.setUTCHours(23, 59, 59, 999);
@@ -174,6 +180,12 @@ export function periodFromPreset(preset: PeriodPreset, now: Date): Period {
   switch (preset) {
     case "7d": from.setUTCDate(from.getUTCDate() - 6); break;
     case "30d": from.setUTCDate(from.getUTCDate() - 29); break;
+    case "month": from.setUTCDate(1); break;
+    case "last_month": {
+      const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+      const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      return { from: start, to: end };
+    }
     case "90d": from.setUTCDate(from.getUTCDate() - 89); break;
     case "12m": from.setUTCMonth(from.getUTCMonth() - 12); from.setUTCDate(1); break;
     case "ytd": from.setUTCMonth(0, 1); break;
@@ -182,7 +194,37 @@ export function periodFromPreset(preset: PeriodPreset, now: Date): Period {
   return { from, to };
 }
 
-export function previousPeriod(period: Period): Period {
+/** Granularité naturelle d'une période pour les séries temporelles. */
+export function granularityFor(preset: PeriodPreset): "day" | "week" | "month" {
+  return preset === "7d" || preset === "30d" || preset === "month" || preset === "last_month" ? "day" : preset === "90d" ? "week" : "month";
+}
+
+/** Libellé humain d'une période (« octobre 2026 » pour ce mois-ci). */
+export function periodLabel(preset: PeriodPreset, now: Date): string {
+  const month = (d: Date) => d.toLocaleDateString("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" });
+  switch (preset) {
+    case "7d": return "7 derniers jours";
+    case "30d": return "30 derniers jours";
+    case "month": return month(now);
+    case "last_month": return month(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)));
+    case "90d": return "90 derniers jours";
+    case "12m": return "12 derniers mois";
+    case "ytd": return `année ${now.getUTCFullYear()}`;
+    case "all": return "depuis le début";
+  }
+}
+
+/**
+ * Période de comparaison. Pour un mois calendaire (« ce mois-ci », « mois
+ * dernier »), on compare au mois précédent sur le même nombre de jours ;
+ * sinon à la période de même durée qui précède.
+ */
+export function previousPeriod(period: Period, preset?: PeriodPreset): Period {
+  if (preset === "month" || preset === "last_month") {
+    const prevFrom = new Date(Date.UTC(period.from.getUTCFullYear(), period.from.getUTCMonth() - 1, 1));
+    const length = period.to.getTime() - period.from.getTime();
+    return { from: prevFrom, to: new Date(Math.min(prevFrom.getTime() + length, period.from.getTime())) };
+  }
   const length = period.to.getTime() - period.from.getTime();
   return { from: new Date(period.from.getTime() - length), to: new Date(period.from.getTime()) };
 }
