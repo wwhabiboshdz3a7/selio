@@ -1,0 +1,2 @@
+# Application monopage : toute URL sans fichier correspondant renvoie index.html.
+/*    /index.html   200

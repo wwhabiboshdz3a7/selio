@@ -16,8 +16,9 @@ navigateur ──HTTPS──▶ API Selio (Linux) ──réseau privé / passere
 1. Installer Ollama (Linux) : `curl -fsSL https://ollama.com/install.sh | sh` ; vérifier `ollama --version`.
 2. Lier le service à l'interface privée uniquement : `OLLAMA_HOST=10.0.0.5:11434` (fichier `/etc/systemd/system/ollama.service.d/override.conf`, `Environment="OLLAMA_HOST=..."`), puis `systemctl daemon-reload && systemctl restart ollama`.
 3. Télécharger le modèle choisi : `ollama pull qwen2.5:7b-instruct` (valeur par défaut de `OLLAMA_MODEL`). Un modèle instruct 7–8 B quantifié en Q4 tient dans ~6 Go de VRAM ; sans GPU, prévoir une latence de plusieurs secondes par réponse (à mesurer).
-4. Régler la concurrence côté Ollama : `OLLAMA_NUM_PARALLEL=2`, `OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_KEEP_ALIVE=30m`.
-5. Pare-feu : n'autoriser `11434` que depuis l'adresse privée du serveur métier.
+4. Pour le générateur d'annonces (lecture des photos), ajouter un modèle de vision : `ollama pull qwen2.5vl:7b` (ou `llama3.2-vision`), valeur conseillée de `OLLAMA_VISION_MODEL`. Sans lui, le générateur rédige à partir des indications (marque, taille, notes) et l'affiche.
+5. Régler la concurrence côté Ollama : `OLLAMA_NUM_PARALLEL=2`, `OLLAMA_KEEP_ALIVE=30m`, et `OLLAMA_MAX_LOADED_MODELS=2` si la mémoire GPU permet de garder le modèle de texte et le modèle de vision chargés (sinon `1` : chaque changement de modèle ajoute quelques secondes).
+6. Pare-feu : n'autoriser `11434` que depuis l'adresse privée du serveur métier.
 
 ## Configuration côté Selio (API et worker)
 
@@ -25,10 +26,12 @@ navigateur ──HTTPS──▶ API Selio (Linux) ──réseau privé / passere
 AI_PROVIDER=ollama
 OLLAMA_BASE_URL=http://10.0.0.5:11434
 OLLAMA_MODEL=qwen2.5:7b-instruct
+OLLAMA_VISION_MODEL=qwen2.5vl:7b   # générateur d'annonces : lecture des photos
+OLLAMA_AUTH_HEADER=          # facultatif : « Bearer … » si une passerelle protège Ollama
 AI_TIMEOUT_MS=45000          # délai maximal par génération
 AI_MAX_CONCURRENCY=2         # aligné sur OLLAMA_NUM_PARALLEL
 AI_CONTEXT_LIMIT=8192        # num_ctx
-AI_MAX_OUTPUT_TOKENS=400     # num_predict
+AI_MAX_OUTPUT_TOKENS=700     # num_predict (une annonce complète tient dans ~500 jetons)
 AI_QUEUE_MAX_PENDING=100     # au-delà : erreur « file saturée »
 AI_CIRCUIT_FAILURES=3        # pannes consécutives avant ouverture du disjoncteur
 AI_CIRCUIT_COOLDOWN_MS=60000

@@ -54,8 +54,8 @@ export default function Dressing() {
       <QueryBoundary query={q}>
         {(d) => (
           <div className="flex flex-col gap-6">
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[1.1fr_1fr_1fr_1fr_1.4fr]">
-              <Card className="flex items-center gap-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-[1.1fr_1fr_1fr_1fr_1.4fr]">
+              <Card className="col-span-2 flex items-center gap-4 xl:col-span-1">
                 <ScoreRing score={d.summary.averageScore} size={76} stroke={8} label="Note moyenne" />
                 <div>
                   <p className="text-sm text-text-muted">Note moyenne</p>
@@ -79,7 +79,7 @@ export default function Dressing() {
                 <p className="num mt-1 text-2xl font-semibold">{formatPercent(d.summary.favoriteRate)}</p>
                 <p className="num text-xs text-text-muted">{formatNumber(d.summary.totalFavorites)} favoris</p>
               </Card>
-              <Card className="sm:col-span-2 xl:col-span-1">
+              <Card className="xl:col-span-1">
                 <p className="mb-2 text-sm text-text-muted">Répartition des notes</p>
                 <StackedBar rows={[
                   { label: "Excellentes", value: d.summary.byBand.excellent, tone: "var(--tone-emerald)" },
