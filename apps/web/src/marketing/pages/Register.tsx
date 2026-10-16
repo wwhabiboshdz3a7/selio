@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { registerInput } from "@selio/contracts";
 import { Alert, Button, Field, Input, Segmented } from "@selio/ui";
 import { usePageMeta } from "../../lib/seo";
-import { Container } from "../components";
+import { Container, Eyebrow } from "../components";
 import { useData } from "../../lib/data/provider";
 import { connectedModeAvailable } from "../../lib/env";
 import { errorMessage } from "../../lib/errors";
@@ -39,9 +39,10 @@ export default function Register() {
     }
   };
   return (
-    <section className="py-12">
+    <section className="mk-hero py-12 md:py-16">
       <Container className="max-w-md">
-        <h1 className="text-xl font-semibold text-text">Créer un compte</h1>
+        <Eyebrow>Espace Selio</Eyebrow>
+        <h1 className="mt-3 text-2xl font-semibold tracking-[-0.025em] text-text">Créer un compte</h1>
         <p className="mt-1 text-sm text-text-muted">Un compte, une organisation. Vous pourrez inviter des collègues ensuite.</p>
         <div className="mt-4">
           <Segmented ariaLabel="Mode" value={mode} onChange={(m: Mode) => setMode(m)} items={[{ value: "demo", label: "Démonstration" }, { value: "connected", label: "Compte connecté" }]} />

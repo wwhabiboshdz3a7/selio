@@ -19,17 +19,17 @@ export default function Faq() {
   usePageMeta("FAQ", "Questions fréquentes sur Selio : indépendance vis-à-vis de Vinted, extension, automatisations, IA, calcul de marge, données et démonstration.");
   return (
     <>
-      <MarketingSection level={1} eyebrow="FAQ" title="Questions fréquentes">
+      <MarketingSection level={1} reveal eyebrow="FAQ" title="Questions fréquentes" lead="Indépendance vis-à-vis de Vinted, extension, IA, calcul de marge, données : les réponses courtes, sans promesse que l'application ne tient pas.">
         <dl className="grid gap-3 md:grid-cols-2">
           {FAQ.map((f) => (
-            <div key={f.q} className="card p-5">
+            <div key={f.q} className="card mk-card p-5 md:p-6" data-reveal="">
               <dt className="text-md font-semibold text-text">{f.q}</dt>
               <dd className="mt-2 text-sm text-text-muted">{f.a}</dd>
             </div>
           ))}
         </dl>
       </MarketingSection>
-      <CtaBand title="Une question précise ?" lead="Écrivez-nous depuis la page Contact ou explorez la démonstration pour vérifier par vous-même." />
+      <CtaBand seed={29} title="Une question précise ?" lead="Écrivez-nous depuis la page Contact ou explorez la démonstration pour vérifier par vous-même." />
     </>
   );
 }
