@@ -81,9 +81,16 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
   const [open, setOpen] = useState(false);
   const { resolved, setPreference } = useTheme();
   const counts = useNavCounts();
-  useEffect(() => setOpen(false), [location.pathname]);
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname]);
   // Chaque page s'ouvre en haut (le menu, lui, reste visible : il suit le défilement).
-  useEffect(() => window.scrollTo({ top: 0 }), [location.pathname]);
+  // Corps en bloc obligatoire : depuis Chrome/Edge 149-150, scrollTo() renvoie une promesse ;
+  // renvoyée par l'effet, React la prenait pour sa fonction de nettoyage et l'appelait à la
+  // navigation suivante (« S is not a function » à chaque changement de page).
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [location.pathname]);
   const s = session.data!;
   const onboardingDone = s.org.settings.onboarding.dismissed || s.org.settings.onboarding.completedSteps.length >= 6;
   const autoBuyOn = s.org.settings.autoBuy.enabled;
@@ -173,7 +180,8 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
       {open ? (
         <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Menu">
           <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-[290px] max-w-[88vw] bg-surface-sidebar shadow-lg">{sidebar}</aside>
+          {/* Tout lien touché ferme le tiroir, y compris celui de la page courante (l'adresse ne change pas). */}
+          <aside className="absolute inset-y-0 left-0 w-[290px] max-w-[88vw] bg-surface-sidebar shadow-lg" onClick={(e) => { if ((e.target as Element).closest("a[href]")) setOpen(false); }}>{sidebar}</aside>
         </div>
       ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
