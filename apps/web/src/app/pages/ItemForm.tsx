@@ -6,6 +6,7 @@ import { ITEM_CATEGORIES, ITEM_CATEGORY_LABELS, ITEM_CONDITIONS, ITEM_CONDITION_
 import { PRICE_CHECK_LABELS, checkPrice, newId, projectedMargin, suggestFloorPrice } from "@selio/domain";
 import { Button, Card, Field, IconButton, Input, Money, PageHeader, Select, Textarea, formatPercent } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
+import { dateInputToIso } from "../../lib/dates";
 import { MoneyInput, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
 
@@ -126,7 +127,7 @@ export default function ItemForm() {
             <Field label="Prix affiché" error={errors.listedPriceCents}>{(p) => <MoneyInput id={p.id} invalid={p.invalid} value={form.listedPriceCents ?? null} onChange={(v) => setForm({ ...form, listedPriceCents: v })} />}</Field>
             <Field label="Prix plancher" error={errors.floorPriceCents} hint={<>Suggéré par vos règles : <button type="button" className="font-medium text-text underline underline-offset-2" onClick={() => setForm({ ...form, floorPriceCents: suggestedFloor })}><Money cents={suggestedFloor} /></button> (marge min. {formatPercent(rules.minMarginRate)} et <Money cents={rules.minMarginCents} />).</>}>{(p) => <MoneyInput id={p.id} invalid={p.invalid} aria-describedby={p.describedBy} value={form.floorPriceCents ?? null} onChange={(v) => setForm({ ...form, floorPriceCents: v })} />}</Field>
             <Field label="Statut">{(p) => <Select id={p.id} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as FormState["status"] })}>{ITEM_STATUSES.map((s) => <option key={s} value={s}>{ITEM_STATUS_LABELS[s]}</option>)}</Select>}</Field>
-            <Field label="Date d'achat">{(p) => <Input id={p.id} type="date" value={form.purchasedAt ? form.purchasedAt.slice(0, 10) : ""} onChange={(e) => setForm({ ...form, purchasedAt: e.target.value ? new Date(e.target.value + "T12:00:00Z").toISOString() : null })} />}</Field>
+            <Field label="Date d'achat">{(p) => <Input id={p.id} type="date" value={form.purchasedAt ? form.purchasedAt.slice(0, 10) : ""} onChange={(e) => { const iso = dateInputToIso(e.target.value); if (e.target.value && !iso) return; setForm({ ...form, purchasedAt: iso }); }} />}</Field>
           </div>
           <div className="mt-4 rounded-md bg-surface-muted p-3 text-sm">
             <p className="flex justify-between"><span className="text-text-muted">Coût d'acquisition</span><Money cents={(form.purchasePriceCents ?? 0) + (form.purchaseFeesCents ?? 0)} /></p>
