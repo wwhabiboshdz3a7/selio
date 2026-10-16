@@ -5,37 +5,35 @@ import { Button, Card, Tag, cn, formatCents, formatPercent, formatRelative } fro
 import { ScoreRing, scoreTone } from "../../components/charts";
 import { useRequiredSession } from "../../lib/data/provider";
 
+/** Bandes de note : neutre → améthyste (bonne) → or (très bonne, exceptionnelle). */
 const BAND_CLASS: Record<ScoreBand["key"], string> = {
-  weak: "bg-tone-rose-soft text-tone-rose",
-  fair: "bg-tone-amber-soft text-tone-amber",
-  good: "bg-tone-teal-soft text-tone-teal",
-  great: "bg-tone-emerald-soft text-tone-emerald",
-  exceptional: "bg-tone-emerald text-white",
+  weak: "bg-surface-muted text-text-muted",
+  fair: "bg-surface-muted text-text-muted",
+  good: "bg-accent-soft text-accent",
+  great: "bg-gold-soft text-gold-text",
+  exceptional: "bg-gold-soft text-gold-text ring-1 ring-gold/40",
 };
 
 export function BandBadge({ score, className }: { score: number; className?: string }) {
   const band = scoreBand(score);
-  return <span className={cn("inline-flex h-6 items-center rounded-full px-2.5 text-xs font-semibold whitespace-nowrap", BAND_CLASS[band.key], className)}>{band.label}</span>;
+  return <span className={cn("inline-flex h-6 items-center rounded-full px-2.5 text-xs font-medium whitespace-nowrap", BAND_CLASS[band.key], className)}>{band.label}</span>;
 }
 
 /** Grille de lecture de la note sur 100 (retours démo : expliquer à partir de quand une affaire est intéressante). */
 export function ScoreLegend({ threshold, compact = false, className }: { threshold?: number; compact?: boolean; className?: string }) {
   return (
-    <div className={cn("grid gap-2", compact ? "grid-cols-5" : "sm:grid-cols-5", className)}>
+    <ol className={cn("grid gap-x-3 gap-y-3", compact ? "grid-cols-5" : "sm:grid-cols-5", className)}>
       {SCORE_BANDS.map((b) => {
         const active = threshold !== undefined && threshold >= b.min && threshold <= b.max;
         return (
-          <div key={b.key} className={cn("rounded-lg border p-2.5", active ? "border-accent bg-accent-soft" : "border-border bg-surface")}>
-            <div className="flex items-center gap-2">
-              <span className="size-2.5 shrink-0 rounded-full" style={{ background: scoreTone(b.min === 0 ? 40 : b.min) }} aria-hidden />
-              <span className="num text-sm font-semibold text-text">{b.min} – {b.max}</span>
-            </div>
-            <p className="mt-1 text-sm font-medium text-text">{b.label}</p>
+          <li key={b.key} className={cn("min-w-0 border-l-2 pl-3 sm:border-t-2 sm:border-l-0 sm:pt-2.5 sm:pl-0", compact && "border-t-2 border-l-0 pt-2.5 pl-0")} style={{ borderColor: scoreTone(b.min === 0 ? 40 : b.min) }}>
+            <p className="num text-xs text-text-muted">{b.min} – {b.max}</p>
+            <p className={cn("mt-0.5 text-sm font-medium", active ? "text-accent" : "text-text")}>{b.label}</p>
             {!compact ? <p className="text-xs text-text-muted">{b.advice}{active ? " · votre seuil" : ""}</p> : null}
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ol>
   );
 }
 
@@ -58,24 +56,24 @@ export function DealMath({ opportunity, fees, className }: { opportunity: Pick<O
     </div>
   );
   return (
-    <div className={cn("grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.1fr)]", className)}>
-      <div className="rounded-lg border border-border bg-surface p-3">
-        <p className="mb-1.5 text-xs font-semibold tracking-wide text-text-muted uppercase">Achat (observé)</p>
+    <div className={cn("grid gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.1fr)]", className)}>
+      <div className="bg-surface p-3">
+        <p className="mb-1.5 text-xs font-medium tracking-wide text-text-muted uppercase">Achat (observé)</p>
         {row("Prix", formatCents(d.itemCents))}
         {row("+ Port", formatCents(d.shippingCents))}
         {row("+ Protection acheteurs", formatCents(d.protectionCents))}
         <div className="my-1.5 border-t border-dashed border-border" />
         {row("= Total à payer", formatCents(d.totalCents), true)}
       </div>
-      <div className="rounded-lg border border-dashed border-border-strong bg-surface p-3">
-        <p className="mb-1.5 text-xs font-semibold tracking-wide text-text-muted uppercase">Vente (estimée)</p>
+      <div className="bg-surface p-3">
+        <p className="mb-1.5 text-xs font-medium tracking-wide text-text-muted uppercase">Vente (estimée)</p>
         {row("Prix de revente", formatCents(d.resaleCents), true)}
         {row("− Frais vendeur", formatCents(d.sellerFeesCents))}
         <p className="mt-1.5 text-xs text-text-muted">Confiance {opportunity.estimate.confidence === "high" ? "élevée" : opportunity.estimate.confidence === "medium" ? "moyenne" : "faible"} · {opportunity.estimate.comparableCount} vente(s) comparable(s)</p>
       </div>
-      <div className={cn("rounded-lg p-3", d.profitCents > 0 ? "bg-tone-emerald-soft" : "bg-tone-rose-soft")}>
-        <p className="mb-1.5 text-xs font-semibold tracking-wide text-text-muted uppercase">Bénéfice</p>
-        <p className={cn("num text-xl font-semibold", d.profitCents > 0 ? "text-success" : "text-danger")}>{d.profitCents > 0 ? "+" : ""}{formatCents(d.profitCents)}</p>
+      <div className="bg-surface p-3">
+        <p className="mb-1.5 text-xs font-medium tracking-wide text-text-muted uppercase">Bénéfice</p>
+        <p className={cn("num text-xl font-semibold tracking-tight", d.profitCents > 0 ? "text-success" : "text-danger")}>{d.profitCents > 0 ? "+" : ""}{formatCents(d.profitCents)}</p>
         <p className="num mt-0.5 text-sm text-text">Marge {formatPercent(d.marginRate)} <span className="text-text-muted">du prix de vente</span></p>
         <p className="num text-sm text-text">Rentabilité {d.roi >= 0 ? "+" : ""}{formatPercent(d.roi)} <span className="text-text-muted">sur l'achat</span></p>
       </div>
@@ -91,7 +89,7 @@ export function ScoreBreakdown({ breakdown, reasons }: { breakdown: Opportunity[
       {breakdown.map((b, i) => (
         <li key={b.key} className="text-sm">
           <div className="flex items-baseline justify-between gap-2"><span className="text-text">{b.label}</span><span className="num text-xs text-text-muted">{b.points} / {b.max}</span></div>
-          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full" style={{ width: `${(b.points / b.max) * 100}%`, background: scoreTone((b.points / b.max) * 100) }} /></div>
+          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full bg-accent-vivid" style={{ width: `${(b.points / b.max) * 100}%` }} /></div>
           {reasons[i] ? <p className="mt-0.5 text-xs text-text-muted">{reasons[i]}</p> : null}
         </li>
       ))}
@@ -104,10 +102,10 @@ export function OpportunityCard({ o, canWrite, onBuy, buying, onStatus, compact 
   const session = useRequiredSession();
   const good = o.score >= REVIEW_THRESHOLD;
   return (
-    <Card className={cn("grid gap-4 md:grid-cols-[132px_minmax(0,1fr)]", good && o.status === "new" && "border-tone-teal")}>
+    <Card className="grid gap-4 md:grid-cols-[132px_minmax(0,1fr)]">
       <div className="relative">
         {o.observed.photoUrl ? <img src={o.observed.photoUrl} alt={o.title} className="aspect-square w-full rounded-lg object-cover md:w-[132px]" loading="lazy" /> : <div className="flex aspect-square w-full items-center justify-center rounded-lg bg-surface-muted text-text-subtle md:w-[132px]"><Images className="size-7" aria-hidden /></div>}
-        <span className="absolute -top-2 -left-2 rounded-full bg-surface p-0.5 shadow-md"><ScoreRing score={o.score} size={52} stroke={5} /></span>
+        <span className="absolute -top-2 -left-2 rounded-full bg-surface p-0.5 shadow-sm"><ScoreRing score={o.score} size={52} stroke={5} /></span>
         {o.observed.photoCount ? <span className="absolute right-1.5 bottom-1.5 inline-flex items-center gap-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[11px] text-white"><Images className="size-3" aria-hidden />{o.observed.photoCount}</span> : null}
       </div>
       <div className="min-w-0">
@@ -119,7 +117,7 @@ export function OpportunityCard({ o, canWrite, onBuy, buying, onStatus, compact 
         <p className="mt-0.5 text-sm text-text-muted">{[o.observed.brand, o.observed.size ? `taille ${o.observed.size}` : null, o.observed.condition ? ITEM_CONDITION_LABELS[o.observed.condition] : null].filter(Boolean).join(" · ")}</p>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-text-muted">
           {o.observed.sellerHandle ? <span>Vendeur @{o.observed.sellerHandle}</span> : null}
-          {o.observed.sellerRating !== null ? <span className="inline-flex items-center gap-0.5"><Star className="size-3 fill-current text-tone-amber" aria-hidden />{o.observed.sellerRating.toFixed(1).replace(".", ",")} ({o.observed.sellerReviews ?? 0} avis)</span> : null}
+          {o.observed.sellerRating !== null ? <span className="inline-flex items-center gap-0.5"><Star className="size-3 fill-current text-gold" aria-hidden />{o.observed.sellerRating.toFixed(1).replace(".", ",")} ({o.observed.sellerReviews ?? 0} avis)</span> : null}
           <span>· vue {formatRelative(o.observed.seenAt)}</span>
         </p>
         <DealMath opportunity={o} fees={session.org.settings.buyerFees} className="mt-3" />
