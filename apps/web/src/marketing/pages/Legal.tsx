@@ -1,7 +1,7 @@
 import { useLocation } from "react-router";
 import { Alert } from "@selio/ui";
 import { usePageMeta } from "../../lib/seo";
-import { Container } from "../components";
+import { Container, Eyebrow } from "../components";
 
 const PAGES: Record<string, { title: string; sections: { h: string; p: string[] }[] }> = {
   "/mentions-legales": {
@@ -38,9 +38,10 @@ export default function Legal() {
   const page = PAGES[pathname] ?? PAGES["/mentions-legales"]!;
   usePageMeta(page.title, `${page.title} de Selio (brouillon à compléter avant publication).`, { noindex: true });
   return (
-    <section className="py-12">
+    <section className="mk-hero py-12 md:py-16">
       <Container className="max-w-3xl">
-        <h1 className="text-xl font-semibold text-text">{page.title}</h1>
+        <Eyebrow>Informations légales</Eyebrow>
+        <h1 className="mt-3 text-2xl font-semibold tracking-[-0.025em] text-text">{page.title}</h1>
         <Alert tone="warning" title="Brouillon" className="mt-4">Ce texte est un brouillon structurel. Il doit être complété et validé par un conseil juridique avant publication. Les passages entre crochets sont à renseigner.</Alert>
         <div className="prose-selio mt-6 text-base text-text">
           {page.sections.map((s) => (
