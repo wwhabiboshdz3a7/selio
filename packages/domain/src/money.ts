@@ -34,10 +34,17 @@ export function sumCents(values: Iterable<Cents>): Cents {
   return total;
 }
 
-/** « 12,50 » / « 12.5 » / « 1 286,00 € » → 128600. Retourne null si illisible. */
+/**
+ * « 12,50 » / « 12.5 » / « 1 286,00 € » → 128600. Retourne null si illisible ou démesuré : au-delà
+ * de Number.MAX_SAFE_INTEGER centimes, les calculs ne sont plus exacts, et un nombre de 309 chiffres
+ * ou plus devenait `Infinity`, que `assertCents` refusait ensuite en plein rendu (écran d'erreur).
+ */
 export function parseEuroInput(input: string | number | null | undefined): Cents | null {
   if (input === null || input === undefined) return null;
-  if (typeof input === "number") return Number.isFinite(input) ? roundHalfAway(input * 100) : null;
+  if (typeof input === "number") {
+    const cents = roundHalfAway(input * 100);
+    return Number.isSafeInteger(cents) ? cents : null;
+  }
   const cleaned = input
     .replace(/[€\s  ]/g, "")
     .replace(/,/g, ".")
@@ -49,6 +56,7 @@ export function parseEuroInput(input: string | number | null | undefined): Cents
   const whole = Math.abs(Number.parseInt(intPart!, 10));
   const dec = Number.parseInt((decPart + "00").slice(0, 2), 10);
   const cents = whole * 100 + dec;
+  if (!Number.isSafeInteger(cents)) return null;
   return negative ? -cents : cents;
 }
 
