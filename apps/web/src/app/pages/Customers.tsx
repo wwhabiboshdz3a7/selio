@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Users } from "lucide-react";
 import type { CustomerQuery } from "@selio/contracts";
 import { Avatar, Button, Dialog, EmptyState, Field, Input, Money, PageHeader, Pagination, Select, Table, TableEmpty, TableWrap, Td, Th, Tr, Tag, formatRelative } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
@@ -21,7 +21,7 @@ export default function Customers() {
   const create = useAppMutation(() => client.createCustomer({ displayName: form.displayName, handle: form.handle || null, city: form.city || null, notes: form.notes, provider: "demo" }), { invalidate: ["customers"], success: "Client créé", onSuccess: (c) => { setOpen(false); navigate(`/app/customers/${c.id}`); } });
   return (
     <>
-      <PageHeader title="Clients" description="Fiches minimales : pseudo, ville facultative, notes et tags. Aucune donnée superflue." actions={session.role !== "viewer" ? <Button icon={<Plus />} onClick={() => setOpen(true)}>Nouveau client</Button> : undefined} />
+      <PageHeader icon={<Users />} tone="sky" title="Clients" description="Fiches minimales : pseudo, ville facultative, notes et tags. Aucune donnée superflue." actions={session.role !== "viewer" ? <Button icon={<Plus />} onClick={() => setOpen(true)}>Nouveau client</Button> : undefined} />
       <div className="mb-4 grid gap-2 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Input placeholder="Rechercher nom, pseudo, ville…" prefix={<Search />} value={query.q ?? ""} onChange={(e) => set("q", e.target.value)} aria-label="Recherche" />
         <Select value={query.sort} onChange={(e) => set("sort", e.target.value)} aria-label="Tri"><option value="last_contact_desc">Dernier contact</option><option value="name_asc">Nom A→Z</option><option value="orders_desc">Commandes</option></Select>

@@ -147,6 +147,7 @@ export default function Dressing() {
                     <li>Copiez la variante conseillée et remettez l'annonce en ligne.</li>
                     <li>Cliquez « J'ai republié » : la variante est marquée utilisée, son rendement est suivi.</li>
                   </ol>
+                  <RepublishDelay current={d.republishAfterDays} />
                   {mode === "demo" ? <p className="mt-3 text-xs text-text-muted">Démonstration : les statistiques des annonces sont simulées. En mode connecté, l'extension Selio relève vues et favoris sur Vinted.</p> : null}
                 </Card>
               </aside>
@@ -298,5 +299,20 @@ function InsightDialog({ listing, onClose, onRepublish }: { listing: DressingLis
         </ul>
       )}
     </Dialog>
+  );
+}
+
+function RepublishDelay({ current }: { current: number }) {
+  const client = useClient();
+  const session = useRequiredSession();
+  const save = useAppMutation((days: number) => client.updateOrg({ settings: { dressing: { republishAfterDays: days } } }), { invalidate: ["session", "dressing", "nav-counts", "overview"], success: (o) => `Republication conseillée après ${o.settings.dressing.republishAfterDays} jours` });
+  const canEdit = session.role === "owner" || session.role === "admin";
+  return (
+    <label className="mt-3 flex items-center justify-between gap-2 text-sm">
+      <span className="text-text-muted">Republier après</span>
+      <Select value={String(current)} onChange={(e) => save.mutate(Number(e.target.value))} disabled={!canEdit || save.isPending} className="w-auto" aria-label="Republier après">
+        {[5, 7, 10, 14, 21, 30].map((n) => <option key={n} value={n}>{n} jours</option>)}
+      </Select>
+    </label>
   );
 }

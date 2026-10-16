@@ -1,12 +1,12 @@
 import { Link } from "react-router";
-import { ArrowRight, Boxes, MessageSquare, Package, Radar, ShoppingBag, TrendingUp, Workflow } from "lucide-react";
+import { ArrowRight, Boxes, MessageSquare, Package, Radar, Shirt, ShoppingBag, Sparkles, TrendingUp, Workflow } from "lucide-react";
 import { Button } from "@selio/ui";
 import { usePageMeta } from "../../lib/seo";
 import { CheckList, Container, CtaBand, Display, Eyebrow, FeatureCard, Lead, MarketingSection, PlannedList, ProductPreview } from "../components";
 
 const JOURNEY = [
-  { icon: <ShoppingBag />, title: "Achat", text: "Repérez une pièce avec le Radar, fixez un budget et une marge cible avant d'acheter." },
-  { icon: <Boxes />, title: "Stock", text: "Enregistrez prix d'achat, frais et prix plancher. Le plancher protège votre marge à chaque négociation." },
+  { icon: <ShoppingBag />, title: "Achat", text: "Le radar note chaque affaire sur 100 : vous validez en un clic, ou l'achat auto s'en charge au-dessus de votre seuil." },
+  { icon: <Sparkles />, title: "Annonce", text: "Ajoutez vos photos : l'IA rédige l'annonce, le prix conseillé vient des ventes comparables. Le plancher protège votre marge." },
   { icon: <MessageSquare />, title: "Conversation", text: "Chaque message est rattaché au client et à l'article. L'assistant propose une réponse, vous validez." },
   { icon: <Package />, title: "Commande", text: "La vente crée une commande sans doublon, suit l'expédition et fige le coût d'acquisition." },
   { icon: <TrendingUp />, title: "Marge", text: "CA, marge brute, panier moyen et rotation calculés depuis vos données réelles, avec les formules affichées." },
@@ -49,11 +49,14 @@ export default function Home() {
 
       <MarketingSection eyebrow="Ce que vous obtenez" title="Un outil de travail, pas un tableau de bord décoratif" className="border-t border-border bg-surface">
         <div className="grid gap-4 md:grid-cols-3">
+          <FeatureCard icon={<Sparkles />} title="Générateur d'annonces" availability="demo">Vos photos, et l'IA rédige l'annonce : titre, description, marque, taille, état, couleurs. Brouillon ou publication directe sur le compte choisi.</FeatureCard>
+          <FeatureCard icon={<Shirt />} title="Dressing intelligent" availability="demo">Chaque annonce notée sur 100, ce qui peut être amélioré, et 10 republications pré-faites pour les annonces en ligne depuis 7 jours ou plus.</FeatureCard>
+          <FeatureCard icon={<TrendingUp />} title="Analyse des revendeurs" availability="demo">Les plus grands revendeurs, leurs niches, leurs prix et leur rotation. Les niches à forte demande et peu concurrencées ressortent d'elles-mêmes.</FeatureCard>
           <FeatureCard icon={<Boxes />} title="Stock et prix plancher" availability="available">Création, import CSV avec prévisualisation des erreurs, actions en lot, historique de modification. Le plancher est calculé depuis vos règles de marge.</FeatureCard>
           <FeatureCard icon={<MessageSquare />} title="Messagerie et négociation" availability="demo">Brouillons, suggestions de réponse, explication de chaque acceptation ou refus. Validation avant envoi par défaut, statut réel du message.</FeatureCard>
           <FeatureCard icon={<Workflow />} title="Automatisations contrôlées" availability="demo">Règles avec horaires, limites par jour et par acheteur, file de tâches visible, pause par règle et arrêt global.</FeatureCard>
           <FeatureCard icon={<TrendingUp />} title="Analyses avec formules" availability="available">CA, marge brute, panier moyen, rotation du stock. Les conventions de calcul sont affichées, l'export CSV aussi.</FeatureCard>
-          <FeatureCard icon={<Radar />} title="Radar d'opportunités" availability="demo">Recherches enregistrées, opportunités classées avec justification, séparation claire entre ce qui est observé et ce qui est estimé.</FeatureCard>
+          <FeatureCard icon={<Radar />} title="Bonnes affaires et achat auto" availability="demo">Le radar note chaque article sur 100 avec une grille expliquée. Total achat, revente, bénéfice et marge calculés ; achat auto au-dessus de votre seuil, avec plafond et délai d'annulation.</FeatureCard>
           <FeatureCard icon={<Package />} title="Extension navigateur" availability="experimental">Capture d'un article visible vers le stock et aide à la rédaction depuis une conversation ouverte. Adaptateurs à valider sur le site réel.</FeatureCard>
         </div>
       </MarketingSection>
@@ -69,7 +72,7 @@ export default function Home() {
           <div className="card p-5">
             <h3 className="text-md font-semibold text-text">En préparation ou à valider</h3>
             <div className="mt-4">
-              <PlannedList items={["Lecture et envoi via l'extension sur le site Vinted : construit sur des fixtures, à valider dans un navigateur réel", "Assistant IA sur mon modèle perso, hébergé sur un serveur dédié : intégration prête, matériel à raccorder", "Achat assisté réel : désactivé par défaut, simulation de bout en bout disponible", "Abonnements : adaptateur de paiement en mode test uniquement", "Vinted ne propose pas d'API publique pour les vendeurs : Selio ne promet aucune compatibilité officielle"]} />
+              <PlannedList items={["Lecture et envoi via l'extension sur le site Vinted : construit sur des fixtures, à valider dans un navigateur réel", "Assistant IA sur mon modèle perso, hébergé sur un serveur dédié : intégration prête, matériel à raccorder", "Achat réel (à valider et achat auto) : désactivé, simulation de bout en bout disponible", "Abonnements : adaptateur de paiement en mode test uniquement", "Vinted ne propose pas d'API publique pour les vendeurs : Selio ne promet aucune compatibilité officielle"]} />
             </div>
           </div>
         </div>

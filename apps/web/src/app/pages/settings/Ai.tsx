@@ -36,6 +36,16 @@ export default function Ai() {
         )}
       </QueryBoundary>
       <Card>
+        <h2 className="text-md font-semibold">Générateur d'annonces : brancher votre modèle</h2>
+        <p className="mt-1 text-sm text-text-muted">Le générateur envoie les photos au serveur Selio, qui les transmet à votre modèle IA. Pour qu'il « voie » vraiment les photos, il faut un modèle multimodal (vision) en plus du modèle de texte.</p>
+        <ol className="mt-3 flex list-decimal flex-col gap-1.5 pl-5 text-sm text-text-muted">
+          <li>Sur le serveur IA : <code className="rounded bg-surface-muted px-1 text-text">ollama pull qwen2.5:7b-instruct</code> (texte) et <code className="rounded bg-surface-muted px-1 text-text">ollama pull qwen2.5vl:7b</code> (vision).</li>
+          <li>Côté API et worker : <code className="rounded bg-surface-muted px-1 text-text">AI_PROVIDER=ollama</code>, <code className="rounded bg-surface-muted px-1 text-text">OLLAMA_BASE_URL</code>, <code className="rounded bg-surface-muted px-1 text-text">OLLAMA_MODEL</code>, <code className="rounded bg-surface-muted px-1 text-text">OLLAMA_VISION_MODEL</code>.</li>
+          <li>Vérifier : <code className="rounded bg-surface-muted px-1 text-text">pnpm ai:diagnose</code> puis ce statut doit passer à « Opérationnel ».</li>
+        </ol>
+        <p className="mt-3 text-xs text-text-muted">Sans modèle de vision, le générateur fonctionne quand même à partir des indications (marque, taille, notes) et le signale. Le prix conseillé n'est jamais fixé par l'IA : il vient des ventes comparables.</p>
+      </Card>
+      <Card>
         <h2 className="text-md font-semibold">Règles de l'assistant</h2>
         <div className="mt-4 flex max-w-xl flex-col gap-4">
           <Toggle label="Assistant activé" description="Désactivé : aucune suggestion, les gabarits restent disponibles." checked={ai.enabled} onChange={(v) => setAi({ ...ai, enabled: v })} disabled={!editable} />

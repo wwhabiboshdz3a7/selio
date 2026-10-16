@@ -7,7 +7,7 @@ test.describe("parcours de référence en démonstration", () => {
     await openDemo(page);
 
     await test.step("vue d'ensemble calculée", async () => {
-      await expect(page.getByRole("heading", { name: "Vue d'ensemble" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: /Bonjour/ })).toBeVisible();
       await expect(page.getByText("Chiffre d'affaires").first()).toBeVisible();
       await expect(page.getByText(/action\(s\) automatique\(s\) à valider/)).toBeVisible();
     });
@@ -42,7 +42,7 @@ test.describe("parcours de référence en démonstration", () => {
       await gotoApp(page, "/app/messages/conv-001");
       await expect(page.getByText("Offre détectée")).toBeVisible();
       await expect(page.getByText(/Contre-proposition recommandée|Offre acceptable|Offre à refuser/)).toBeVisible();
-      await expect(page.getByText(/plancher/).first()).toBeVisible();
+      await expect(page.getByText(/plancher/).filter({ visible: true }).first()).toBeVisible();
     });
 
     await test.step("suggestion IA validée, modification et envoi simulé", async () => {
@@ -100,25 +100,25 @@ test.describe("parcours de référence en démonstration", () => {
       await expect(page.getByText(/Tâche exécutée|Tâche en échec/)).toBeVisible();
     });
 
-    await test.step("radar : analyse, opportunité classée et justifiée", async () => {
+    await test.step("bonnes affaires : analyse, note expliquée, total d'achat calculé", async () => {
       await gotoApp(page, "/app/radar");
+      await expect(page.getByText("Comment lire la note")).toBeVisible();
       await page.getByRole("button", { name: "Analyser" }).first().click();
-      await expect(page.getByText(/nouvelle\(s\) opportunité\(s\)/)).toBeVisible();
-      await expect(page.getByText("Observé").first()).toBeVisible();
-      await expect(page.getByText("Estimé").first()).toBeVisible();
-      await page.getByText("Pourquoi ce score").first().click();
+      await expect(page.getByText(/nouvelle\(s\) affaire\(s\) notée\(s\)/)).toBeVisible();
+      await page.getByRole("radio", { name: "Toutes", exact: true }).click();
+      await expect(page.getByText("Achat (observé)").first()).toBeVisible();
+      await expect(page.getByText("= Total à payer").first()).toBeVisible();
+      await expect(page.getByText("Vente (estimée)").first()).toBeVisible();
+      await page.getByText(/Pourquoi \d+\/100/).first().click();
       await expect(page.getByText(/Marge estimée/).first()).toBeVisible();
     });
 
-    await test.step("achat assisté : simulation de bout en bout, jamais réel", async () => {
-      await page.getByRole("button", { name: "Préparer l'achat" }).first().click();
-      await expect(page.getByText("Demande d'achat créée")).toBeVisible();
+    await test.step("à valider : achat en un clic, simulé, jamais réel", async () => {
       await gotoApp(page, "/app/purchase");
       await expect(page.getByText("Achat réel désactivé")).toBeVisible();
-      await page.getByRole("button", { name: "Confirmer (simulation)" }).first().click();
-      await page.getByRole("dialog").locator("input").fill("SIMULER");
-      await page.getByRole("dialog").getByRole("button", { name: "Je confirme (simulation)" }).click();
-      await expect(page.getByText(/Achat simulé de bout en bout|bloqué/)).toBeVisible();
+      await page.getByRole("button", { name: "Valider l'achat" }).first().click();
+      await expect(page.getByText(/Achat validé \(simulé\)|bloqué/).first()).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Historique des achats" })).toBeVisible();
     });
 
     await test.step("CRM : historique du client avec message et commande", async () => {
