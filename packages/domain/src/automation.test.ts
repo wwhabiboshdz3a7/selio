@@ -34,5 +34,6 @@ describe("automatisations", () => {
   it("rend un gabarit en texte brut", () => {
     expect(renderTemplate("Bonjour {{ prenom }}, {{ article }} est dispo", { prenom: "Léa", article: "la veste" })).toBe("Bonjour Léa, la veste est dispo");
     expect(renderTemplate("{{inconnu}}", {})).toBe("");
+    expect(renderTemplate("{{constructor}}{{__proto__}}{{toString}}", { prenom: "Léa" })).toBe("");
   });
 });
