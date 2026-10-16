@@ -19,6 +19,18 @@ describe("csv", () => {
     expect(p.validCount).toBe(1);
     expect(p.errorCount).toBe(3);
   });
+  it("ignore les noms de propriétés d'Object.prototype dans les catégories, états et statuts", () => {
+    // « constructor » / « __proto__ » renvoyaient une fonction / un objet, rendus dans l'aperçu (écran d'erreur).
+    const csv = ["Titre;Catégorie;État;Statut", "A;constructor;constructor;en stock", "B;__proto__;__proto__;__proto__", "C;femme;bon état;constructor"].join("\n");
+    const p = previewInventoryImport(csv);
+    expect(p.rows[0]!.item?.category).toBe("other");
+    expect(p.rows[0]!.item?.condition).toBe("good");
+    expect(p.rows[0]!.warnings).toHaveLength(2);
+    expect(p.rows[1]!.item).toBeNull();
+    expect(p.rows[1]!.errors[0]).toMatch(/Statut inconnu/);
+    expect(p.rows[2]!.errors[0]).toMatch(/Statut inconnu/);
+    for (const r of p.rows) if (r.item) for (const v of [r.item.category, r.item.condition, r.item.status]) expect(typeof v).toBe("string");
+  });
   it("refuse un fichier sans colonne titre", () => {
     const p = previewInventoryImport("a;b\n1;2");
     expect(p.errorCount).toBe(1);
