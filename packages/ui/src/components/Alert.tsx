@@ -27,7 +27,7 @@ export function Alert({
   return (
     <div
       role={tone === "danger" || tone === "warning" ? "alert" : "status"}
-      className={cn("card flex items-start gap-3 p-3 md:p-4", tone === "danger" && "border-danger", className)}
+      className={cn("flex items-start gap-3 rounded-lg border bg-surface px-4 py-3", tone === "danger" ? "border-danger/35" : "border-border", className)}
     >
       <span className="mt-0.5 shrink-0">{icons[tone]}</span>
       <div className="min-w-0 flex-1 text-sm">
@@ -39,19 +39,20 @@ export function Alert({
   );
 }
 
-/** Bandeau pleine largeur (ex. « Démonstration — données fictives »). */
+/** Bandeau pleine largeur, discret (ex. « Démonstration — données fictives »). */
 export function Banner({ children, tone = "accent", className }: { children: ReactNode; tone?: "accent" | "neutral" | "danger"; className?: string }) {
   return (
     <div
       role="status"
       className={cn(
-        "flex min-h-8 items-center justify-center gap-2 px-4 py-1.5 text-center text-xs font-medium",
-        tone === "accent" && "bg-accent-soft text-accent",
-        tone === "neutral" && "bg-surface-muted text-text-muted",
-        tone === "danger" && "bg-surface-muted text-danger",
+        "flex min-h-8 items-center justify-center gap-2 border-b border-border px-4 py-1.5 text-center text-xs",
+        tone === "accent" && "text-text-muted",
+        tone === "neutral" && "text-text-muted",
+        tone === "danger" && "text-danger",
         className,
       )}
     >
+      {tone === "accent" ? <span className="size-1.5 shrink-0 rounded-full bg-accent-vivid" aria-hidden /> : null}
       {children}
     </div>
   );

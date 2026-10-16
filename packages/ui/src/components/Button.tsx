@@ -2,7 +2,7 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "../lib/cn";
 
-export type ButtonVariant = "primary" | "accent" | "secondary" | "ghost" | "danger";
+export type ButtonVariant = "primary" | "accent" | "brand" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md" | "lg";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -17,6 +17,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const variantClass: Record<ButtonVariant, string> = {
   primary: "bg-primary text-primary-on hover:bg-primary-hover border border-transparent",
   accent: "bg-accent text-accent-on hover:bg-accent-hover border border-transparent",
+  /** Générateur IA (« premium ») : améthyste profond en dégradé, icône or, identique en clair et en sombre. */
+  brand: "bg-brand text-white border border-transparent shadow-sm hover:brightness-110 [&>span>svg]:text-gold-300",
   secondary: "bg-surface text-text border border-border hover:bg-surface-muted",
   ghost: "bg-transparent text-text-muted hover:bg-surface-muted hover:text-text border border-transparent",
   danger: "bg-transparent text-danger hover:bg-surface-muted border border-transparent",

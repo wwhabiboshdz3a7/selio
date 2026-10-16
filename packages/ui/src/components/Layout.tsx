@@ -1,19 +1,8 @@
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
 
-/** Tons des fonctionnalités : repères visuels (tuiles d'icônes, graphiques), jamais pour du texte long. */
+/** Tons des graphiques (séries, répartitions). Jamais pour du texte long ni pour décorer une icône. */
 export type Tone = "braise" | "teal" | "indigo" | "amber" | "rose" | "emerald" | "sky" | "slate";
-
-export const TONE_TILE: Record<Tone, string> = {
-  braise: "bg-tone-braise-soft text-tone-braise",
-  teal: "bg-tone-teal-soft text-tone-teal",
-  indigo: "bg-tone-indigo-soft text-tone-indigo",
-  amber: "bg-tone-amber-soft text-tone-amber",
-  rose: "bg-tone-rose-soft text-tone-rose",
-  emerald: "bg-tone-emerald-soft text-tone-emerald",
-  sky: "bg-tone-sky-soft text-tone-sky",
-  slate: "bg-tone-slate-soft text-tone-slate",
-};
 
 export const TONE_VAR: Record<Tone, string> = {
   braise: "var(--tone-braise)",
@@ -26,28 +15,38 @@ export const TONE_VAR: Record<Tone, string> = {
   slate: "var(--tone-slate)",
 };
 
-/** Tuile d'icône colorée (identité visuelle de chaque fonctionnalité). */
-export function IconTile({ icon, tone = "slate", size = 40, className }: { icon: ReactNode; tone?: Tone; size?: number; className?: string }) {
+/**
+ * Tons des tuiles d'icône, volontairement réduits (charte v3) :
+ * neutre par défaut, améthyste pour la marque ou l'action principale,
+ * or pour ce qui distingue (notes, objectifs atteints, éléments premium).
+ */
+export type TileTone = "neutral" | "accent" | "gold";
+
+const TILE_CLASS: Record<TileTone, string> = {
+  neutral: "bg-surface-muted text-text-muted",
+  accent: "bg-accent-soft text-accent",
+  gold: "bg-gold-soft text-gold-text",
+};
+
+/** Tuile d'icône discrète. */
+export function IconTile({ icon, tone = "neutral", size = 40, className }: { icon: ReactNode; tone?: TileTone; size?: number; className?: string }) {
   return (
-    <span aria-hidden className={cn("inline-flex shrink-0 items-center justify-center rounded-lg", TONE_TILE[tone], className)} style={{ width: size, height: size }}>
-      <span className="inline-flex [&>svg]:size-[55%]" style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>{icon}</span>
+    <span aria-hidden className={cn("inline-flex shrink-0 items-center justify-center rounded-lg", TILE_CLASS[tone], className)} style={{ width: size, height: size }}>
+      <span className="inline-flex [&>svg]:size-[50%]" style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>{icon}</span>
     </span>
   );
 }
 
-/** En-tête de page : un seul titre par écran, tuile d'icône facultative, description, actions à droite. */
-export function PageHeader({ title, description, actions, eyebrow, className, icon, tone }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; eyebrow?: ReactNode; className?: string; icon?: ReactNode; tone?: Tone }) {
+/** En-tête de page : un seul titre par écran, description courte, actions à droite. Pas de tuile d'icône. */
+export function PageHeader({ title, description, actions, eyebrow, className }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; eyebrow?: ReactNode; className?: string }) {
   return (
-    <div className={cn("mb-6 flex flex-wrap items-start justify-between gap-3", className)}>
-      <div className="flex min-w-0 items-start gap-3.5">
-        {icon ? <IconTile icon={icon} tone={tone} size={44} className="mt-0.5 hidden sm:inline-flex" /> : null}
-        <div className="min-w-0">
-          {eyebrow ? <div className="mb-1 text-xs font-medium text-text-muted">{eyebrow}</div> : null}
-          <h1 className="text-xl font-semibold text-text">{title}</h1>
-          {description ? <p className="mt-1 max-w-3xl text-sm text-text-muted">{description}</p> : null}
-        </div>
+    <div className={cn("mb-8 flex flex-wrap items-start justify-between gap-x-8 gap-y-4", className)}>
+      <div className="min-w-0 flex-1 basis-96">
+        {eyebrow ? <div className="mb-1.5 text-xs font-medium tracking-wide text-text-subtle uppercase">{eyebrow}</div> : null}
+        <h1 className="text-xl font-semibold tracking-tight text-text">{title}</h1>
+        {description ? <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-text-muted">{description}</p> : null}
       </div>
-      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+      {actions ? <div className="flex flex-wrap items-center gap-2 sm:pt-0.5">{actions}</div> : null}
     </div>
   );
 }
@@ -83,8 +82,6 @@ export function DescriptionList({ items, className, columns = 1 }: { items: { la
   );
 }
 
-const AVATAR_TONES: Tone[] = ["braise", "teal", "indigo", "amber", "rose", "emerald", "sky"];
-
 export function Avatar({ name, size = 32, className, colored = false }: { name: string; size?: number; className?: string; colored?: boolean }) {
   const initials = name
     .split(/\s+/)
@@ -95,7 +92,7 @@ export function Avatar({ name, size = 32, className, colored = false }: { name: 
   return (
     <span
       aria-hidden
-      className={cn("inline-flex shrink-0 items-center justify-center rounded-full font-medium", colored ? TONE_TILE[AVATAR_TONES[[...name].reduce((h, c) => h + c.charCodeAt(0), 0) % AVATAR_TONES.length]!] : "bg-surface-muted text-text-muted", className)}
+      className={cn("inline-flex shrink-0 items-center justify-center rounded-full font-medium", colored ? "bg-accent-soft text-accent" : "bg-surface-muted text-text-muted", className)}
       style={{ width: size, height: size, fontSize: Math.max(10, Math.round(size * 0.38)) }}
     >
       {initials || "?"}
@@ -114,7 +111,7 @@ export function ProgressBar({ value, max = 100, label, className }: { value: num
       aria-label={label}
       className={cn("h-1.5 w-full overflow-hidden rounded-full bg-surface-muted", className)}
     >
-      <div className="h-full rounded-full bg-text transition-[width]" style={{ width: `${ratio * 100}%` }} />
+      <div className="h-full rounded-full bg-accent-vivid transition-[width]" style={{ width: `${ratio * 100}%` }} />
     </div>
   );
 }

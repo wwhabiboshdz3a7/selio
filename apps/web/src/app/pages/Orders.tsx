@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Package, Plus, Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { ORDER_STATUSES, ORDER_STATUS_LABELS, type OrderQuery } from "@selio/contracts";
 import { orderMargin } from "@selio/domain";
 import { Button, Dialog, EmptyState, Field, Input, Money, PageHeader, Pagination, Select, Table, TableEmpty, TableWrap, Td, Th, Tr, Tag, formatDate, formatPercent } from "@selio/ui";
@@ -25,7 +25,7 @@ export default function Orders() {
   const selectedItem = items.data?.items.find((i) => i.id === form.itemId);
   return (
     <>
-      <PageHeader icon={<Package />} tone="emerald" title="Commandes" description="Une commande fige le coût d'acquisition et calcule la marge brute. Les transitions de statut sont contrôlées." actions={session.role !== "viewer" ? <Button icon={<Plus />} onClick={() => setOpen(true)}>Nouvelle commande</Button> : undefined} />
+      <PageHeader title="Commandes" description="Une commande fige le coût d'acquisition et calcule la marge brute. Les transitions de statut sont contrôlées." actions={session.role !== "viewer" ? <Button icon={<Plus />} onClick={() => setOpen(true)}>Nouvelle commande</Button> : undefined} />
       <div className="mb-4 grid gap-2 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Input placeholder="Rechercher article, client, référence…" prefix={<Search />} value={query.q ?? ""} onChange={(e) => set("q", e.target.value)} aria-label="Recherche" />
         <Select value={query.status ?? ""} onChange={(e) => set("status", e.target.value)} aria-label="Statut"><option value="">Tous les statuts</option>{ORDER_STATUSES.map((s) => <option key={s} value={s}>{ORDER_STATUS_LABELS[s]}</option>)}</Select>

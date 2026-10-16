@@ -23,7 +23,7 @@ export default function Messages() {
 
   return (
     <>
-      <PageHeader icon={<MessagesSquare />} tone="teal" title="Messagerie" description="Toutes vos conversations Vinted au même endroit, reliées à l'acheteur et à l'article. L'IA propose une réponse, vous validez : rien ne part sans votre clic." actions={mode === "demo" ? <Button variant="secondary" icon={<Zap />} onClick={() => simulate.mutate()} loading={simulate.isPending}>Simuler un message entrant</Button> : undefined} className={cn(id && "hidden md:flex")} />
+      <PageHeader title="Messagerie" description="Toutes vos conversations Vinted au même endroit, reliées à l'acheteur et à l'article. L'IA propose une réponse, vous validez : rien ne part sans votre clic." actions={mode === "demo" ? <Button variant="secondary" icon={<Zap />} onClick={() => simulate.mutate()} loading={simulate.isPending}>Simuler un message entrant</Button> : undefined} className={cn(id && "hidden md:flex")} />
       <div className="card grid overflow-hidden p-0 md:h-[calc(100dvh-210px)] md:min-h-[580px] md:grid-cols-[320px_minmax(0,1fr)] lg:grid-cols-[360px_minmax(0,1fr)]">
         <aside className={cn("flex min-h-[60dvh] flex-col border-border md:min-h-0 md:border-r", id && "hidden md:flex")} aria-label="Liste des conversations">
           <div className="flex flex-col gap-2 border-b border-border p-3">
@@ -36,18 +36,18 @@ export default function Messages() {
                 <ul>
                   {d.items.map((c) => (
                     <li key={c.id}>
-                      <Link to={`/app/messages/${c.id}`} className={cn("relative flex gap-3 border-b border-border px-3 py-3 hover:bg-surface-muted", c.id === id && "bg-tone-teal-soft")} aria-current={c.id === id ? "page" : undefined}>
+                      <Link to={`/app/messages/${c.id}`} className={cn("relative flex gap-3 border-b border-border px-3 py-3 transition-colors", c.id === id ? "bg-accent-soft" : "hover:bg-surface-muted")} aria-current={c.id === id ? "page" : undefined}>
                         <span className="relative shrink-0">
-                          <Avatar name={c.customer.displayName} size={44} colored />
+                          <Avatar name={c.customer.displayName} size={40} />
                           {c.item?.photos[0] ? <img src={c.item.photos[0].url} alt="" className="absolute -right-1.5 -bottom-1.5 size-6 rounded-md border-2 border-surface object-cover" /> : null}
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="flex items-baseline justify-between gap-2">
                             <span className={cn("truncate text-sm", c.unreadCount > 0 ? "font-semibold text-text" : "font-medium text-text")}>{c.customer.displayName}</span>
-                            <span className={cn("shrink-0 text-xs", c.unreadCount > 0 ? "font-semibold text-tone-teal" : "text-text-muted")}>{c.lastMessageAt ? formatRelative(c.lastMessageAt) : ""}</span>
+                            <span className={cn("shrink-0 text-xs", c.unreadCount > 0 ? "font-medium text-accent" : "text-text-muted")}>{c.lastMessageAt ? formatRelative(c.lastMessageAt) : ""}</span>
                           </span>
                           <span className="block truncate text-xs text-text-muted">{c.item?.title ?? "Sans article"}{c.item?.listedPriceCents ? ` · ${(c.item.listedPriceCents / 100).toFixed(2).replace(".", ",")} €` : ""}</span>
-                          <span className={cn("mt-0.5 flex items-center gap-1.5 text-sm", c.unreadCount > 0 ? "text-text" : "text-text-muted")}><span className="truncate">{c.lastMessagePreview}</span>{c.unreadCount > 0 ? <span className="ml-auto inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-tone-teal text-[11px] font-semibold text-white">{c.unreadCount}</span> : null}</span>
+                          <span className={cn("mt-0.5 flex items-center gap-1.5 text-sm", c.unreadCount > 0 ? "text-text" : "text-text-muted")}><span className="truncate">{c.lastMessagePreview}</span>{c.unreadCount > 0 ? <span className="num ml-auto inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-semibold text-accent-on">{c.unreadCount}</span> : null}</span>
                         </span>
                       </Link>
                     </li>
@@ -125,7 +125,7 @@ function ConversationView({ id }: { id: string }) {
             <div className="flex min-w-0 flex-1 flex-col">
               <header className="flex items-center gap-3 border-b border-border px-4 py-3">
                 <IconButton label="Retour à la liste" className="md:hidden" onClick={() => navigate("/app/messages")}><ChevronLeft /></IconButton>
-                <Avatar name={customer.displayName} size={38} colored />
+                <Avatar name={customer.displayName} size={36} />
                 <div className="min-w-0 flex-1">
                   <Link to={`/app/customers/${customer.id}`} className="block truncate text-sm font-semibold hover:text-accent">{customer.displayName}{customer.handle ? <span className="font-normal text-text-muted"> · @{customer.handle}</span> : null}</Link>
                   <span className="block truncate text-xs text-text-muted">{customer.city ? `${customer.city} · ` : ""}{connection ? connection.label : "Sans connexion"}</span>
@@ -140,7 +140,7 @@ function ConversationView({ id }: { id: string }) {
                   <Package className="size-4 text-text-muted" aria-hidden />
                 </Link>
               ) : null}
-              <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto bg-bg/40 px-4 py-4 scrollbar-thin">
+              <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto bg-bg/50 px-4 py-4 scrollbar-thin">
                 {visible.map((m, i) => {
                   const day = new Date(m.createdAt).toDateString();
                   const prevDay = i > 0 ? new Date(visible[i - 1]!.createdAt).toDateString() : null;
@@ -172,14 +172,14 @@ function ConversationView({ id }: { id: string }) {
                   <label className="sr-only" htmlFor="draft">Brouillon de réponse</label>
                   <div className="flex items-end gap-2">
                     <Textarea id="draft" rows={2} placeholder={`Écrire à ${firstName}…`} value={draftText} onChange={(e) => setDraftText(e.target.value)} maxLength={4000} className="min-h-[52px] rounded-2xl" onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && draftText.trim() && !sendBlocked) send.mutate(undefined); }} />
-                    <Button icon={<Send />} onClick={() => send.mutate(undefined)} disabled={!draftText.trim() || sendBlocked} loading={send.isPending} className="h-[52px] rounded-2xl bg-tone-teal px-4 text-white hover:bg-tone-teal hover:opacity-90">{mode === "demo" ? "Envoyer (simulé)" : "Envoyer"}</Button>
+                    <Button variant="accent" icon={<Send />} onClick={() => send.mutate(undefined)} disabled={!draftText.trim() || sendBlocked} loading={send.isPending} className="h-[52px] rounded-2xl px-4">{mode === "demo" ? "Envoyer (simulé)" : "Envoyer"}</Button>
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <Button variant="ghost" size="sm" icon={<Bot />} onClick={() => suggest.mutate(undefined)} loading={suggest.isPending} disabled={!session.org.settings.ai.enabled}>Suggérer une réponse</Button>
                     <Button variant="ghost" size="sm" onClick={() => saveDraft.mutate(undefined)} disabled={!draftText.trim()} loading={saveDraft.isPending}>Enregistrer le brouillon</Button>
                     {activeDraftId ? <IconButton label="Supprimer le brouillon" size="sm" onClick={() => delDraft.mutate(undefined)}><Trash2 /></IconButton> : null}
                     <span className="flex-1" />
-                    {activeDraftId ? <MessageStatusBadge status={failed ? "failed" : "draft"} /> : <span className="hidden text-[11px] text-text-subtle sm:inline">Ctrl + Entrée pour envoyer</span>}
+                    {activeDraftId ? <MessageStatusBadge status={failed ? "failed" : "draft"} /> : <span className="hidden text-[11px] text-text-muted sm:inline">Ctrl + Entrée pour envoyer</span>}
                   </div>
                   {mode === "demo" ? (
                     <details className="mt-2 text-xs text-text-muted">
@@ -211,7 +211,7 @@ function ConversationView({ id }: { id: string }) {
                 L'IA rédige, mais la décision (accepter, contre-proposer, refuser) vient de vos règles : jamais sous le plancher, jamais de prix inventé.
               </div>
               <Link to={`/app/customers/${customer.id}`} className="flex items-center gap-3 rounded-lg border border-border p-3 hover:bg-surface-muted">
-                <Avatar name={customer.displayName} size={34} colored />
+                <Avatar name={customer.displayName} size={34} />
                 <span className="min-w-0"><span className="block truncate text-sm font-medium">{customer.displayName}</span><span className="block truncate text-xs text-text-muted">{customer.tags.length ? customer.tags.join(" · ") : "Fiche client"}</span></span>
               </Link>
             </aside>
@@ -236,9 +236,9 @@ function Bubble({ m, name }: { m: Message; name: string }) {
   const inbound = m.direction === "inbound";
   return (
     <div className={cn("flex max-w-[82%] gap-2", inbound ? "self-start" : "flex-row-reverse self-end")}>
-      {inbound ? <Avatar name={name} size={26} colored className="mt-auto mb-5" /> : null}
+      {inbound ? <Avatar name={name} size={26} className="mt-auto mb-5" /> : null}
       <div className={cn("flex flex-col gap-1", inbound ? "items-start" : "items-end")}>
-        <div className={cn("rounded-2xl px-3.5 py-2 text-sm whitespace-pre-line shadow-sm", inbound ? "rounded-bl-md bg-surface text-text ring-1 ring-border" : "rounded-br-md bg-tone-teal text-white")}>{m.body}</div>
+        <div className={cn("rounded-2xl px-3.5 py-2 text-sm whitespace-pre-line", inbound ? "rounded-bl-md bg-surface text-text ring-1 ring-border" : "bg-brand rounded-br-md text-white")}>{m.body}</div>
         <div className="flex flex-wrap items-center gap-2 px-1 text-[11px] text-text-muted">
           <span>{formatTime(m.createdAt)}</span>
           {m.offerCents !== null && inbound ? <span className="num rounded-full bg-accent-soft px-2 py-0.5 font-semibold text-accent">Offre détectée : <Money cents={m.offerCents} /></span> : null}
@@ -254,17 +254,17 @@ function Bubble({ m, name }: { m: Message; name: string }) {
 
 function OfferPanel({ buyer, listedCents, offerCents, evaluation, onCreateOrder, onCounter, onDecline }: { buyer: string; listedCents: number | null; offerCents: number; evaluation: NegotiationResult; onCreateOrder?: (price: number) => void; onCounter?: () => void; onDecline?: () => void }) {
   const label: Record<NegotiationResult["decision"], { title: string; tone: string; ring: string }> = {
-    accept: { title: "Offre acceptable", tone: "text-success", ring: "ring-tone-emerald" },
-    counter: { title: "Contre-proposition recommandée", tone: "text-accent", ring: "ring-accent" },
-    decline: { title: "Offre à refuser", tone: "text-danger", ring: "ring-tone-rose" },
-    escalate: { title: "À traiter manuellement", tone: "text-warning", ring: "ring-tone-amber" },
+    accept: { title: "Offre acceptable", tone: "text-success", ring: "ring-border" },
+    counter: { title: "Contre-proposition recommandée", tone: "text-accent", ring: "ring-accent/40" },
+    decline: { title: "Offre à refuser", tone: "text-danger", ring: "ring-border" },
+    escalate: { title: "À traiter manuellement", tone: "text-warning", ring: "ring-border" },
     hold: { title: "Réponse différée (hors horaires)", tone: "text-text-muted", ring: "ring-border" },
   };
   const l = label[evaluation.decision];
   const discount = listedCents ? Math.round((1 - offerCents / listedCents) * 100) : null;
   return (
-    <div className={cn("my-1 self-center rounded-2xl bg-surface p-4 text-sm shadow-sm ring-2 sm:w-[min(100%,520px)]", l.ring)}>
-      <p className="text-xs font-semibold tracking-wide text-text-muted uppercase">Offre de {buyer}</p>
+    <div className={cn("my-1 self-center rounded-2xl bg-surface p-4 text-sm ring-1 sm:w-[min(100%,520px)]", l.ring)}>
+      <p className="text-xs font-medium tracking-wide text-text-muted uppercase">Offre de {buyer}</p>
       <div className="mt-1 flex flex-wrap items-baseline gap-2">
         <span className="num text-2xl font-semibold text-text"><Money cents={offerCents} /></span>
         {listedCents ? <span className="num text-sm text-text-muted line-through"><Money cents={listedCents} /></span> : null}

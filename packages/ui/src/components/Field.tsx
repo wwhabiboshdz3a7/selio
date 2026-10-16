@@ -108,7 +108,7 @@ export interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement
 export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Checkbox({ label, className, ...rest }, ref) {
   return (
     <label className={cn("inline-flex cursor-pointer items-center gap-2 text-base text-text", className)}>
-      <input ref={ref} type="checkbox" className="size-4 shrink-0 cursor-pointer rounded-sm border border-border-strong accent-[var(--primary)]" {...rest} />
+      <input ref={ref} type="checkbox" className="size-4 shrink-0 cursor-pointer rounded-sm border border-border-strong accent-[var(--accent-vivid)]" {...rest} />
       {label}
     </label>
   );
@@ -123,7 +123,7 @@ export interface ToggleProps {
   className?: string;
 }
 
-/** Toggle : off gris 300, on encre (jamais d'accent). */
+/** Toggle : off gris 300, on améthyste (sélection). */
 export function Toggle({ checked, onChange, label, description, disabled, className }: ToggleProps) {
   return (
     <label className={cn("flex cursor-pointer items-start justify-between gap-4", disabled && "cursor-not-allowed opacity-60", className)}>
@@ -139,13 +139,13 @@ export function Toggle({ checked, onChange, label, description, disabled, classN
         onClick={() => onChange(!checked)}
         className={cn(
           "relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors",
-          checked ? "bg-primary" : "bg-gray-300",
+          checked ? "bg-accent-vivid" : "bg-border-strong",
         )}
       >
         <span
           aria-hidden
           className={cn(
-            "absolute top-0.5 left-0.5 size-4 rounded-full bg-surface transition-transform",
+            "absolute top-0.5 left-0.5 size-4 rounded-full bg-white shadow-sm transition-transform",
             checked && "translate-x-4",
           )}
         />
