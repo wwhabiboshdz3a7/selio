@@ -118,7 +118,7 @@ export function Sparkline({ values, className }: { values: number[]; className?:
 }
 
 /** Palette catégorielle (tons de la charte) pour les graphiques à plusieurs séries. */
-export const CHART_TONES = ["var(--tone-braise)", "var(--tone-teal)", "var(--tone-indigo)", "var(--tone-amber)", "var(--tone-rose)", "var(--tone-emerald)", "var(--tone-sky)", "var(--tone-slate)"];
+export const CHART_TONES = ["var(--tone-braise)", "var(--tone-amber)", "var(--tone-teal)", "var(--tone-rose)", "var(--tone-indigo)", "var(--tone-emerald)", "var(--tone-sky)", "var(--tone-slate)"];
 
 function useWidth(initial = 480) {
   const ref = useRef<HTMLDivElement>(null);

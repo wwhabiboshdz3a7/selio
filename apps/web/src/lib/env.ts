@@ -16,3 +16,5 @@ export const apiBaseUrl = env.VITE_API_BASE_URL.replace(/\/+$/, "");
 export const connectedModeAvailable = apiBaseUrl !== "" || import.meta.env.DEV;
 export const showIndicativePricing = env.VITE_SHOW_INDICATIVE_PRICING === "true";
 export const appVersion = "0.1.0";
+/** Identifiant de build (commit + date), affiché dans les rapports d'erreur. */
+export const buildId: string = typeof __SELIO_BUILD__ === "string" ? __SELIO_BUILD__ : "dev";

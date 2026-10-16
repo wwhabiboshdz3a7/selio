@@ -16,16 +16,17 @@
     "@selio/ai": "workspace:*",
     "@selio/connectors": "workspace:*",
     "@selio/contracts": "workspace:*",
+    "@selio/demo-data": "workspace:*",
     "@selio/domain": "workspace:*",
     "@selio/ui": "workspace:*",
     "@tanstack/react-query": "^5.104.1",
+    "animejs": "4.5.0",
     "lucide-react": "^0.577.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router": "^7.18.4",
     "workbox-window": "^7.4.1",
-    "zod": "^3.25.76",
-    "@selio/demo-data": "workspace:*"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",
