@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Bot, Boxes, ChevronDown, ClipboardList, Gauge, LogOut, Menu as MenuIcon, MessageSquare, Moon, Package, Radar, Settings, ShieldCheck, Shirt, ShoppingCart, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
 import { Avatar, Banner, Button, IconButton, LoadingState, Menu, Tag, cn } from "@selio/ui";
 import { REVIEW_THRESHOLD } from "@selio/domain";
-import { useClient, useData, useSession } from "../lib/data/provider";
+import { useClient, useData, useRequiredSession, useSession } from "../lib/data/provider";
 import { useTheme } from "../lib/theme";
 import { Logo } from "../components/Logo";
 import { ROLE_LABELS } from "@selio/contracts";
@@ -73,7 +73,9 @@ export function useNavCounts() {
 }
 
 export function AppLayout({ admin = false }: { admin?: boolean }) {
-  const session = useSession();
+  // Pas de `useSession().data!` : à la fin de la session, la mise en page peut être rendue une
+  // dernière fois avec une session nulle (« Cannot read properties of null (reading 'org') »).
+  const s = useRequiredSession();
   const client = useClient();
   const { mode } = useData();
   const navigate = useNavigate();
@@ -91,7 +93,6 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, [location.pathname]);
-  const s = session.data!;
   const onboardingDone = s.org.settings.onboarding.dismissed || s.org.settings.onboarding.completedSteps.length >= 6;
   const autoBuyOn = s.org.settings.autoBuy.enabled;
 
