@@ -123,7 +123,7 @@ export interface ToggleProps {
   className?: string;
 }
 
-/** Toggle : off gris 300, on noir (jamais orange). */
+/** Toggle : off gris 300, on encre (jamais d'accent). */
 export function Toggle({ checked, onChange, label, description, disabled, className }: ToggleProps) {
   return (
     <label className={cn("flex cursor-pointer items-start justify-between gap-4", disabled && "cursor-not-allowed opacity-60", className)}>

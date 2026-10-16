@@ -1,15 +1,14 @@
 /* ==========================================================================
-   Selio — Design tokens v2.0 (octobre 2026)
-   Direction : minimaliste, noir & blanc, un seul accent orange « Braise ».
+   Selio — Design tokens v3.0 (octobre 2026)
+   Direction : épurée, encre et porcelaine, accent violet « Améthyste »,
+   rehaut or « Champagne » utilisé avec parcimonie (notes, primes, éclats).
    Importer ce fichier une fois, à la racine de l'app. Ne jamais coder une
    couleur en dur dans un composant : toujours passer par une variable.
 
-   Corrections appliquées par rapport au fichier livré (docs/DECISIONS.md) :
-   - La police Inter n'est plus chargée depuis Google Fonts (requête tierce,
-     hors-ligne PWA impossible, CSP) : elle est auto-hébergée via
-     @fontsource/inter (graisses 400/500/600 uniquement) dans base.css.
-   - Ajout de `color-scheme` pour que les contrôles natifs suivent le mode.
-   - Les sélecteurs de mode sombre sont inchangés.
+   - Police Inter auto-hébergée (@fontsource/inter, 400/500/600) dans base.css.
+   - `color-scheme` pour que les contrôles natifs suivent le mode.
+   - Les noms de tons historiques (braise, teal…) sont conservés pour la
+     compatibilité ; leurs valeurs suivent la nouvelle palette violet/or.
    ========================================================================== */
 
 :root {
@@ -17,94 +16,113 @@
 
   /* ---- Palette brute (ne pas utiliser directement dans les composants) -- */
   --gray-0:   #FFFFFF;
-  --gray-25:  #FCFCFC;
-  --gray-50:  #FAFAFA;
-  --gray-100: #F4F4F5;
-  --gray-200: #E4E4E7;
-  --gray-300: #D4D4D8;
-  --gray-400: #A1A1AA;
-  --gray-500: #71717A;
-  --gray-600: #52525B;
-  --gray-700: #3F3F46;
-  --gray-800: #27272A;
-  --gray-900: #18181B;
-  --gray-950: #0B0B0C;
+  --gray-25:  #FCFCFD;
+  --gray-50:  #FAFAFB;
+  --gray-100: #F3F2F6;
+  --gray-200: #E6E4EC;
+  --gray-300: #D3D0DB;
+  --gray-400: #A3A0AE;
+  --gray-500: #6E6A7B;
+  --gray-600: #535061;
+  --gray-700: #3D3A48;
+  --gray-800: #2A2733;
+  --gray-900: #1C1A24;
+  --gray-950: #121017;
 
-  --braise-50:  #FEF3EC;
-  --braise-100: #FDE3D3;
-  --braise-200: #FAC4A5;
-  --braise-500: #EA6A2A; /* décoratif, graphiques, accent sur fond sombre */
-  --braise-600: #C4501B; /* texte, boutons avec texte blanc (contraste 4.7:1) */
-  --braise-700: #A3410F; /* hover / pressed */
+  /* Améthyste (marque). 600 : texte et boutons avec texte blanc (contraste ≥ 6:1). */
+  --violet-50:  #F5F2FF;
+  --violet-100: #ECE6FF;
+  --violet-200: #D9CCFF;
+  --violet-300: #BBA6FF;
+  --violet-400: #9B80F7;
+  --violet-500: #7C5CEB;
+  --violet-600: #6442D6;
+  --violet-700: #5232B5;
+  --violet-800: #3E2689;
+  --violet-900: #29195C;
 
-  --green-600: #15803D;
-  --amber-600: #B45309;
-  --red-600:   #B91C1C;
+  /* Champagne (rehaut). 700 : seul niveau autorisé pour du texte sur fond clair. */
+  --gold-50:  #FBF7EC;
+  --gold-100: #F5EBCF;
+  --gold-200: #ECD9A4;
+  --gold-300: #E2C67C;
+  --gold-400: #D4AC57;
+  --gold-500: #C1933B;
+  --gold-600: #9E7426;
+  --gold-700: #7A591A;
+
+  --green-600: #1D7F4E;
+  --amber-600: #A15C07;
+  --red-600:   #B42318;
 
   /* Porcelaine : fond de page (retour démo du 13/10 : le blanc pur est trop dur). */
   --porcelain: #F5F5F7;
 
-  /* Tons de fonctionnalités et de graphiques (repères visuels, jamais pour du texte long). */
-  --tone-braise:  #EA6A2A;
-  --tone-teal:    #138A84;
-  --tone-indigo:  #5A5BD4;
-  --tone-amber:   #D4951B;
-  --tone-rose:    #D2457A;
-  --tone-emerald: #2E9A68;
-  --tone-sky:     #2F7FC4;
-  --tone-slate:   #6B6F7B;
+  /* Tons de fonctionnalités et de graphiques : palette resserrée autour du violet et de l'or. */
+  --tone-braise:  #7B5BE6; /* améthyste (marque) */
+  --tone-teal:    #2E8A82; /* jade */
+  --tone-indigo:  #5865D4; /* pervenche */
+  --tone-amber:   #C1933B; /* champagne */
+  --tone-rose:    #B4569A; /* orchidée */
+  --tone-emerald: #3A9170; /* sauge */
+  --tone-sky:     #4A80BC; /* acier */
+  --tone-slate:   #6E6A7B; /* ardoise */
 
   /* ---- Rôles (à utiliser dans les composants) -------------------------- */
-  --bg:             var(--porcelain); /* fond de page : porcelaine #F5F5F7 */
-  --surface:        #FFFFFF;          /* cartes, panneaux, modales */
-  --surface-sidebar:#FBFBFC;          /* barre latérale, à peine teintée */
-  --surface-muted:  #EEEEF1;          /* zones secondaires, hover de ligne */
-  --border:         #E3E3E8;
-  --border-strong:  #D2D2D9;
+  --bg:             var(--porcelain);
+  --surface:        #FFFFFF;
+  --surface-sidebar:#FAFAFB;
+  --surface-muted:  #F1F0F4;
+  --border:         #E7E5EC;
+  --border-strong:  #D6D3DE;
 
-  --text:           #1D1D1F;          /* titres, texte principal */
-  --text-muted:     var(--gray-500);  /* légendes, métadonnées */
-  --text-subtle:    var(--gray-400);  /* placeholders, désactivé */
+  --text:           #1C1A24;
+  --text-muted:     var(--gray-500);
+  --text-subtle:    var(--gray-400);
   --text-inverse:   var(--gray-0);
 
-  --primary:        var(--gray-950);  /* bouton principal = noir */
+  --primary:        var(--gray-900);  /* bouton principal = encre */
   --primary-hover:  var(--gray-800);
   --on-primary:     var(--gray-0);
 
-  --accent:         var(--braise-600); /* 1 action forte par écran max */
-  --accent-hover:   var(--braise-700);
-  --accent-soft:    var(--braise-50);  /* fond de badge, sélection */
-  --accent-vivid:   var(--braise-500); /* graphiques, points, indicateurs */
+  --accent:         var(--violet-600); /* 1 action forte par écran max */
+  --accent-hover:   var(--violet-700);
+  --accent-soft:    var(--violet-50);
+  --accent-vivid:   var(--violet-500);
   --on-accent:      var(--gray-0);
 
-  /* Fonds doux des tons (pastilles, tuiles de fonctionnalités). */
-  --tone-braise-soft:  #FDEBDF;
-  --tone-teal-soft:    #DFF2F0;
-  --tone-indigo-soft:  #E7E7FB;
-  --tone-amber-soft:   #FBF0D9;
-  --tone-rose-soft:    #FBE4EC;
-  --tone-emerald-soft: #DFF3E8;
-  --tone-sky-soft:     #E1EEF9;
-  --tone-slate-soft:   #ECEDF0;
+  --gold:           var(--gold-500);   /* décor : étoiles, notes, éclats */
+  --gold-soft:      var(--gold-50);
+  --gold-text:      var(--gold-700);   /* texte or lisible */
+  --brand-gradient: linear-gradient(135deg, var(--violet-600) 0%, var(--violet-500) 55%, var(--gold-400) 130%);
+
+  --tone-braise-soft:  #F1EDFE;
+  --tone-teal-soft:    #E3F2F0;
+  --tone-indigo-soft:  #E9EBFB;
+  --tone-amber-soft:   #F8F0DC;
+  --tone-rose-soft:    #F7E8F2;
+  --tone-emerald-soft: #E4F2EC;
+  --tone-sky-soft:     #E6EEF8;
+  --tone-slate-soft:   #EDECF1;
 
   --success: var(--green-600);
   --warning: var(--amber-600);
   --danger:  var(--red-600);
 
-  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--braise-500);
+  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--violet-400);
 
   /* ---- Typographie ----------------------------------------------------- */
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  --text-xs:   12px;  /* labels, badges */
-  --text-sm:   13px;  /* tableaux, métadonnées */
-  --text-base: 14px;  /* texte d'interface par défaut */
-  --text-md:   16px;  /* paragraphes, champs sur mobile */
-  --text-lg:   20px;  /* titres de carte */
-  --text-xl:   24px;  /* titre de page */
-  --text-2xl:  32px;  /* chiffres clés */
-  --text-3xl:  48px;  /* marketing uniquement */
+  --text-xs:   12px;
+  --text-sm:   13px;
+  --text-base: 14px;
+  --text-md:   16px;
+  --text-lg:   20px;
+  --text-xl:   24px;
+  --text-2xl:  32px;
+  --text-3xl:  48px;
 
   --weight-regular: 400;
   --weight-medium:  500;
@@ -112,7 +130,7 @@
 
   --leading-tight: 1.2;
   --leading-normal: 1.5;
-  --tracking-tight: -0.02em; /* titres ≥ 20px */
+  --tracking-tight: -0.02em;
 
   /* ---- Espacement (grille de 4px) -------------------------------------- */
   --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
@@ -120,16 +138,16 @@
   --space-12: 48px; --space-16: 64px;
 
   /* ---- Formes ---------------------------------------------------------- */
-  --radius-sm: 6px;    /* badges, inputs compacts */
-  --radius-md: 8px;    /* boutons, inputs */
-  --radius-lg: 12px;   /* cartes */
-  --radius-xl: 16px;   /* modales, feuilles mobiles */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
   --radius-full: 999px;
 
-  --shadow-sm: 0 1px 2px rgba(11, 11, 12, 0.05);
-  --shadow-card: 0 1px 2px rgba(11, 11, 12, 0.04), 0 4px 14px rgba(11, 11, 12, 0.035);
-  --shadow-md: 0 4px 16px rgba(11, 11, 12, 0.06);   /* popovers, menus */
-  --shadow-lg: 0 12px 40px rgba(11, 11, 12, 0.10);  /* modales seulement */
+  --shadow-sm: 0 1px 2px rgba(18, 16, 23, 0.04);
+  --shadow-card: 0 1px 2px rgba(18, 16, 23, 0.03), 0 6px 18px rgba(18, 16, 23, 0.03);
+  --shadow-md: 0 6px 20px rgba(18, 16, 23, 0.07);
+  --shadow-lg: 0 16px 48px rgba(18, 16, 23, 0.12);
 
   --duration-fast: 120ms;
   --duration-base: 200ms;
@@ -139,80 +157,106 @@
   --content-max: 1600px;
 }
 
-/* ---- Mode sombre -------------------------------------------------------- */
+/* ---- Mode sombre (système, sauf choix « clair ») et mode sombre forcé ---- */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    /* Sombre éclairci (retour démo : « on ne voit rien ») et blanc cassé pour le texte. */
-    --bg: #1B1B1F;
-    --surface: #24242A;
-    --surface-sidebar: #202025;
-    --surface-muted: #2F2F36;
-    --border: #36363E;
-    --border-strong: #474750;
-    --text: #ECE9E4;
-    --text-muted: #B7B4AE;
-    --text-subtle: #87857F;
-    --text-inverse: #1B1B1F;
-    --primary: #ECE9E4;
-    --primary-hover: #D9D6D0;
-    --on-primary: #1B1B1F;
-    --accent: #F08A55;
-    --accent-hover: var(--braise-200);
-    --accent-soft: rgba(240, 138, 85, 0.16);
-    --accent-vivid: #F08A55;
-    --on-accent: #1B1B1F;
-    --success: #5CC98A;
-    --warning: #E8B04F;
-    --danger: #F07A6E;
-    --tone-braise-soft: rgba(234, 106, 42, 0.18);
-    --tone-teal-soft: rgba(19, 138, 132, 0.22);
-    --tone-indigo-soft: rgba(90, 91, 212, 0.24);
-    --tone-amber-soft: rgba(212, 149, 27, 0.2);
-    --tone-rose-soft: rgba(210, 69, 122, 0.2);
-    --tone-emerald-soft: rgba(46, 154, 104, 0.22);
-    --tone-sky-soft: rgba(47, 127, 196, 0.22);
-    --tone-slate-soft: rgba(107, 111, 123, 0.25);
+    /* Sombre éclairci (retour démo : « on ne voit rien »), texte blanc cassé. */
+    --bg: #1A1820;
+    --surface: #23202A;
+    --surface-sidebar: #1E1B24;
+    --surface-muted: #2D2A35;
+    --border: #37333F;
+    --border-strong: #48434F;
+    --text: #EEEBF3;
+    --text-muted: #B4AFC0;
+    --text-subtle: #868193;
+    --text-inverse: #1A1820;
+    --primary: #EEEBF3;
+    --primary-hover: #DAD6E2;
+    --on-primary: #1A1820;
+    --accent: #B5A3FF;
+    --accent-hover: #CFC2FF;
+    --accent-soft: rgba(155, 128, 247, 0.18);
+    --accent-vivid: #9B80F7;
+    --on-accent: #1A1820;
+    --gold: #E2C67C;
+    --gold-soft: rgba(212, 172, 87, 0.16);
+    --gold-text: #E8CF8E;
+    --brand-gradient: linear-gradient(135deg, #7C5CEB 0%, #9B80F7 55%, #E2C67C 130%);
+    --success: #5CC896;
+    --warning: #E5B259;
+    --danger: #F0857A;
+    --tone-braise: #A08BFF;
+    --tone-teal: #52B3A9;
+    --tone-indigo: #8C95F0;
+    --tone-amber: #E2C06E;
+    --tone-rose: #D883BE;
+    --tone-emerald: #63BD94;
+    --tone-sky: #7CA9DD;
+    --tone-slate: #9C97AA;
+    --tone-braise-soft: rgba(160, 139, 255, 0.16);
+    --tone-teal-soft: rgba(82, 179, 169, 0.16);
+    --tone-indigo-soft: rgba(140, 149, 240, 0.16);
+    --tone-amber-soft: rgba(226, 192, 110, 0.15);
+    --tone-rose-soft: rgba(216, 131, 190, 0.15);
+    --tone-emerald-soft: rgba(99, 189, 148, 0.15);
+    --tone-sky-soft: rgba(124, 169, 221, 0.15);
+    --tone-slate-soft: rgba(156, 151, 170, 0.18);
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
-    --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.35);
-    --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--braise-500);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2), 0 6px 18px rgba(0, 0, 0, 0.12);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+    --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px #9B80F7;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  /* Sombre éclairci (retour démo : « on ne voit rien ») et blanc cassé pour le texte. */
-  --bg: #1B1B1F;
-  --surface: #24242A;
-  --surface-sidebar: #202025;
-  --surface-muted: #2F2F36;
-  --border: #36363E;
-  --border-strong: #474750;
-  --text: #ECE9E4;
-  --text-muted: #B7B4AE;
-  --text-subtle: #87857F;
-  --text-inverse: #1B1B1F;
-  --primary: #ECE9E4;
-  --primary-hover: #D9D6D0;
-  --on-primary: #1B1B1F;
-  --accent: #F08A55;
-  --accent-hover: var(--braise-200);
-  --accent-soft: rgba(240, 138, 85, 0.16);
-  --accent-vivid: #F08A55;
-  --on-accent: #1B1B1F;
-  --success: #5CC98A;
-  --warning: #E8B04F;
-  --danger: #F07A6E;
-  --tone-braise-soft: rgba(234, 106, 42, 0.18);
-  --tone-teal-soft: rgba(19, 138, 132, 0.22);
-  --tone-indigo-soft: rgba(90, 91, 212, 0.24);
-  --tone-amber-soft: rgba(212, 149, 27, 0.2);
-  --tone-rose-soft: rgba(210, 69, 122, 0.2);
-  --tone-emerald-soft: rgba(46, 154, 104, 0.22);
-  --tone-sky-soft: rgba(47, 127, 196, 0.22);
-  --tone-slate-soft: rgba(107, 111, 123, 0.25);
+  /* Sombre éclairci (retour démo : « on ne voit rien »), texte blanc cassé. */
+  --bg: #1A1820;
+  --surface: #23202A;
+  --surface-sidebar: #1E1B24;
+  --surface-muted: #2D2A35;
+  --border: #37333F;
+  --border-strong: #48434F;
+  --text: #EEEBF3;
+  --text-muted: #B4AFC0;
+  --text-subtle: #868193;
+  --text-inverse: #1A1820;
+  --primary: #EEEBF3;
+  --primary-hover: #DAD6E2;
+  --on-primary: #1A1820;
+  --accent: #B5A3FF;
+  --accent-hover: #CFC2FF;
+  --accent-soft: rgba(155, 128, 247, 0.18);
+  --accent-vivid: #9B80F7;
+  --on-accent: #1A1820;
+  --gold: #E2C67C;
+  --gold-soft: rgba(212, 172, 87, 0.16);
+  --gold-text: #E8CF8E;
+  --brand-gradient: linear-gradient(135deg, #7C5CEB 0%, #9B80F7 55%, #E2C67C 130%);
+  --success: #5CC896;
+  --warning: #E5B259;
+  --danger: #F0857A;
+  --tone-braise: #A08BFF;
+  --tone-teal: #52B3A9;
+  --tone-indigo: #8C95F0;
+  --tone-amber: #E2C06E;
+  --tone-rose: #D883BE;
+  --tone-emerald: #63BD94;
+  --tone-sky: #7CA9DD;
+  --tone-slate: #9C97AA;
+  --tone-braise-soft: rgba(160, 139, 255, 0.16);
+  --tone-teal-soft: rgba(82, 179, 169, 0.16);
+  --tone-indigo-soft: rgba(140, 149, 240, 0.16);
+  --tone-amber-soft: rgba(226, 192, 110, 0.15);
+  --tone-rose-soft: rgba(216, 131, 190, 0.15);
+  --tone-emerald-soft: rgba(99, 189, 148, 0.15);
+  --tone-sky-soft: rgba(124, 169, 221, 0.15);
+  --tone-slate-soft: rgba(156, 151, 170, 0.18);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
-  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.35);
-  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--braise-500);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2), 0 6px 18px rgba(0, 0, 0, 0.12);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px #9B80F7;
 }
 
 /* ---- Base --------------------------------------------------------------- */

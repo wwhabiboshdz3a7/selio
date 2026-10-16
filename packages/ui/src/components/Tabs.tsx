@@ -7,7 +7,7 @@ export interface TabItem<T extends string> {
   count?: number;
 }
 
-/** Onglets horizontaux (liste de pages) — barre orange 2 px sous l'onglet actif. */
+/** Onglets horizontaux (liste de pages) — barre d'accent 2 px sous l'onglet actif. */
 export function Tabs<T extends string>({
   value,
   onChange,

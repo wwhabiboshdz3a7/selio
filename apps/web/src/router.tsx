@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from "react-router";
+import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
 import { MarketingLayout } from "./marketing/layout";
 import { AppLayout, RequireSession, RequireOperator } from "./app/layout";
 import { RouteError } from "./components/RouteError";
@@ -8,12 +8,19 @@ const lazy = (loader: () => Promise<{ default: React.ComponentType }>) => async 
   return { Component: mod.default };
 };
 
+/**
+ * Chaque page a sa propre frontière d'erreur : une page en échec s'affiche dans
+ * la mise en page (menu, en-tête), le reste de l'application reste utilisable.
+ */
+const guarded = (routes: RouteObject[]): RouteObject[] =>
+  routes.map((r) => ({ ...r, ...(r.element ? {} : { errorElement: <RouteError inline /> }), ...(r.children ? { children: guarded(r.children) } : {}) }) as RouteObject);
+
 export const router = createBrowserRouter([
   {
     path: "/",
     element: <MarketingLayout />,
     errorElement: <RouteError />,
-    children: [
+    children: guarded([
       { index: true, lazy: lazy(() => import("./marketing/pages/Home")) },
       { path: "fonctionnalites", lazy: lazy(() => import("./marketing/pages/Features")) },
       { path: "extension", lazy: lazy(() => import("./marketing/pages/Extension")) },
@@ -27,7 +34,7 @@ export const router = createBrowserRouter([
       { path: "connexion", lazy: lazy(() => import("./marketing/pages/Login")) },
       { path: "inscription", lazy: lazy(() => import("./marketing/pages/Register")) },
       { path: "demo", lazy: lazy(() => import("./marketing/pages/DemoEntry")) },
-    ],
+    ]),
   },
   {
     path: "/app",
@@ -37,7 +44,7 @@ export const router = createBrowserRouter([
       </RequireSession>
     ),
     errorElement: <RouteError />,
-    children: [
+    children: guarded([
       { index: true, lazy: lazy(() => import("./app/pages/Overview")) },
       { path: "studio", lazy: lazy(() => import("./app/pages/Studio")) },
       { path: "dressing", lazy: lazy(() => import("./app/pages/Dressing")) },
@@ -72,7 +79,7 @@ export const router = createBrowserRouter([
         { path: "status", lazy: lazy(() => import("./app/pages/settings/Status")) },
       ] },
       { path: "*", element: <Navigate to="/app" replace /> },
-    ],
+    ]),
   },
   {
     path: "/admin",
@@ -84,7 +91,7 @@ export const router = createBrowserRouter([
       </RequireSession>
     ),
     errorElement: <RouteError />,
-    children: [{ index: true, lazy: lazy(() => import("./app/pages/Admin")) }],
+    children: guarded([{ index: true, lazy: lazy(() => import("./app/pages/Admin")) }]),
   },
   { path: "*", element: <Navigate to="/" replace /> },
 ]);

@@ -3,7 +3,19 @@
    `inline` : les utilitaires référencent directement var(--bg), var(--text)…
    ce qui garantit le basculement clair/sombre sans recalcul. */
 
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+/* « dark: » suit exactement tokens.css : thème sombre choisi dans l'application,
+   OU thème du système sombre tant que l'utilisateur n'a pas forcé le clair.
+   (Avant : seul le choix explicite comptait, d'où un logo noir sur fond sombre.) */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
 
 @theme inline {
   /* Toute la palette par défaut de Tailwind (bleu compris) est retirée. */
@@ -47,6 +59,15 @@
   --color-accent-soft: var(--accent-soft);
   --color-accent-vivid: var(--accent-vivid);
   --color-accent-on: var(--on-accent);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-gold-text: var(--gold-text);
+  --color-violet-50: var(--violet-50);
+  --color-violet-100: var(--violet-100);
+  --color-violet-300: var(--violet-300);
+  --color-violet-500: var(--violet-500);
+  --color-violet-600: var(--violet-600);
+  --color-violet-700: var(--violet-700);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
@@ -97,9 +118,9 @@
 
   --shadow-*: initial;
   --shadow-none: none;
-  --shadow-sm: 0 1px 2px rgba(11, 11, 12, 0.04);
-  --shadow-md: 0 4px 16px rgba(11, 11, 12, 0.06);
-  --shadow-lg: 0 12px 40px rgba(11, 11, 12, 0.10);
+  --shadow-sm: 0 1px 2px rgba(18, 16, 23, 0.04);
+  --shadow-md: 0 6px 20px rgba(18, 16, 23, 0.07);
+  --shadow-lg: 0 16px 48px rgba(18, 16, 23, 0.12);
 
   /* Grille de 4 px indépendante de la taille de police racine (14 px). */
   --spacing: 4px;
