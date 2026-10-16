@@ -90,10 +90,19 @@ export function useSession() {
   return useQuery({ queryKey: [...sessionKey, mode], queryFn: () => client.getSession(), staleTime: 60_000 });
 }
 
+/**
+ * Session d'un écran protégé par RequireSession. À la fin de la session (déconnexion, suppression
+ * de l'organisation), chaque composant abonné peut être rendu une dernière fois avant que
+ * RequireSession ne redirige : on garde alors la dernière session connue au lieu de lever une erreur
+ * (qui affichait « Cette page a rencontré un problème » le temps de la redirection).
+ */
 export function useRequiredSession(): Session {
   const q = useSession();
-  if (!q.data) throw new Error("Session requise");
-  return q.data;
+  const [last, setLast] = useState<Session | null>(q.data ?? null);
+  if (q.data && q.data !== last) setLast(q.data);
+  const session = q.data ?? last;
+  if (!session) throw new Error("Session requise");
+  return session;
 }
 
 export function useInvalidate() {
