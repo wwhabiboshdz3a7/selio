@@ -145,10 +145,13 @@ export function buildDemoState(now = new Date()): DemoState {
     const republications: Republication[] = [];
     if (status === "listed" && listedAtDate && i % 3 !== 2) {
       const count = i % 4 === 0 ? 3 : i % 4 === 1 ? 1 : 2;
+      // Une annonce sur deux a été republiée cette semaine (pas encore à republier).
+      const recent = i % 2 === 0;
       for (let r = 0; r < count; r++) {
-        const at = daysAgo(Math.max(1, Math.floor((purchasedDaysAgo - 4) * (1 - (r + 1) / (count + 1)))), 19);
+        const last = r === count - 1;
+        const at = recent && last ? daysAgo(1 + (i % 5), 19) : daysAgo(Math.max(8, Math.floor((purchasedDaysAgo - 4) * (1 - (r + 1) / (count + 1)))), 19);
         if (at <= listedAtDate) continue;
-        const measured = r < count - 1 || i % 2 === 0;
+        const measured = !(recent && last) && (r < count - 1 || i % 2 === 0);
         republications.push({ id: `rep-${i}-${r}`, variantId: `v${(r + (i % 2)) % 4 + 1}`, at: iso(at), mode: r % 2 === 0 ? "manual" : "auto", before: { views: between(20, 120), favorites: between(0, 8) }, after: measured ? { views: between(45, 180), favorites: between(2, 16) } : null });
       }
     }

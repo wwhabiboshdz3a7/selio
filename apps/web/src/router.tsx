@@ -39,6 +39,10 @@ export const router = createBrowserRouter([
     errorElement: <RouteError />,
     children: [
       { index: true, lazy: lazy(() => import("./app/pages/Overview")) },
+      { path: "studio", lazy: lazy(() => import("./app/pages/Studio")) },
+      { path: "dressing", lazy: lazy(() => import("./app/pages/Dressing")) },
+      { path: "market", lazy: lazy(() => import("./app/pages/Market")) },
+      { path: "auto-buy", lazy: lazy(() => import("./app/pages/AutoBuy")) },
       { path: "onboarding", lazy: lazy(() => import("./app/pages/Onboarding")) },
       { path: "items", lazy: lazy(() => import("./app/pages/Items")) },
       { path: "items/new", lazy: lazy(() => import("./app/pages/ItemForm")) },

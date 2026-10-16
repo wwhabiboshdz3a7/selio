@@ -1,62 +1,98 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Check, X } from "lucide-react";
+import { Bot, Check, History, Images, ShoppingCart, User, X } from "lucide-react";
 import type { PurchaseRequest } from "@selio/contracts";
-import { Alert, Button, Card, ConfirmDialog, EmptyState, Money, PageHeader, StatusBadge, Tag, formatDateTime } from "@selio/ui";
+import { REVIEW_THRESHOLD, dealEconomics } from "@selio/domain";
+import { Alert, Button, Card, ConfirmDialog, EmptyState, PageHeader, StatusBadge, Tag, formatCents, formatDateTime } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { OpportunityCard } from "../components/deals";
+import { ScoreRing } from "../../components/charts";
 
 const STATUS: Record<PurchaseRequest["status"], { label: string; tone: "neutral" | "warning" | "success" | "danger" | "muted" | "accent" }> = {
-  draft: { label: "Brouillon", tone: "muted" }, awaiting_confirmation: { label: "À confirmer", tone: "warning" }, simulated: { label: "Simulé", tone: "accent" }, blocked: { label: "Bloqué", tone: "danger" }, executed: { label: "Exécuté", tone: "success" }, cancelled: { label: "Annulé", tone: "muted" },
+  draft: { label: "Brouillon", tone: "muted" }, awaiting_confirmation: { label: "À confirmer", tone: "warning" }, simulated: { label: "Acheté (simulé)", tone: "success" }, blocked: { label: "Bloqué", tone: "danger" }, executed: { label: "Acheté", tone: "success" }, cancelled: { label: "Annulé", tone: "muted" },
 };
 
 export default function Purchase() {
   const client = useClient();
   const session = useRequiredSession();
-  const q = useQuery({ queryKey: ["purchases"], queryFn: () => client.listPurchaseRequests() });
+  const toReview = useQuery({ queryKey: ["opportunities", "to-review"], queryFn: async () => (await client.listOpportunities({ status: "new" })).filter((o) => o.score >= REVIEW_THRESHOLD) });
+  const purchases = useQuery({ queryKey: ["purchases"], queryFn: () => client.listPurchaseRequests() });
   const [confirm, setConfirm] = useState<PurchaseRequest | null>(null);
-  const [typed, setTyped] = useState("");
-  const confirmMut = useAppMutation((id: string) => client.confirmPurchaseRequest(id), { invalidate: ["purchases", "opportunities"], success: (p) => (p.status === "simulated" ? "Achat simulé de bout en bout (aucun paiement réel)" : p.status === "blocked" ? "Achat bloqué par les contrôles" : "Demande traitée"), onSuccess: () => setConfirm(null) });
-  const cancel = useAppMutation((id: string) => client.cancelPurchaseRequest(id), { invalidate: ["purchases"], success: "Demande annulée" });
-  const canConfirm = session.role !== "viewer";
+  const buy = useAppMutation((id: string) => client.quickBuy(id), { invalidate: ["purchases", "opportunities", "nav-counts"], success: (p) => (p.status === "blocked" ? "Achat bloqué par les contrôles : voir le détail dans l'historique" : "Achat validé (simulé) en un clic") });
+  const dismiss = useAppMutation((id: string) => client.setOpportunityStatus(id, "dismissed"), { invalidate: ["opportunities", "nav-counts"], success: "Affaire écartée" });
+  const watch = useAppMutation((id: string) => client.setOpportunityStatus(id, "watching"), { invalidate: ["opportunities", "nav-counts"], success: "Affaire suivie" });
+  const confirmMut = useAppMutation((id: string) => client.confirmPurchaseRequest(id), { invalidate: ["purchases", "opportunities", "nav-counts"], success: (p) => (p.status === "simulated" ? "Achat simulé de bout en bout (aucun paiement réel)" : p.status === "blocked" ? "Achat bloqué par les contrôles" : "Demande traitée"), onSuccess: () => setConfirm(null) });
+  const cancel = useAppMutation((id: string) => client.cancelPurchaseRequest(id), { invalidate: ["purchases", "opportunities"], success: "Demande annulée" });
+  const canBuy = session.role !== "viewer";
+  const fees = session.org.settings.buyerFees;
+
   return (
     <>
-      <PageHeader title="Achat assisté" description="Préparez un achat avec budget, prix maximal et contrôles. L'exécution réelle est désactivée : tout est simulé de bout en bout." />
-      <Alert tone="warning" className="mb-4" title="Achat réel désactivé">Aucun endpoint d'achat n'existe. Pour qu'un achat réel soit possible, il faudrait un connecteur autorisé techniquement et contractuellement, une confirmation explicite et la prévention des doublons. Tant que ce n'est pas le cas, l'exécution est une simulation marquée comme telle.</Alert>
-      <QueryBoundary query={q} empty={(d) => d.length === 0 ? <EmptyState title="Aucune demande d'achat" description="Depuis le Radar, cliquez sur « Préparer l'achat » sur une opportunité." action={<Link to="/app/radar"><Button variant="secondary">Ouvrir le Radar</Button></Link>} /> : null}>
-        {(list) => (
-          <div className="flex flex-col gap-3">
-            {list.map((p) => (
-              <Card key={p.id} className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-md font-semibold">{p.opportunity?.title ?? "Opportunité supprimée"}</h2>
-                    <StatusBadge tone={STATUS[p.status].tone}>{STATUS[p.status].label}</StatusBadge>
-                    {p.realPurchaseEnabled ? <Tag accent>Achat réel</Tag> : <Tag>Simulation</Tag>}
-                  </div>
-                  <p className="mt-1 text-sm text-text-muted">Prix max <Money cents={p.maxPriceCents} /> · budget <Money cents={p.budgetCents} /> · créée {formatDateTime(p.createdAt)}</p>
-                  {p.opportunity ? <p className="text-sm text-text-muted">Observé <Money cents={p.opportunity.observed.priceCents + p.opportunity.observed.shippingCents} /> port compris · marge estimée <Money cents={p.opportunity.estimate.marginCents} signed /></p> : null}
-                  {p.checks.length > 0 ? (
-                    <ul className="mt-3 grid gap-1 text-sm sm:grid-cols-2">
-                      {p.checks.map((c) => <li key={c.code} className="flex items-start gap-1.5">{c.ok ? <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> : <X className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />}<span className={c.ok ? "text-text" : "text-danger"}>{c.label}</span></li>)}
-                    </ul>
-                  ) : <p className="mt-2 text-xs text-text-muted">Les contrôles s'exécutent à la confirmation : prix max, budget de la demande, budget journalier, doublon, marge positive, confirmation explicite, connecteur autorisé.</p>}
-                  {p.resultNote ? <p className="mt-2 text-xs text-text-muted">{p.resultNote}</p> : null}
-                </div>
-                {canConfirm ? (
-                  <div className="flex flex-row flex-wrap gap-2 md:flex-col">
-                    {p.status === "awaiting_confirmation" ? <><Button size="sm" onClick={() => setConfirm(p)}>Confirmer (simulation)</Button><Button size="sm" variant="ghost" onClick={() => cancel.mutate(p.id)}>Annuler</Button></> : null}
-                    {p.opportunity ? <Link to="/app/radar"><Button size="sm" variant="ghost">Voir dans le Radar</Button></Link> : null}
-                  </div>
-                ) : null}
-              </Card>
-            ))}
-          </div>
-        )}
-      </QueryBoundary>
-      <ConfirmDialog open={confirm !== null} onClose={() => setConfirm(null)} onConfirm={() => confirm && confirmMut.mutate(confirm.id)} loading={confirmMut.isPending} title="Confirmer la demande d'achat ?" description="Les contrôles s'exécutent maintenant. Comme l'achat réel est désactivé, le résultat sera une simulation : aucun paiement, aucune commande chez un vendeur." confirmLabel="Je confirme (simulation)" typeToConfirm="SIMULER" typed={typed} onTypedChange={setTyped} />
+      <PageHeader
+        icon={<ShoppingCart />}
+        tone="amber"
+        eyebrow="Achat assisté"
+        title="À valider"
+        description={`La liste des bonnes affaires repérées par le radar (note de ${REVIEW_THRESHOLD}/100 ou plus). Vérifiez le calcul achat → revente → bénéfice, puis validez l'achat en un clic, suivez ou écartez. L'historique des achats est en bas de page.`}
+        actions={<><Link to="/app/radar"><Button variant="secondary">Bonnes affaires</Button></Link><Link to="/app/auto-buy"><Button variant="secondary" icon={<Bot />}>Achat auto</Button></Link></>}
+      />
+      <Alert tone="warning" className="mb-5" title="Achat réel désactivé">Valider déclenche un achat SIMULÉ, avec tous les contrôles (prix maximal, budget, plafond du jour, doublon, marge positive). Aucun paiement ni commande chez un vendeur tant qu'un connecteur d'achat autorisé n'existe pas.</Alert>
+
+      <section className="mb-8">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-md font-semibold">Affaires à valider <span className="num text-text-muted">({toReview.data?.length ?? 0})</span></h2>
+        </div>
+        <QueryBoundary query={toReview} empty={(d) => d.length === 0 ? <EmptyState icon={<Check />} title="Rien à valider" description="Toutes les bonnes affaires ont été traitées. Lancez une analyse dans « Bonnes affaires » pour en trouver d'autres." action={<Link to="/app/radar"><Button variant="secondary">Bonnes affaires</Button></Link>} /> : null}>
+          {(list) => (
+            <div className="grid gap-3 2xl:grid-cols-2">
+              {list.map((o) => <OpportunityCard key={o.id} o={o} canWrite={canBuy} compact onBuy={() => buy.mutate(o.id)} buying={buy.isPending && buy.variables === o.id} onStatus={(s) => (s === "dismissed" ? dismiss.mutate(o.id) : s === "watching" ? watch.mutate(o.id) : undefined)} />)}
+            </div>
+          )}
+        </QueryBoundary>
+      </section>
+
+      <section>
+        <div className="mb-3 flex items-center gap-2"><History className="size-4 text-text-muted" aria-hidden /><h2 className="text-md font-semibold">Historique des achats</h2></div>
+        <QueryBoundary query={purchases} empty={(d) => d.length === 0 ? <EmptyState title="Aucun achat pour l'instant" description="Les achats validés à la main et les achats automatiques apparaissent ici." /> : null}>
+          {(list) => (
+            <Card padding="none" className="overflow-x-auto">
+              <table className="w-full min-w-[860px] text-sm">
+                <thead><tr className="border-b border-border text-left">{["Article", "Mode", "Note", "Total payé", "Revente estimée", "Bénéfice", "Statut", ""].map((h) => <th key={h} className="th-label px-4 py-2.5 first:pl-5">{h}</th>)}</tr></thead>
+                <tbody>
+                  {list.map((p) => {
+                    const o = p.opportunity;
+                    const d = o ? dealEconomics(o.observed, o.estimate.resalePriceCents, fees, o.estimate.expectedFeesCents) : null;
+                    return (
+                      <tr key={p.id} className="border-b border-border align-middle last:border-0">
+                        <td className="px-4 py-3 pl-5">
+                          <span className="flex items-center gap-3">
+                            {o?.observed.photoUrl ? <img src={o.observed.photoUrl} alt="" className="size-12 shrink-0 rounded-md object-cover" /> : <span className="flex size-12 shrink-0 items-center justify-center rounded-md bg-surface-muted text-text-subtle"><Images className="size-4" aria-hidden /></span>}
+                            <span className="min-w-0"><span className="block truncate font-medium text-text">{o?.title ?? "Affaire supprimée"}</span><span className="num block text-xs text-text-muted">{formatDateTime(p.createdAt)}</span></span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">{p.mode === "auto" ? <Tag accent><Bot className="mr-1 size-3" aria-hidden />Auto</Tag> : <Tag><User className="mr-1 size-3" aria-hidden />Manuel</Tag>}</td>
+                        <td className="px-4 py-3">{o ? <ScoreRing score={o.score} size={36} stroke={4} /> : "—"}</td>
+                        <td className="num px-4 py-3 font-medium">{d ? formatCents(d.totalCents) : formatCents(p.maxPriceCents)}{d ? <span className="block text-[11px] text-text-muted">{formatCents(d.itemCents)} + {formatCents(d.shippingCents)} + {formatCents(d.protectionCents)}</span> : null}</td>
+                        <td className="num px-4 py-3">{d ? formatCents(d.resaleCents) : "—"}</td>
+                        <td className="num px-4 py-3">{d ? <span className={d.profitCents > 0 ? "font-semibold text-success" : "font-semibold text-danger"}>{d.profitCents > 0 ? "+" : ""}{formatCents(d.profitCents)}<span className="block text-[11px] font-normal whitespace-nowrap text-text-muted">marge {Math.round(d.marginRate * 100)} %</span></span> : "—"}</td>
+                        <td className="px-4 py-3"><StatusBadge tone={STATUS[p.status].tone}>{STATUS[p.status].label}</StatusBadge>{p.checks.some((c) => !c.ok) ? <span className="mt-1 block text-[11px] text-danger">{p.checks.filter((c) => !c.ok && c.code !== "connector_authorized").map((c) => c.label).join(" · ")}</span> : null}</td>
+                        <td className="px-4 py-3 text-right">
+                          {canBuy && p.status === "awaiting_confirmation" ? <span className="inline-flex gap-1"><Button size="sm" onClick={() => setConfirm(p)}>Confirmer</Button><Button size="sm" variant="ghost" icon={<X />} onClick={() => cancel.mutate(p.id)}>Annuler</Button></span> : null}
+                          {p.mode === "auto" && p.cancelableUntil && new Date(p.cancelableUntil) > new Date() && p.status === "simulated" ? <Link to="/app/auto-buy" className="text-xs font-medium text-tone-amber underline underline-offset-2">Annulable</Link> : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </Card>
+          )}
+        </QueryBoundary>
+      </section>
+      <ConfirmDialog open={confirm !== null} onClose={() => setConfirm(null)} onConfirm={() => confirm && confirmMut.mutate(confirm.id)} loading={confirmMut.isPending} title="Confirmer la demande d'achat ?" description="Les contrôles s'exécutent maintenant. L'achat réel étant désactivé, le résultat sera une simulation : aucun paiement, aucune commande chez un vendeur." confirmLabel="Je confirme (simulation)" />
     </>
   );
 }

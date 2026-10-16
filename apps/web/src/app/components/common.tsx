@@ -43,6 +43,8 @@ export function JobStatusBadge({ status }: { status: JobStatus }) {
 export const PERIODS: { value: PeriodPreset; label: string }[] = [
   { value: "7d", label: "7 j" },
   { value: "30d", label: "30 j" },
+  { value: "month", label: "Ce mois-ci" },
+  { value: "last_month", label: "Mois dernier" },
   { value: "90d", label: "90 j" },
   { value: "12m", label: "12 mois" },
   { value: "ytd", label: "Année" },
