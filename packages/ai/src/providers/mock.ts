@@ -82,6 +82,7 @@ export class MockAIProvider implements AIProvider {
 
   private renderStructured(req: StructuredRequest<unknown>): unknown {
     const hints = readHints(req.prompt);
+    if (req.schemaName === "listing_generation") return mockGeneratedListing(hints);
     if (req.schemaName === "listing_description") {
       return {
         title: `${hints.brand ? hints.brand + " " : ""}${hints.title ?? "Article"}`.slice(0, 120),
@@ -108,6 +109,10 @@ export class MockAIProvider implements AIProvider {
 
 interface Hints {
   kind?: string;
+  notes?: string;
+  files?: string;
+  photos?: string;
+  seed?: string;
   decision?: string;
   priceCents?: number;
   buyerName?: string;
@@ -133,4 +138,88 @@ function readHints(prompt: string): Hints {
 
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+// ---------------------------------------------------------------------------
+// Générateur d'annonces simulé : le simulateur ne voit pas les photos. Il
+// déduit ce qu'il peut des indications (marque, taille, notes, noms de
+// fichiers) et complète avec un gabarit déterministe, clairement signalé
+// comme simulé dans l'interface.
+// ---------------------------------------------------------------------------
+
+interface PieceSpec { kw: string[]; piece: string; category: string; material: string | null; colors: string[] }
+
+const PIECES: PieceSpec[] = [
+  { kw: ["jean", "denim", "501"], piece: "Jean", category: "men", material: "Denim", colors: ["Bleu"] },
+  { kw: ["pull", "maille", "torsad", "cardigan"], piece: "Pull en maille", category: "men", material: "Laine", colors: ["Bleu marine", "Beige", "Gris"] },
+  { kw: ["sweat", "hoodie", "capuche"], piece: "Sweat à capuche", category: "men", material: "Coton", colors: ["Gris", "Noir"] },
+  { kw: ["basket", "sneaker", "air max", "samba", "stan smith", "running", "chaussure"], piece: "Baskets", category: "shoes", material: "Cuir", colors: ["Blanc", "Noir"] },
+  { kw: ["bottine", "boots", "1460", "chelsea"], piece: "Bottines", category: "shoes", material: "Cuir", colors: ["Noir"] },
+  { kw: ["robe"], piece: "Robe midi", category: "women", material: "Viscose", colors: ["Noir", "Vert"] },
+  { kw: ["jupe"], piece: "Jupe plissée", category: "women", material: "Polyester", colors: ["Beige"] },
+  { kw: ["blouse", "chemisier"], piece: "Blouse", category: "women", material: "Soie", colors: ["Blanc"] },
+  { kw: ["doudoune", "parka", "nuptse"], piece: "Doudoune", category: "men", material: "Polyester", colors: ["Noir"] },
+  { kw: ["manteau", "trench"], piece: "Manteau", category: "women", material: "Laine", colors: ["Camel"] },
+  { kw: ["veste", "blouson", "jacket"], piece: "Veste", category: "men", material: "Coton", colors: ["Kaki", "Noir"] },
+  { kw: ["chemise", "flanelle"], piece: "Chemise", category: "men", material: "Coton", colors: ["Bleu ciel", "Blanc"] },
+  { kw: ["polo"], piece: "Polo", category: "men", material: "Coton", colors: ["Blanc", "Bleu marine"] },
+  { kw: ["t-shirt", "tshirt", "tee"], piece: "T-shirt", category: "men", material: "Coton", colors: ["Blanc", "Noir"] },
+  { kw: ["sac", "bag", "pliage", "cabas"], piece: "Sac", category: "bags", material: "Toile", colors: ["Noir"] },
+  { kw: ["lunettes", "wayfarer"], piece: "Lunettes de soleil", category: "accessories", material: null, colors: ["Noir"] },
+];
+
+const BRAND_DEFAULT_PIECE: Record<string, string> = {
+  "nike": "Baskets", "adidas": "Baskets", "new balance": "Baskets", "converse": "Baskets", "vans": "Baskets",
+  "levi's": "Jean", "the north face": "Doudoune", "patagonia": "Veste", "ralph lauren": "Pull en maille", "lacoste": "Polo",
+  "dr. martens": "Bottines", "longchamp": "Sac", "ray-ban": "Lunettes de soleil", "carhartt": "Veste", "sézane": "Blouse",
+  "maje": "Robe midi", "zara": "Robe midi", "uniqlo": "T-shirt", "tommy hilfiger": "Chemise", "stone island": "Sweat à capuche",
+};
+
+const KNOWN_BRANDS = ["The North Face", "Ralph Lauren", "Dr. Martens", "New Balance", "Tommy Hilfiger", "Stone Island", "Levi's", "Nike", "Adidas", "Converse", "Vans", "Zara", "Carhartt", "Lacoste", "Patagonia", "Sézane", "Maje", "Longchamp", "Ray-Ban", "Uniqlo", "Sandro", "Kenzo", "Jacquemus", "Mango", "Champion", "Arc'teryx"];
+const COLORS = ["noir", "blanc", "bleu marine", "bleu", "beige", "gris", "rouge", "vert", "kaki", "marron", "rose", "camel", "jaune"];
+
+function simplify(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[-_.']+/g, " ");
+}
+
+function mockGeneratedListing(h: Hints): Record<string, unknown> {
+  const haystack = simplify([h.brand, h.notes, h.files].filter(Boolean).join(" "));
+  const rnd = seededRandom(hashString(h.seed ?? haystack ?? "selio"));
+  const brand = h.brand?.trim() || KNOWN_BRANDS.find((b) => haystack.includes(simplify(b))) || null;
+  const byKeyword = PIECES.find((p) => p.kw.some((k) => haystack.includes(simplify(k))));
+  const byBrand = brand ? PIECES.find((p) => p.piece === BRAND_DEFAULT_PIECE[brand.toLowerCase()]) : undefined;
+  const spec = byKeyword ?? byBrand ?? PIECES[Math.floor(rnd() * PIECES.length)]!;
+  const sizeMatch = haystack.match(/\b(xxs|xs|s|m|l|xl|xxl|3[4-9]|4[0-6]|w\d{2})\b/i);
+  const size = h.size?.trim() || (sizeMatch ? sizeMatch[1]!.toUpperCase() : null);
+  const colorWord = COLORS.find((c) => haystack.includes(c));
+  const color = colorWord ? colorWord.charAt(0).toUpperCase() + colorWord.slice(1) : spec.colors[Math.floor(rnd() * spec.colors.length)]!;
+  const condition = /etiquette/.test(haystack) ? "new_with_tags" : /\bneuf\b/.test(haystack) ? "new_without_tags" : /defaut|tache|trou|use/.test(haystack) ? "satisfactory" : rnd() < 0.6 ? "very_good" : "good";
+  const conditionText: Record<string, string> = {
+    new_with_tags: "Neuf avec étiquette, jamais porté.",
+    new_without_tags: "Neuf sans étiquette, jamais porté.",
+    very_good: "Très bon état : porté quelques fois, aucun défaut visible.",
+    good: "Bon état : légères traces d'usage, sans défaut majeur.",
+    satisfactory: "État correct : défaut visible sur les photos, prix ajusté en conséquence.",
+  };
+  const title = [brand, spec.piece, color.toLowerCase(), size ? `taille ${size}` : null].filter(Boolean).join(" ").slice(0, 70);
+  const description = [
+    `${spec.piece}${brand ? ` ${brand}` : ""} coloris ${color.toLowerCase()}${spec.material ? `, en ${spec.material.toLowerCase()}` : ""}.`,
+    conditionText[condition],
+    size ? `Taille ${size}${spec.category === "shoes" ? "" : ", coupe classique"}.` : "Taille à confirmer sur l'étiquette.",
+    "Mesures disponibles sur demande.",
+    "Envoi soigné sous 48 h.",
+  ].join(" ");
+  const tag = (v: string) => `#${simplify(v).replace(/\s+/g, "")}`;
+  return {
+    title: title.length >= 3 ? title : `${spec.piece} ${color}`,
+    description,
+    brand,
+    category: spec.category,
+    size,
+    condition,
+    colors: [color],
+    material: spec.material,
+    hashtags: [brand ? tag(brand) : null, tag(spec.piece), tag(color)].filter(Boolean),
+    confidence: brand || byKeyword ? 0.6 : 0.35,
+  };
 }

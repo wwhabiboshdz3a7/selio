@@ -1,9 +1,9 @@
 import { repos } from "@selio/db";
-import { breakdownBy, daysInStock, orderMargin, periodFromPreset, previousPeriod, salesKpis, salesSeries, stockKpis, toCsv, type PeriodPreset } from "@selio/domain";
+import { PERIOD_PRESETS, breakdownBy, buildDashboard, buildDressing, comparablesFromSales, daysInStock, granularityFor, orderMargin, periodFromPreset, periodLabel, previousPeriod, salesKpis, salesSeries, stockKpis, toCsv, type PeriodPreset } from "@selio/domain";
 import { AppError, requireAction, withOrg, type OrgContext } from "../context";
 import type { AnalyticsData, AnalyticsFilters, OverviewData } from "../types-data";
 
-const PRESETS: PeriodPreset[] = ["7d", "30d", "90d", "12m", "ytd", "all"];
+const PRESETS: readonly PeriodPreset[] = PERIOD_PRESETS;
 
 function preset(v: unknown): PeriodPreset {
   return PRESETS.includes(v as PeriodPreset) ? (v as PeriodPreset) : "30d";
@@ -30,9 +30,14 @@ export function getOverview(ctx: OrgContext, rawPeriod: unknown): Promise<Overvi
     if (state.globalPaused) alerts.push({ id: "global-pause", tone: "warning", title: "Automatisations en arrêt global", description: "Aucune règle ne s'exécute tant que l'arrêt global est actif.", to: "/app/automations" });
     const ai = await ctx.services.ai.status();
     if (ai.status === "unavailable" || ai.status === "circuit_open") alerts.push({ id: "ai", tone: "warning", title: "Assistant IA indisponible", description: `${ai.message}. Les gabarits déterministes restent utilisables.`, to: "/app/settings/ai" });
+    const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+    const sales = comparablesFromSales(orders, new Map(items.map((i) => [i.id, i])));
     return {
-      period, sales: salesKpis(orders, p), previousSales: salesKpis(orders, previousPeriod(p)), stock: stockKpis(items, now),
-      series: salesSeries(orders, p, period === "7d" || period === "30d" ? "day" : period === "90d" ? "week" : "month"),
+      period, sales: salesKpis(orders, p), previousSales: salesKpis(orders, previousPeriod(p, period)), stock: stockKpis(items, now),
+      series: salesSeries(orders, p, granularityFor(period)),
+      periodLabel: periodLabel(period, now),
+      dashboard: buildDashboard(items, orders, p, now, { timezone: org.settings.timezone, granularity: granularityFor(period) }),
+      dressing: buildDressing(items, sales, { now, rules: org.settings.margin, republishAfterDays: org.settings.dressing.republishAfterDays }).summary,
       counts: { openConversations: conv.open, unreadMessages: conv.unread, pendingOrders: await repos.orders.countPending(tx), jobsAwaiting: jobCounts.awaiting_approval ?? 0, jobsFailed: jobCounts.failed ?? 0 },
       alerts, recentOrders: await repos.orders.recent(tx, 5), recentConversations: await repos.conversations.recent(tx, 5),
       staleItems: items.filter((i) => (i.status === "listed" || i.status === "in_stock") && daysInStock(i, now) > 45).slice(0, 5),
@@ -55,10 +60,10 @@ export function getAnalytics(ctx: OrgContext, raw: Record<string, unknown>): Pro
     let orders = await repos.orders.all(tx);
     if (filters.category) orders = orders.filter((o) => itemMap.get(o.itemId)?.category === filters.category);
     if (filters.channel) orders = orders.filter((o) => o.provider === filters.channel);
-    const granularity = filters.granularity ?? (filters.period === "7d" || filters.period === "30d" ? "day" : filters.period === "90d" ? "week" : "month");
+    const granularity = filters.granularity ?? granularityFor(filters.period);
     const inPeriod = orders.filter((o) => new Date(o.createdAt) >= p.from && new Date(o.createdAt) < p.to && o.status !== "cancelled" && o.status !== "refunded");
     return {
-      period: filters.period, sales: salesKpis(orders, p), previousSales: salesKpis(orders, previousPeriod(p)), stock: stockKpis(items, now, { period: p }),
+      period: filters.period, sales: salesKpis(orders, p), previousSales: salesKpis(orders, previousPeriod(p, filters.period)), stock: stockKpis(items, now, { period: p }),
       series: salesSeries(orders, p, granularity),
       byCategory: breakdownBy(orders, (o) => itemMap.get(o.itemId)?.category ?? "other", p),
       byChannel: breakdownBy(orders, (o) => o.provider, p),

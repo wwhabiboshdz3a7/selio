@@ -10,11 +10,12 @@ export function createProvider(config: AIConfig, deps: { fetchImpl?: typeof fetc
       return new OllamaProvider({
         baseUrl: config.OLLAMA_BASE_URL,
         model: config.OLLAMA_MODEL,
+        visionModel: config.OLLAMA_VISION_MODEL,
         timeoutMs: config.AI_TIMEOUT_MS,
         contextLimit: config.AI_CONTEXT_LIMIT,
         maxOutputTokens: config.AI_MAX_OUTPUT_TOKENS,
         fetchImpl: deps.fetchImpl,
-        headers: deps.headers,
+        headers: { ...(config.OLLAMA_AUTH_HEADER ? { authorization: config.OLLAMA_AUTH_HEADER } : {}), ...(deps.headers ?? {}) },
       });
     case "mock":
     default:

@@ -10,3 +10,4 @@ export * from "./connections";
 export * from "./ai";
 export * from "./api";
 export * from "./labels";
+export * from "./studio";

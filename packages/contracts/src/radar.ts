@@ -48,6 +48,12 @@ export const opportunity = z.object({
     condition: itemCondition.nullable().default(null),
     category: itemCategory.nullable().default(null),
     sellerHandle: z.string().max(80).nullable().default(null),
+    /** Note moyenne du vendeur (sur 5) et nombre d'évaluations, si visibles. */
+    sellerRating: z.number().min(0).max(5).nullable().default(null),
+    sellerReviews: z.number().int().min(0).nullable().default(null),
+    /** Photo principale de l'annonce observée (URL ou data URL en démo). */
+    photoUrl: z.string().max(200_000).nullable().default(null),
+    photoCount: z.number().int().min(0).max(30).nullable().default(null),
     url: z.string().max(500).nullable().default(null),
     seenAt: isoDate,
     source: z.enum(["demo_simulator", "extension_capture", "connector"]),
@@ -63,6 +69,8 @@ export const opportunity = z.object({
   }),
   score: z.number().min(0).max(100),
   reasons: z.array(z.string().max(200)).default([]),
+  /** Détail de la note par critère (points obtenus / maximum). */
+  breakdown: z.array(z.object({ key: z.string().max(40), label: z.string().max(80), points: z.number(), max: z.number() })).default([]),
   status: opportunityStatus.default("new"),
   createdAt: isoDate,
   updatedAt: isoDate,
@@ -80,6 +88,10 @@ export const purchaseRequest = z.object({
   maxPriceCents: nonNegCents,
   budgetCents: nonNegCents,
   status: purchaseStatus.default("draft"),
+  /** manual = validé à la main (« À valider ») ; auto = déclenché par l'achat automatique. */
+  mode: z.enum(["manual", "auto"]).default("manual"),
+  /** Fin du délai d'annulation d'un achat automatique (null = pas de délai). */
+  cancelableUntil: isoDate.nullable().default(null),
   checks: z
     .array(z.object({ code: z.string().max(60), ok: z.boolean(), label: z.string().max(200) }))
     .default([]),

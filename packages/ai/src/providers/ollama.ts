@@ -3,6 +3,8 @@ import { AIError, extractJson, toAIError, withTimeout, type AIProvider, type Gen
 export interface OllamaOptions {
   baseUrl: string;
   model: string;
+  /** Modèle multimodal utilisé quand la requête contient des images. */
+  visionModel?: string;
   timeoutMs: number;
   contextLimit: number;
   maxOutputTokens: number;
@@ -28,10 +30,12 @@ interface OllamaGenerateResponse {
 export class OllamaProvider implements AIProvider {
   readonly name = "ollama";
   readonly model: string;
+  readonly visionModel: string | null;
   private readonly fetchImpl: typeof fetch;
 
   constructor(private readonly opts: OllamaOptions) {
     this.model = opts.model;
+    this.visionModel = opts.visionModel ?? null;
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
     if (!this.fetchImpl) throw new AIError("config", "fetch indisponible dans cet environnement");
   }
@@ -57,7 +61,11 @@ export class OllamaProvider implements AIProvider {
       if (!present) {
         return { ok: false, status: "degraded", message: `Serveur joignable mais modèle « ${this.model} » absent (ollama pull ${this.model})`, latencyMs, model: this.model, provider: this.name, details: { models: names } };
       }
-      return { ok: true, status: "healthy", message: "Ollama joignable, modèle présent", latencyMs, model: this.model, provider: this.name, details: { models: names } };
+      const vision = this.visionModel;
+      if (vision && !names.some((n) => n === vision || n.split(":")[0] === vision.split(":")[0])) {
+        return { ok: false, status: "degraded", message: `Modèle principal présent, mais modèle de vision « ${vision} » absent (ollama pull ${vision}) : le générateur d'annonces ne lira pas les photos`, latencyMs, model: this.model, provider: this.name, details: { models: names } };
+      }
+      return { ok: true, status: "healthy", message: vision ? `Ollama joignable, modèles « ${this.model} » et « ${vision} » présents` : "Ollama joignable, modèle présent", latencyMs, model: this.model, provider: this.name, details: { models: names, visionModel: vision } };
     } catch (err) {
       const e = toAIError(err);
       return { ok: false, status: "unavailable", message: e.code === "timeout" ? "Délai de connexion dépassé" : `Ollama injoignable : ${e.message}`, latencyMs: Date.now() - started, model: this.model, provider: this.name };
@@ -73,7 +81,7 @@ export class OllamaProvider implements AIProvider {
       const res = await this.fetchImpl(this.url("/api/generate"), { method: "POST", headers: this.headers(), body: JSON.stringify(body), signal: t.signal });
       if (res.status === 404) {
         const text = await safeText(res);
-        if (/model/i.test(text)) throw new AIError("model_missing", `Modèle « ${this.model} » introuvable sur le serveur Ollama`, false);
+        if (/model/i.test(text)) throw new AIError("model_missing", `Modèle « ${String(body.model ?? this.model)} » introuvable sur le serveur Ollama`, false);
         throw new AIError("http", `Ollama 404 : ${text.slice(0, 200)}`, false);
       }
       if (res.status === 429) throw new AIError("rate_limited", "Ollama sature (429)", true);
@@ -97,8 +105,15 @@ export class OllamaProvider implements AIProvider {
     };
   }
 
+  /** Modèle et images à envoyer : le modèle de vision n'est utilisé que si la requête contient des photos. */
+  private target(req: GenerateRequest): { model: string; images?: string[] } {
+    const images = req.images?.filter((i) => i.length > 0) ?? [];
+    if (images.length > 0 && this.visionModel) return { model: this.visionModel, images };
+    return { model: this.model };
+  }
+
   async generate(req: GenerateRequest, opts?: GenerateOptions): Promise<GenerateResult> {
-    const { data, latencyMs } = await this.call({ model: this.model, system: req.system, prompt: req.prompt, stream: false, options: this.options(req) }, opts);
+    const { data, latencyMs } = await this.call({ ...this.target(req), system: req.system, prompt: req.prompt, stream: false, options: this.options(req) }, opts);
     return {
       text: (data.response ?? "").trim(),
       usage: { promptTokens: data.prompt_eval_count ?? 0, outputTokens: data.eval_count ?? 0 },
@@ -110,7 +125,8 @@ export class OllamaProvider implements AIProvider {
 
   async generateStructured<T>(req: StructuredRequest<T>, opts?: GenerateOptions): Promise<StructuredResult<T>> {
     const prompt = `${req.prompt}\n\nRéponds UNIQUEMENT avec un objet JSON valide${req.example ? ` de la forme : ${JSON.stringify(req.example)}` : ""}.`;
-    const { data, latencyMs } = await this.call({ model: this.model, system: req.system, prompt, stream: false, format: "json", options: this.options(req) }, opts);
+    const target = this.target(req);
+    const { data, latencyMs } = await this.call({ ...target, system: req.system, prompt, stream: false, format: "json", options: this.options(req) }, opts);
     const raw = (data.response ?? "").trim();
     const json = extractJson(raw);
     let parsedJson: unknown;
@@ -129,7 +145,7 @@ export class OllamaProvider implements AIProvider {
       text: raw,
       usage: { promptTokens: data.prompt_eval_count ?? 0, outputTokens: data.eval_count ?? 0 },
       latencyMs,
-      model: data.model ?? this.model,
+      model: data.model ?? target.model,
       provider: this.name,
     };
   }

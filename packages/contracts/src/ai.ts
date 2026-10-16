@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { cents, id, isoDate } from "./common";
 
-export const AI_REQUEST_KINDS = ["reply_suggestion", "negotiation", "listing_description", "summary", "health"] as const;
+export const AI_REQUEST_KINDS = ["reply_suggestion", "negotiation", "listing_description", "listing_generation", "summary", "health"] as const;
 export const aiRequestKind = z.enum(AI_REQUEST_KINDS);
 export type AiRequestKind = z.infer<typeof aiRequestKind>;
 

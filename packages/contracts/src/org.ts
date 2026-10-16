@@ -40,6 +40,41 @@ export const aiSettings = z.object({
 });
 export type AiSettings = z.infer<typeof aiSettings>;
 
+/**
+ * Frais payés par l'acheteur en plus du prix et du port (ex. « Protection
+ * acheteurs » sur Vinted : part fixe + pourcentage du prix). Valeurs
+ * modifiables : elles servent à calculer le coût réel d'un achat.
+ */
+export const buyerFees = z.object({
+  fixedCents: nonNegCents.max(10_000).default(70),
+  rate: rate.default(0.05),
+});
+export type BuyerFees = z.infer<typeof buyerFees>;
+
+/**
+ * Achat automatique : au-dessus du seuil de score, l'application achète
+ * seule, dans la limite d'un plafond journalier, puis laisse un délai pour
+ * annuler. Désactivé par défaut.
+ */
+export const autoBuySettings = z.object({
+  enabled: z.boolean().default(false),
+  /** Score minimal (sur 100) pour déclencher un achat automatique. */
+  threshold: z.number().int().min(50).max(100).default(85),
+  /** Plafond de dépense par jour (port et frais inclus). */
+  dailyCapCents: nonNegCents.default(15_000),
+  /** Prix maximal par article (port et frais inclus). */
+  maxItemCents: nonNegCents.default(6_000),
+  /** Délai pendant lequel l'achat automatique peut être annulé. */
+  cancelWindowMinutes: z.number().int().min(0).max(1440).default(30),
+});
+export type AutoBuySettings = z.infer<typeof autoBuySettings>;
+
+/** Dressing intelligent : à partir de quand une annonce est à republier. */
+export const dressingSettings = z.object({
+  republishAfterDays: z.number().int().min(1).max(90).default(7),
+});
+export type DressingSettings = z.infer<typeof dressingSettings>;
+
 export const notificationSettings = z.object({
   emailDigest: z.boolean().default(false),
   newMessage: z.boolean().default(true),
@@ -54,6 +89,9 @@ export const orgSettings = z.object({
   margin: marginRules.default({}),
   ai: aiSettings.default({}),
   notifications: notificationSettings.default({}),
+  buyerFees: buyerFees.default({}),
+  autoBuy: autoBuySettings.default({}),
+  dressing: dressingSettings.default({}),
   retentionDays: z.object({
     messages: z.number().int().min(30).max(3650).default(730),
     auditLogs: z.number().int().min(90).max(3650).default(365),

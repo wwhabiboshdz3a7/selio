@@ -1,6 +1,7 @@
 import { radarSearchCreate, type Opportunity, type PurchaseRequest, type RadarSearch } from "@selio/contracts";
 import { repos } from "@selio/db";
-import { comparablesFromSales, estimateResale, hashString, localDayKey, purchaseOutcome, rankOpportunities, runPurchaseChecks, scoreOpportunity, seededRandom } from "@selio/domain";
+import { autoBuyDecision, canStillCancel, cancelableUntil, comparablesFromSales, estimateResale, hashString, localDayKey, purchaseCost, purchaseOutcome, rankOpportunities, runPurchaseChecks, scoreOpportunity, seededRandom } from "@selio/domain";
+import type { Tx } from "@selio/db";
 import { AppError, nowIso, requireAction, withOrg, type OrgContext } from "../context";
 
 export const listSearches = (ctx: OrgContext) => withOrg(ctx, (tx) => repos.searches.list(tx));
@@ -35,7 +36,14 @@ export function deleteSearch(ctx: OrgContext, id: string): Promise<void> {
 }
 
 /** Analyse : simulateur déterministe uniquement (aucune source réelle n'est consultée). */
-export function runSearch(ctx: OrgContext, id: string): Promise<{ found: number }> {
+export async function runSearch(ctx: OrgContext, id: string): Promise<{ found: number; autoBought: number }> {
+  const res = await runSearchOnly(ctx, id);
+  const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+  const auto = org.settings.autoBuy.enabled ? await runAutoBuy(ctx) : null;
+  return { found: res.found, autoBought: auto?.bought ?? 0 };
+}
+
+function runSearchOnly(ctx: OrgContext, id: string): Promise<{ found: number }> {
   requireAction(ctx, "radar.write");
   return withOrg(ctx, async (tx) => {
     const search = await repos.searches.byId(tx, id);
@@ -58,10 +66,13 @@ export function runSearch(ctx: OrgContext, id: string): Promise<{ found: number 
       const size = search.criteria.sizes.length ? search.criteria.sizes[Math.floor(rnd() * search.criteria.sizes.length)]! : "M";
       const seenAt = new Date(now.getTime() - Math.floor(rnd() * 20) * 3_600_000).toISOString();
       const est = estimateResale({ priceCents, brand, category, condition }, comps);
-      const scored = scoreOpportunity({ priceCents, shippingCents, seenAt }, est, search, 0, now);
+      const photoCount = 1 + Math.floor(rnd() * 8);
+      const sellerRating = Math.round((3.6 + rnd() * 1.4) * 10) / 10;
+      const sellerReviews = Math.floor(rnd() * 180);
+      const scored = scoreOpportunity({ priceCents, shippingCents, seenAt }, est, search, 0, now, { condition, photoCount, sellerRating, sellerReviews, fees: org.settings.buyerFees });
       const title = `${brand} ${search.criteria.keywords[0] ?? (category === "shoes" ? "sneakers" : "pièce")} ${size}`;
       if (await repos.opportunities.exists(tx, search.id, title, priceCents)) continue;
-      await repos.opportunities.create(tx, { searchId: search.id, title, observed: { priceCents, shippingCents, brand, size, condition, category, sellerHandle: `vendeur_${Math.floor(rnd() * 900 + 100)}`, url: null, seenAt, source: "demo_simulator" }, estimate: { resalePriceCents: est.resalePriceCents, expectedFeesCents: 0, marginCents: scored.marginCents, marginRate: scored.marginRate, confidence: est.confidence, method: est.method, comparableCount: est.comparableCount }, score: scored.score, reasons: scored.reasons, status: "new", createdAt: seenAt });
+      await repos.opportunities.create(tx, { searchId: search.id, title, observed: { priceCents, shippingCents, brand, size, condition, category, sellerHandle: `vendeur_${Math.floor(rnd() * 900 + 100)}`, sellerRating, sellerReviews, photoUrl: null, photoCount, url: null, seenAt, source: "demo_simulator" }, estimate: { resalePriceCents: est.resalePriceCents, expectedFeesCents: 0, marginCents: scored.marginCents, marginRate: scored.marginRate, confidence: est.confidence, method: est.method, comparableCount: est.comparableCount }, score: scored.score, reasons: scored.reasons, breakdown: scored.breakdown, status: "new", createdAt: seenAt });
       found++;
     }
     await repos.searches.update(tx, id, { lastRunAt: nowIso(ctx) });
@@ -89,7 +100,7 @@ export function createPurchase(ctx: OrgContext, raw: { opportunityId?: string; m
     const opp = await repos.opportunities.byId(tx, raw.opportunityId!);
     const existing = await repos.purchases.activeForOpportunity(tx, opp.id);
     if (existing) throw new AppError("conflict", "Une demande d'achat existe déjà pour cette opportunité (prévention des doublons).", 409, { existingId: existing.id });
-    const p = await repos.purchases.create(tx, { opportunityId: opp.id, dedupeKey: `purchase:${opp.id}`, maxPriceCents: raw.maxPriceCents!, budgetCents: raw.budgetCents!, status: "awaiting_confirmation", realPurchaseEnabled: false });
+    const p = await repos.purchases.create(tx, { opportunityId: opp.id, dedupeKey: `purchase:${opp.id}`, maxPriceCents: raw.maxPriceCents!, budgetCents: raw.budgetCents!, status: "awaiting_confirmation", mode: "manual", realPurchaseEnabled: false });
     await repos.audit.add(tx, { actorUserId: ctx.userId, action: "purchase.requested", targetType: "purchase_request", targetId: p.id, ip: ctx.ip });
     return p;
   });
@@ -97,21 +108,83 @@ export function createPurchase(ctx: OrgContext, raw: { opportunityId?: string; m
 
 export function confirmPurchase(ctx: OrgContext, id: string): Promise<PurchaseRequest> {
   requireAction(ctx, "purchase.simulate");
-  return withOrg(ctx, async (tx) => {
-    const p = await repos.purchases.byId(tx, id);
-    if (p.status !== "awaiting_confirmation") throw new AppError("conflict", "Cette demande n'est plus en attente de confirmation.", 409);
-    const opp = await repos.opportunities.byId(tx, p.opportunityId);
-    const confirmedAt = nowIso(ctx);
-    const checks = runPurchaseChecks({ opportunity: opp, request: { ...p, confirmedAt }, spentTodayCents: await repos.purchases.spentToday(tx, p.id), dailyBudgetCents: 50_000, duplicateExists: false, connectorAllowsPurchase: false });
-    const outcome = purchaseOutcome(checks, p.realPurchaseEnabled);
-    const saved = await repos.purchases.update(tx, id, { confirmedAt, checks: checks.map(({ code, ok, label }) => ({ code, ok, label })), status: outcome, executedAt: outcome === "blocked" ? null : confirmedAt, resultNote: outcome === "blocked" ? "Contrôles non satisfaits : aucun achat (même simulé) n'a été effectué." : "Achat SIMULÉ de bout en bout : aucun paiement ni commande réels. L'achat réel est désactivé et exige un connecteur autorisé." });
-    if (outcome !== "blocked") await repos.opportunities.update(tx, opp.id, { status: "purchased" });
-    await repos.audit.add(tx, { actorUserId: ctx.userId, action: "purchase.confirmed", targetType: "purchase_request", targetId: id, meta: { outcome }, ip: ctx.ip });
-    return saved;
-  });
+  return withOrg(ctx, (tx) => confirmPurchaseTx(ctx, tx, id));
+}
+
+async function confirmPurchaseTx(ctx: OrgContext, tx: Tx, id: string): Promise<PurchaseRequest> {
+  const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+  const p = await repos.purchases.byId(tx, id);
+  if (p.status !== "awaiting_confirmation") throw new AppError("conflict", "Cette demande n'est plus en attente de confirmation.", 409);
+  const opp = await repos.opportunities.byId(tx, p.opportunityId);
+  const confirmedAt = nowIso(ctx);
+  const checks = runPurchaseChecks({ opportunity: opp, request: { ...p, confirmedAt }, spentTodayCents: await repos.purchases.spentToday(tx, p.id), dailyBudgetCents: org.settings.autoBuy.dailyCapCents, duplicateExists: false, connectorAllowsPurchase: false, fees: org.settings.buyerFees });
+  const outcome = purchaseOutcome(checks, p.realPurchaseEnabled);
+  const saved = await repos.purchases.update(tx, id, { confirmedAt, checks: checks.map(({ code, ok, label }) => ({ code, ok, label })), status: outcome, executedAt: outcome === "blocked" ? null : confirmedAt, resultNote: outcome === "blocked" ? "Contrôles non satisfaits : aucun achat (même simulé) n'a été effectué." : "Achat SIMULÉ de bout en bout : aucun paiement ni commande réels. L'achat réel est désactivé et exige un connecteur autorisé." });
+  if (outcome !== "blocked") await repos.opportunities.update(tx, opp.id, { status: "purchased" });
+  await repos.audit.add(tx, { actorUserId: ctx.userId, action: "purchase.confirmed", targetType: "purchase_request", targetId: id, meta: { outcome }, ip: ctx.ip });
+  return saved;
 }
 
 export function cancelPurchase(ctx: OrgContext, id: string): Promise<PurchaseRequest> {
   requireAction(ctx, "purchase.simulate");
-  return withOrg(ctx, (tx) => repos.purchases.update(tx, id, { status: "cancelled" }));
+  return withOrg(ctx, async (tx) => {
+    const p = await repos.purchases.byId(tx, id);
+    if (p.status === "cancelled") return p;
+    if (p.status === "simulated" || p.status === "executed") {
+      if (p.mode !== "auto") throw new AppError("conflict", "Cet achat a déjà été effectué : il ne peut plus être annulé depuis Selio.", 409);
+      if (!canStillCancel(p.cancelableUntil, ctx.services.now())) throw new AppError("conflict", "Le délai d'annulation de cet achat automatique est dépassé.", 409);
+      await repos.opportunities.update(tx, p.opportunityId, { status: "dismissed" });
+    }
+    const saved = await repos.purchases.update(tx, id, { status: "cancelled", ...(p.mode === "auto" ? { resultNote: "Achat automatique annulé dans le délai prévu (simulation)." } : {}) });
+    await repos.audit.add(tx, { actorUserId: ctx.userId, action: "purchase.cancelled", targetType: "purchase_request", targetId: id, meta: { mode: p.mode }, ip: ctx.ip });
+    return saved;
+  });
+}
+
+/** « À valider » : un clic crée la demande d'achat et la confirme (contrôles compris). */
+export function quickBuy(ctx: OrgContext, opportunityId: string): Promise<PurchaseRequest> {
+  requireAction(ctx, "purchase.simulate");
+  return withOrg(ctx, async (tx) => {
+    const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+    const opp = await repos.opportunities.byId(tx, opportunityId);
+    if (await repos.purchases.activeForOpportunity(tx, opp.id)) throw new AppError("conflict", "Une demande d'achat existe déjà pour cette affaire (prévention des doublons).", 409);
+    const total = purchaseCost(opp.observed, org.settings.buyerFees).totalCents;
+    const search = await repos.searches.byId(tx, opp.searchId);
+    const p = await repos.purchases.create(tx, { opportunityId: opp.id, dedupeKey: `purchase:${opp.id}`, maxPriceCents: total, budgetCents: search.budgetCents, status: "awaiting_confirmation", mode: "manual", realPurchaseEnabled: false });
+    return confirmPurchaseTx(ctx, tx, p.id);
+  });
+}
+
+/** Achat automatique : affaires nouvelles au-dessus du seuil, dans le plafond du jour, annulables pendant le délai. */
+export function runAutoBuy(ctx: OrgContext): Promise<{ evaluated: number; bought: number; spentCents: number; skipped: { reason: string; count: number }[] }> {
+  requireAction(ctx, "purchase.simulate");
+  return withOrg(ctx, async (tx) => {
+    const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+    const settings = org.settings.autoBuy;
+    const skipped = new Map<string, number>();
+    let evaluated = 0, bought = 0, spentCents = 0;
+    const candidates = rankOpportunities(await repos.opportunities.list(tx, { status: "new" }));
+    for (const opp of candidates) {
+      evaluated++;
+      const spentToday = await repos.purchases.spentToday(tx, "");
+      const decision = autoBuyDecision({ opportunity: opp, settings, fees: org.settings.buyerFees, spentTodayCents: spentToday, alreadyPurchased: Boolean(await repos.purchases.activeForOpportunity(tx, opp.id)) });
+      if (!decision.buy) {
+        const reason = /sous le seuil/.test(decision.reason) ? `Note sous le seuil de ${settings.threshold}` : decision.reason;
+        skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
+        continue;
+      }
+      const now = ctx.services.now();
+      const search = await repos.searches.byId(tx, opp.searchId);
+      const checks = runPurchaseChecks({ opportunity: opp, request: { maxPriceCents: decision.totalCents, budgetCents: search.budgetCents, realPurchaseEnabled: false, confirmedAt: now.toISOString() }, spentTodayCents: spentToday, dailyBudgetCents: settings.dailyCapCents, duplicateExists: false, connectorAllowsPurchase: false, fees: org.settings.buyerFees });
+      const outcome = purchaseOutcome(checks, false);
+      const p = await repos.purchases.create(tx, { opportunityId: opp.id, dedupeKey: `purchase:${opp.id}`, maxPriceCents: decision.totalCents, budgetCents: search.budgetCents, status: outcome, mode: "auto", cancelableUntil: outcome === "blocked" ? null : cancelableUntil(now, settings), checks: checks.map(({ code, ok, label }) => ({ code, ok, label })), realPurchaseEnabled: false, confirmedAt: now.toISOString(), executedAt: outcome === "blocked" ? null : now.toISOString(), resultNote: outcome === "blocked" ? "Achat automatique bloqué par les contrôles." : `Achat automatique SIMULÉ : ${decision.reason}. Annulable pendant ${settings.cancelWindowMinutes} min.` });
+      if (outcome !== "blocked") {
+        await repos.opportunities.update(tx, opp.id, { status: "purchased" });
+        bought++;
+        spentCents += decision.totalCents;
+      }
+      await repos.audit.add(tx, { actorUserId: ctx.userId, action: "purchase.auto", targetType: "purchase_request", targetId: p.id, meta: { outcome, score: opp.score }, ip: ctx.ip });
+    }
+    return { evaluated, bought, spentCents, skipped: [...skipped.entries()].map(([reason, count]) => ({ reason, count })) };
+  });
 }

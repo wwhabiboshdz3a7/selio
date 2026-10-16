@@ -35,6 +35,11 @@ export interface GenerateRequest {
   /** Identifiant de corrélation (journalisation, métriques). */
   requestId?: string;
   kind?: string;
+  /**
+   * Images à analyser (base64 brut, sans préfixe data:). Envoyées au modèle
+   * de vision configuré (OLLAMA_VISION_MODEL), sinon au modèle principal.
+   */
+  images?: string[];
 }
 
 export interface GenerateOptions {

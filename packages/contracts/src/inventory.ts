@@ -32,6 +32,43 @@ export const photo = z.object({
 });
 export type Photo = z.infer<typeof photo>;
 
+/**
+ * Statistiques de l'annonce telles que la plateforme les affiche au vendeur
+ * (vues, favoris, offres reçues). Relevées par l'extension en mode connecté,
+ * simulées en démonstration. `updatedAt` null = jamais relevées.
+ */
+export const listingStats = z.object({
+  views: z.number().int().min(0).default(0),
+  favorites: z.number().int().min(0).default(0),
+  offers: z.number().int().min(0).default(0),
+  updatedAt: isoDate.nullable().default(null),
+});
+export type ListingStats = z.infer<typeof listingStats>;
+
+export const REPUBLICATION_MODES = ["manual", "auto"] as const;
+
+/** Une republication déjà effectuée : variante utilisée et rendement mesuré. */
+export const republication = z.object({
+  id,
+  variantId: z.string().trim().min(1).max(20),
+  at: isoDate,
+  mode: z.enum(REPUBLICATION_MODES).default("manual"),
+  /** Statistiques de l'annonce juste avant la republication. */
+  before: z.object({ views: z.number().int().min(0), favorites: z.number().int().min(0) }).default({ views: 0, favorites: 0 }),
+  /** Statistiques relevées 48 h après (null tant qu'elles ne sont pas connues). */
+  after: z.object({ views: z.number().int().min(0), favorites: z.number().int().min(0) }).nullable().default(null),
+});
+export type Republication = z.infer<typeof republication>;
+
+/** Attributs complémentaires d'une annonce (remplis par le générateur ou à la main). */
+export const itemAttributes = z.object({
+  colors: z.array(z.string().trim().min(1).max(30)).max(3).default([]),
+  material: z.string().trim().max(60).nullable().default(null),
+  /** Origine du texte de l'annonce : IA, gabarit de repli ou saisie manuelle. */
+  generatedBy: z.enum(["ai", "fallback", "manual"]).nullable().default(null),
+});
+export type ItemAttributes = z.infer<typeof itemAttributes>;
+
 export const inventoryItem = z.object({
   id,
   orgId: id,
@@ -53,6 +90,9 @@ export const inventoryItem = z.object({
   externalRef: z.string().max(120).nullable().default(null),
   externalUrl: z.string().url().max(500).nullable().default(null),
   tags,
+  listingStats: listingStats.default({}),
+  republications: z.array(republication).max(200).default([]),
+  attributes: itemAttributes.default({}),
   purchasedAt: isoDate.nullable().default(null),
   listedAt: isoDate.nullable().default(null),
   soldAt: isoDate.nullable().default(null),
@@ -88,7 +128,9 @@ export const inventoryQuery = z.object({
   status: itemStatus.optional(),
   category: itemCategory.optional(),
   brand: z.string().trim().max(80).optional(),
-  sort: z.enum(["updated_desc", "created_desc", "title_asc", "price_asc", "price_desc", "margin_desc"]).default("updated_desc"),
+  sort: z.enum(["updated_desc", "created_desc", "title_asc", "price_asc", "price_desc", "margin_desc", "online_desc"]).default("updated_desc"),
+  /** Articles en ligne depuis au moins N jours (tri « à republier »). */
+  minDaysOnline: z.coerce.number().int().min(0).max(3650).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(25),
 });

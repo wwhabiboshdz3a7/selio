@@ -13,4 +13,7 @@ export * as radar from "./services/radar";
 export * as connections from "./services/connections";
 export * as billing from "./services/billing";
 export * as admin from "./services/admin";
+export * as studio from "./services/studio";
+export * as dressing from "./services/dressing";
+export * as market from "./services/market";
 export type { QueueStats, QueueStatsProvider } from "./services/admin";
