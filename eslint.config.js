@@ -15,6 +15,7 @@ export default tseslint.config(
       "**/test-results/**",
       "**/*.gen.ts",
       "apps/web/public/**",
+      ".claude/**",
     ],
   },
   js.configs.recommended,
