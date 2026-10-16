@@ -2,8 +2,9 @@ import { useEffect, useId, useRef, useState } from "react";
 import { cn, formatCents } from "@selio/ui";
 
 /**
- * Graphiques SVG maison conformes à la charte : une seule couleur vive
- * (--accent-vivid), séries secondaires en gris, grille horizontale seule.
+ * Graphiques SVG maison conformes à la charte v3 : améthyste d'abord
+ * (--accent-vivid), or en second, séries secondaires en encre ou gris,
+ * grille horizontale seule. Les autres tons ne servent qu'aux répartitions.
  */
 export interface SeriesDatum {
   label: string;
@@ -64,16 +65,16 @@ export function BarChart({ data, height = 220, formatValue = (v) => formatCents(
           return (
             <g key={i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(i)} onBlur={() => setHover(null)} tabIndex={0} aria-label={`${d.label} : ${primaryLabel} ${formatValue(d.primary)}${d.secondary !== undefined ? `, ${secondaryLabel} ${formatValue(d.secondary)}` : ""}`}>
               <rect x={pad.left + i * slot} y={pad.top} width={slot} height={innerH} fill="transparent" />
-              <rect x={x} y={pad.top + innerH - hP} width={barW} height={hP} rx={4} fill="var(--accent-vivid)" opacity={hover === null || active ? 1 : 0.5} />
-              {d.secondary !== undefined ? <rect x={x} y={pad.top + innerH - hS} width={barW} height={hS} rx={4} fill="var(--text)" opacity={hover === null || active ? 0.8 : 0.35} /> : null}
+              <rect x={x} y={pad.top + innerH - hP} width={barW} height={hP} rx={4} fill="var(--accent-vivid)" opacity={hover === null || active ? 0.35 : 0.18} />
+              {d.secondary !== undefined ? <rect x={x} y={pad.top + innerH - hS} width={barW} height={hS} rx={4} fill="var(--accent-vivid)" opacity={hover === null || active ? 1 : 0.45} /> : null}
               {i % labelEvery === 0 ? <text x={x + barW / 2} y={height - 8} textAnchor="middle" fontSize={11} fill="var(--text-muted)">{d.label}</text> : null}
             </g>
           );
         })}
       </svg>
       <figcaption id={`${id}-desc`} className="mt-2 flex flex-wrap items-center gap-4 text-xs text-text-muted">
-        <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-sm bg-accent-vivid" aria-hidden /> {primaryLabel}</span>
-        <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-sm bg-text" aria-hidden /> {secondaryLabel}</span>
+        <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-sm bg-accent-vivid opacity-35" aria-hidden /> {primaryLabel}</span>
+        <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-sm bg-accent-vivid" aria-hidden /> {secondaryLabel}</span>
         {hover !== null && data[hover] ? (
           <span className="num ml-auto text-text">
             {data[hover]!.label} · {formatValue(data[hover]!.primary)}{data[hover]!.secondary !== undefined ? ` · ${formatValue(data[hover]!.secondary!)}` : ""}
@@ -106,19 +107,29 @@ export function HorizontalBars({ rows, formatValue = (v) => formatCents(v, { com
   );
 }
 
-export function Sparkline({ values, className }: { values: number[]; className?: string }) {
+export function Sparkline({ values, className, tone = "var(--accent-vivid)" }: { values: number[]; className?: string; tone?: string }) {
+  const id = useId();
   const w = 120, h = 32;
   const max = Math.max(1, ...values);
-  const pts = values.map((v, i) => `${(i / Math.max(1, values.length - 1)) * w},${h - (v / max) * (h - 4) - 2}`).join(" ");
+  const coords = values.map((v, i) => [(i / Math.max(1, values.length - 1)) * w, h - (v / max) * (h - 4) - 2] as const);
+  const pts = coords.map(([x, y]) => `${x},${y}`).join(" ");
+  const area = coords.length ? `M0,${h} L${coords.map(([x, y]) => `${x},${y}`).join(" L")} L${w},${h} Z` : "";
   return (
     <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={className ?? "h-8 w-30"} aria-hidden>
-      <polyline points={pts} fill="none" stroke="var(--accent-vivid)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+      <defs>
+        <linearGradient id={`${id}-s`} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor={tone} stopOpacity={0.18} />
+          <stop offset="100%" stopColor={tone} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      {area ? <path d={area} fill={`url(#${id}-s)`} /> : null}
+      <polyline points={pts} fill="none" stroke={tone} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }
 
-/** Palette catégorielle (tons de la charte) pour les graphiques à plusieurs séries. */
-export const CHART_TONES = ["var(--tone-braise)", "var(--tone-amber)", "var(--tone-teal)", "var(--tone-rose)", "var(--tone-indigo)", "var(--tone-emerald)", "var(--tone-sky)", "var(--tone-slate)"];
+/** Palette catégorielle : améthyste, or, ardoise, puis tons secondaires (répartitions uniquement). */
+export const CHART_TONES = ["var(--tone-braise)", "var(--tone-amber)", "var(--tone-slate)", "var(--tone-indigo)", "var(--tone-rose)", "var(--tone-teal)", "var(--tone-sky)", "var(--violet-300)"];
 
 function useWidth(initial = 480) {
   const ref = useRef<HTMLDivElement>(null);
@@ -134,7 +145,7 @@ function useWidth(initial = 480) {
 }
 
 /** Courbe avec aire (cumuls, taux, évolutions). */
-export function AreaChart({ data, height = 200, formatValue = (v) => formatCents(v, { compact: true }), tone = "var(--tone-teal)", label = "Valeur", className }: { data: { label: string; value: number }[]; height?: number; formatValue?: (v: number) => string; tone?: string; label?: string; className?: string }) {
+export function AreaChart({ data, height = 200, formatValue = (v) => formatCents(v, { compact: true }), tone = "var(--accent-vivid)", label = "Valeur", className }: { data: { label: string; value: number }[]; height?: number; formatValue?: (v: number) => string; tone?: string; label?: string; className?: string }) {
   const id = useId();
   const { ref, width } = useWidth();
   const [hover, setHover] = useState<number | null>(null);
@@ -155,7 +166,7 @@ export function AreaChart({ data, height = 200, formatValue = (v) => formatCents
       <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label={`${label} : ${data.length ? formatValue(data[data.length - 1]!.value) : "aucune donnée"}`} onMouseLeave={() => setHover(null)}>
         <defs>
           <linearGradient id={`${id}-g`} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor={tone} stopOpacity={0.28} />
+            <stop offset="0%" stopColor={tone} stopOpacity={0.2} />
             <stop offset="100%" stopColor={tone} stopOpacity={0.02} />
           </linearGradient>
         </defs>
@@ -166,7 +177,7 @@ export function AreaChart({ data, height = 200, formatValue = (v) => formatCents
           </g>
         ))}
         {area ? <path d={area} fill={`url(#${id}-g)`} /> : null}
-        {line ? <path d={line} fill="none" stroke={tone} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {line ? <path d={line} fill="none" stroke={tone} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" /> : null}
         {data.map((d, i) => (
           <g key={i}>
             <rect x={x(i) - innerW / Math.max(1, data.length) / 2} y={pad.top} width={innerW / Math.max(1, data.length)} height={innerH} fill="transparent" onMouseEnter={() => setHover(i)} />
@@ -215,7 +226,7 @@ export function DonutChart({ rows, size = 168, formatValue = (v) => formatCents(
 }
 
 /** Jauge demi-cercle (objectif, taux). */
-export function Gauge({ value, max, label, sublabel, tone = "var(--tone-braise)", size = 200 }: { value: number; max: number; label: string; sublabel?: string; tone?: string; size?: number }) {
+export function Gauge({ value, max, label, sublabel, tone = "var(--accent-vivid)", size = 200 }: { value: number; max: number; label: string; sublabel?: string; tone?: string; size?: number }) {
   const ratio = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
   const r = size / 2 - 14;
   const c = Math.PI * r;
@@ -223,8 +234,8 @@ export function Gauge({ value, max, label, sublabel, tone = "var(--tone-braise)"
   return (
     <figure className="flex flex-col items-center">
       <svg width={size} height={h} viewBox={`0 0 ${size} ${h}`} role="img" aria-label={`${label} : ${Math.round(ratio * 100)} %`}>
-        <path d={`M14 ${size / 2} A ${r} ${r} 0 0 1 ${size - 14} ${size / 2}`} fill="none" stroke="var(--surface-muted)" strokeWidth={16} strokeLinecap="round" />
-        <path d={`M14 ${size / 2} A ${r} ${r} 0 0 1 ${size - 14} ${size / 2}`} fill="none" stroke={tone} strokeWidth={16} strokeLinecap="round" strokeDasharray={`${ratio * c} ${c}`} />
+        <path d={`M14 ${size / 2} A ${r} ${r} 0 0 1 ${size - 14} ${size / 2}`} fill="none" stroke="var(--surface-muted)" strokeWidth={12} strokeLinecap="round" />
+        <path d={`M14 ${size / 2} A ${r} ${r} 0 0 1 ${size - 14} ${size / 2}`} fill="none" stroke={tone} strokeWidth={12} strokeLinecap="round" strokeDasharray={`${ratio * c} ${c}`} />
         <text x={size / 2} y={size / 2 - 10} textAnchor="middle" fontSize={26} fontWeight={600} fill="var(--text)" className="num">{Math.round(ratio * 100)} %</text>
       </svg>
       <figcaption className="-mt-1 text-center">
@@ -235,20 +246,39 @@ export function Gauge({ value, max, label, sublabel, tone = "var(--tone-braise)"
   );
 }
 
-/** Teinte d'une note sur 100 (rouge → orange → vert). */
-export function scoreTone(score: number): string {
-  if (score >= 85) return "var(--tone-emerald)";
-  if (score >= 75) return "var(--tone-teal)";
-  if (score >= 60) return "var(--tone-amber)";
-  return "var(--tone-rose)";
+/**
+ * Échelle des notes sur 100, cohérente avec la charte : or = excellent,
+ * améthyste = bon, lavande = moyen, orchidée = faible.
+ * « deal » : bonnes affaires (75 = à valider, 85 = achat auto) ;
+ * « listing » : annonces du dressing (80 = excellente, 60 = bonne, 40 = à améliorer).
+ */
+export type ScoreScale = "deal" | "listing";
+const SCORE_STEPS: Record<ScoreScale, [number, number, number]> = { deal: [85, 75, 60], listing: [80, 60, 40] };
+
+/** Lavande adaptée au mode : améthyste diluée dans la surface (claire en mode clair, sourde en mode sombre). */
+const SCORE_FAIR = "color-mix(in srgb, var(--accent-vivid) 42%, var(--surface-muted))";
+
+function scoreLevel(score: number, scale: ScoreScale): 0 | 1 | 2 | 3 {
+  const [top, good, fair] = SCORE_STEPS[scale];
+  return score >= top ? 3 : score >= good ? 2 : score >= fair ? 1 : 0;
+}
+
+/** Couleur graphique d'une note (anneaux, barres, pastilles). */
+export function scoreTone(score: number, scale: ScoreScale = "deal"): string {
+  return ["var(--tone-rose)", SCORE_FAIR, "var(--accent-vivid)", "var(--gold)"][scoreLevel(score, scale)]!;
+}
+
+/** Couleur de texte lisible (AA) associée à une note. */
+export function scoreTextTone(score: number, scale: ScoreScale = "deal"): string {
+  return ["var(--danger)", "var(--text-muted)", "var(--accent)", "var(--gold-text)"][scoreLevel(score, scale)]!;
 }
 
 /** Note circulaire sur 100 (bonnes affaires, annonces). */
-export function ScoreRing({ score, size = 48, stroke = 5, label, className }: { score: number; size?: number; stroke?: number; label?: string; className?: string }) {
+export function ScoreRing({ score, size = 48, stroke = 5, label, scale = "deal", className }: { score: number; size?: number; stroke?: number; label?: string; scale?: ScoreScale; className?: string }) {
   const r = size / 2 - stroke;
   const c = 2 * Math.PI * r;
   const s = Math.max(0, Math.min(100, Math.round(score)));
-  const tone = scoreTone(s);
+  const tone = scoreTone(s, scale);
   return (
     <span className={cn("relative inline-flex shrink-0 items-center justify-center", className)} style={{ width: size, height: size }} role="img" aria-label={`${label ?? "Note"} ${s} sur 100`}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
@@ -261,7 +291,7 @@ export function ScoreRing({ score, size = 48, stroke = 5, label, className }: { 
 }
 
 /** Barres verticales simples (une série catégorielle). */
-export function ColumnChart({ rows, height = 180, formatValue = (v) => String(v), tone = "var(--tone-indigo)", highlightMax = true, className }: { rows: { label: string; value: number }[]; height?: number; formatValue?: (v: number) => string; tone?: string; highlightMax?: boolean; className?: string }) {
+export function ColumnChart({ rows, height = 180, formatValue = (v) => String(v), tone = "var(--accent-vivid)", highlightMax = true, className }: { rows: { label: string; value: number }[]; height?: number; formatValue?: (v: number) => string; tone?: string; highlightMax?: boolean; className?: string }) {
   const max = Math.max(1, ...rows.map((r) => r.value));
   const best = rows.reduce((b, r, i) => (r.value > (rows[b]?.value ?? -1) ? i : b), 0);
   return (
@@ -269,7 +299,7 @@ export function ColumnChart({ rows, height = 180, formatValue = (v) => String(v)
       {rows.map((r, i) => (
         <div key={r.label} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1">
           <span className="num text-[11px] text-text-muted">{r.value ? formatValue(r.value) : ""}</span>
-          <div className="w-full max-w-10 rounded-t-md" style={{ height: `${Math.max(3, (r.value / max) * (height - 44))}px`, background: tone, opacity: highlightMax && i !== best ? 0.45 : 1 }} />
+          <div className="w-full max-w-10 rounded-t-md" style={{ height: `${Math.max(3, (r.value / max) * (height - 44))}px`, background: tone, opacity: highlightMax && i !== best ? 0.35 : 1 }} />
           <span className="w-full truncate text-center text-[11px] text-text-muted">{r.label}</span>
         </div>
       ))}
@@ -282,7 +312,7 @@ export function StackedBar({ rows, className }: { rows: { label: string; value: 
   const total = rows.reduce((s, r) => s + r.value, 0);
   return (
     <div className={className}>
-      <div className="flex h-3 w-full overflow-hidden rounded-full bg-surface-muted">
+      <div className="flex h-2 w-full gap-0.5 overflow-hidden rounded-full bg-surface-muted">
         {rows.map((r, i) => (total ? <div key={r.label} style={{ width: `${(r.value / total) * 100}%`, background: r.tone ?? CHART_TONES[i % CHART_TONES.length] }} title={`${r.label} : ${r.value}`} /> : null))}
       </div>
       <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
