@@ -1,0 +1,261 @@
+/* ==========================================================================
+   Vitrine : composants partagés (préfixe .mk-), dans l'univers « constellation »
+   du héros. Chargé avec les pages de la vitrine, pas dans le CSS initial.
+   Aucune couleur en dur : tout dérive des jetons.
+   ========================================================================== */
+
+/* ---- Sur-titre : étoile or + libellé ------------------------------------- */
+.mk-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.mk-eyebrow-star { width: 12px; height: 12px; flex: none; color: var(--gold); }
+
+/* ---- En-tête de page : une aube discrète, quelques étoiles fixes --------- */
+.mk-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.mk-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: min(560px, 100%);
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(46% 70% at 12% 0%, color-mix(in oklab, var(--violet-200) 34%, transparent), transparent 70%),
+    radial-gradient(34% 52% at 88% 0%, color-mix(in oklab, var(--gold-100) 55%, transparent), transparent 72%);
+}
+.mk-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: min(420px, 100%);
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.55;
+  background-image:
+    radial-gradient(1.2px 1.2px at 72% 18%, var(--violet-400), transparent),
+    radial-gradient(1px 1px at 84% 42%, var(--violet-300), transparent),
+    radial-gradient(1.4px 1.4px at 92% 12%, var(--gold-400), transparent),
+    radial-gradient(1px 1px at 63% 36%, var(--violet-300), transparent),
+    radial-gradient(1.2px 1.2px at 78% 64%, var(--violet-400), transparent),
+    radial-gradient(1px 1px at 96% 56%, var(--violet-300), transparent);
+  -webkit-mask-image: linear-gradient(to bottom, black, transparent);
+  mask-image: linear-gradient(to bottom, black, transparent);
+}
+:root[data-theme="dark"] .mk-hero::before {
+  background:
+    radial-gradient(46% 70% at 12% 0%, color-mix(in oklab, var(--violet-700) 30%, transparent), transparent 70%),
+    radial-gradient(34% 52% at 88% 0%, color-mix(in oklab, var(--gold-600) 16%, transparent), transparent 72%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .mk-hero::before {
+    background:
+      radial-gradient(46% 70% at 12% 0%, color-mix(in oklab, var(--violet-700) 30%, transparent), transparent 70%),
+      radial-gradient(34% 52% at 88% 0%, color-mix(in oklab, var(--gold-600) 16%, transparent), transparent 72%);
+  }
+}
+.mk-display {
+  font-size: clamp(28px, 3.4vw, 44px);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  font-weight: 600;
+  color: var(--text);
+  text-wrap: balance;
+}
+
+/* ---- Cartes ---------------------------------------------------------------- */
+.mk-card {
+  transition: border-color var(--duration-base) var(--ease), box-shadow var(--duration-base) var(--ease), transform var(--duration-base) var(--ease);
+}
+.mk-card:hover {
+  border-color: color-mix(in oklab, var(--accent) 38%, var(--border));
+  box-shadow: var(--shadow-card), 0 14px 32px -18px color-mix(in oklab, var(--violet-500) 45%, transparent);
+}
+.mk-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 10px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 16%, transparent);
+}
+.mk-icon svg { width: 18px; height: 18px; }
+.mk-icon[data-tone="gold"] {
+  color: var(--gold-text);
+  background: var(--gold-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--gold) 30%, transparent);
+}
+
+/* Carte mise en avant : liseré améthyste → champagne. */
+.mk-featured {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(140deg, var(--violet-400), color-mix(in oklab, var(--violet-300) 50%, var(--gold-300)) 55%, var(--gold-300)) border-box;
+  box-shadow: var(--shadow-card), 0 18px 40px -22px color-mix(in oklab, var(--violet-500) 55%, transparent);
+}
+
+/* Badge d'état : pastille colorée, jamais d'orange. */
+.mk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--text);
+}
+.mk-badge::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: var(--text-subtle); }
+.mk-badge[data-value="available"]::before { background: var(--success); }
+.mk-badge[data-value="demo"]::before { background: var(--accent-vivid); }
+.mk-badge[data-value="experimental"]::before { background: var(--gold); }
+
+/* ---- Index « constellation » des modules ---------------------------------- */
+.mk-index { display: flex; flex-wrap: wrap; gap: 8px; }
+.mk-index a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--surface) 80%, transparent);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: color var(--duration-fast) var(--ease), border-color var(--duration-fast) var(--ease);
+}
+.mk-index a::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--accent-vivid);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent-vivid) 18%, transparent);
+}
+.mk-index a[data-tone="gold"]::before { background: var(--gold); box-shadow: 0 0 0 3px color-mix(in oklab, var(--gold) 22%, transparent); }
+.mk-index a:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, var(--border)); }
+
+/* ---- Panneau « ciel nocturne » (bandeau d'appel, constellation IA) -------- */
+.mk-night {
+  --night: color-mix(in oklab, var(--violet-900) 46%, var(--gray-950));
+  --night-deep: color-mix(in oklab, var(--violet-900) 20%, var(--gray-950));
+  --ink: var(--violet-50);
+  --ink-muted: color-mix(in oklab, var(--violet-100) 80%, var(--gray-500));
+  --ink-subtle: color-mix(in oklab, var(--violet-200) 62%, var(--gray-500));
+  --hairline: color-mix(in oklab, var(--violet-200) 16%, transparent);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 20px;
+  color: var(--ink);
+  background:
+    radial-gradient(60% 90% at 85% 10%, color-mix(in oklab, var(--violet-500) 26%, transparent), transparent 70%),
+    radial-gradient(40% 70% at 10% 100%, color-mix(in oklab, var(--gold-400) 9%, transparent), transparent 70%),
+    linear-gradient(160deg, var(--night), var(--night-deep));
+  box-shadow: inset 0 0 0 1px var(--hairline), 0 24px 60px -32px color-mix(in oklab, var(--violet-700) 70%, transparent);
+}
+.mk-night-title { color: var(--ink); }
+.mk-night-text { color: var(--ink-muted); }
+.mk-night .mk-eyebrow { color: var(--ink-muted); }
+.mk-night .mk-eyebrow-star { color: var(--gold-300); }
+.mk-ghost {
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 18px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--ink);
+  background: color-mix(in oklab, var(--violet-50) 6%, transparent);
+  border: 1px solid color-mix(in oklab, var(--violet-100) 26%, transparent);
+  transition: background-color var(--duration-fast) var(--ease), border-color var(--duration-fast) var(--ease);
+}
+.mk-ghost:hover { background: color-mix(in oklab, var(--violet-50) 12%, transparent); border-color: color-mix(in oklab, var(--violet-100) 42%, transparent); }
+.mk-night a:focus-visible {
+  outline: 2px solid var(--violet-200);
+  outline-offset: 3px;
+}
+.mk-cta-link { display: inline-flex; border-radius: var(--radius-md); }
+
+/* Ciel : étoiles fixes (SVG), animées par anime.js quand le mouvement est permis. */
+.mk-sky { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; pointer-events: none; }
+.mk-sky-star { fill: var(--violet-100); }
+.mk-sky-star[data-tone="gold"] { fill: var(--gold-200); }
+.mk-sky-halo { fill: var(--violet-300); }
+.mk-sky-halo[data-tone="gold"] { fill: var(--gold-300); }
+.mk-sky-line { fill: none; stroke: var(--violet-200); stroke-width: 1; opacity: 0.32; vector-effect: non-scaling-stroke; }
+.mk-sky-line[data-tone="gold"] { stroke: var(--gold-300); opacity: 0.4; }
+@media (max-width: 639px) {
+  .mk-sky-line, .mk-sky-halo { display: none; }
+}
+
+/* ---- Constellation d'une réponse (page Assistant IA) ---------------------- */
+.mk-flow { list-style: none; margin: 0; padding: 0; display: grid; gap: 28px; }
+.mk-flow-step { position: relative; padding-left: 44px; }
+.mk-flow-node {
+  position: absolute;
+  left: 7px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: radial-gradient(circle, var(--violet-50) 0 22%, color-mix(in oklab, var(--violet-300) 70%, transparent) 36%, transparent 70%);
+  box-shadow: 0 0 18px 2px color-mix(in oklab, var(--violet-400) 55%, transparent);
+}
+.mk-flow-step[data-tone="gold"] .mk-flow-node {
+  background: radial-gradient(circle, var(--gold-50) 0 22%, color-mix(in oklab, var(--gold-300) 70%, transparent) 36%, transparent 70%);
+  box-shadow: 0 0 20px 3px color-mix(in oklab, var(--gold-400) 50%, transparent);
+}
+/* Lien vers l'étoile suivante (tracé par anime.js à l'apparition). */
+.mk-flow-link {
+  position: absolute;
+  left: 14.5px;
+  top: 22px;
+  bottom: -26px;
+  width: 1px;
+  transform-origin: top center;
+  background: linear-gradient(to bottom, color-mix(in oklab, var(--violet-300) 70%, transparent), color-mix(in oklab, var(--violet-300) 25%, transparent));
+}
+.mk-flow-step:last-child .mk-flow-link { display: none; }
+.mk-flow-step:nth-last-child(2) .mk-flow-link { background: linear-gradient(to bottom, color-mix(in oklab, var(--violet-300) 70%, transparent), color-mix(in oklab, var(--gold-300) 60%, transparent)); }
+.mk-flow-k { font-size: 11px; line-height: 16px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-subtle); }
+.mk-flow-title { margin-top: 2px; font-size: 15px; line-height: 21px; font-weight: 600; color: var(--ink); }
+.mk-flow-text { margin-top: 4px; font-size: 13px; line-height: 19px; color: var(--ink-muted); }
+@media (min-width: 900px) {
+  .mk-flow { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 20px; }
+  .mk-flow-step { padding-left: 0; padding-top: 40px; }
+  .mk-flow-node { left: 0; top: 0; }
+  .mk-flow-link {
+    left: 24px;
+    right: -14px;
+    top: 7.5px;
+    bottom: auto;
+    width: auto;
+    height: 1px;
+    transform-origin: left center;
+    background: linear-gradient(to right, color-mix(in oklab, var(--violet-300) 70%, transparent), color-mix(in oklab, var(--violet-300) 25%, transparent));
+  }
+  .mk-flow-step:nth-last-child(2) .mk-flow-link { background: linear-gradient(to right, color-mix(in oklab, var(--violet-300) 70%, transparent), color-mix(in oklab, var(--gold-300) 60%, transparent)); }
+}

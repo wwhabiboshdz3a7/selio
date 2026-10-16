@@ -1,59 +1,104 @@
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from "react";
 import { Link } from "react-router";
 import { ArrowRight, Check, Clock } from "lucide-react";
-import { Button, KpiCard, StatusBadge, Tag, cn, formatCents } from "@selio/ui";
+import { Button, cn } from "@selio/ui";
+import { seeded } from "./constellation/geometry";
+import "./marketing.css";
 
 export function Container({ children, className }: { children: ReactNode; className?: string }) {
   return <div className={cn("mx-auto w-full max-w-content px-4 md:px-8", className)}>{children}</div>;
 }
 
-export function Eyebrow({ children }: { children: ReactNode }) {
-  return <p className="text-xs font-medium tracking-[0.04em] text-accent uppercase">{children}</p>;
+/** Étoile à quatre branches, motif de la constellation Selio. */
+export function Sparkle({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" className={className} aria-hidden="true" focusable="false">
+      <path d="M8 0c.5 4.2 3.3 7 8 8-4.7 1-7.5 3.8-8 8-.5-4.2-3.3-7-8-8 4.7-1 7.5-3.8 8-8Z" fill="currentColor" />
+    </svg>
+  );
 }
 
-export function Display({ children, className }: { children: ReactNode; className?: string }) {
-  return <h1 className={cn("text-xl font-semibold text-text md:text-3xl", className)}>{children}</h1>;
+export function Eyebrow({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <p className={cn("mk-eyebrow", className)}>
+      <Sparkle className="mk-eyebrow-star" />
+      {children}
+    </p>
+  );
 }
 
 export function Lead({ children, className }: { children: ReactNode; className?: string }) {
   return <p className={cn("text-md text-text-muted", className)}>{children}</p>;
 }
 
-export function MarketingSection({ eyebrow, title, lead, children, className, id, level = 2 }: { eyebrow?: string; title?: ReactNode; lead?: ReactNode; children?: ReactNode; className?: string; id?: string; level?: 1 | 2 }) {
+type FxKind = "sky" | "reveal" | "flow";
+
+/**
+ * Effet décoratif (anime.js) chargé à la demande : jamais en mouvement réduit,
+ * nettoyé à la sortie de la page. Sans lui, le contenu reste complet et lisible.
+ */
+export function useFx(ref: RefObject<Element | null>, kind: FxKind) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    let cancelled = false;
+    let cleanup: (() => void) | undefined;
+    import("./fx")
+      .then((fx) => {
+        if (cancelled) return;
+        try {
+          cleanup = fx[kind](el);
+        } catch (error) {
+          console.warn("Effet de vitrine ignoré", error);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, [ref, kind]);
+}
+
+export function MarketingSection({ eyebrow, title, lead, children, className, id, level = 2, reveal = false }: { eyebrow?: string; title?: ReactNode; lead?: ReactNode; children?: ReactNode; className?: string; id?: string; level?: 1 | 2; reveal?: boolean }) {
+  // L'apparition au défilement ne s'attache qu'aux sections qui la demandent.
+  const ref = useRef<HTMLElement>(null);
+  useFx(ref, "reveal");
   const Heading = level === 1 ? "h1" : "h2";
+  const hero = level === 1;
   return (
-    <section id={id} className={cn("py-12 md:py-16", className)}>
+    <section ref={reveal ? ref : undefined} id={id} className={cn(hero ? "mk-hero pt-14 pb-12 md:pt-20 md:pb-16" : "py-12 md:py-16", className)}>
       <Container>
         {eyebrow || title ? (
-          <div className="max-w-2xl">
+          <div className={hero ? "max-w-3xl" : "max-w-2xl"}>
             {eyebrow ? <Eyebrow>{eyebrow}</Eyebrow> : null}
-            {title ? <Heading className="mt-2 text-xl font-semibold text-text md:text-[28px] md:leading-[34px]">{title}</Heading> : null}
-            {lead ? <Lead className="mt-3">{lead}</Lead> : null}
+            {title ? <Heading className={hero ? "mk-display mt-4" : "mt-3 text-xl font-semibold tracking-[-0.015em] text-text md:text-[28px] md:leading-[34px]"}>{title}</Heading> : null}
+            {lead ? <Lead className={hero ? "mt-4 max-w-2xl" : "mt-3"}>{lead}</Lead> : null}
           </div>
         ) : null}
-        {children ? <div className={cn(eyebrow || title ? "mt-8" : "")}>{children}</div> : null}
+        {children ? <div className={cn(eyebrow || title ? (hero ? "mt-10" : "mt-8") : "")}>{children}</div> : null}
       </Container>
     </section>
   );
 }
 
 export type Availability = "available" | "demo" | "experimental" | "planned";
-export const AVAILABILITY: Record<Availability, { label: string; tone: "success" | "accent" | "warning" | "muted" }> = {
-  available: { label: "Disponible", tone: "success" },
-  demo: { label: "Démontré en simulation", tone: "accent" },
-  experimental: { label: "Expérimental, à valider", tone: "warning" },
-  planned: { label: "En préparation", tone: "muted" },
+export const AVAILABILITY_LABEL: Record<Availability, string> = {
+  available: "Disponible",
+  demo: "Démontré en simulation",
+  experimental: "Expérimental, à valider",
+  planned: "En préparation",
 };
 
 export function AvailabilityBadge({ value }: { value: Availability }) {
-  const a = AVAILABILITY[value];
-  return <StatusBadge tone={a.tone}>{a.label}</StatusBadge>;
+  return <span className="mk-badge" data-value={value}>{AVAILABILITY_LABEL[value]}</span>;
 }
 
-export function FeatureCard({ title, children, availability, icon }: { title: string; children: ReactNode; availability?: Availability; icon?: ReactNode }) {
+export function FeatureCard({ title, children, availability, icon, tone }: { title: string; children: ReactNode; availability?: Availability; icon?: ReactNode; tone?: "gold" }) {
   return (
-    <div className="card flex flex-col p-5">
-      {icon ? <div className="mb-3 text-text [&>svg]:size-5" aria-hidden>{icon}</div> : null}
+    <div className="card mk-card flex flex-col p-5" data-reveal="">
+      {icon ? <span className="mk-icon mb-4" data-tone={tone} aria-hidden>{icon}</span> : null}
       <h3 className="text-md font-semibold text-text">{title}</h3>
       <p className="mt-1.5 flex-1 text-sm text-text-muted">{children}</p>
       {availability ? <div className="mt-4"><AvailabilityBadge value={availability} /></div> : null}
@@ -61,17 +106,71 @@ export function FeatureCard({ title, children, availability, icon }: { title: st
   );
 }
 
-export function CtaBand({ title, lead }: { title: string; lead: string }) {
+interface SkyStar { x: number; y: number; r: number; o: number; gold: boolean }
+
+/** Ciel en 1200 × 300 : les constellations restent hors des zones de texte du bandeau. */
+function buildSky(seed: number, withLines: boolean): { stars: SkyStar[]; halos: SkyStar[]; lines: { points: string; gold: boolean }[] } {
+  const rnd = seeded(seed);
+  const round = (n: number) => Math.round(n * 10) / 10;
+  const stars: SkyStar[] = Array.from({ length: withLines ? 46 : 34 }, () => ({
+    x: round(rnd() * 1200),
+    y: round(rnd() * 300),
+    r: round(0.5 + rnd() ** 3 * 1.3),
+    o: round(0.3 + rnd() * 0.55),
+    gold: rnd() < 0.12,
+  }));
+  const halos: SkyStar[] = [];
+  const constellation = (cx: number, cy: number, n: number, gold: boolean) => {
+    const pts = Array.from({ length: n }, (_, i) => ({ x: round(cx + (i - (n - 1) / 2) * (58 + rnd() * 22)), y: round(cy + (rnd() - 0.5) * 56) }));
+    pts.forEach((p, i) => {
+      const star = { x: p.x, y: p.y, r: round(1.5 + rnd() * 0.8), o: 0.95, gold: gold && i === n - 1 };
+      stars.push(star);
+      halos.push({ ...star, r: star.r * 4.5, o: 0.14 });
+    });
+    return pts.map((p) => `${p.x},${p.y}`).join(" ");
+  };
+  const lines = withLines
+    ? [
+        { points: constellation(740, 70, 5, true), gold: false },
+        { points: constellation(1040, 232, 4, false), gold: true },
+      ]
+    : [];
+  return { stars, halos, lines };
+}
+
+/** Ciel nocturne décoratif (SVG), animé par anime.js si le mouvement est permis. */
+export function NightSky({ seed = 7, lines = true }: { seed?: number; lines?: boolean }) {
+  const ref = useRef<SVGSVGElement>(null);
+  const sky = useMemo(() => buildSky(seed, lines), [seed, lines]);
+  useFx(ref, "sky");
   return (
-    <section className="border-t border-border bg-surface py-12 md:py-16">
-      <Container className="flex flex-col items-start gap-6 md:flex-row md:items-center md:justify-between">
-        <div className="max-w-xl">
-          <h2 className="text-xl font-semibold text-text">{title}</h2>
-          <p className="mt-2 text-base text-text-muted">{lead}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link to="/inscription"><Button variant="accent" size="lg" iconRight={<ArrowRight />}>Créer un compte</Button></Link>
-          <Link to="/demo"><Button variant="secondary" size="lg">Explorer la démo</Button></Link>
+    <svg ref={ref} className="mk-sky" viewBox="0 0 1200 300" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">
+      {sky.halos.map((s, i) => <circle key={`h${i}`} className="mk-sky-halo" data-tone={s.gold ? "gold" : undefined} cx={s.x} cy={s.y} r={s.r} opacity={s.o} />)}
+      {sky.lines.map((l, i) => <polyline key={`l${i}`} className="mk-sky-line" data-tone={l.gold ? "gold" : undefined} points={l.points} />)}
+      {sky.stars.map((s, i) => <circle key={`s${i}`} className="mk-sky-star" data-tone={s.gold ? "gold" : undefined} cx={s.x} cy={s.y} r={s.r} opacity={s.o} />)}
+    </svg>
+  );
+}
+
+export function CtaBand({ title, lead, seed = 7 }: { title: string; lead: string; seed?: number }) {
+  return (
+    <section className="py-12 md:py-20">
+      <Container>
+        <div className="mk-night px-6 py-10 sm:px-10 md:px-14 md:py-14">
+          <NightSky seed={seed} />
+          <div className="flex flex-col items-start gap-7 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-xl">
+              <Eyebrow>Sans compte ni carte bancaire</Eyebrow>
+              <h2 className="mk-night-title mt-3 text-xl font-semibold tracking-[-0.02em] md:text-[28px] md:leading-[34px]">{title}</h2>
+              <p className="mk-night-text mt-3 text-base">{lead}</p>
+            </div>
+            <div className="flex flex-wrap gap-2.5">
+              <Link to="/inscription" className="mk-cta-link">
+                <Button variant="accent" size="lg" iconRight={<ArrowRight />} tabIndex={-1}>Créer un compte</Button>
+              </Link>
+              <Link to="/demo" className="mk-ghost">Explorer la démo</Link>
+            </div>
+          </div>
         </div>
       </Container>
     </section>
@@ -83,7 +182,7 @@ export function CheckList({ items }: { items: string[] }) {
     <ul className="flex flex-col gap-2">
       {items.map((i) => (
         <li key={i} className="flex items-start gap-2 text-sm text-text">
-          <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+          <Check className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden />
           {i}
         </li>
       ))}
@@ -96,48 +195,10 @@ export function PlannedList({ items }: { items: string[] }) {
     <ul className="flex flex-col gap-2">
       {items.map((i) => (
         <li key={i} className="flex items-start gap-2 text-sm text-text-muted">
-          <Clock className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <Clock className="mt-0.5 size-4 shrink-0 text-text-subtle" aria-hidden />
           {i}
         </li>
       ))}
     </ul>
-  );
-}
-
-/** Aperçu produit : de vrais composants de l'application avec des données d'exemple (fictives, annoncées comme telles). */
-export function ProductPreview() {
-  return (
-    <div className="card overflow-hidden p-0" aria-label="Aperçu de l'application avec des données d'exemple">
-      <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-        <span className="text-sm font-medium text-text">Vue d'ensemble</span>
-        <Tag>Données d'exemple</Tag>
-      </div>
-      <div className="grid gap-3 p-4 sm:grid-cols-3">
-        <KpiCard label="Chiffre d'affaires · 30 j" value={formatCents(186450)} delta={{ value: "+12,4 % vs période précédente", tone: "success" }} />
-        <KpiCard label="Marge brute · 30 j" value={formatCents(79210)} delta={{ value: "42,5 % du CA", tone: "neutral" }} />
-        <KpiCard label="Articles en vente" value="47" hint="6 dormants depuis plus de 45 jours" />
-      </div>
-      <div className="grid gap-3 border-t border-border p-4 md:grid-cols-2">
-        <div className="card p-4">
-          <p className="text-xs font-medium text-text-muted">Conversation · Léa M. · Veste en jean Levi's</p>
-          <div className="mt-3 flex flex-col gap-2 text-sm">
-            <p className="max-w-[85%] rounded-lg bg-surface-muted px-3 py-2 text-text">Bonjour, je vous propose 25 € avec envoi rapide.</p>
-            <div className="ai-suggestion max-w-[85%] self-end p-3">
-              <p className="text-xs font-medium text-accent">Suggestion IA · à valider</p>
-              <p className="mt-1 text-text">Bonjour Léa, merci pour votre proposition. Je peux descendre à 33,25 €, c'est mon meilleur prix.</p>
-            </div>
-          </div>
-        </div>
-        <div className="card p-4">
-          <p className="text-xs font-medium text-text-muted">Pourquoi cette contre-proposition ?</p>
-          <ul className="mt-3 flex flex-col gap-1.5 text-sm text-text">
-            <li className="flex gap-2"><StatusBadge tone="danger" dot>Offre 25,00 €</StatusBadge><span className="text-text-muted">sous le plancher de 30,00 €</span></li>
-            <li className="flex gap-2"><StatusBadge tone="accent" dot>Contre 33,25 €</StatusBadge><span className="text-text-muted">prix affiché −5 %, 1er tour</span></li>
-            <li className="flex gap-2"><StatusBadge tone="success" dot>Marge 15,25 €</StatusBadge><span className="text-text-muted">46 % du prix de vente</span></li>
-          </ul>
-          <p className="mt-3 text-xs text-text-muted">La règle décide, l'IA rédige. Rien ne part sans votre validation.</p>
-        </div>
-      </div>
-    </div>
   );
 }
