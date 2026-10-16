@@ -37,7 +37,23 @@ export default tseslint.config(
   {
     files: ["apps/web/**/*.{ts,tsx}", "apps/extension/**/*.{ts,tsx}", "packages/ui/**/*.{ts,tsx}"],
     plugins: { "react-hooks": reactHooks },
-    rules: { ...reactHooks.configs.recommended.rules },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      // Un effet ne doit renvoyer qu'une fonction de nettoyage (ou rien) : React appelle la valeur
+      // renvoyée au démontage. Un corps expression (`useEffect(() => window.scrollTo(…))`) renvoie
+      // la valeur de l'appel — une promesse dans les navigateurs récents → « S is not a function ».
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.name=/^use(Layout|Insertion)?Effect$/] > ArrowFunctionExpression:first-child[body.type!='BlockStatement'][body.type!='ArrowFunctionExpression'][body.type!='FunctionExpression']",
+          message: "Effet : utilisez un corps en bloc `() => { … }` ; seule une fonction de nettoyage peut être renvoyée.",
+        },
+        {
+          selector: "CallExpression[callee.property.name=/^use(Layout|Insertion)?Effect$/] > ArrowFunctionExpression:first-child[body.type!='BlockStatement'][body.type!='ArrowFunctionExpression'][body.type!='FunctionExpression']",
+          message: "Effet : utilisez un corps en bloc `() => { … }` ; seule une fonction de nettoyage peut être renvoyée.",
+        },
+      ],
+    },
   },
   {
     files: ["apps/extension/**/*.{ts,tsx}"],
