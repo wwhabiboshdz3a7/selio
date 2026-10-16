@@ -77,9 +77,16 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
   const [open, setOpen] = useState(false);
   const { resolved, setPreference } = useTheme();
   const counts = useNavCounts();
-  useEffect(() => setOpen(false), [location.pathname]);
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname]);
   // Chaque page s'ouvre en haut (le menu, lui, reste visible : il suit le défilement).
-  useEffect(() => window.scrollTo({ top: 0 }), [location.pathname]);
+  // Corps en bloc obligatoire : depuis Chrome/Edge 149-150, scrollTo() renvoie une promesse ;
+  // renvoyée par l'effet, React la prenait pour sa fonction de nettoyage et l'appelait à la
+  // navigation suivante (« S is not a function » à chaque changement de page).
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [location.pathname]);
   const s = session.data!;
   const onboardingDone = s.org.settings.onboarding.dismissed || s.org.settings.onboarding.completedSteps.length >= 6;
   const autoBuyOn = s.org.settings.autoBuy.enabled;
