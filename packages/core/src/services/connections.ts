@@ -1,5 +1,6 @@
-import { connectionCreate, type ConnectionTestResult, type ExtensionToken, type MarketplaceConnection } from "@selio/contracts";
+import { connectionCreate, connectionUpdate, type ConnectionTestResult, type ExtensionToken, type MarketplaceConnection } from "@selio/contracts";
 import { repos, hashSecret, newSecret, secretsMatch } from "@selio/db";
+import { monthStart, type AccountStats } from "@selio/domain";
 import { describeConnectors, getConnector } from "@selio/connectors";
 import { PLAN_QUOTAS } from "@selio/demo-data";
 import { AppError, nowIso, requireAction, withOrg, type OrgContext, type Services } from "../context";
@@ -14,17 +15,39 @@ export function createConnection(ctx: OrgContext, raw: unknown): Promise<Marketp
   if (!parsed.success) throw new AppError("validation", "Connexion invalide", 400, parsed.error.flatten());
   return withOrg(ctx, async (tx) => {
     const quotas = (await repos.subscriptions.get(tx))?.quotas ?? PLAN_QUOTAS.free;
-    if ((await repos.connections.count(tx)) >= quotas.connections) throw new AppError("quota_exceeded", `Quota de connexions atteint (${quotas.connections}).`, 402);
+    if (parsed.data.provider !== "demo" && (await repos.connections.count(tx)) >= quotas.connections) throw new AppError("quota_exceeded", `Quota de comptes connectés atteint (${quotas.connections}).`, 402);
     const desc = getConnector(parsed.data.provider).describe();
     const id = newSecret(12);
     const c = await repos.connections.create(tx, {
-      id, provider: parsed.data.provider, label: parsed.data.label, status: parsed.data.provider === "demo" ? "connected" : "ready", capabilities: desc.capabilities, config: parsed.data.config ?? {}, transport: desc.transport,
+      id, provider: parsed.data.provider, label: parsed.data.label, usage: parsed.data.usage ?? "sale", status: parsed.data.provider === "demo" ? "connected" : "ready", capabilities: desc.capabilities, config: parsed.data.config ?? {}, transport: desc.transport,
       secretCiphertext: parsed.data.secret ? ctx.services.secrets.encrypt(parsed.data.secret, id) : null,
     });
-    await repos.audit.add(tx, { actorUserId: ctx.userId, action: "connection.created", targetType: "marketplace_connection", targetId: c.id, meta: { provider: c.provider }, ip: ctx.ip });
+    await repos.audit.add(tx, { actorUserId: ctx.userId, action: "connection.created", targetType: "marketplace_connection", targetId: c.id, meta: { provider: c.provider, usage: c.usage }, ip: ctx.ip });
     return c;
   });
 }
+
+/** Renomme un compte, change sa catégorie (vente, achat, perso) ou son pseudo Vinted affiché. */
+export function updateConnection(ctx: OrgContext, id: string, raw: unknown): Promise<MarketplaceConnection> {
+  requireAction(ctx, "connections.manage");
+  const parsed = connectionUpdate.safeParse(raw);
+  if (!parsed.success) throw new AppError("validation", "Modification du compte invalide", 400, parsed.error.flatten());
+  return withOrg(ctx, async (tx) => {
+    const before = await repos.connections.byId(tx, id);
+    const { label, usage, displayHandle } = parsed.data;
+    const c = await repos.connections.update(tx, id, {
+      ...(label !== undefined ? { label } : {}),
+      ...(usage !== undefined ? { usage } : {}),
+      ...(displayHandle !== undefined ? { config: { ...before.config, displayHandle } } : {}),
+    });
+    const changes = Object.fromEntries(Object.entries({ label, usage, displayHandle }).filter(([, v]) => v !== undefined));
+    await repos.audit.add(tx, { actorUserId: ctx.userId, action: "connection.updated", targetType: "marketplace_connection", targetId: id, meta: { ...changes, ...(usage !== undefined && usage !== before.usage ? { previousUsage: before.usage } : {}) }, ip: ctx.ip });
+    return c;
+  });
+}
+
+/** Chiffres utiles par compte (annonces en ligne, ventes du mois, achats, conversations ouvertes). */
+export const connectionStats = (ctx: OrgContext): Promise<AccountStats[]> => withOrg(ctx, (tx) => repos.connections.stats(tx, monthStart(ctx.services.now()).toISOString()));
 
 export function testConnection(ctx: OrgContext, id: string): Promise<ConnectionTestResult> {
   requireAction(ctx, "connections.manage");

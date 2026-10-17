@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AutoBuySettings } from "@selio/contracts";
 import { autoBuyDecision, canStillCancel, cancelableUntil, dealEconomics, purchaseCost, scoreBand } from "./buying";
 
-const settings: AutoBuySettings = { enabled: true, threshold: 85, dailyCapCents: 10_000, maxItemCents: 6_000, cancelWindowMinutes: 30 };
+const settings: AutoBuySettings = { enabled: true, threshold: 85, dailyCapCents: 10_000, maxItemCents: 6_000, cancelWindowMinutes: 30, connectionId: null };
 const opp = { id: "o1", score: 90, status: "new" as const, observed: { priceCents: 2000, shippingCents: 450 } as never, estimate: { marginCents: 2500 } as never };
 
 describe("achats", () => {

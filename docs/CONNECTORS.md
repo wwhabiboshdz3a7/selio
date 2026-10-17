@@ -6,7 +6,19 @@ Un connecteur expose des **capacités** : `read_items`, `read_conversations`, `s
 
 Statuts d'une connexion : `not_configured`, `ready`, `connected`, `degraded`, `expired`, `disconnected`, `unsupported`.
 
-L'écran **Paramètres › Connexions** permet : configuration adaptée au service, test, synchronisation, révocation, suppression, dernière synchronisation, capacités, erreurs lisibles.
+L'écran **Comptes Vinted** (`/app/accounts`, menu « Comptes ») permet : ajout d'un compte (pseudo, nom interne, catégorie), test, synchronisation, révocation, suppression, dernière synchronisation, capacités résumées, chiffres du compte, erreurs lisibles. L'ancienne adresse `/app/settings/connections` redirige vers cette page. Les jetons d'extension sont dans la section repliée « Avancé — relier l'extension Selio ».
+
+### Catégories de comptes (`usage`)
+
+Plusieurs comptes Vinted peuvent être connectés à une même organisation ; chacun a une catégorie, modifiable en un clic (`PATCH /api/connections/:id`, permission `connections.manage`, audit `connection.updated`) :
+
+| Catégorie | Usage dans Selio |
+|---|---|
+| `sale` — Vente (défaut) | Annonces publiées et négociées : générateur d'annonces, dressing, messagerie, automatisations |
+| `purchase` — Achat | Compte qui achète les bonnes affaires : achats validés (« À valider ») et achat auto, enregistré sur chaque demande d'achat (`purchase_requests.connection_id`) |
+| `personal` — Perso | Compte personnel : jamais utilisé par les automatisations (tâches ignorées, même déjà planifiées) ni par l'achat auto |
+
+Le générateur d'annonces ne propose que les comptes Vente (puis Perso, signalé). L'achat auto utilise le compte Achat choisi dans ses réglages (`autoBuy.connectionId`), sinon le premier compte Achat actif. Le simulateur de démonstration ne compte pas dans le quota de comptes du plan. `GET /api/connections/stats` renvoie par compte : annonces en ligne, ventes du mois, achats, conversations ouvertes.
 
 ## Simulateur de démonstration (`demo`)
 

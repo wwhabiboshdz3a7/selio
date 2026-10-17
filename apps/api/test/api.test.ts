@@ -183,6 +183,75 @@ describe("API Selio (mode connecté, base réelle)", () => {
     expect(adminA.json.orgs.length).toBe(2);
   });
 
+  it("comptes Vinted : catégories vente / achat / perso, modification, chiffres et droits", async () => {
+    if (!available) return;
+    // Création : catégorie explicite ou « Vente » par défaut ; le pseudo affiché est normalisé.
+    const sale = await call("POST", "/api/connections", { provider: "vinted", label: "Boutique principale", usage: "sale", config: { displayHandle: "@ma.boutique" } });
+    expect(sale.status).toBe(201);
+    expect(sale.json.usage).toBe("sale");
+    expect(sale.json.config.displayHandle).toBe("ma.boutique");
+    const other = await call("POST", "/api/connections", { provider: "vinted", label: "Second compte" });
+    expect(other.status).toBe(201);
+    expect(other.json.usage).toBe("sale");
+    expect((await call("POST", "/api/connections", { provider: "vinted", label: "Mauvais", usage: "pro" })).status).toBe(400);
+    // Quota du plan Essentiel : 2 comptes ; le simulateur créé plus haut n'y compte pas.
+    const third = await call("POST", "/api/connections", { provider: "vinted", label: "Troisième" });
+    expect(third.status).toBe(402);
+
+    // Changement de catégorie en un clic, renommage et pseudo.
+    const toPurchase = await call("PATCH", `/api/connections/${other.json.id}`, { usage: "purchase" });
+    expect(toPurchase.status).toBe(200);
+    expect(toPurchase.json.usage).toBe("purchase");
+    const renamed = await call("PATCH", `/api/connections/${other.json.id}`, { label: "Compte achats", displayHandle: "marie.chineuse" });
+    expect(renamed.json).toMatchObject({ label: "Compte achats", usage: "purchase", config: { displayHandle: "marie.chineuse" } });
+    expect((await call("PATCH", `/api/connections/${other.json.id}`, { usage: "bogus" })).status).toBe(400);
+    expect((await call("PATCH", `/api/connections/${other.json.id}`, {})).status).toBe(400);
+    expect((await call("PATCH", `/api/connections/${other.json.id}`, { status: "connected" })).status).toBe(400);
+    expect((await call("PATCH", `/api/connections/${other.json.id}`, { usage: "personal" }, "b")).status).toBe(404);
+
+    // Lecture seule : voit les comptes et leur catégorie, ne peut pas les modifier.
+    const seen = await call("GET", "/api/connections", undefined, "v");
+    expect(seen.status).toBe(200);
+    expect(seen.json.find((c: { id: string }) => c.id === other.json.id).usage).toBe("purchase");
+    const denied = await call("PATCH", `/api/connections/${sale.json.id}`, { usage: "personal" }, "v");
+    expect(denied.status).toBe(403);
+    expect((await call("GET", "/api/connections", undefined, "v")).json.find((c: { id: string }) => c.id === sale.json.id).usage).toBe("sale");
+
+    // Audit de la modification.
+    const audit = await call("GET", "/api/audit?limit=50");
+    expect(audit.json.some((a: { action: string; targetId: string; meta: { usage?: string; previousUsage?: string } }) => a.action === "connection.updated" && a.targetId === other.json.id && a.meta.usage === "purchase" && a.meta.previousUsage === "sale")).toBe(true);
+
+    // Chiffres par compte : un article en ligne rattaché au compte Vente.
+    const item = await call("POST", "/api/items", { title: "Chemise en lin", purchasePriceCents: 500, listedPriceCents: 2500, floorPriceCents: 1800, status: "listed", connectionId: sale.json.id });
+    expect(item.status).toBe(201);
+    const stats = await call("GET", "/api/connections/stats");
+    expect(stats.status).toBe(200);
+    expect(stats.json.find((s: { connectionId: string }) => s.connectionId === sale.json.id)).toMatchObject({ listedItems: 1, salesThisMonth: 0, purchases: 0 });
+    const usage = await call("GET", "/api/billing/usage");
+    expect(usage.json.connectionsCount).toBe(2);
+
+    // Achat auto : utilise le compte Achat, jamais un compte Perso.
+    const run = await call("POST", "/api/purchases/auto-run");
+    expect(run.status).toBe(200);
+    expect(run.json.account).toEqual({ id: other.json.id, label: "Compte achats" });
+    await call("PATCH", `/api/connections/${other.json.id}`, { usage: "personal" });
+    expect((await call("POST", "/api/purchases/auto-run")).json.account).toBeNull();
+    await call("PATCH", `/api/connections/${other.json.id}`, { usage: "purchase" });
+
+    // Automatisations : une conversation d'un compte Perso est ignorée.
+    await call("PATCH", `/api/connections/${sale.json.id}`, { usage: "personal" });
+    const conv = await call("POST", "/api/conversations/simulate", { body: "Bonjour, toujours disponible ?" });
+    await built.services.db.withOrg(a_org(), (tx) => tx.query("update conversations set connection_id = $1 where id = $2", [sale.json.id, conv.json.id]));
+    const rule = await call("POST", "/api/automations/rules", { name: "Réponse perso", kind: "reply_on_new_message", enabled: true, requiresApproval: true, runsIn: "server", schedule: { days: [0, 1, 2, 3, 4, 5, 6], startHour: 0, endHour: 24, timezone: "Europe/Paris" }, limits: { maxPerDay: 50, maxPerCustomerPerDay: 5, minMinutesBetweenActions: 0 }, config: { template: "Bonjour {{prenom}}." } });
+    expect(rule.status).toBe(201);
+    const ran = await call("POST", `/api/automations/rules/${rule.json.id}/run`);
+    expect(ran.json.skipped.some((s: { reason: string }) => /Compte Perso/.test(s.reason))).toBe(true);
+    const jobs = await call("GET", `/api/automations/jobs?ruleId=${rule.json.id}`);
+    expect(jobs.json.items.some((j: { payload: { conversationId?: string } }) => j.payload.conversationId === conv.json.id)).toBe(false);
+    await call("PATCH", `/api/automations/rules/${rule.json.id}`, { enabled: false });
+    await call("PATCH", `/api/connections/${sale.json.id}`, { usage: "sale" });
+  });
+
   it("jeton d'extension : association, capture, règles, révocation", async () => {
     if (!available) return;
     const tok = await call("POST", "/api/extension-tokens", { label: "Chrome test" });

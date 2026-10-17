@@ -1,8 +1,8 @@
 import type {
-  AiRequest, AiStatus, AuditLog, ListingDraft, ListingGenerationInput, AutomationRule, AutomationRuleCreate, BulkItemAction, ConnectionCreate, ConnectionTestResult, Conversation, ConversationQuery, Customer, CustomerCreate, CustomerQuery, CustomerUpdate, ExtensionToken, InventoryEvent, InventoryItem, InventoryItemCreate, InventoryItemUpdate, InventoryQuery, Job, JobQuery, MarketplaceConnection, Membership, Message, Opportunity, Order, OrderCreate, OrderQuery, OrderStatus, Organization, OrgSettings, Page, Plan, PurchaseRequest, RadarSearch, RadarSearchCreate, Role, Shipment, Subscription, UsageEvent, User,
+  AiRequest, AiStatus, AuditLog, ListingDraft, ListingGenerationInput, AutomationRule, AutomationRuleCreate, BulkItemAction, ConnectionCreate, ConnectionTestResult, ConnectionUpdate, Conversation, ConversationQuery, Customer, CustomerCreate, CustomerQuery, CustomerUpdate, ExtensionToken, InventoryEvent, InventoryItem, InventoryItemCreate, InventoryItemUpdate, InventoryQuery, Job, JobQuery, MarketplaceConnection, Membership, Message, Opportunity, Order, OrderCreate, OrderQuery, OrderStatus, Organization, OrgSettings, Page, Plan, PurchaseRequest, RadarSearch, RadarSearchCreate, Role, Shipment, Subscription, UsageEvent, User,
 } from "@selio/contracts";
 import type { ConnectorDescriptor } from "@selio/connectors";
-import type { NegotiationResult, PeriodPreset } from "@selio/domain";
+import type { AccountStats, NegotiationResult, PeriodPreset } from "@selio/domain";
 import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
 
 type Query = Record<string, string | number | boolean | undefined | null>;
@@ -148,6 +148,8 @@ export class ApiClient implements DataClient {
   describeConnectors() { return this.get<ConnectorDescriptor[]>("/api/connectors"); }
   listConnections() { return this.get<MarketplaceConnection[]>("/api/connections"); }
   createConnection(input: ConnectionCreate) { return this.post<MarketplaceConnection>("/api/connections", input); }
+  updateConnection(id: string, input: ConnectionUpdate) { return this.patch<MarketplaceConnection>(`/api/connections/${id}`, input); }
+  getConnectionStats() { return this.get<AccountStats[]>("/api/connections/stats"); }
   testConnection(id: string) { return this.post<ConnectionTestResult>(`/api/connections/${id}/test`); }
   syncConnection(id: string) { return this.post<{ conversations: number; items: number; orders: number; simulated: boolean }>(`/api/connections/${id}/sync`); }
   disconnectConnection(id: string) { return this.post<MarketplaceConnection>(`/api/connections/${id}/disconnect`); }
