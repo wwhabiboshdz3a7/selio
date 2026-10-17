@@ -231,6 +231,43 @@ describe("API Selio (mode connecté, base réelle)", () => {
     expect(JSON.parse(health2.body).status).toBe("mock");
   });
 
+  it("état de l'IA et négociation : taux, quota du mois, limites, droits", async () => {
+    if (!available) return;
+    const { repos } = await import("@selio/db");
+    // La suggestion réussie du parcours, plus une requête au délai dépassé.
+    await built.services.db.withOrg(a_org(), (tx) => repos.aiRequests.create(tx, { kind: "reply_suggestion", provider: "mock", model: "selio-mock-v1", status: "timeout", latencyMs: 45_000 }));
+    const stats = await call("GET", "/api/ai/stats?days=30");
+    expect(stats.status).toBe(200);
+    expect(stats.json.windowDays).toBe(30);
+    expect(stats.json.finished).toBe(2);
+    expect(stats.json.succeeded).toBe(1);
+    expect(stats.json.timeouts).toBe(1);
+    expect(stats.json.availabilityRate).toBeCloseTo(0.5);
+    expect(stats.json.validatedRate).toBe(1);
+    expect(stats.json.quota.used).toBe(2);
+    expect(stats.json.quota.limit).toBe(Math.min(stats.json.quota.planLimit, stats.json.quota.orgLimit));
+    expect(stats.json.limits.timeoutMs).toBeGreaterThanOrEqual(1000);
+    expect(stats.json.limits.concurrency).toBeGreaterThan(0);
+    // Isolation : l'autre organisation ne voit rien, et aucun taux n'est inventé sans requête.
+    const statsB = await call("GET", "/api/ai/stats", undefined, "b");
+    expect(statsB.json.finished).toBe(0);
+    expect(statsB.json.availabilityRate).toBeNull();
+    expect((await call("GET", "/api/ai/stats", undefined, "v")).status).toBe(200);
+    expect((await call("GET", "/api/ai/stats", undefined, "none")).status).toBe(401);
+    // Négociation et marges : l'objet complet est enregistré tel quel ; un lecteur ne peut que consulter.
+    const margin = { minMarginRate: 0.35, minMarginCents: 800, maxDiscountRate: 0.1, counterStepRate: 0.04, maxRoundsPerCustomer: 1, defaultPlatformFeeRate: 0, defaultShippingCostCents: 250 };
+    expect((await call("PATCH", "/api/org", { settings: { margin } }, "v")).status).toBe(403);
+    const saved = await call("PATCH", "/api/org", { settings: { margin } });
+    expect(saved.status).toBe(200);
+    expect(saved.json.settings.margin).toEqual(margin);
+    expect(saved.json.settings.ai.enabled).toBe(true);
+    const session = await call("GET", "/api/auth/session");
+    expect(session.json.org.settings.margin.maxDiscountRate).toBe(0.1);
+    // Retour aux règles par défaut pour la suite du parcours.
+    const restored = await call("PATCH", "/api/org", { settings: { margin: { minMarginRate: 0.25, minMarginCents: 500, maxDiscountRate: 0.2, counterStepRate: 0.05, maxRoundsPerCustomer: 2, defaultPlatformFeeRate: 0, defaultShippingCostCents: 0 } } });
+    expect(restored.status).toBe(200);
+  });
+
   it("générateur d'annonces, dressing intelligent, republication, bonnes affaires, achat auto, marché", async () => {
     if (!available) return;
     const { repos } = await import("@selio/db");

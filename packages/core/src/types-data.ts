@@ -1,5 +1,6 @@
 import type { AiStatus, Conversation, Customer, InventoryItem, MarketplaceConnection, Message, Order, Plan, ReplySuggestion, Subscription } from "@selio/contracts";
 import type { BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
+import type { AiHealthSummary } from "@selio/domain";
 
 export type VariantLeaderboardRow = ReturnType<typeof variantLeaderboard>[number];
 
@@ -89,6 +90,11 @@ export interface ServiceStatus {
   message: string;
   latencyMs: number | null;
   checkedAt: string;
+}
+/** État de l'IA (Paramètres › Assistant IA) : taux sur la période, quota du mois, limites de la passerelle. */
+export interface AiHealthData extends AiHealthSummary {
+  quota: { used: number; limit: number; planLimit: number; orgLimit: number; monthStart: string };
+  limits: { timeoutMs: number; concurrency: number; maxPending: number; circuitFailures: number; circuitCooldownMs: number };
 }
 export interface AdminOverview {
   services: ServiceStatus[];

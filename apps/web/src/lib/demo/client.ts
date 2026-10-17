@@ -13,6 +13,8 @@ import { buildDemoState } from "@selio/demo-data";
 import { DEAL_ENTRIES, LocalDemoStorage, buildMarketObservations, type DemoState, type DemoStorage } from "@selio/demo-data";
 import { PLAN_QUOTAS } from "@selio/demo-data";
 import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
+import type { AiHealthData } from "../data/types";
+import { effectiveAiQuota, summarizeAiRequests } from "@selio/domain";
 
 function paginate<T>(items: T[], page = 1, pageSize = 25): Page<T> {
   const total = items.length;
@@ -1284,6 +1286,20 @@ export class DemoClient implements DataClient {
   }
   async listAiRequests(): Promise<AiRequest[]> {
     return [...this.s.aiRequests];
+  }
+  /** Même calcul que le serveur ; le quota du mois suit le contrôle fait avant chaque requête simulée. */
+  async getAiHealth(windowDays = 30): Promise<AiHealthData> {
+    const st = this.s;
+    const now = this.clock();
+    const days = Math.min(90, Math.max(1, Math.round(windowDays)));
+    const monthKey = this.now().slice(0, 7);
+    const planLimit = st.subscription.quotas.aiRequestsPerMonth;
+    const orgLimit = st.org.settings.ai.monthlyRequestQuota;
+    return {
+      ...summarizeAiRequests(st.aiRequests, { now, windowDays: days }),
+      quota: { used: st.aiRequests.filter((r) => r.createdAt.startsWith(monthKey)).length, limit: effectiveAiQuota(planLimit, orgLimit), planLimit, orgLimit, monthStart: `${monthKey}-01T00:00:00.000Z` },
+      limits: this.ai.limits,
+    };
   }
 
   // ---------- abonnement ----------

@@ -4,6 +4,7 @@ import type {
 import type { ConnectorDescriptor } from "@selio/connectors";
 import type { ReplySuggestion } from "@selio/contracts";
 import type { BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
+import type { AiHealthSummary } from "@selio/domain";
 
 export type VariantLeaderboardRow = ReturnType<typeof variantLeaderboard>[number];
 
@@ -110,6 +111,12 @@ export interface ServiceStatus {
   message: string;
   latencyMs: number | null;
   checkedAt: string;
+}
+
+/** État de l'IA (Paramètres › Assistant IA) : taux sur la période, quota du mois, limites de la passerelle. */
+export interface AiHealthData extends AiHealthSummary {
+  quota: { used: number; limit: number; planLimit: number; orgLimit: number; monthStart: string };
+  limits: { timeoutMs: number; concurrency: number; maxPending: number; circuitFailures: number; circuitCooldownMs: number };
 }
 
 export interface AdminOverview {
@@ -265,6 +272,8 @@ export interface DataClient {
   // IA
   getAiStatus(): Promise<AiStatus>;
   listAiRequests(): Promise<AiRequest[]>;
+  /** Taux de réussite, quota du mois et limites, sur les `windowDays` derniers jours (30 par défaut). */
+  getAiHealth(windowDays?: number): Promise<AiHealthData>;
   // Abonnement et consommation
   getSubscription(): Promise<Subscription>;
   getUsage(): Promise<UsageSummary>;
