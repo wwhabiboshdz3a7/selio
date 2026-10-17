@@ -19,7 +19,7 @@ Légende : **IT** implémenté et testé · **IV** implémenté, intégration ex
 | Automatisations (règles, horaires, limites, file, historique, pause, arrêt global, retry, doublons) | IT (exécution immédiate simulée) | IT (serveur) ; actions navigateur **IV** (remises à l'extension) | Explication serveur/navigateur dans l'interface |
 | Radar (recherches, opportunités classées, observé/estimé) | SD | SD (simulateur côté serveur) | Connecteur réel **NI** (pas de source autorisée) |
 | Achat assisté (budget, contrôles, simulation, doublons) | SD | SD | Achat réel **NI** et désactivé par conception |
-| Paramètres (organisation, rôles, connexions, IA, abonnement/consommation, notifications, sécurité, données, statut) | IT | IT | Email de notification **NI** |
+| Comptes Vinted catégorisés (vente, achat, perso) ; Paramètres (organisation, rôles, IA, abonnement/consommation, notifications, sécurité, données, statut) | IT | IT | Email de notification **NI** |
 | Administration opérateur (services, files, connecteurs, IA, plans/quotas, erreurs, audit) | IT | IT | |
 | Extension MV3 (popup, options, service worker, content script, jetons, diagnostic) | — | **IV** : adaptateurs sur fixtures, à valider sur vinted.fr | Build et chargement Chromium vérifiés |
 | Connecteur Vinted | — | **IV** (expérimental) | Aucun envoi automatique |

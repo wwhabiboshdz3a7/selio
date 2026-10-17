@@ -70,11 +70,13 @@ export const router = createBrowserRouter([
       { path: "automations", lazy: lazy(() => import("./app/pages/Automations")) },
       { path: "radar", lazy: lazy(() => import("./app/pages/Radar")) },
       { path: "purchase", lazy: lazy(() => import("./app/pages/Purchase")) },
+      { path: "accounts", lazy: lazy(() => import("./app/pages/Accounts")) },
       { path: "settings", lazy: lazy(() => import("./app/pages/Settings")), children: [
         { index: true, element: <Navigate to="organisation" replace /> },
         { path: "organisation", lazy: lazy(() => import("./app/pages/settings/Organisation")) },
         { path: "members", lazy: lazy(() => import("./app/pages/settings/Members")) },
-        { path: "connections", lazy: lazy(() => import("./app/pages/settings/Connections")) },
+        // Les comptes Vinted ont leur propre menu (« Comptes ») : l'ancienne adresse y redirige.
+        { path: "connections", element: <Navigate to="/app/accounts" replace /> },
         { path: "ai", lazy: lazy(() => import("./app/pages/settings/Ai")) },
         { path: "billing", lazy: lazy(() => import("./app/pages/settings/Billing")) },
         { path: "notifications", lazy: lazy(() => import("./app/pages/settings/Notifications")) },

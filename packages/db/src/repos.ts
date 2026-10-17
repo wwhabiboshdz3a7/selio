@@ -3,6 +3,7 @@ import {
   type AiRequest, type AuditLog, type AutomationRule, type Conversation, type ConversationQuery, type Customer, type CustomerQuery, type ExtensionToken, type InventoryEvent, type InventoryItem, type InventoryQuery, type Job, type JobQuery, type MarketplaceConnection, type Membership, type Message, type Opportunity, type Order, type OrderQuery, type Organization, type Page, type PurchaseRequest, type RadarSearch, type Shipment, type Subscription, type UsageEvent, type User,
 } from "@selio/contracts";
 import type { ZodType, ZodTypeDef } from "zod";
+import type { AccountStats } from "@selio/domain";
 import { DbError, type Tx } from "./pool";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -522,8 +523,25 @@ export const connections = {
   async delete(tx: Tx, id: string): Promise<void> {
     await tx.query("delete from marketplace_connections where org_id = $1 and id = $2", [tx.orgId, id]);
   },
+  /** Comptes pris en compte dans le quota du plan : le simulateur de démonstration n'en fait pas partie. */
   async count(tx: Tx): Promise<number> {
-    return tx.count("select count(*) from marketplace_connections where org_id = $1", [tx.orgId]);
+    return tx.count("select count(*) from marketplace_connections where org_id = $1 and provider <> 'demo'", [tx.orgId]);
+  },
+  /** Chiffres utiles par compte : annonces en ligne, ventes depuis `since`, achats, conversations ouvertes. */
+  async stats(tx: Tx, since: string): Promise<AccountStats[]> {
+    const live = "o.org_id = c.org_id and o.connection_id = c.id and o.status not in ('cancelled','refunded') and o.created_at >= $2";
+    const bought = "p.org_id = c.org_id and p.connection_id = c.id and p.status in ('simulated','executed')";
+    return tx.query<AccountStats>(
+      `select c.id as connection_id,
+        (select count(*) from inventory_items i where i.org_id = c.org_id and i.connection_id = c.id and i.status in ('listed','reserved')) as listed_items,
+        (select count(*) from orders o where ${live}) as sales_this_month,
+        (select coalesce(sum(o.sale_price_cents), 0) from orders o where ${live}) as revenue_this_month_cents,
+        (select count(*) from purchase_requests p where ${bought}) as purchases,
+        (select coalesce(sum(p.max_price_cents), 0) from purchase_requests p where ${bought}) as purchases_spent_cents,
+        (select count(*) from conversations v where v.org_id = c.org_id and v.connection_id = c.id and v.status = 'open') as open_conversations
+      from marketplace_connections c where c.org_id = $1 order by c.created_at`,
+      [tx.orgId, since],
+    );
   },
 };
 

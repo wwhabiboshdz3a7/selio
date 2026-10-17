@@ -1,4 +1,4 @@
-import type { ConnectorStatus, Capability } from "./connections";
+import type { ConnectorStatus, Capability, ConnectionUsage } from "./connections";
 import type { ItemCategory, ItemCondition, ItemStatus } from "./inventory";
 import type { MessageStatus } from "./messaging";
 import type { OrderStatus } from "./orders";
@@ -61,6 +61,19 @@ export const CONNECTOR_STATUS_LABELS: Record<ConnectorStatus, string> = {
   expired: "Expiré",
   disconnected: "Déconnecté",
   unsupported: "Non pris en charge",
+};
+
+export const CONNECTION_USAGE_LABELS: Record<ConnectionUsage, string> = {
+  sale: "Vente",
+  purchase: "Achat",
+  personal: "Perso",
+};
+
+/** Ce que Selio fait (et ne fait pas) avec un compte de chaque catégorie. */
+export const CONNECTION_USAGE_DESCRIPTIONS: Record<ConnectionUsage, string> = {
+  sale: "Annonces publiées et négociées par Selio : générateur, dressing, messagerie et automatisations.",
+  purchase: "Compte qui achète les bonnes affaires repérées par le radar (achats validés ou automatiques).",
+  personal: "Compte personnel : visible ici, mais jamais utilisé par les automatisations ni par l'achat auto.",
 };
 
 export const CAPABILITY_LABELS: Record<Capability, string> = {

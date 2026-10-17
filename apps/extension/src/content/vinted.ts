@@ -114,7 +114,7 @@ async function render() {
   const status = await send({ type: "status" });
   const paired = status.ok && (status.data as { paired: boolean }).paired;
   if (!paired) {
-    body.append(el("p", { text: "Extension non associée. Ouvrez les options de l'extension et collez un jeton créé dans Selio › Paramètres › Connexions." }));
+    body.append(el("p", { text: "Extension non associée. Ouvrez les options de l'extension et collez un jeton créé dans Selio › Comptes Vinted (section « Avancé »)." }));
     body.append(el("p", { className: "msg", text: status.ok ? "" : (status as { message: string }).message }));
     return;
   }

@@ -92,6 +92,8 @@ export const purchaseRequest = z.object({
   mode: z.enum(["manual", "auto"]).default("manual"),
   /** Fin du délai d'annulation d'un achat automatique (null = pas de délai). */
   cancelableUntil: isoDate.nullable().default(null),
+  /** Compte Vinted « Achat » utilisé (null = aucun compte Achat au moment de l'achat simulé). */
+  connectionId: id.nullable().default(null),
   checks: z
     .array(z.object({ code: z.string().max(60), ok: z.boolean(), label: z.string().max(200) }))
     .default([]),

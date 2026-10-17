@@ -5,6 +5,8 @@ export default async function connectionRoutes(app: FastifyInstance) {
   app.get("/api/connectors", async () => connections.describe());
   app.get("/api/connections", async (req) => connections.listConnections(app.requireCtx(req)));
   app.post("/api/connections", async (req, reply) => { reply.status(201); return connections.createConnection(app.requireCtx(req), req.body); });
+  app.get("/api/connections/stats", async (req) => connections.connectionStats(app.requireCtx(req)));
+  app.patch<{ Params: { id: string } }>("/api/connections/:id", async (req) => connections.updateConnection(app.requireCtx(req), req.params.id, req.body));
   app.post<{ Params: { id: string } }>("/api/connections/:id/test", async (req) => connections.testConnection(app.requireCtx(req), req.params.id));
   app.post<{ Params: { id: string } }>("/api/connections/:id/sync", async (req) => connections.syncConnection(app.requireCtx(req), req.params.id));
   app.post<{ Params: { id: string } }>("/api/connections/:id/disconnect", async (req) => connections.disconnectConnection(app.requireCtx(req), req.params.id));
