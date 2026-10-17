@@ -4,6 +4,7 @@ import type {
 import type { ConnectorDescriptor } from "@selio/connectors";
 import type { AccountStats, NegotiationResult, PeriodPreset } from "@selio/domain";
 import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
+import type { AiHealthData } from "../data/types";
 
 type Query = Record<string, string | number | boolean | undefined | null>;
 
@@ -161,6 +162,7 @@ export class ApiClient implements DataClient {
 
   getAiStatus() { return this.get<AiStatus>("/api/ai/status"); }
   listAiRequests() { return this.get<AiRequest[]>("/api/ai/requests"); }
+  getAiHealth(windowDays?: number) { return this.get<AiHealthData>("/api/ai/stats", { days: windowDays }); }
 
   getSubscription() { return this.get<Subscription>("/api/billing/subscription"); }
   getUsage() { return this.get<UsageSummary>("/api/billing/usage"); }

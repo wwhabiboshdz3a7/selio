@@ -66,6 +66,12 @@ export class AIService {
     return this.opts.provider;
   }
 
+  /** Limites de la passerelle (affichées dans Paramètres › Assistant IA). */
+  get limits(): { timeoutMs: number; concurrency: number; maxPending: number; circuitFailures: number; circuitCooldownMs: number } {
+    const { timeoutMs, concurrency, maxPending, circuitFailures, circuitCooldownMs } = this.opts;
+    return { timeoutMs, concurrency, maxPending, circuitFailures, circuitCooldownMs };
+  }
+
   async health(opts?: GenerateOptions): Promise<HealthResult> {
     this.lastHealth = await this.opts.provider.health(opts);
     return this.lastHealth;

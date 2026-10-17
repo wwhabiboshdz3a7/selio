@@ -56,7 +56,7 @@ export function PeriodPicker({ value, onChange }: { value: PeriodPreset; onChang
 }
 
 /** Champ montant : saisie « 12,50 », valeur en centimes. */
-export function MoneyInput({ value, onChange, id, invalid, placeholder = "0,00", allowEmpty = true, ...rest }: { value: number | null; onChange: (cents: number | null) => void; id?: string; invalid?: boolean; placeholder?: string; allowEmpty?: boolean; "aria-describedby"?: string; disabled?: boolean }) {
+export function MoneyInput({ value, onChange, id, invalid, placeholder = "0,00", allowEmpty = true, ...rest }: { value: number | null; onChange: (cents: number | null) => void; id?: string; invalid?: boolean; placeholder?: string; allowEmpty?: boolean; "aria-describedby"?: string; "aria-label"?: string; disabled?: boolean }) {
   const [text, setText] = useState(value === null ? "" : centsToDecimalString(value));
   const [focused, setFocused] = useState(false);
   const shown = focused ? text : value === null ? "" : centsToDecimalString(value);

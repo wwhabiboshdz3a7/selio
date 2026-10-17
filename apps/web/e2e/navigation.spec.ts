@@ -13,6 +13,7 @@ const PAGES: { href: string; heading: RegExp }[] = [
   { href: "/app/messages", heading: /Messagerie/ },
   { href: "/app/orders", heading: /Commandes/ },
   { href: "/app/customers", heading: /Clients/ },
+  { href: "/app/selling-rules", heading: /Négociation et marges/ },
   { href: "/app/radar", heading: /Bonnes affaires/ },
   { href: "/app/purchase", heading: /À valider/ },
   { href: "/app/auto-buy", heading: /Achat auto/ },

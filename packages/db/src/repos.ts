@@ -573,6 +573,10 @@ export const aiRequests = {
   async countSince(tx: Tx, since: string): Promise<number> {
     return tx.count("select count(*) from ai_requests where org_id = $1 and created_at >= $2", [tx.orgId, since]);
   },
+  /** Requêtes depuis une date (état de l'IA), plafonnées : le quota mensuel le plus large reste bien en dessous. */
+  async listSince(tx: Tx, since: string, limit = 10_000): Promise<AiRequest[]> {
+    return (await tx.query("select * from ai_requests where org_id = $1 and created_at >= $2 order by created_at desc limit $3", [tx.orgId, since, limit])).map((r) => parse(aiRequest, r));
+  },
   async create(tx: Tx, input: Partial<AiRequest>): Promise<AiRequest> {
     return parse(aiRequest, await tx.insert("ai_requests", { ...input, orgId: tx.orgId }));
   },

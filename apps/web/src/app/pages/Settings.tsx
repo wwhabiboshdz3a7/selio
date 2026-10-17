@@ -5,7 +5,7 @@ import { useRequiredSession } from "../../lib/data/provider";
 
 const ITEMS = [
   { to: "organisation", label: "Organisation" },
-  { to: "members", label: "Utilisateurs et rôles" },
+  { to: "access", label: "Comptes et accès" },
   { to: "ai", label: "Assistant IA" },
   { to: "billing", label: "Abonnement et consommation" },
   { to: "notifications", label: "Notifications" },
