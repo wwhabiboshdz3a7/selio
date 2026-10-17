@@ -208,6 +208,7 @@ export class DemoClient implements DataClient {
     const m = this.s.memberships.find((x) => x.id === membershipId);
     if (!m) throw new DataError("not_found", "Membre introuvable", 404);
     if (m.userId === this.s.user.id && role !== "owner") throw new DataError("validation", "Le propriétaire ne peut pas rétrograder son propre rôle.", 400);
+    if ((role === "owner" || m.role === "owner") && this.session().role !== "owner") throw new DataError("forbidden", "Seul un propriétaire peut nommer ou changer un propriétaire.", 403);
     m.role = role;
     this.audit("member.role_changed", "membership", m.id, { role });
     this.persist();
@@ -216,7 +217,8 @@ export class DemoClient implements DataClient {
     const m = this.s.memberships.find((x) => x.id === membershipId);
     if (!m) throw new DataError("not_found", "Membre introuvable", 404);
     if (m.userId === this.s.user.id) throw new DataError("validation", "Vous ne pouvez pas vous retirer vous-même.", 400);
-    this.s.memberships = this.s.memberships.filter((x) => x.id !== membershipId);
+    if (m.role === "owner" && this.session().role !== "owner") throw new DataError("forbidden", "Seul un propriétaire peut retirer un propriétaire.", 403);
+    this.s.memberships =this.s.memberships.filter((x) => x.id !== membershipId);
     this.audit("member.removed", "membership", membershipId, {});
     this.persist();
   }

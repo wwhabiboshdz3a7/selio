@@ -263,6 +263,15 @@ describe("API Selio (mode connecté, base réelle)", () => {
     expect(saved.json.settings.ai.enabled).toBe(true);
     const session = await call("GET", "/api/auth/session");
     expect(session.json.org.settings.margin.maxDiscountRate).toBe(0.1);
+    // Comptes et accès : un administrateur ne peut ni changer ni retirer le propriétaire.
+    const members = await call("GET", "/api/org/members");
+    const ownerM = members.json.find((m: { role: string }) => m.role === "owner");
+    const viewerM = members.json.find((m: { user: { email: string } }) => m.user.email === "lecteur@test.local");
+    expect((await call("PATCH", `/api/org/members/${viewerM.id}`, { role: "superadmin" })).status).toBe(400);
+    expect((await call("PATCH", `/api/org/members/${viewerM.id}`, { role: "admin" })).status).toBe(204);
+    expect((await call("PATCH", `/api/org/members/${ownerM.id}`, { role: "viewer" }, "v")).status).toBe(403);
+    expect((await call("DELETE", `/api/org/members/${ownerM.id}`, undefined, "v")).status).toBe(403);
+    expect((await call("PATCH", `/api/org/members/${viewerM.id}`, { role: "viewer" })).status).toBe(204);
     // Retour aux règles par défaut pour la suite du parcours.
     const restored = await call("PATCH", "/api/org", { settings: { margin: { minMarginRate: 0.25, minMarginCents: 500, maxDiscountRate: 0.2, counterStepRate: 0.05, maxRoundsPerCustomer: 2, defaultPlatformFeeRate: 0, defaultShippingCostCents: 0 } } });
     expect(restored.status).toBe(200);

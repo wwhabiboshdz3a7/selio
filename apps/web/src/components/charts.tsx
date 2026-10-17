@@ -226,17 +226,18 @@ export function DonutChart({ rows, size = 168, formatValue = (v) => formatCents(
 }
 
 /** Jauge demi-cercle (objectif, taux). */
-export function Gauge({ value, max, label, sublabel, tone = "var(--accent-vivid)", size = 200 }: { value: number; max: number; label: string; sublabel?: string; tone?: string; size?: number }) {
+export function Gauge({ value, max, label, sublabel, tone = "var(--accent-vivid)", size = 200, valueLabel }: { value: number; max: number; label: string; sublabel?: string; tone?: string; size?: number; /** Texte central à la place du pourcentage (ex. « — » sans donnée). */ valueLabel?: string }) {
   const ratio = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
   const r = size / 2 - 14;
   const c = Math.PI * r;
   const h = size / 2 + 8;
+  const center = valueLabel ?? `${Math.round(ratio * 100)} %`;
   return (
     <figure className="flex flex-col items-center">
-      <svg width={size} height={h} viewBox={`0 0 ${size} ${h}`} role="img" aria-label={`${label} : ${Math.round(ratio * 100)} %`}>
+      <svg width={size} height={h} viewBox={`0 0 ${size} ${h}`} role="img" aria-label={`${label} : ${valueLabel === undefined ? center : valueLabel === "—" ? "aucune donnée" : valueLabel}`}>
         <path d={`M14 ${size / 2} A ${r} ${r} 0 0 1 ${size - 14} ${size / 2}`} fill="none" stroke="var(--surface-muted)" strokeWidth={12} strokeLinecap="round" />
-        <path d={`M14 ${size / 2} A ${r} ${r} 0 0 1 ${size - 14} ${size / 2}`} fill="none" stroke={tone} strokeWidth={12} strokeLinecap="round" strokeDasharray={`${ratio * c} ${c}`} />
-        <text x={size / 2} y={size / 2 - 10} textAnchor="middle" fontSize={26} fontWeight={600} fill="var(--text)" className="num">{Math.round(ratio * 100)} %</text>
+        {ratio > 0 ? <path d={`M14 ${size / 2} A ${r} ${r} 0 0 1 ${size - 14} ${size / 2}`} fill="none" stroke={tone} strokeWidth={12} strokeLinecap="round" strokeDasharray={`${ratio * c} ${c}`} /> : null}
+        <text x={size / 2} y={size / 2 - 10} textAnchor="middle" fontSize={Math.round(Math.min(26, size / 6))} fontWeight={600} fill="var(--text)" className="num">{center}</text>
       </svg>
       <figcaption className="-mt-1 text-center">
         <span className="block text-sm font-medium text-text">{label}</span>
