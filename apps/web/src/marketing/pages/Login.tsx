@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Alert, Button, Field, Input, Segmented } from "@selio/ui";
 import { usePageMeta } from "../../lib/seo";
-import { Container } from "../components";
+import { Container, Eyebrow } from "../components";
 import { useData } from "../../lib/data/provider";
 import { connectedModeAvailable } from "../../lib/env";
 import { errorMessage } from "../../lib/errors";
@@ -31,9 +31,10 @@ export default function Login() {
     }
   };
   return (
-    <section className="py-12">
+    <section className="mk-hero py-12 md:py-16">
       <Container className="max-w-md">
-        <h1 className="text-xl font-semibold text-text">Connexion</h1>
+        <Eyebrow>Espace Selio</Eyebrow>
+        <h1 className="mt-3 text-2xl font-semibold tracking-[-0.025em] text-text">Connexion</h1>
         <p className="mt-1 text-sm text-text-muted">Choisissez le mode, puis identifiez-vous.</p>
         <div className="mt-4">
           <Segmented ariaLabel="Mode" value={mode} onChange={(m: Mode) => { setMode(m); setEmail(m === "demo" ? "marie@demo.selio.local" : ""); setPassword(m === "demo" ? "demo" : ""); setError(null); }} items={[{ value: "demo", label: "Démonstration" }, { value: "connected", label: "Compte connecté" }]} />

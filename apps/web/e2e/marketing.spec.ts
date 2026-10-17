@@ -9,7 +9,7 @@ test.describe("vitrine", () => {
     await expect(page.getByRole("link", { name: "Explorer la démo" }).first()).toBeVisible();
     await expect(page.getByText("Ce qui est disponible aujourd'hui")).toBeVisible();
     await expect(page.getByText(/ni affilié à Vinted/)).toBeVisible();
-    // Un seul bouton orange (accent) visible dans la zone héro.
+    // Accent violet avec parcimonie : au plus deux boutons (héros et bandeau d'appel).
     const accentButtons = page.locator("header ~ main a > button.bg-accent, main button.bg-accent");
     expect(await accentButtons.count()).toBeLessThanOrEqual(2);
   });

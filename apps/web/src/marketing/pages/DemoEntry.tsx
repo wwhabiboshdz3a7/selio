@@ -30,7 +30,7 @@ export default function DemoEntry() {
     return () => { cancelled = true; };
   }, [client, mode, setMode, navigate]);
   return (
-    <Container className="py-16">
+    <Container className="mk-hero py-16">
       {error ? <ErrorState title="Impossible d'ouvrir la démonstration" description={error} onRetry={() => window.location.reload()} /> : <LoadingState label="Préparation des données de démonstration…" />}
     </Container>
   );
