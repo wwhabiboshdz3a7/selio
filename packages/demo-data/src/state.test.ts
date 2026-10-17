@@ -44,7 +44,7 @@ describe("stockage local de la démo", () => {
     expect(localStorage.getItem(DEMO_STORAGE_KEY)!.length).toBeLessThan(baseSize + 600_000);
   });
 
-  it("n'allège jamais les illustrations de la démo", () => {
+  it("n'allège jamais les photos du catalogue de la démo", () => {
     const base = buildDemoState(new Date("2026-10-08T12:00:00Z"));
     const light = lightenDemoState(base, false);
     expect(light.items.map((i) => i.photos.length)).toEqual(base.items.map((i) => i.photos.length));

@@ -10,7 +10,7 @@ import {
 import { getConnector, describeConnectors } from "@selio/connectors";
 import { AIService, MockAIProvider } from "@selio/ai";
 import { buildDemoState } from "@selio/demo-data";
-import { LocalDemoStorage, buildMarketObservations, illustrationUrl, silhouetteFor, type DemoState, type DemoStorage } from "@selio/demo-data";
+import { DEAL_ENTRIES, LocalDemoStorage, buildMarketObservations, type DemoState, type DemoStorage } from "@selio/demo-data";
 import { PLAN_QUOTAS } from "@selio/demo-data";
 import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
 
@@ -981,30 +981,32 @@ export class DemoClient implements DataClient {
     await this.delay(500);
     const now = this.clock();
     const rnd = seededRandom(hashString(search.id + localDayKey(now, st.org.settings.timezone) + st.opportunities.length));
-    const brands = search.criteria.brands.length ? search.criteria.brands : ["Nike", "Zara", "Levi's"];
-    const cats = search.criteria.categories.length ? search.criteria.categories : (["shoes", "men", "women"] as const);
+    // Annonces réelles (vraies photos) correspondant aux critères de la recherche.
+    const wanted = search.criteria.brands.map((b) => b.toLowerCase());
+    const pool = DEAL_ENTRIES.filter((e) => (!wanted.length || wanted.includes((e.brand ?? "").toLowerCase())) && (!search.criteria.categories.length || search.criteria.categories.includes(e.category)));
+    const candidates = pool.length ? pool : DEAL_ENTRIES;
     const comps = this.comparables();
-    const colors = ["Noir", "Blanc", "Bleu marine", "Beige", "Gris", "Vert", "Camel"];
     const count = 1 + Math.floor(rnd() * 3);
     let found = 0;
     for (let i = 0; i < count; i++) {
-      const brand = brands[Math.floor(rnd() * brands.length)]!;
-      const category = cats[Math.floor(rnd() * cats.length)]!;
+      const entry = candidates[Math.floor(rnd() * candidates.length)]!;
+      const brand = entry.brand ?? search.criteria.brands[0] ?? null;
+      const category = entry.category;
       const conditions = search.criteria.conditions.length ? search.criteria.conditions : (["very_good", "good", "satisfactory"] as const);
       const condition = conditions[Math.floor(rnd() * conditions.length)]!;
       const priceCents = Math.round((search.criteria.maxPriceCents * (0.5 + rnd() * 0.6)) / 100) * 100;
       const shippingCents = 450 + Math.floor(rnd() * 3) * 100;
-      const size = search.criteria.sizes.length ? search.criteria.sizes[Math.floor(rnd() * search.criteria.sizes.length)]! : "M";
+      const size = entry.size ?? (search.criteria.sizes.length ? search.criteria.sizes[Math.floor(rnd() * search.criteria.sizes.length)]! : "M");
       const seenAt = new Date(now.getTime() - Math.floor(rnd() * 20) * 3_600_000).toISOString();
       const photoCount = 1 + Math.floor(rnd() * 8);
       const sellerRating = Math.round((3.6 + rnd() * 1.4) * 10) / 10;
       const sellerReviews = Math.floor(rnd() * 180);
       const est = estimateResale({ priceCents, brand, category, condition }, comps);
       const scored = scoreOpportunity({ priceCents, shippingCents, seenAt }, est, search, 0, now, { condition, photoCount, sellerRating, sellerReviews, fees: st.org.settings.buyerFees });
-      const title = `${brand} ${search.criteria.keywords[0] ?? (category === "shoes" ? "sneakers" : "pièce")} ${size}`;
+      const title = entry.title;
       const dedupe = `${search.id}:${title}:${priceCents}`;
       if (st.opportunities.some((o) => o.searchId === search.id && `${search.id}:${o.title}:${o.observed.priceCents}` === dedupe)) continue;
-      const photoUrl = illustrationUrl({ silhouette: silhouetteFor(title, category), color: colors[Math.floor(rnd() * colors.length)]!, brand, view: 0, seed: Math.floor(rnd() * 1000) });
+      const photoUrl = entry.photos[0]!;
       st.opportunities.unshift({ id: newId(), orgId: st.org.id, searchId: search.id, title, observed: { priceCents, shippingCents, brand, size, condition, category, sellerHandle: `vendeur_${Math.floor(rnd() * 900 + 100)}`, sellerRating, sellerReviews, photoUrl, photoCount, url: `https://demo.invalid/items/${Math.floor(rnd() * 90000)}`, seenAt, source: "demo_simulator" }, estimate: { resalePriceCents: est.resalePriceCents, expectedFeesCents: 0, marginCents: scored.marginCents, marginRate: scored.marginRate, confidence: est.confidence, method: est.method, comparableCount: est.comparableCount }, score: scored.score, reasons: scored.reasons, breakdown: scored.breakdown, status: "new", createdAt: seenAt, updatedAt: this.now() });
       found++;
     }
