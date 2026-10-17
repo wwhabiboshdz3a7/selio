@@ -70,3 +70,15 @@ describe("composants de la vitrine", () => {
     expect(container.innerHTML).not.toMatch(/warning|amber|orange/);
   });
 });
+
+describe("entrée de la démonstration", () => {
+  it("n'accepte qu'une page de l'application comme destination", async () => {
+    const { demoTarget } = await import("./pages/DemoEntry");
+    expect(demoTarget("/app/dressing")).toBe("/app/dressing");
+    expect(demoTarget("/app/items/item-014")).toBe("/app/items/item-014");
+    expect(demoTarget(null)).toBe("/app");
+    expect(demoTarget("https://exemple.com")).toBe("/app");
+    expect(demoTarget("//exemple.com/app")).toBe("/app");
+    expect(demoTarget("/app/../admin")).toBe("/app");
+  });
+});

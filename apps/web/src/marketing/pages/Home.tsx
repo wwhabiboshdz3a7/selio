@@ -14,11 +14,11 @@ const JOURNEY = [
   { icon: <TrendingUp />, title: "Marge", text: "CA, marge brute, panier moyen et rotation calculés depuis vos données réelles, avec les formules affichées." },
 ];
 
-const SHOT_ALT = "Vue d'ensemble de la démonstration Selio : chiffre d'affaires, bénéfice, ventes, stock actif, raccourcis vers les modules et alertes à traiter (données fictives).";
+const SHOT_ALT = "Dressing intelligent de la démonstration Selio : vraies annonces Vinted en photo, note sur 100 au-dessus de chaque annonce, ancienneté en ligne et republications conseillées (statistiques fictives).";
 
 /**
- * Le produit réel, juste après la visite : la vue d'ensemble de la démonstration
- * (capture locale, données fictives) sort du ciel nocturne dans un cadre incliné
+ * Le produit réel, juste après la visite : le dressing intelligent de la démonstration
+ * (capture locale, vraies photos d'annonces, statistiques fictives) sort du ciel nocturne dans un cadre incliné
  * qui se redresse au défilement (CSS, sans JS), entouré de l'anneau d'or.
  */
 function ProductShowcase() {
@@ -28,7 +28,7 @@ function ProductShowcase() {
         <div className="mk-showcase-stage">
           <span className="mk-orbit mk-orbit-back" aria-hidden="true" />
           <figure className="mk-shot">
-            <div className="mk-shot-bar" aria-hidden="true"><i /><i /><i /><span>Selio · vue d'ensemble</span></div>
+            <div className="mk-shot-bar" aria-hidden="true"><i /><i /><i /><span>Selio · dressing intelligent</span></div>
             <img src={apercuClair} alt={SHOT_ALT} width={1600} height={1000} loading="lazy" decoding="async" className="mk-shot-img dark:hidden" />
             <img src={apercuSombre} alt={SHOT_ALT} width={1600} height={1000} loading="lazy" decoding="async" className="mk-shot-img hidden dark:block" />
           </figure>
@@ -36,13 +36,13 @@ function ProductShowcase() {
             <span className="mk-orbit-path"><span className="mk-orbit-arm"><span className="mk-orbit-star" /></span></span>
           </span>
         </div>
-        <p className="mt-4 text-center text-xs text-text-muted">Capture réelle de la démonstration, avec des données fictives.</p>
+        <p className="mt-4 text-center text-xs text-text-muted">Capture réelle de la démonstration : vraies annonces Vinted, statistiques fictives.</p>
         <div className="mx-auto mt-10 max-w-2xl text-center md:mt-12">
           <Eyebrow>L'application</Eyebrow>
-          <h2 id="application-titre" className="mt-3 text-xl font-semibold tracking-[-0.015em] text-balance text-text md:text-[28px] md:leading-[34px]">Tout votre commerce sur un seul écran</h2>
-          <Lead className="mt-3">Chiffre d'affaires, marge, ventes, stock et ce qui attend votre validation : chaque chiffre est calculé depuis vos données, avec les formules affichées.</Lead>
+          <h2 id="application-titre" className="mt-3 text-xl font-semibold tracking-[-0.015em] text-balance text-text md:text-[28px] md:leading-[34px]">Chaque annonce notée, chaque republication prête</h2>
+          <Lead className="mt-3">Vos annonces en ligne, notées sur 100 avec ce qu'il faut améliorer, triées par ancienneté pour savoir quoi republier, et dix variantes déjà écrites pour chacune.</Lead>
           <p className="mt-5">
-            <Link to="/demo" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">Ouvrir cette vue dans la démo <ArrowRight className="size-4" aria-hidden /></Link>
+            <Link to="/demo?vers=/app/dressing" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">Ouvrir le dressing dans la démo <ArrowRight className="size-4" aria-hidden /></Link>
           </p>
         </div>
       </Container>

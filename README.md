@@ -12,6 +12,8 @@ Plateforme de gestion pour revendeurs Vinted : vitrine, application web de gesti
 - **Bonnes affaires · À valider · Achat auto** : note /100 expliquée, coût réel (prix + port + protection acheteurs), revente, bénéfice et marge ; validation en un clic ; achat automatique au-dessus d'un seuil avec plafond par jour et délai d'annulation (simulé tant qu'aucun connecteur d'achat n'est autorisé).
 - Stock, messagerie, clients, commandes, analyses (galerie de graphiques personnalisable), automatisations, paramètres.
 
+La démonstration utilise de **vraies annonces Vinted** (photos, titres, marques et prix issus du dépôt revendo, sans nom de compte) : `python3 packages/demo-data/scripts/import-revendo-photos.py <chemin/vers/revendo>` régénère `apps/web/public/demo/photos/` et `packages/demo-data/src/catalog.generated.ts`. Les statistiques (vues, ventes, clients) restent fictives.
+
 ## Deux modes, clairement séparés
 
 | Mode | Ce qu'il prouve | Ce qu'il ne prouve pas |

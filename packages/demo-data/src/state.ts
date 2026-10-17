@@ -2,7 +2,7 @@ import type {
   AiRequest, AuditLog, AutomationRule, Conversation, Customer, ExtensionToken, InventoryEvent, InventoryItem, Job, MarketplaceConnection, Membership, Message, Opportunity, Order, Organization, PurchaseRequest, RadarSearch, Shipment, Subscription, UsageEvent, User,
 } from "@selio/contracts";
 
-export const DEMO_STATE_VERSION = 5;
+export const DEMO_STATE_VERSION = 6;
 export const DEMO_STORAGE_KEY = "selio.demo.v1";
 
 export interface DemoState {
@@ -35,7 +35,7 @@ export interface DemoState {
   passwordHint: string;
 }
 
-/** Au-delà de cette taille, une data URL est une photo importée (les illustrations SVG de la démo pèsent quelques Ko). */
+/** Au-delà de cette taille, une data URL est une photo importée (les photos de la démo sont des fichiers servis par le site, pas des data URL). */
 const IMPORTED_PHOTO_MIN_CHARS = 20_000;
 
 /** Copie de l'état sans les photos importées des articles (toutes, ou toutes sauf la couverture). */

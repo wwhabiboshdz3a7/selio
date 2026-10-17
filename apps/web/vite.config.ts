@@ -59,6 +59,12 @@ export default defineConfig({
             urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
             handler: "NetworkOnly",
           },
+          {
+            // Photos réelles de la démo : chargées à la demande puis gardées en cache (pas de pré-cache de 3 Mo).
+            urlPattern: ({ url }) => url.pathname.startsWith("/demo/photos/"),
+            handler: "CacheFirst",
+            options: { cacheName: "selio-demo-photos", expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 30 } },
+          },
         ],
       },
     }),
