@@ -18,3 +18,4 @@ export * from "./studio";
 export * from "./untrusted";
 export * from "./ids";
 export * from "./permissions";
+export * from "./accounts";

@@ -33,7 +33,7 @@ function Options() {
   };
   const unpair = async () => {
     await sendToBackground({ type: "unpair" });
-    setMsg({ tone: "info", text: "Extension dissociée. Pensez à révoquer le jeton dans Selio › Paramètres › Connexions." });
+    setMsg({ tone: "info", text: "Extension dissociée. Pensez à révoquer le jeton dans Selio › Comptes Vinted (section « Avancé »)." });
     await refresh();
   };
   return (
@@ -55,7 +55,7 @@ function Options() {
         ) : (
           <div className="mt-3 flex flex-col gap-3">
             <Field label="URL de l'API Selio" hint="L'extension demandera l'autorisation d'accéder à cette origine.">{(p) => <Input id={p.id} aria-describedby={p.describedBy} value={apiBaseUrl} onChange={(e) => setApi(e.target.value)} />}</Field>
-            <Field label="Jeton d'extension" hint="Créé dans Selio › Paramètres › Connexions › Jetons d'extension. Affiché une seule fois.">{(p) => <Input id={p.id} aria-describedby={p.describedBy} value={token} onChange={(e) => setToken(e.target.value)} type="password" autoComplete="off" />}</Field>
+            <Field label="Jeton d'extension" hint="Créé dans Selio › Comptes Vinted › Avancé — relier l'extension Selio. Affiché une seule fois.">{(p) => <Input id={p.id} aria-describedby={p.describedBy} value={token} onChange={(e) => setToken(e.target.value)} type="password" autoComplete="off" />}</Field>
             <div><Button onClick={() => void pair()} loading={busy} disabled={!token.trim() || !apiBaseUrl.trim()}>Associer</Button></div>
           </div>
         )}

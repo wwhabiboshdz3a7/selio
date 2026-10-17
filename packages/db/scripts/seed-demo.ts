@@ -35,6 +35,9 @@ async function main() {
     const idMap = new Map<string, string>();
     const remap = (id: string | null) => (id ? (idMap.get(id) ?? null) : null);
     for (const c of state.connections) { const { id, orgId: _o, hasSecret: _h, ...rest } = c; const row = await repos.connections.create(tx, rest); idMap.set(id, row.id); }
+    // Compte « Achat » de l'achat auto : identifiant de la démo → identifiant en base.
+    const purchaseAccount = remap(state.org.settings.autoBuy.connectionId);
+    await repos.orgs.update(tx, orgId, { settings: { ...state.org.settings, autoBuy: { ...state.org.settings.autoBuy, connectionId: purchaseAccount } } });
     for (const it of state.items) { const { id, orgId: _o, ...rest } = it; const row = await repos.items.create(tx, { ...rest, connectionId: remap(it.connectionId) }); idMap.set(id, row.id); }
     for (const c of state.customers) { const { id, orgId: _o, ...rest } = c; const row = await repos.customers.create(tx, rest); idMap.set(id, row.id); }
     for (const c of state.conversations) { const { id, orgId: _o, ...rest } = c; const row = await repos.conversations.create(tx, { ...rest, customerId: remap(c.customerId)!, itemId: remap(c.itemId), connectionId: remap(c.connectionId) }); idMap.set(id, row.id); }

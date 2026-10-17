@@ -27,6 +27,18 @@ const THUMBS = REAL_CATALOG.filter((e) => !e.fullSize);
 export const STOCK_ENTRIES = THUMBS.filter((_, k) => k % 2 === 0);
 export const DEAL_ENTRIES = THUMBS.filter((_, k) => k % 2 === 1);
 
+/**
+ * Comptes de la démo : deux comptes Vinted « Vente », un compte « Achat », un compte « Perso »
+ * et le simulateur. Les pseudos sont fictifs.
+ */
+const SALE_ACCOUNT = "conn-vinted";
+const SALE_ACCOUNT_2 = "conn-vinted-2";
+const PURCHASE_ACCOUNT = "conn-vinted-achat";
+const PERSONAL_ACCOUNT = "conn-vinted-perso";
+const SIMULATOR = "conn-demo";
+/** Nombre de conversations de la démo (une par annonce en ligne, dans l'ordre). */
+const DEMO_CONVERSATIONS = 10;
+
 export function buildDemoState(now = new Date()): DemoState {
   const rnd = seededRandom(20261008);
   const pick = <T,>(arr: readonly T[]): T => arr[Math.floor(rnd() * arr.length)]!;
@@ -45,7 +57,7 @@ export function buildDemoState(now = new Date()): DemoState {
     id: orgId,
     name: "Atelier Seconde Main",
     slug: "atelier-seconde-main",
-    settings: { margin: rules, ai: { tone: "friendly", signature: "— Marie, Atelier Seconde Main", requireApproval: true, monthlyRequestQuota: 500 }, buyerFees: DEFAULT_BUYER_FEES, autoBuy: { enabled: true, threshold: 85, dailyCapCents: 15_000, maxItemCents: 8_000, cancelWindowMinutes: 30 }, dressing: { republishAfterDays: 7 }, onboarding: { completedSteps: ["account", "preferences", "mode"], dismissed: false } },
+    settings: { margin: rules, ai: { tone: "friendly", signature: "— Marie, Atelier Seconde Main", requireApproval: true, monthlyRequestQuota: 500 }, buyerFees: DEFAULT_BUYER_FEES, autoBuy: { enabled: true, threshold: 85, dailyCapCents: 15_000, maxItemCents: 8_000, cancelWindowMinutes: 30, connectionId: PURCHASE_ACCOUNT }, dressing: { republishAfterDays: 7 }, onboarding: { completedSteps: ["account", "preferences", "mode"], dismissed: false } },
     createdAt: iso(daysAgo(120)),
     updatedAt: iso(daysAgo(1)),
   });
@@ -79,6 +91,14 @@ export function buildDemoState(now = new Date()): DemoState {
     ...Array<InventoryItem["status"]>(2).fill("reserved"),
     "archived",
   ];
+  // Les annonces qui ont une conversation restent surtout sur le simulateur (seul à permettre l'envoi
+  // simulé des réponses) ; les autres articles sont répartis entre les deux comptes Vinted « Vente ».
+  const firstListed = statusPlan.indexOf("listed");
+  const accountFor = (i: number): string => {
+    if (i >= firstListed && i < firstListed + DEMO_CONVERSATIONS) return i % 4 === 0 ? SALE_ACCOUNT : SIMULATOR;
+    return i % 2 === 0 ? SALE_ACCOUNT : SALE_ACCOUNT_2;
+  };
+  const providerOf = (connectionId: string | null): "demo" | "vinted" => (!connectionId || connectionId === SIMULATOR ? "demo" : "vinted");
   // Les deux galeries complètes (7 vraies photos) sont des annonces en ligne, bien visibles.
   let thumbIndex = 0;
   const entryFor = (i: number): CatalogEntry => (i === 13 ? GALLERIES[0] : i === 14 ? GALLERIES[1] : undefined) ?? STOCK_ENTRIES[thumbIndex++ % STOCK_ENTRIES.length]!;
@@ -142,7 +162,7 @@ export function buildDemoState(now = new Date()): DemoState {
       listedPriceCents: status === "in_stock" ? null : listed,
       floorPriceCents: status === "in_stock" ? null : floor,
       status,
-      connectionId: i % 4 === 0 ? "conn-vinted" : "conn-demo",
+      connectionId: accountFor(i),
       externalRef: status === "in_stock" ? null : `ext-${1000 + i}`,
       tags: i % 5 === 0 ? ["lot possible"] : i % 7 === 0 ? ["vintage"] : [],
       purchasedAt: iso(createdAt),
@@ -174,9 +194,9 @@ export function buildDemoState(now = new Date()): DemoState {
       customerId: customer.id,
       conversationId: null,
       connectionId: it.connectionId,
-      provider: it.connectionId === "conn-vinted" ? "vinted" : "demo",
+      provider: providerOf(it.connectionId),
       externalRef: `tx-${5000 + i}`,
-      dedupeKey: orderDedupeKey({ provider: it.connectionId === "conn-vinted" ? "vinted" : "demo", externalRef: `tx-${5000 + i}`, itemId: it.id, customerId: customer.id, day: createdAt.slice(0, 10) }),
+      dedupeKey: orderDedupeKey({ provider: providerOf(it.connectionId), externalRef: `tx-${5000 + i}`, itemId: it.id, customerId: customer.id, day: createdAt.slice(0, 10) }),
       status,
       salePriceCents: sale,
       platformFeeCents: 0,
@@ -254,7 +274,7 @@ export function buildDemoState(now = new Date()): DemoState {
       customerId: customer.id,
       itemId: item.id,
       connectionId: item.connectionId,
-      provider: item.connectionId === "conn-vinted" ? "vinted" : "demo",
+      provider: providerOf(item.connectionId),
       externalRef: `ext-conv-${ci}`,
       status: plan.hoursAgo > 250 ? "archived" : "open",
       unreadCount: plan.unread ? plan.thread.filter((t) => t.dir === "inbound").length : 0,
@@ -360,17 +380,34 @@ export function buildDemoState(now = new Date()): DemoState {
     const total = purchaseCost(opp.observed, org.settings.buyerFees).totalCents;
     const checks = runPurchaseChecks({ opportunity: opp, request: { maxPriceCents: total, budgetCents: searches.find((x) => x.id === opp.searchId)!.budgetCents, realPurchaseEnabled: false, confirmedAt: iso(at) }, spentTodayCents: 0, dailyBudgetCents: org.settings.autoBuy.dailyCapCents, duplicateExists: false, connectorAllowsPurchase: false, fees: org.settings.buyerFees });
     opp.status = "purchased";
-    return { id: `pur-${mode}-${opp.id}`, orgId, opportunityId: opp.id, dedupeKey: `purchase:${opp.id}`, maxPriceCents: total, budgetCents: searches.find((x) => x.id === opp.searchId)!.budgetCents, status: "simulated", mode, cancelableUntil: mode === "auto" ? cancelableUntil(at, org.settings.autoBuy) : null, checks: checks.map(({ code, ok, label }) => ({ code, ok, label })), realPurchaseEnabled: false, confirmedAt: iso(at), executedAt: iso(at), resultNote: mode === "auto" ? `Achat automatique SIMULÉ : score ${opp.score} ≥ seuil ${org.settings.autoBuy.threshold}. Annulable pendant ${org.settings.autoBuy.cancelWindowMinutes} min.` : "Achat SIMULÉ validé en un clic : aucun paiement ni commande réels.", createdAt: iso(at), updatedAt: iso(at) };
+    return { id: `pur-${mode}-${opp.id}`, orgId, opportunityId: opp.id, dedupeKey: `purchase:${opp.id}`, maxPriceCents: total, budgetCents: searches.find((x) => x.id === opp.searchId)!.budgetCents, status: "simulated", mode, connectionId: PURCHASE_ACCOUNT, cancelableUntil: mode === "auto" ? cancelableUntil(at, org.settings.autoBuy) : null, checks: checks.map(({ code, ok, label }) => ({ code, ok, label })), realPurchaseEnabled: false, confirmedAt: iso(at), executedAt: iso(at), resultNote: mode === "auto" ? `Achat automatique SIMULÉ via le compte Achat « Compte achats » : score ${opp.score} ≥ seuil ${org.settings.autoBuy.threshold}. Annulable pendant ${org.settings.autoBuy.cancelWindowMinutes} min.` : "Achat SIMULÉ validé en un clic : aucun paiement ni commande réels.", createdAt: iso(at), updatedAt: iso(at) };
   };
   if (autoOpp) purchases.push(mkPurchase(autoOpp, "auto", 6));
   if (manualOpp) purchases.push(mkPurchase(manualOpp, "manual", 60 * 26));
 
-  // ---- Connexions ----
+  // ---- Comptes connectés : simulateur + quatre comptes Vinted catégorisés (pseudos fictifs) ----
   const demoDesc = getConnector("demo").describe();
   const vintedDesc = getConnector("vinted").describe();
+  const minutesAgo = (m: number) => iso(new Date(now.getTime() - m * 60_000));
+  const vinted = (id: string, label: string, usage: MarketplaceConnection["usage"], handle: string, opts: { seenMinutesAgo: number | null; createdDaysAgo: number }): MarketplaceConnection => ({
+    id, orgId, provider: "vinted", label, usage,
+    status: opts.seenMinutesAgo === null ? "ready" : "connected",
+    capabilities: vintedDesc.capabilities,
+    // Dernière activité de l'extension sur ce compte (le statut en est déduit au prochain test).
+    config: { displayHandle: handle, ...(opts.seenMinutesAgo === null ? {} : { extensionLastSeenAt: minutesAgo(opts.seenMinutesAgo) }) },
+    hasSecret: false,
+    lastSyncAt: opts.seenMinutesAgo === null ? null : minutesAgo(opts.seenMinutesAgo),
+    lastTestAt: opts.seenMinutesAgo === null ? null : iso(daysAgo(2)),
+    lastError: null, transport: "extension",
+    createdAt: iso(daysAgo(opts.createdDaysAgo)),
+    updatedAt: opts.seenMinutesAgo === null ? iso(daysAgo(opts.createdDaysAgo)) : minutesAgo(opts.seenMinutesAgo),
+  });
   const connections: MarketplaceConnection[] = [
-    { id: "conn-demo", orgId, provider: "demo", label: "Simulateur de démonstration", status: "connected", capabilities: demoDesc.capabilities, config: {}, hasSecret: false, lastSyncAt: iso(daysAgo(0, 6)), lastTestAt: iso(daysAgo(0, 6)), lastError: null, transport: "simulator", createdAt: iso(daysAgo(120)), updatedAt: iso(daysAgo(0, 6)) },
-    { id: "conn-vinted", orgId, provider: "vinted", label: "Vinted — atelier.secondemain", status: "ready", capabilities: vintedDesc.capabilities, config: { displayHandle: "atelier.secondemain" }, hasSecret: false, lastSyncAt: null, lastTestAt: iso(daysAgo(2)), lastError: null, transport: "extension", createdAt: iso(daysAgo(30)), updatedAt: iso(daysAgo(2)) },
+    { id: SIMULATOR, orgId, provider: "demo", label: "Simulateur de démonstration", usage: "sale", status: "connected", capabilities: demoDesc.capabilities, config: {}, hasSecret: false, lastSyncAt: minutesAgo(50), lastTestAt: minutesAgo(50), lastError: null, transport: "simulator", createdAt: iso(daysAgo(120)), updatedAt: minutesAgo(50) },
+    vinted(SALE_ACCOUNT, "Boutique principale", "sale", "atelier.secondemain", { seenMinutesAgo: 8, createdDaysAgo: 90 }),
+    vinted(SALE_ACCOUNT_2, "Boutique vintage", "sale", "secondemain.vintage", { seenMinutesAgo: 35, createdDaysAgo: 45 }),
+    vinted(PURCHASE_ACCOUNT, "Compte achats", "purchase", "marie.chineuse", { seenMinutesAgo: 6, createdDaysAgo: 30 }),
+    vinted(PERSONAL_ACCOUNT, "Compte perso", "personal", "marie.lfv", { seenMinutesAgo: null, createdDaysAgo: 10 }),
   ];
   const tokens: ExtensionToken[] = [
     { id: "tok-1", orgId, userId, label: "Chrome — PC bureau", prefix: "slx_demo1", scopes: ["capture:items", "read:rules", "draft:messages", "sync:conversations"], expiresAt: iso(addDays(now, 60)), lastUsedAt: iso(daysAgo(2)), revokedAt: null, createdAt: iso(daysAgo(30)) },
@@ -398,11 +435,12 @@ export function buildDemoState(now = new Date()): DemoState {
   const usage: UsageEvent[] = [
     ...aiRequests.map((r) => ({ id: newId(), orgId, kind: "ai.request" as const, quantity: 1, meta: { requestId: r.id }, createdAt: r.createdAt })),
     ...jobs.filter((j) => j.status === "succeeded").map((j) => ({ id: newId(), orgId, kind: "automation.action" as const, quantity: 1, meta: { jobId: j.id }, createdAt: j.createdAt })),
-    { id: newId(), orgId, kind: "connector.sync", quantity: 1, meta: { connectionId: "conn-demo" }, createdAt: iso(daysAgo(0, 6)) },
+    { id: newId(), orgId, kind: "connector.sync", quantity: 1, meta: { connectionId: SIMULATOR }, createdAt: iso(daysAgo(0, 6)) },
     { id: newId(), orgId, kind: "extension.capture", quantity: 1, meta: {}, createdAt: iso(daysAgo(2)) },
     { id: newId(), orgId, kind: "export.csv", quantity: 1, meta: {}, createdAt: iso(daysAgo(4)) },
   ];
-  const subscription = subscriptionSchema.parse({ id: "sub-demo", orgId, plan: "starter", status: "trialing", provider: "none", externalRef: null, currentPeriodEnd: iso(addDays(now, 14)), quotas: PLAN_QUOTAS.starter, testMode: true, createdAt: iso(daysAgo(120)), updatedAt: iso(daysAgo(1)) });
+  // Plan Pro (essai) : plusieurs comptes Vinted connectés.
+  const subscription = subscriptionSchema.parse({ id: "sub-demo", orgId, plan: "pro", status: "trialing", provider: "none", externalRef: null, currentPeriodEnd: iso(addDays(now, 14)), quotas: PLAN_QUOTAS.pro, testMode: true, createdAt: iso(daysAgo(120)), updatedAt: iso(daysAgo(1)) });
   const audit: AuditLog[] = [
     { id: newId(), orgId, actorUserId: userId, action: "auth.login", targetType: null, targetId: null, meta: { mode: "demo" }, ip: null, createdAt: iso(daysAgo(0, 7)) },
     { id: newId(), orgId, actorUserId: userId, action: "rule.updated", targetType: "automation_rule", targetId: "rule-4", meta: { enabled: true }, ip: null, createdAt: iso(daysAgo(3, 8)) },

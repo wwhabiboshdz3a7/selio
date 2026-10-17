@@ -1,9 +1,10 @@
 import {
   type AiRequest, type AuditLog, type AutomationRule, type AutomationRuleCreate, type BulkItemAction, type ConnectionCreate, type ConnectionTestResult, type Conversation, type ConversationQuery, type Customer, type CustomerCreate, type CustomerQuery, type CustomerUpdate, type ExtensionToken, type InventoryEvent, type InventoryItem, type InventoryItemCreate, type InventoryItemUpdate, type InventoryQuery, type Job, type JobQuery, type MarketplaceConnection, type Membership, type Message, type Opportunity, type Order, type OrderCreate, type OrderQuery, type OrderStatus, type Organization, type OrgSettings, type Page, type Plan, type PurchaseRequest, type RadarSearch, type RadarSearchCreate, type Role, type Shipment, type Subscription, type UsageEvent, type User,
   type ListingDraft, type ListingGenerationInput, type ListingGenerationOutput, listingGenerationInput as listingGenerationInputSchema,
-  automationRuleCreate as automationRuleCreateSchema, inventoryItemCreate as inventoryItemCreateSchema, inventoryItemUpdate as inventoryItemUpdateSchema, customerCreate as customerCreateSchema, orderCreate as orderCreateSchema, radarSearchCreate as radarSearchCreateSchema, orgSettings as orgSettingsSchema, connectionCreate as connectionCreateSchema,
+  automationRuleCreate as automationRuleCreateSchema, inventoryItemCreate as inventoryItemCreateSchema, inventoryItemUpdate as inventoryItemUpdateSchema, customerCreate as customerCreateSchema, orderCreate as orderCreateSchema, radarSearchCreate as radarSearchCreateSchema, orgSettings as orgSettingsSchema, connectionCreate as connectionCreateSchema, connectionUpdate as connectionUpdateSchema, type ConnectionUpdate,
 } from "@selio/contracts";
 import {
+  PERSONAL_ACCOUNT_SKIP, computeAccountStats, countsTowardQuota, isAutomatable, resolvePurchaseAccount, type AccountStats,
   analyzeMarket, applyVariant, autoBuyDecision, buildDashboard, buildDressing, canStillCancel, cancelableUntil, comparablesFromMarket, daysOnline, granularityFor, periodLabel, priceListingDraft, purchaseCost, recordRepublication, republicationPlan, type Comparable,
   ItemTransitionError, OrderTransitionError, breakdownBy, canChangeItemStatus, comparablesFromSales, daysInStock, diffItem, estimateResale, evaluateOffer, extractOfferCents, gateRule, itemStatusForOrder, jobDedupeKey, newId, orderDedupeKey, orderMargin, periodFromPreset, previousPeriod, purchaseOutcome, rankOpportunities, renderTemplate, runPurchaseChecks, salesKpis, salesSeries, sanitizeUntrustedText, scanForInjection, scoreOpportunity, stockKpis, transitionOrder, toCsv, EXPORT_HEADERS, inventoryToCsvRow, nextSku, seededRandom, hashString, localDayKey, type NegotiationResult, type PeriodPreset,
 } from "@selio/domain";
@@ -107,6 +108,14 @@ export class DemoClient implements DataClient {
   }
   private margin() {
     return this.s.org.settings.margin;
+  }
+  /** Compte « Achat » utilisé par les achats (jamais un compte Vente ou Perso). */
+  private purchaseAccount(): MarketplaceConnection | null {
+    return resolvePurchaseAccount(this.s.connections, this.s.org.settings.autoBuy.connectionId);
+  }
+  /** Comptes Perso : jamais utilisés par les automatisations. */
+  private personalAccountIds(): Set<string> {
+    return new Set(this.s.connections.filter((c) => !isAutomatable(c)).map((c) => c.id));
   }
   private lastOffer(conv: Conversation): { offerCents: number; evaluation: NegotiationResult } | null {
     const item = conv.itemId ? this.s.items.find((i) => i.id === conv.itemId) : null;
@@ -699,8 +708,8 @@ export class DemoClient implements DataClient {
     const open = st.conversations.filter((c) => c.status === "open");
     const alerts: OverviewData["alerts"] = [];
     for (const c of st.connections) {
-      if (c.status === "expired" || c.status === "disconnected" || c.status === "degraded") alerts.push({ id: `conn-${c.id}`, tone: c.status === "degraded" ? "warning" : "danger", title: `Connexion « ${c.label} » ${c.status === "degraded" ? "dégradée" : c.status === "expired" ? "expirée" : "déconnectée"}`, description: c.lastError ?? "Vérifiez la connexion dans les paramètres.", to: "/app/settings/connections" });
-      if (c.status === "ready") alerts.push({ id: `conn-ready-${c.id}`, tone: "info", title: `Connexion « ${c.label} » en attente de l'extension`, description: "Associez l'extension Selio pour activer la lecture des pages.", to: "/app/settings/connections" });
+      if (c.status === "expired" || c.status === "disconnected" || c.status === "degraded") alerts.push({ id: `conn-${c.id}`, tone: c.status === "degraded" ? "warning" : "danger", title: `Connexion « ${c.label} » ${c.status === "degraded" ? "dégradée" : c.status === "expired" ? "expirée" : "déconnectée"}`, description: c.lastError ?? "Vérifiez le compte dans « Comptes Vinted ».", to: "/app/accounts" });
+      if (c.status === "ready") alerts.push({ id: `conn-ready-${c.id}`, tone: "info", title: `Connexion « ${c.label} » en attente de l'extension`, description: "Associez l'extension Selio pour activer la lecture des pages.", to: "/app/accounts" });
     }
     const failedJobs = st.jobs.filter((j) => j.status === "failed");
     if (failedJobs.length > 0) alerts.push({ id: "jobs-failed", tone: "danger", title: `${failedJobs.length} tâche(s) d'automatisation en échec`, description: failedJobs[0]!.error ?? "", to: "/app/automations?tab=jobs&status=failed" });
@@ -802,6 +811,16 @@ export class DemoClient implements DataClient {
   }
   private async executeJob(job: Job): Promise<void> {
     const rule = this.s.rules.find((r) => r.id === job.ruleId);
+    // Le compte a pu passer en « Perso » entre la planification et la validation : on n'agit pas.
+    const personal = this.personalAccountIds();
+    const target = typeof job.payload.conversationId === "string" ? this.s.conversations.find((c) => c.id === job.payload.conversationId) : typeof job.payload.itemId === "string" ? this.s.items.find((i) => i.id === job.payload.itemId) : undefined;
+    if (target?.connectionId && personal.has(target.connectionId)) {
+      job.status = "skipped";
+      job.result = { reason: PERSONAL_ACCOUNT_SKIP };
+      job.finishedAt = this.now();
+      job.updatedAt = job.finishedAt;
+      return;
+    }
     job.status = "running";
     job.startedAt = this.now();
     job.attempts += 1;
@@ -849,9 +868,11 @@ export class DemoClient implements DataClient {
     const actionsToday = st.jobs.filter((j) => j.ruleId === rule.id && j.status === "succeeded" && localDayKey(new Date(j.createdAt), rule.schedule.timezone) === today).length;
     let evaluated = 0, created = 0;
     const targets: { targetId: string; payload: Record<string, unknown>; kind: Job["kind"] }[] = [];
+    const personal = this.personalAccountIds();
     if (rule.kind === "reply_on_new_message" || rule.kind === "follow_up_no_reply" || rule.kind === "auto_negotiate" || rule.kind === "post_sale_message") {
       for (const conv of st.conversations.filter((c) => c.status === "open")) {
         evaluated++;
+        if (conv.connectionId && personal.has(conv.connectionId)) { skip(PERSONAL_ACCOUNT_SKIP); continue; }
         const msgs = st.messages.filter((m) => m.conversationId === conv.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
         const last = msgs[msgs.length - 1];
         if (!last) continue;
@@ -881,6 +902,7 @@ export class DemoClient implements DataClient {
     } else if (rule.kind === "price_drop_stale" || rule.kind === "relist_stale") {
       for (const item of st.items.filter((i) => i.status === "listed")) {
         evaluated++;
+        if (item.connectionId && personal.has(item.connectionId)) { skip(PERSONAL_ACCOUNT_SKIP); continue; }
         if (daysInStock(item, now) < (rule.config.staleDays ?? 45)) { skip("Article pas encore dormant"); continue; }
         if (rule.kind === "price_drop_stale" && (item.listedPriceCents ?? 0) <= (item.floorPriceCents ?? 0)) { skip("Déjà au prix plancher"); continue; }
         targets.push({ targetId: item.id, kind: "automation.evaluate", payload: { itemId: item.id, ruleName: rule.name } });
@@ -1043,7 +1065,7 @@ export class DemoClient implements DataClient {
     const existing = this.s.purchases.find((p) => p.dedupeKey === dedupeKey && p.status !== "cancelled" && p.status !== "blocked");
     if (existing) throw new DataError("conflict", "Une demande d'achat existe déjà pour cette opportunité (prévention des doublons).", 409, { existingId: existing.id });
     const now = this.now();
-    const p: PurchaseRequest = { id: newId(), orgId: this.s.org.id, opportunityId: opp.id, dedupeKey, maxPriceCents: input.maxPriceCents, budgetCents: input.budgetCents, status: "awaiting_confirmation", mode: "manual", cancelableUntil: null, checks: [], realPurchaseEnabled: false, confirmedAt: null, executedAt: null, resultNote: null, createdAt: now, updatedAt: now };
+    const p: PurchaseRequest = { id: newId(), orgId: this.s.org.id, opportunityId: opp.id, dedupeKey, maxPriceCents: input.maxPriceCents, budgetCents: input.budgetCents, status: "awaiting_confirmation", mode: "manual", connectionId: this.purchaseAccount()?.id ?? null, cancelableUntil: null, checks: [], realPurchaseEnabled: false, confirmedAt: null, executedAt: null, resultNote: null, createdAt: now, updatedAt: now };
     this.s.purchases.unshift(p);
     this.audit("purchase.requested", "purchase_request", p.id, {});
     this.persist();
@@ -1100,6 +1122,8 @@ export class DemoClient implements DataClient {
   async runAutoBuy(): Promise<AutoBuyRunResult> {
     const st = this.s;
     const settings = st.org.settings.autoBuy;
+    const account = this.purchaseAccount();
+    const via = account ? ` via le compte Achat « ${account.label} »` : "";
     const skipped = new Map<string, number>();
     let evaluated = 0, bought = 0, spentCents = 0;
     const candidates = [...st.opportunities].filter((o) => o.status === "new").sort((a, b) => b.score - a.score);
@@ -1115,13 +1139,13 @@ export class DemoClient implements DataClient {
       const search = st.searches.find((x) => x.id === opp.searchId);
       const checks = runPurchaseChecks({ opportunity: opp, request: { maxPriceCents: decision.totalCents, budgetCents: search?.budgetCents ?? decision.totalCents, realPurchaseEnabled: false, confirmedAt: now.toISOString() }, spentTodayCents: this.spentToday(), dailyBudgetCents: settings.dailyCapCents, duplicateExists: false, connectorAllowsPurchase: false, fees: st.org.settings.buyerFees });
       const outcome = purchaseOutcome(checks, false);
-      const p: PurchaseRequest = { id: newId(), orgId: st.org.id, opportunityId: opp.id, dedupeKey: `purchase:${opp.id}`, maxPriceCents: decision.totalCents, budgetCents: search?.budgetCents ?? decision.totalCents, status: outcome, mode: "auto", cancelableUntil: outcome === "blocked" ? null : cancelableUntil(now, settings), checks: checks.map(({ code, ok, label }) => ({ code, ok, label })), realPurchaseEnabled: false, confirmedAt: now.toISOString(), executedAt: outcome === "blocked" ? null : now.toISOString(), resultNote: outcome === "blocked" ? "Achat automatique bloqué par les contrôles." : `Achat automatique SIMULÉ : ${decision.reason}. Annulable pendant ${settings.cancelWindowMinutes} min.`, createdAt: now.toISOString(), updatedAt: now.toISOString() };
+      const p: PurchaseRequest = { id: newId(), orgId: st.org.id, opportunityId: opp.id, dedupeKey: `purchase:${opp.id}`, maxPriceCents: decision.totalCents, budgetCents: search?.budgetCents ?? decision.totalCents, status: outcome, mode: "auto", connectionId: account?.id ?? null, cancelableUntil: outcome === "blocked" ? null : cancelableUntil(now, settings), checks: checks.map(({ code, ok, label }) => ({ code, ok, label })), realPurchaseEnabled: false, confirmedAt: now.toISOString(), executedAt: outcome === "blocked" ? null : now.toISOString(), resultNote: outcome === "blocked" ? "Achat automatique bloqué par les contrôles." : `Achat automatique SIMULÉ${via} : ${decision.reason}. Annulable pendant ${settings.cancelWindowMinutes} min.`.slice(0, 500), createdAt: now.toISOString(), updatedAt: now.toISOString() };
       st.purchases.unshift(p);
       if (outcome !== "blocked") { opp.status = "purchased"; opp.updatedAt = this.now(); bought++; spentCents += decision.totalCents; }
       this.audit("purchase.auto", "purchase_request", p.id, { outcome, score: opp.score });
     }
     this.persist();
-    return { evaluated, bought, spentCents, skipped: [...skipped.entries()].map(([reason, count]) => ({ reason, count })) };
+    return { evaluated, bought, spentCents, skipped: [...skipped.entries()].map(([reason, count]) => ({ reason, count })), account: account ? { id: account.id, label: account.label } : null };
   }
 
   // ---------- générateur d'annonces ----------
@@ -1197,20 +1221,45 @@ export class DemoClient implements DataClient {
   async createConnection(input: ConnectionCreate): Promise<MarketplaceConnection> {
     const parsed = connectionCreateSchema.safeParse(input);
     if (!parsed.success) throw new DataError("validation", "Connexion invalide", 400, parsed.error.flatten());
-    if (this.s.connections.length >= this.s.subscription.quotas.connections) throw new DataError("quota_exceeded", `Quota de connexions atteint (${this.s.subscription.quotas.connections}).`, 402);
+    const quota = this.s.subscription.quotas.connections;
+    if (parsed.data.provider !== "demo" && this.s.connections.filter(countsTowardQuota).length >= quota) throw new DataError("quota_exceeded", `Quota de comptes connectés atteint (${quota}).`, 402);
     const desc = getConnector(parsed.data.provider).describe();
     const now = this.now();
-    const c: MarketplaceConnection = { id: newId(), orgId: this.s.org.id, provider: parsed.data.provider, label: parsed.data.label, status: parsed.data.provider === "demo" ? "connected" : "ready", capabilities: desc.capabilities, config: parsed.data.config ?? {}, hasSecret: Boolean(parsed.data.secret), lastSyncAt: null, lastTestAt: null, lastError: null, transport: desc.transport, createdAt: now, updatedAt: now };
+    const c: MarketplaceConnection = { id: newId(), orgId: this.s.org.id, provider: parsed.data.provider, label: parsed.data.label, usage: parsed.data.usage ?? "sale", status: parsed.data.provider === "demo" ? "connected" : "ready", capabilities: desc.capabilities, config: parsed.data.config ?? {}, hasSecret: Boolean(parsed.data.secret), lastSyncAt: null, lastTestAt: null, lastError: null, transport: desc.transport, createdAt: now, updatedAt: now };
     this.s.connections.push(c);
-    this.audit("connection.created", "marketplace_connection", c.id, { provider: c.provider });
+    this.audit("connection.created", "marketplace_connection", c.id, { provider: c.provider, usage: c.usage });
     this.persist();
     return c;
+  }
+  async updateConnection(id: string, input: ConnectionUpdate): Promise<MarketplaceConnection> {
+    const parsed = connectionUpdateSchema.safeParse(input);
+    if (!parsed.success) throw new DataError("validation", "Modification du compte invalide", 400, parsed.error.flatten());
+    const c = this.s.connections.find((x) => x.id === id);
+    if (!c) throw new DataError("not_found", "Connexion introuvable", 404);
+    const { label, usage, displayHandle } = parsed.data;
+    const previousUsage = c.usage;
+    if (label !== undefined) c.label = label;
+    if (usage !== undefined) c.usage = usage;
+    if (displayHandle !== undefined) c.config = { ...c.config, displayHandle };
+    c.updatedAt = this.now();
+    const changes = Object.fromEntries(Object.entries({ label, usage, displayHandle }).filter(([, v]) => v !== undefined));
+    this.audit("connection.updated", "marketplace_connection", id, { ...changes, ...(usage !== undefined && usage !== previousUsage ? { previousUsage } : {}) });
+    this.persist();
+    return c;
+  }
+  async getConnectionStats(): Promise<AccountStats[]> {
+    const st = this.s;
+    return computeAccountStats(st.connections, { items: st.items, orders: st.orders, purchases: st.purchases, conversations: st.conversations }, this.clock());
   }
   async testConnection(id: string): Promise<ConnectionTestResult> {
     const c = this.s.connections.find((x) => x.id === id);
     if (!c) throw new DataError("not_found", "Connexion introuvable", 404);
     await this.delay(400);
-    const res = await getConnector(c.provider).test({ orgId: this.s.org.id, connectionId: c.id, config: c.config, now: this.clock() });
+    // Démonstration : un compte Vinted déjà relié est réputé avoir l'extension ouverte (résultat marqué simulé).
+    const simulatedExtension = c.provider === "vinted" && c.status !== "disconnected" && typeof c.config.extensionLastSeenAt === "string";
+    if (simulatedExtension) c.config = { ...c.config, extensionLastSeenAt: new Date(this.clock().getTime() - 60_000).toISOString() };
+    const tested = await getConnector(c.provider).test({ orgId: this.s.org.id, connectionId: c.id, config: c.config, now: this.clock() });
+    const res = simulatedExtension ? { ...tested, simulated: true } : tested;
     if (c.status !== "disconnected") c.status = res.status;
     c.lastTestAt = res.testedAt;
     c.lastError = res.ok ? null : res.message;
@@ -1295,7 +1344,7 @@ export class DemoClient implements DataClient {
     const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const inMonth = this.s.usage.filter((u) => new Date(u.createdAt) >= from);
     const count = (k: UsageEvent["kind"]) => inMonth.filter((u) => u.kind === k).reduce((s, u) => s + u.quantity, 0);
-    return { period: { from: from.toISOString(), to: now.toISOString() }, aiRequests: count("ai.request"), automationActions: count("automation.action"), connectorSyncs: count("connector.sync"), exports: count("export.csv"), extensionCaptures: count("extension.capture"), quotas: this.s.subscription.quotas, itemsCount: this.s.items.filter((i) => i.status !== "archived").length, connectionsCount: this.s.connections.length, membersCount: this.s.memberships.length };
+    return { period: { from: from.toISOString(), to: now.toISOString() }, aiRequests: count("ai.request"), automationActions: count("automation.action"), connectorSyncs: count("connector.sync"), exports: count("export.csv"), extensionCaptures: count("extension.capture"), quotas: this.s.subscription.quotas, itemsCount: this.s.items.filter((i) => i.status !== "archived").length, connectionsCount: this.s.connections.filter(countsTowardQuota).length, membersCount: this.s.memberships.length };
   }
   async startCheckout(plan: Plan) {
     await this.delay(300);

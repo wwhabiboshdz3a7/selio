@@ -138,3 +138,37 @@ describe("nouveaux modules (démonstration)", () => {
     expect(ov.dressing.listed).toBeGreaterThan(0);
   });
 });
+
+describe("comptes Vinted catégorisés (démonstration)", () => {
+  it("plusieurs comptes vente, achat et perso, catégorie modifiable, chiffres par compte", async () => {
+    const vinted = (await client.listConnections()).filter((c) => c.provider === "vinted");
+    expect(vinted.filter((c) => c.usage === "sale").length).toBeGreaterThanOrEqual(2);
+    expect(vinted.filter((c) => c.usage === "purchase")).toHaveLength(1);
+    expect(vinted.filter((c) => c.usage === "personal")).toHaveLength(1);
+    const stats = await client.getConnectionStats();
+    const statOf = (id: string) => stats.find((s) => s.connectionId === id)!;
+    expect(vinted.filter((c) => c.usage === "sale").every((c) => statOf(c.id).listedItems > 0)).toBe(true);
+    const buyer = vinted.find((c) => c.usage === "purchase")!;
+    expect(statOf(buyer.id).purchases).toBeGreaterThan(0);
+    const usage = await client.getUsage();
+    expect(usage.connectionsCount).toBe(vinted.length);
+    expect(usage.connectionsCount).toBeLessThanOrEqual(usage.quotas.connections);
+    expect((await client.runAutoBuy()).account?.id).toBe(buyer.id);
+
+    const moved = await client.updateConnection(buyer.id, { usage: "personal", label: "Ancien compte achats", displayHandle: "@marie.ancien" });
+    expect(moved).toMatchObject({ usage: "personal", label: "Ancien compte achats", config: { displayHandle: "marie.ancien" } });
+    await expect(client.updateConnection(buyer.id, {})).rejects.toThrow(/invalide/);
+    expect((await client.runAutoBuy()).account).toBeNull();
+  });
+
+  it("n'automatise jamais une conversation d'un compte Perso", async () => {
+    const sale = (await client.getConversation("conv-001")).connection!;
+    await client.updateConnection(sale.id, { usage: "personal" });
+    const rule = (await client.listRules()).find((r) => r.kind === "reply_on_new_message")!;
+    const before = new Set((await client.listJobs({ ruleId: rule.id, pageSize: 200 })).items.map((j) => j.id));
+    const res = await client.runRuleNow(rule.id);
+    expect(res.skipped.some((s) => /Compte Perso/.test(s.reason))).toBe(true);
+    const created = (await client.listJobs({ ruleId: rule.id, pageSize: 200 })).items.filter((j) => !before.has(j.id));
+    expect(created.some((j) => j.payload.conversationId === "conv-001")).toBe(false);
+  });
+});
