@@ -58,7 +58,7 @@ test.describe("constellation de l'accueil", () => {
     await expect(skip).toBeInViewport();
     const opacity = await skip.evaluate((el) => {
       let o = 1;
-      for (let e: HTMLElement | null = el; e; e = e.parentElement) o *= Number(getComputedStyle(e).opacity);
+      for (let e: Element | null = el; e; e = e.parentElement) o *= Number(getComputedStyle(e).opacity);
       return o;
     });
     expect(opacity).toBeGreaterThan(0.9);

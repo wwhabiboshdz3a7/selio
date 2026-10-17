@@ -405,7 +405,9 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
     if (!labelsCanvas) return;
     labelsCanvas.width = Math.round(W * labelDpr);
     labelsCanvas.height = Math.round(H * labelDpr);
-    labelsDrawn = true;
+    // Le redimensionnement a tout effacé : la prochaine image repart d'un canevas vide.
+    labelsDrawn = false;
+    drawnBoxes.length = 0;
   }
 
   function measure() {
@@ -492,6 +494,7 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
   const labelSlot: number[] = new Array<number>(CONSTELLATION.length).fill(-1);
   const labelOrder = CONSTELLATION.map((_, i) => i);
   const placed: Box[] = [];
+  const drawnBoxes: Box[] = [];
   let labelsDrawn = false;
   let lastP = 0;
   let lastHero = "", lastHud = "", lastSkipP = "", lastDotsP = "", lastNebula = "", lastTip = "", lastLimb = "", lastFinale = "", lastFinaleP = "", lastPair = -1;
@@ -560,17 +563,23 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
         lctx.setTransform(1, 0, 0, 1, 0, 0);
         lctx.clearRect(0, 0, labelsCanvas.width, labelsCanvas.height);
         labelsDrawn = false;
+        drawnBoxes.length = 0;
       }
       return;
     }
-    labelsDrawn = true;
     lctx.setTransform(labelDpr, 0, 0, labelDpr, 0, 0);
-    lctx.clearRect(0, 0, W, H);
+    // Seules les zones dessinées à l'image précédente sont effacées (pas tout le canevas).
+    if (labelsDrawn) for (const b of drawnBoxes) lctx.clearRect(b.l - 6, b.t - 6, b.r - b.l + 12, b.b - b.t + 12);
+    else lctx.clearRect(0, 0, W, H);
+    labelsDrawn = true;
+    drawnBoxes.length = 0;
     if (document.fonts?.status === "loading") labelWidth.fill(0);
     lctx.font = '500 12px Inter, ui-sans-serif, system-ui, sans-serif';
     lctx.textBaseline = "middle";
-    lctx.shadowColor = rgba(C.night, 0.9);
-    lctx.shadowBlur = 6;
+    // Halo de lisibilité : un contour nocturne sous le texte (bien moins coûteux qu'un flou).
+    lctx.strokeStyle = rgba(C.night, 0.85);
+    lctx.lineWidth = 3.5;
+    lctx.lineJoin = "round";
     labelOrder.sort((a, b) => (features[b]?.front ?? 0) - (features[a]?.front ?? 0));
     placed.length = 0;
     for (const i of labelOrder) {
@@ -603,13 +612,15 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
       labelSlot[i] = chosen;
       if (chosen < 0) continue;
       placed.push(box);
+      drawnBoxes.push(box);
       const [dx, dy, leftAligned] = LABEL_SPOTS[chosen]!;
       lctx.textAlign = leftAligned ? "left" : "right";
+      lctx.globalAlpha = a * 0.8;
+      lctx.strokeText(label, fs.px + dx, fs.py + dy);
       lctx.globalAlpha = a;
       lctx.fillStyle = rgba(fs.gold ? C.g200 : C.v100, 1);
       lctx.fillText(label, fs.px + dx, fs.py + dy);
     }
-    lctx.shadowBlur = 0;
     lctx.globalAlpha = 1;
   }
 
