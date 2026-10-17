@@ -1,4 +1,4 @@
-import { inviteInput, orgSettings as orgSettingsSchema, orgUpdate, type Membership, type Organization, type Role, type User } from "@selio/contracts";
+import { ROLES, inviteInput, orgSettings as orgSettingsSchema, orgUpdate, type Membership, type Organization, type Role, type User } from "@selio/contracts";
 import { repos, hashPassword, newSecret } from "@selio/db";
 import { PLAN_QUOTAS } from "@selio/demo-data";
 import { AppError, requireAction, withOrg, type OrgContext } from "../context";
@@ -74,11 +74,12 @@ export async function inviteMember(ctx: OrgContext, raw: unknown): Promise<Membe
 
 export async function updateMemberRole(ctx: OrgContext, membershipId: string, role: Role): Promise<void> {
   requireAction(ctx, "members.manage");
+  if (!(ROLES as readonly string[]).includes(role)) throw new AppError("validation", "Rôle inconnu.", 400);
   await ctx.services.db.withGlobal(async (tx) => {
     const m = await repos.memberships.byId(tx, membershipId);
     if (m.orgId !== ctx.orgId) throw new AppError("not_found", "Membre introuvable", 404);
     if (m.userId === ctx.userId && role !== "owner") throw new AppError("validation", "Impossible de rétrograder votre propre rôle.", 400);
-    if (role === "owner" && ctx.role !== "owner") throw new AppError("forbidden", "Seul un propriétaire peut nommer un propriétaire.", 403);
+    if ((role === "owner" || m.role === "owner") && ctx.role !== "owner") throw new AppError("forbidden", "Seul un propriétaire peut nommer ou changer un propriétaire.", 403);
     await repos.memberships.setRole(tx, membershipId, role);
     await tx.query("select set_config('app.org_id', $1, true)", [ctx.orgId]);
     await repos.audit.add(tx, { orgId: ctx.orgId, actorUserId: ctx.userId, action: "member.role_changed", targetType: "membership", targetId: membershipId, meta: { role }, ip: ctx.ip });
@@ -91,6 +92,7 @@ export async function removeMember(ctx: OrgContext, membershipId: string): Promi
     const m = await repos.memberships.byId(tx, membershipId);
     if (m.orgId !== ctx.orgId) throw new AppError("not_found", "Membre introuvable", 404);
     if (m.userId === ctx.userId) throw new AppError("validation", "Vous ne pouvez pas vous retirer vous-même.", 400);
+    if (m.role === "owner" && ctx.role !== "owner") throw new AppError("forbidden", "Seul un propriétaire peut retirer un propriétaire.", 403);
     await repos.memberships.delete(tx, membershipId);
     await repos.sessions.deleteForUser(tx, m.userId);
     await tx.query("select set_config('app.org_id', $1, true)", [ctx.orgId]);
