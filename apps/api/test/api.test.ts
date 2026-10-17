@@ -197,6 +197,7 @@ describe("API Selio (mode connecté, base réelle)", () => {
     // Quota du plan Essentiel : 2 comptes ; le simulateur créé plus haut n'y compte pas.
     const third = await call("POST", "/api/connections", { provider: "vinted", label: "Troisième" });
     expect(third.status).toBe(402);
+    expect((await call("POST", "/api/connections", { provider: "demo", label: "Second simulateur" })).status).toBe(409);
 
     // Changement de catégorie en un clic, renommage et pseudo.
     const toPurchase = await call("PATCH", `/api/connections/${other.json.id}`, { usage: "purchase" });

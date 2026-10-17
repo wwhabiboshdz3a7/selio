@@ -1223,6 +1223,8 @@ export class DemoClient implements DataClient {
     if (!parsed.success) throw new DataError("validation", "Connexion invalide", 400, parsed.error.flatten());
     const quota = this.s.subscription.quotas.connections;
     if (parsed.data.provider !== "demo" && this.s.connections.filter(countsTowardQuota).length >= quota) throw new DataError("quota_exceeded", `Quota de comptes connectés atteint (${quota}).`, 402);
+    // Hors quota, le simulateur reste unique.
+    if (parsed.data.provider === "demo" && this.s.connections.some((c) => c.provider === "demo")) throw new DataError("conflict", "Le simulateur de démonstration est déjà ajouté.", 409);
     const desc = getConnector(parsed.data.provider).describe();
     const now = this.now();
     const c: MarketplaceConnection = { id: newId(), orgId: this.s.org.id, provider: parsed.data.provider, label: parsed.data.label, usage: parsed.data.usage ?? "sale", status: parsed.data.provider === "demo" ? "connected" : "ready", capabilities: desc.capabilities, config: parsed.data.config ?? {}, hasSecret: Boolean(parsed.data.secret), lastSyncAt: null, lastTestAt: null, lastError: null, transport: desc.transport, createdAt: now, updatedAt: now };

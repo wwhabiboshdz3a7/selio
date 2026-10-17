@@ -16,6 +16,8 @@ export function createConnection(ctx: OrgContext, raw: unknown): Promise<Marketp
   return withOrg(ctx, async (tx) => {
     const quotas = (await repos.subscriptions.get(tx))?.quotas ?? PLAN_QUOTAS.free;
     if (parsed.data.provider !== "demo" && (await repos.connections.count(tx)) >= quotas.connections) throw new AppError("quota_exceeded", `Quota de comptes connectés atteint (${quotas.connections}).`, 402);
+    // Hors quota, le simulateur reste unique par organisation.
+    if (parsed.data.provider === "demo" && (await repos.connections.list(tx)).some((c) => c.provider === "demo")) throw new AppError("conflict", "Le simulateur de démonstration est déjà ajouté.", 409);
     const desc = getConnector(parsed.data.provider).describe();
     const id = newSecret(12);
     const c = await repos.connections.create(tx, {

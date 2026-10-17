@@ -233,8 +233,8 @@ function AccountNumbers({ account: c, stats, usedByAutoBuy }: { account: Marketp
   return (
     <dl className="grid grid-cols-3 gap-3 rounded-md bg-surface-muted px-3 py-2.5">
       {items.map((it) => (
-        <div key={it.label} className="flex min-w-0 flex-col gap-0.5">
-          <dt className="truncate text-xs text-text-muted">{it.label}</dt>
+        <div key={it.label} className="flex min-w-0 flex-col justify-between gap-0.5">
+          <dt className="text-xs leading-tight text-text-muted">{it.label}</dt>
           <dd className="num truncate text-base font-medium text-text">{it.value}</dd>
         </div>
       ))}
