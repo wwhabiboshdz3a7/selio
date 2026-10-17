@@ -1,0 +1,74 @@
+import type { MarginRules } from "@selio/contracts";
+import { evaluateOffer, type NegotiationResult } from "./negotiation";
+import type { ItemPricing } from "./pricing";
+import type { Cents } from "./money";
+
+/**
+ * Préréglages de négociation (page « Négociation et marges »). Ils ne fixent que
+ * les règles de négociation : les frais vendeur et le port restent ceux de
+ * l'organisation, car ce sont des faits et non des choix de stratégie.
+ */
+export type MarginPresetId = "careful" | "balanced" | "fast";
+
+export type NegotiationRuleKeys = "minMarginRate" | "minMarginCents" | "maxDiscountRate" | "counterStepRate" | "maxRoundsPerCustomer";
+
+export interface MarginPreset {
+  id: MarginPresetId;
+  label: string;
+  summary: string;
+  rules: Pick<MarginRules, NegotiationRuleKeys>;
+}
+
+export const MARGIN_PRESETS: MarginPreset[] = [
+  {
+    id: "careful",
+    label: "Prudent",
+    summary: "Marge protégée, petites remises : pour les pièces recherchées qui partent seules.",
+    rules: { minMarginRate: 0.35, minMarginCents: 800, maxDiscountRate: 0.1, counterStepRate: 0.04, maxRoundsPerCustomer: 1 },
+  },
+  {
+    id: "balanced",
+    label: "Équilibré",
+    summary: "Les réglages par défaut : souple avec les acheteurs, sans brader.",
+    rules: { minMarginRate: 0.25, minMarginCents: 500, maxDiscountRate: 0.2, counterStepRate: 0.05, maxRoundsPerCustomer: 2 },
+  },
+  {
+    id: "fast",
+    label: "Écouler vite",
+    summary: "Remises plus larges et plus de contre-propositions pour faire tourner le stock.",
+    rules: { minMarginRate: 0.15, minMarginCents: 200, maxDiscountRate: 0.3, counterStepRate: 0.08, maxRoundsPerCustomer: 3 },
+  },
+];
+
+const RATE_KEYS = ["minMarginRate", "maxDiscountRate", "counterStepRate"] as const;
+
+/** Applique un préréglage en conservant les frais de l'organisation. */
+export function applyMarginPreset(rules: MarginRules, id: MarginPresetId): MarginRules {
+  const preset = MARGIN_PRESETS.find((p) => p.id === id);
+  return preset ? { ...rules, ...preset.rules } : rules;
+}
+
+/** Préréglage correspondant exactement aux règles (taux comparés au dixième de point), ou null (« personnalisé »). */
+export function matchMarginPreset(rules: MarginRules): MarginPresetId | null {
+  const same = (a: number, b: number) => Math.abs(a - b) < 0.0005;
+  const hit = MARGIN_PRESETS.find((p) =>
+    RATE_KEYS.every((k) => same(rules[k], p.rules[k])) &&
+    rules.minMarginCents === p.rules.minMarginCents &&
+    rules.maxRoundsPerCustomer === p.rules.maxRoundsPerCustomer);
+  return hit?.id ?? null;
+}
+
+/**
+ * Déroulé d'une négociation face à un acheteur qui maintient la même offre :
+ * la décision du moteur à chaque tour, jusqu'à l'acceptation ou l'escalade.
+ * Sert au simulateur (aucune règle propre : tout vient d'evaluateOffer).
+ */
+export function negotiationPath(item: ItemPricing, offerCents: Cents, rules: MarginRules, maxSteps = 10): NegotiationResult[] {
+  const steps: NegotiationResult[] = [];
+  for (let round = 0; round < maxSteps; round++) {
+    const r = evaluateOffer({ item, offerCents, rules, roundsSoFar: round });
+    steps.push(r);
+    if (r.decision !== "counter") break;
+  }
+  return steps;
+}
