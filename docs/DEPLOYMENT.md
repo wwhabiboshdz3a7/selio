@@ -33,6 +33,11 @@ L'archive contient `apps/web/dist` plus `_headers` (CSP, HSTS, cache) et `_redir
 
 La liste complète des clés et variables (Netlify, serveur, IA, Stripe) est dans [CLES-ET-CONFIGURATION.md](CLES-ET-CONFIGURATION.md).
 
+### Mises à jour et erreurs côté navigateur
+
+- Le service worker est en mise à jour automatique : après un nouveau déploiement, les navigateurs passent à la nouvelle version au chargement suivant (plus de version périmée gardée en cache). Si un ancien onglet demande un fichier qui n'existe plus, la page se recharge une fois d'elle-même.
+- En cas d'erreur, seule la page concernée affiche l'écran d'erreur (le menu reste utilisable), avec un bouton « Copier le rapport » : version de build (commit + date), navigateur, page, pile d'appels. Rien n'est envoyé sur le réseau.
+
 ## 2. Serveur métier (Linux)
 
 ### Option A — Docker Compose (recommandée)
