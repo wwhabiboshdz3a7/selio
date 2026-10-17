@@ -10,7 +10,8 @@ export interface MenuItem {
 }
 
 /** Menu déroulant léger (popover flottant, --shadow-md). */
-export function Menu({ trigger, items, align = "end", className }: { trigger: (props: { open: boolean; toggle: () => void; id: string }) => ReactNode; items: MenuItem[]; align?: "start" | "end"; className?: string }) {
+/** `side="top"` : le menu s'ouvre au-dessus du déclencheur (déclencheur en bas d'écran, ex. compte en pied de menu latéral). */
+export function Menu({ trigger, items, align = "end", side = "bottom", className }: { trigger: (props: { open: boolean; toggle: () => void; id: string }) => ReactNode; items: MenuItem[]; align?: "start" | "end"; side?: "bottom" | "top"; className?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const id = useId();
@@ -39,7 +40,8 @@ export function Menu({ trigger, items, align = "end", className }: { trigger: (p
           id={id}
           role="menu"
           className={cn(
-            "absolute z-40 mt-1 min-w-44 rounded-lg border border-border bg-surface p-1 shadow-md",
+            "absolute z-40 min-w-44 rounded-lg border border-border bg-surface p-1 shadow-md",
+            side === "top" ? "bottom-full mb-1" : "mt-1",
             align === "end" ? "right-0" : "left-0",
           )}
         >
