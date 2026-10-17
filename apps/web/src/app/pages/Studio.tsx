@@ -2,8 +2,8 @@ import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Camera, Check, ClipboardCopy, ImagePlus, Info, Send, Sparkles, Star, Trash2, Upload, Wand2 } from "lucide-react";
-import { ITEM_CATEGORIES, ITEM_CATEGORY_LABELS, ITEM_CONDITIONS, ITEM_CONDITION_LABELS, type GeneratorPhoto, type InventoryItem, type ListingDraft } from "@selio/contracts";
-import { newId, suggestFloorPrice } from "@selio/domain";
+import { ITEM_CATEGORIES, ITEM_CATEGORY_LABELS, ITEM_CONDITIONS, ITEM_CONDITION_LABELS, type GeneratorPhoto, type InventoryItem, type ListingDraft, type MarketplaceConnection } from "@selio/contracts";
+import { listingAccounts, newId, suggestFloorPrice } from "@selio/domain";
 import { Alert, Button, Card, Field, IconButton, IconTile, Input, Money, PageHeader, Select, Tag, Textarea, cn, formatCents } from "@selio/ui";
 import { useClient, useData, useRequiredSession } from "../../lib/data/provider";
 import { MoneyInput } from "../components/common";
@@ -11,6 +11,13 @@ import { useAppMutation } from "../components/hooks";
 
 const MAX_PHOTOS = 12;
 const MAX_SIDE = 1100;
+
+/** « @pseudo — nom interne », avec la mention simulation ou perso. */
+function accountOptionLabel(c: MarketplaceConnection): string {
+  const handle = typeof c.config.displayHandle === "string" && c.config.displayHandle ? `@${c.config.displayHandle}` : null;
+  const name = handle && handle !== c.label ? `${handle} — ${c.label}` : c.label;
+  return `${name}${c.provider === "demo" ? " (simulation)" : c.usage === "personal" ? " (perso)" : ""}`;
+}
 
 /** Compresse une photo dans le navigateur (JPEG, ~150–300 Ko) avant envoi. */
 async function compress(file: File): Promise<GeneratorPhoto> {
@@ -72,8 +79,9 @@ export default function Studio() {
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const canWrite = session.role !== "viewer";
-  const accounts = useMemo(() => (connections.data ?? []).filter((c) => c.status !== "disconnected"), [connections.data]);
-  const account = accounts.find((c) => c.id === connectionId) ?? accounts.find((c) => c.provider === "vinted") ?? accounts[0] ?? null;
+  // Comptes Vente uniquement (Vinted d'abord), puis les comptes Perso, signalés ; jamais un compte Achat.
+  const accounts = useMemo(() => listingAccounts(connections.data ?? []), [connections.data]);
+  const account = accounts.find((c) => c.id === connectionId) ?? accounts[0] ?? null;
 
   const addFiles = async (files: FileList | File[] | null) => {
     if (!files) return;
@@ -210,11 +218,11 @@ export default function Studio() {
           <Card>
             <h2 className="mb-3 text-md font-semibold">Compte et indications</h2>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Compte Vinted" className="sm:col-span-2" hint={account?.provider === "vinted" ? "L'annonce sera rattachée à ce compte." : "Simulateur : aucune publication réelle."}>
+              <Field label="Compte Vinted" className="sm:col-span-2" hint={!account ? <>Aucun compte Vente : <Link to="/app/accounts?categorie=vente" className="underline underline-offset-2">ajoutez-en un</Link>.</> : account.usage === "personal" ? "Compte perso : l'annonce y sera rattachée, mais aucune automatisation ne s'y appliquera." : account.provider === "vinted" ? "L'annonce sera rattachée à ce compte de vente." : "Simulateur : aucune publication réelle."}>
                 {(p) => (
                   <Select id={p.id} aria-describedby={p.describedBy} value={account?.id ?? ""} onChange={(e) => setConnectionId(e.target.value)}>
-                    {accounts.length === 0 ? <option value="">Aucun compte connecté</option> : null}
-                    {accounts.map((c) => <option key={c.id} value={c.id}>{c.label}{c.provider === "demo" ? " (simulation)" : ""}</option>)}
+                    {accounts.length === 0 ? <option value="">Aucun compte Vente connecté</option> : null}
+                    {accounts.map((c) => <option key={c.id} value={c.id}>{accountOptionLabel(c)}</option>)}
                   </Select>
                 )}
               </Field>
