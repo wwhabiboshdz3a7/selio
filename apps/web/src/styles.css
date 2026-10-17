@@ -46,3 +46,10 @@ tr[tabindex]:focus-visible {
 @media (max-width: 767px) {
   .hide-mobile { display: none; }
 }
+
+/* Vitrine : l'avertissement prend l'or Champagne de la charte (jamais d'orange). */
+.mk-scope { --warning: var(--gold-600); }
+:root[data-theme="dark"] .mk-scope { --warning: var(--gold-300); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .mk-scope { --warning: var(--gold-300); }
+}
