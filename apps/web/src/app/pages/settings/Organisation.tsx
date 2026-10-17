@@ -1,41 +1,30 @@
 import { useState } from "react";
+import { Link } from "react-router";
+import { ArrowRight } from "lucide-react";
 import { Button, Card, Field, Input, Select } from "@selio/ui";
-import { useClient, useRequiredSession } from "../../../lib/data/provider";
-import { MoneyInput } from "../../components/common";
-import { useAppMutation } from "../../components/hooks";
 import { can } from "@selio/domain";
+import { useClient, useRequiredSession } from "../../../lib/data/provider";
+import { useAppMutation } from "../../components/hooks";
 
+/** Réglages généraux de l'organisation. Les règles de vente et d'achat ont leur propre page. */
 export default function Organisation() {
   const client = useClient();
   const session = useRequiredSession();
   const [name, setName] = useState(session.org.name);
   const [timezone, setTimezone] = useState(session.org.settings.timezone);
-  const [margin, setMargin] = useState(session.org.settings.margin);
   const [retention, setRetention] = useState(session.org.settings.retentionDays);
-  const save = useAppMutation(() => client.updateOrg({ name, settings: { timezone, margin, retentionDays: retention } }), { invalidate: ["session", "overview", "items"], success: "Paramètres enregistrés" });
+  const save = useAppMutation(() => client.updateOrg({ name, settings: { timezone, retentionDays: retention } }), { invalidate: ["session", "overview"], success: "Paramètres enregistrés" });
   const editable = can(session.role, "org.update");
   return (
     <div className="flex flex-col gap-4">
       <Card>
         <h2 className="text-md font-semibold">Organisation</h2>
+        <p className="mt-1 text-sm text-text-muted">Le nom et le fuseau s'appliquent à toute l'équipe : dates des analyses, plages horaires des automatisations, plafonds par jour.</p>
         <div className="mt-4 grid max-w-xl gap-3 sm:grid-cols-2">
           <Field label="Nom">{(p) => <Input id={p.id} value={name} onChange={(e) => setName(e.target.value)} disabled={!editable} />}</Field>
           <Field label="Fuseau horaire">{(p) => <Select id={p.id} value={timezone} onChange={(e) => setTimezone(e.target.value)} disabled={!editable}>{["Europe/Paris", "Europe/Brussels", "Europe/Zurich", "Europe/Luxembourg", "America/Montreal"].map((tz) => <option key={tz} value={tz}>{tz}</option>)}</Select>}</Field>
           <Field label="Devise">{(p) => <Select id={p.id} value="EUR" disabled><option>EUR</option></Select>}</Field>
           <Field label="Identifiant">{(p) => <Input id={p.id} value={session.org.slug} disabled />}</Field>
-        </div>
-      </Card>
-      <Card>
-        <h2 className="text-md font-semibold">Règles de marge et de négociation</h2>
-        <p className="mt-1 text-sm text-text-muted">Ces règles pilotent le prix plancher suggéré, l'évaluation des offres et les suggestions de réponse. Elles sont déterministes : l'IA ne les modifie jamais.</p>
-        <div className="mt-4 grid max-w-xl gap-3 sm:grid-cols-2">
-          <Field label="Marge minimale (%)">{(p) => <Input id={p.id} type="number" min={0} max={90} value={Math.round(margin.minMarginRate * 100)} onChange={(e) => setMargin({ ...margin, minMarginRate: Number(e.target.value) / 100 })} disabled={!editable} />}</Field>
-          <Field label="Marge minimale absolue">{(p) => <MoneyInput id={p.id} value={margin.minMarginCents} onChange={(v) => setMargin({ ...margin, minMarginCents: v ?? 0 })} allowEmpty={false} disabled={!editable} />}</Field>
-          <Field label="Remise maximale (%)">{(p) => <Input id={p.id} type="number" min={0} max={90} value={Math.round(margin.maxDiscountRate * 100)} onChange={(e) => setMargin({ ...margin, maxDiscountRate: Number(e.target.value) / 100 })} disabled={!editable} />}</Field>
-          <Field label="Pas de contre-proposition (%)">{(p) => <Input id={p.id} type="number" min={1} max={50} value={Math.round(margin.counterStepRate * 100)} onChange={(e) => setMargin({ ...margin, counterStepRate: Number(e.target.value) / 100 })} disabled={!editable} />}</Field>
-          <Field label="Contre-propositions max par acheteur">{(p) => <Input id={p.id} type="number" min={0} max={10} value={margin.maxRoundsPerCustomer} onChange={(e) => setMargin({ ...margin, maxRoundsPerCustomer: Number(e.target.value) })} disabled={!editable} />}</Field>
-          <Field label="Frais plateforme vendeur par défaut (%)" hint="0 sur Vinted : la protection acheteur est payée par l'acheteur.">{(p) => <Input id={p.id} aria-describedby={p.describedBy} type="number" min={0} max={50} value={Math.round(margin.defaultPlatformFeeRate * 100)} onChange={(e) => setMargin({ ...margin, defaultPlatformFeeRate: Number(e.target.value) / 100 })} disabled={!editable} />}</Field>
-          <Field label="Port à charge vendeur par défaut">{(p) => <MoneyInput id={p.id} value={margin.defaultShippingCostCents} onChange={(v) => setMargin({ ...margin, defaultShippingCostCents: v ?? 0 })} allowEmpty={false} disabled={!editable} />}</Field>
         </div>
       </Card>
       <Card>
@@ -47,7 +36,29 @@ export default function Organisation() {
           <Field label="Requêtes IA">{(p) => <Input id={p.id} type="number" min={7} max={730} value={retention.aiRequests} onChange={(e) => setRetention({ ...retention, aiRequests: Number(e.target.value) })} disabled={!editable} />}</Field>
         </div>
       </Card>
-      {editable ? <div className="flex justify-end"><Button onClick={() => save.mutate()} loading={save.isPending}>Enregistrer</Button></div> : <p className="text-sm text-text-muted">Votre rôle ne permet pas de modifier ces paramètres.</p>}
+      {editable ? <div className="flex justify-end"><Button onClick={() => save.mutate(undefined)} loading={save.isPending}>Enregistrer</Button></div> : <p className="text-sm text-text-muted">Votre rôle ne permet pas de modifier ces paramètres.</p>}
+      <Card>
+        <h2 className="text-md font-semibold">Règles de vente et d'achat</h2>
+        <p className="mt-1 text-sm text-text-muted">Elles ont leur propre page, là où vous vendez et achetez.</p>
+        <ul className="mt-3 flex flex-col">
+          <RuleLink to="/app/selling-rules" title="Négociation et marges" section="Vendre">Marge minimale, remise maximale, contre-propositions et frais vendeur : la réponse donnée à chaque offre d'acheteur, avec un simulateur.</RuleLink>
+          <RuleLink to="/app/auto-buy" title="Achat auto" section="Acheter">Seuil de note, plafond par jour, prix maximal par article et frais acheteur (protection acheteurs).</RuleLink>
+        </ul>
+      </Card>
     </div>
+  );
+}
+
+function RuleLink({ to, title, section, children }: { to: string; title: string; section: string; children: string }) {
+  return (
+    <li>
+      <Link to={to} className="group -mx-2 flex items-center gap-3 rounded-md px-2 py-2.5 hover:bg-surface-muted">
+        <span className="min-w-0 flex-1">
+          <span className="block text-base font-medium text-text">{title} <span className="text-xs font-normal text-text-muted">· {section}</span></span>
+          <span className="block text-sm text-text-muted">{children}</span>
+        </span>
+        <ArrowRight className="size-4 shrink-0 text-text-muted transition-transform group-hover:translate-x-0.5" aria-hidden />
+      </Link>
+    </li>
   );
 }

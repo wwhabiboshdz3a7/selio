@@ -8,6 +8,7 @@ import { useClient, useData, useRequiredSession, useSession } from "../lib/data/
 import { useTheme } from "../lib/theme";
 import { Logo } from "../components/Logo";
 import { ROLE_LABELS } from "@selio/contracts";
+import { HandCoins } from "lucide-react";
 
 export function RequireSession({ children }: { children: ReactNode }) {
   const session = useSession();
@@ -38,6 +39,7 @@ const GROUPS: NavGroup[] = [
     { to: "/app/messages", label: "Messagerie", icon: <MessageSquare />, badgeKey: "unread" },
     { to: "/app/orders", label: "Commandes", icon: <Package /> },
     { to: "/app/customers", label: "Clients", icon: <Users /> },
+    { to: "/app/selling-rules", label: "Négociation et marges", icon: <HandCoins />, hint: "Marges, remises, contre-propositions et simulateur" },
   ] },
   { title: "Acheter", items: [
     { to: "/app/radar", label: "Bonnes affaires", icon: <Radar />, hint: "Radar : chaque affaire notée /100" },

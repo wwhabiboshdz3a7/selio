@@ -63,12 +63,33 @@ export function matchMarginPreset(rules: MarginRules): MarginPresetId | null {
  * la décision du moteur à chaque tour, jusqu'à l'acceptation ou l'escalade.
  * Sert au simulateur (aucune règle propre : tout vient d'evaluateOffer).
  */
-export function negotiationPath(item: ItemPricing, offerCents: Cents, rules: MarginRules, maxSteps = 10): NegotiationResult[] {
+export function negotiationPath(item: ItemPricing, offerCents: Cents, rules: MarginRules, opts: { fromRound?: number; maxSteps?: number } = {}): NegotiationResult[] {
   const steps: NegotiationResult[] = [];
-  for (let round = 0; round < maxSteps; round++) {
+  const from = Math.max(0, opts.fromRound ?? 0);
+  for (let round = from; round < from + (opts.maxSteps ?? 10); round++) {
     const r = evaluateOffer({ item, offerCents, rules, roundsSoFar: round });
     steps.push(r);
     if (r.decision !== "counter") break;
   }
   return steps;
+}
+
+/**
+ * Plus petite offre acceptée d'office par le moteur (à ce tour de négociation),
+ * ou null sans prix affiché. L'ensemble des offres acceptées est croissant
+ * (au-dessus du prix affiché, ou plancher + marges + remise respectés, ou au
+ * moins la contre-proposition du tour) : une recherche par dichotomie suffit.
+ */
+export function lowestAcceptedOffer(item: ItemPricing, rules: MarginRules, roundsSoFar = 0): Cents | null {
+  const listed = item.listedPriceCents;
+  if (listed === null || listed <= 0) return null;
+  const accepts = (c: Cents) => evaluateOffer({ item, offerCents: c, rules, roundsSoFar }).decision === "accept";
+  let lo = 1;
+  let hi = listed;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (accepts(mid)) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo;
 }
