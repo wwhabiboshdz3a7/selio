@@ -108,6 +108,14 @@ const STATUS_ALIASES: Record<string, ItemStatus> = {
   archive: "archived", archivé: "archived", archived: "archived",
 };
 
+/**
+ * Recherche d'alias sans passer par Object.prototype : une cellule « constructor » ou « __proto__ »
+ * renvoyait sinon une fonction ou un objet, affiché tel quel dans l'aperçu (écran d'erreur).
+ */
+function lookup<T>(aliases: Record<string, T>, key: string): T | undefined {
+  return Object.prototype.hasOwnProperty.call(aliases, key) ? aliases[key] : undefined;
+}
+
 function norm(s: string): string {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
 }
@@ -173,13 +181,13 @@ export function previewInventoryImport(text: string, opts: { maxRows?: number } 
     const listedPriceCents = money("listedPrice", "Prix affiché");
     const floorPriceCents = money("floorPrice", "Prix plancher");
     const catRaw = get("category");
-    const category = catRaw ? CATEGORY_ALIASES[norm(catRaw)] : undefined;
+    const category = catRaw ? lookup(CATEGORY_ALIASES, norm(catRaw)) : undefined;
     if (catRaw && !category) warnings.push(`Catégorie inconnue « ${catRaw} » → « Autre ».`);
     const condRaw = get("condition");
-    const condition = condRaw ? CONDITION_ALIASES[norm(condRaw)] : undefined;
+    const condition = condRaw ? lookup(CONDITION_ALIASES, norm(condRaw)) : undefined;
     if (condRaw && !condition) warnings.push(`État inconnu « ${condRaw} » → « Bon état ».`);
     const statusRaw = get("status");
-    const status = statusRaw ? STATUS_ALIASES[norm(statusRaw)] : undefined;
+    const status = statusRaw ? lookup(STATUS_ALIASES, norm(statusRaw)) : undefined;
     if (statusRaw && !status) errors.push(`Statut inconnu « ${statusRaw} » (attendu : ${ITEM_STATUSES.join(", ")}).`);
     if (listedPriceCents !== null && floorPriceCents !== null && floorPriceCents > listedPriceCents)
       warnings.push("Prix plancher supérieur au prix affiché.");

@@ -67,7 +67,8 @@ export function shouldRetry(job: Pick<Job, "attempts" | "maxAttempts">): boolean
 /** Remplit un gabarit `{{variable}}` avec échappement : jamais de HTML, texte brut uniquement. */
 export function renderTemplate(template: string, vars: Record<string, string | number | null | undefined>): string {
   return template.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_, key: string) => {
-    const v = vars[key];
+    // Propriétés propres uniquement : « {{constructor}} » insérait sinon « function Object() { [native code] } ».
+    const v = Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : undefined;
     return v === null || v === undefined ? "" : String(v);
   });
 }

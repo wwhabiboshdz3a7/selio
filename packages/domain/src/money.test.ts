@@ -13,6 +13,14 @@ describe("money", () => {
     expect(parseEuroInput("")).toBeNull();
     expect(parseEuroInput("12.345")).toBeNull();
   });
+  it("refuse les montants démesurés au lieu de produire Infinity", () => {
+    // 400 chiffres collés dans un champ € : Infinity, puis RangeError au rendu (écran d'erreur).
+    expect(parseEuroInput("9".repeat(400))).toBeNull();
+    expect(parseEuroInput("99999999999999999999")).toBeNull();
+    expect(parseEuroInput(1e307)).toBeNull();
+    expect(parseEuroInput(Number.NaN)).toBeNull();
+    expect(parseEuroInput("90071992547409,91")).toBe(Number.MAX_SAFE_INTEGER);
+  });
   it("arrondit demi vers l'infini", () => {
     expect(roundHalfAway(0.5)).toBe(1);
     expect(roundHalfAway(-0.5)).toBe(-1);
