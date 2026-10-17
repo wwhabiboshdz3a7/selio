@@ -23,6 +23,7 @@ describe("composants de la vitrine", () => {
     const { container } = render(<MemoryRouter><CtaBand title="Essayez" lead="Sans compte." /></MemoryRouter>);
     expect(screen.getByRole("heading", { level: 2, name: "Essayez" })).toBeTruthy();
     expect(screen.getByRole("link", { name: /Créer un compte/ }).getAttribute("href")).toBe("/inscription");
+    expect(container.querySelectorAll("a button")).toHaveLength(0);
     expect(screen.getByRole("link", { name: "Explorer la démo" }).getAttribute("href")).toBe("/demo");
     const sky = container.querySelector("svg.mk-sky");
     expect(sky?.getAttribute("aria-hidden")).toBe("true");
@@ -31,13 +32,21 @@ describe("composants de la vitrine", () => {
 
   it("ciel : composition identique d'un rendu à l'autre (graine fixe)", () => {
     mockMotion(true);
-    const a = render(<NightSky seed={11} />).container.innerHTML;
+    // Les identifiants des dégradés (useId) varient d'un rendu à l'autre : on les neutralise.
+    const html = (el: HTMLElement) => el.innerHTML.replace(/id="[^"]+"|url\(#[^)]+\)/g, "");
+    const a = html(render(<NightSky seed={11} />).container);
     cleanup();
-    const b = render(<NightSky seed={11} />).container.innerHTML;
+    const b = html(render(<NightSky seed={11} />).container);
     expect(a).toBe(b);
     cleanup();
     const noLines = render(<NightSky seed={11} lines={false} />).container;
     expect(noLines.querySelectorAll(".mk-sky-line")).toHaveLength(0);
+    cleanup();
+    // Halos en dégradé radial (pas de disques pleins) et « S » de Selio en constellation.
+    const withFigure = render(<NightSky seed={11} />).container;
+    expect(withFigure.querySelectorAll("radialGradient")).toHaveLength(2);
+    expect(withFigure.querySelectorAll(".mk-sky-figure")).toHaveLength(8);
+    for (const h of Array.from(withFigure.querySelectorAll(".mk-sky-halo"))) expect(h.getAttribute("fill")).toMatch(/^url\(#/);
   });
 
   it("en-tête de page : un seul h1, sur-titre étoilé", () => {
@@ -56,8 +65,8 @@ describe("composants de la vitrine", () => {
         <AvailabilityBadge value="planned" />
       </>,
     );
-    expect(screen.getByText("Démontré en simulation")).toBeTruthy();
-    expect(screen.getByText("Expérimental, à valider")).toBeTruthy();
+    expect(screen.getByText("En démonstration")).toBeTruthy();
+    expect(screen.getByText("Expérimental")).toBeTruthy();
     expect(container.innerHTML).not.toMatch(/warning|amber|orange/);
   });
 });

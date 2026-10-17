@@ -47,7 +47,7 @@ export default function Login() {
           <Field label="Email" required>{(p) => <Input id={p.id} type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required />}</Field>
           <Field label="Mot de passe" required>{(p) => <Input id={p.id} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />}</Field>
           {error ? <Alert tone="danger">{error}</Alert> : null}
-          <Button type="submit" loading={loading} disabled={mode === "connected" && !connectedModeAvailable} fullWidth>{mode === "demo" ? "Entrer dans la démonstration" : "Se connecter"}</Button>
+          <Button type="submit" variant="accent" loading={loading} disabled={mode === "connected" && !connectedModeAvailable} fullWidth>{mode === "demo" ? "Entrer dans la démonstration" : "Se connecter"}</Button>
           <p className="text-center text-sm text-text-muted">Pas de compte ? <Link to="/inscription" className="font-medium text-text underline underline-offset-2">Créer un compte</Link></p>
         </form>
       </Container>

@@ -23,14 +23,18 @@ export function wrapPi(a: number): number {
   return r - Math.PI;
 }
 
+/** Part de chaque pas consacrée à la transition ; le reste est un vrai plateau. */
+export const DWELL_EDGE = 0.3;
+
 /**
- * Escalier adouci : la valeur marque une pause autour de chaque entier
- * (dérivée nulle), ce qui laisse le temps de lire chaque paire de cartes.
+ * Escalier à plateaux : la valeur reste exactement sur l'entier pendant 60 % de
+ * chaque pas (de k − 0,3 à k + 0,3), puis passe à l'entier suivant en douceur.
+ * Chaque paire de cartes reste donc immobile assez longtemps pour être lue.
  */
 export function dwell(r: number): number {
   const k = Math.floor(r);
   const x = r - k;
-  return k + x - Math.sin(TAU * x) / TAU;
+  return k + smoothstep(DWELL_EDGE, 1 - DWELL_EDGE, x);
 }
 
 /** Générateur pseudo-aléatoire déterministe (mulberry32) : même ciel à chaque visite. */

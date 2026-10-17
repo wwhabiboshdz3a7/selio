@@ -43,7 +43,7 @@ export default function Legal() {
         <Eyebrow>Informations légales</Eyebrow>
         <h1 className="mt-3 text-2xl font-semibold tracking-[-0.025em] text-text">{page.title}</h1>
         <Alert tone="warning" title="Brouillon" className="mt-4">Ce texte est un brouillon structurel. Il doit être complété et validé par un conseil juridique avant publication. Les passages entre crochets sont à renseigner.</Alert>
-        <div className="prose-selio mt-6 text-base text-text">
+        <div className="prose-selio mt-6 max-w-[70ch] text-base text-text">
           {page.sections.map((s) => (
             <div key={s.h}>
               <h2>{s.h}</h2>

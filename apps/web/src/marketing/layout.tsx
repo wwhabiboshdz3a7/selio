@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { Link, NavLink, Outlet, useLocation, useNavigationType } from "react-router";
 import { Menu as MenuIcon, X, Moon, Sun } from "lucide-react";
-import { Button, IconButton, cn } from "@selio/ui";
+import { IconButton, buttonClass, cn } from "@selio/ui";
 import { useTheme } from "../lib/theme";
 import { Logo } from "../components/Logo";
 import { useSession } from "../lib/data/provider";
+import { getOverNight, getOverNightServer, subscribeOverNight } from "./nightHeader";
 
 const NAV = [
   { to: "/fonctionnalites", label: "Fonctionnalités" },
@@ -21,8 +22,12 @@ export function MarketingLayout() {
   const session = useSession();
   const authPage = ["/connexion", "/inscription", "/demo"].includes(location.pathname);
   const { pathname, hash } = location;
+  const navigationType = useNavigationType();
+  const overNight = useSyncExternalStore(subscribeOverNight, getOverNight, getOverNightServer) && !open;
   // Navigation interne : haut de page, ou ancre (/fonctionnalites#generateur) si présente.
+  // Retour arrière (POP) : le navigateur restaure lui-même la position.
   useEffect(() => {
+    if (navigationType === "POP" && !hash) return;
     if (hash.length > 1) {
       const el = document.getElementById(decodeURIComponent(hash.slice(1)));
       if (el) {
@@ -31,13 +36,13 @@ export function MarketingLayout() {
       }
     }
     window.scrollTo({ top: 0 });
-  }, [pathname, hash]);
+  }, [pathname, hash, navigationType]);
   return (
     <div className="mk-scope flex min-h-dvh flex-col bg-bg">
       <a href="#contenu" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2">Aller au contenu</a>
-      <header className="sticky top-0 z-30 border-b border-border bg-surface/90 backdrop-blur-md">
+      <header className="mk-header sticky top-0 z-30 border-b border-border bg-surface/90 backdrop-blur-md" data-over-night={overNight || undefined}>
         <div className="mx-auto flex h-14 max-w-content items-center justify-between gap-4 px-4 md:px-8">
-          <Link to="/" aria-label="Selio, accueil" className="shrink-0"><Logo height={24} /></Link>
+          <Link to="/" aria-label="Selio, accueil" className="shrink-0"><Logo height={24} inverse={overNight} /></Link>
           <nav aria-label="Navigation principale" className="hidden items-center gap-1 lg:flex">
             {NAV.map((n) => (
               <NavLink key={n.to} to={n.to} className={({ isActive }) => cn("relative rounded-md px-3 py-2 text-base font-medium transition-colors hover:text-text", isActive ? "text-text after:absolute after:bottom-0 after:left-1/2 after:size-1 after:-translate-x-1/2 after:rounded-full after:bg-gold" : "text-text-muted")}>
@@ -50,11 +55,11 @@ export function MarketingLayout() {
               {resolved === "dark" ? <Sun /> : <Moon />}
             </IconButton>
             {session.data ? (
-              <Link to="/app" className="hidden md:block"><Button size="sm">Ouvrir l'application</Button></Link>
+              <Link to="/app" className={buttonClass({ variant: "accent", size: "sm", className: "max-md:hidden" })}>Ouvrir l'application</Link>
             ) : (
               <>
-                <Link to="/connexion" className="hidden md:block"><Button variant="ghost" size="sm">Connexion</Button></Link>
-                {!authPage ? <Link to="/demo" className="hidden md:block"><Button size="sm">Voir la démo</Button></Link> : null}
+                <Link to="/connexion" className={buttonClass({ variant: "ghost", size: "sm", className: "mk-header-ghost max-md:hidden" })}>Connexion</Link>
+                {!authPage ? <Link to="/demo" className={buttonClass({ variant: "accent", size: "sm", className: "max-md:hidden" })}>Voir la démo</Link> : null}
               </>
             )}
             <IconButton label={open ? "Fermer le menu" : "Ouvrir le menu"} className="lg:hidden" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls="menu-mobile">
@@ -69,10 +74,10 @@ export function MarketingLayout() {
                 <li key={n.to}><NavLink to={n.to} onClick={() => setOpen(false)} className={({ isActive }) => cn("block rounded-md px-3 py-2.5 text-base font-medium", isActive ? "bg-surface-muted text-text" : "text-text-muted")}>{n.label}</NavLink></li>
               ))}
               <li className="mt-2 flex gap-2">
-                {session.data ? <Link to="/app" className="flex-1" onClick={() => setOpen(false)}><Button fullWidth>Ouvrir l'application</Button></Link> : (
+                {session.data ? <Link to="/app" className={buttonClass({ variant: "accent", className: "flex-1" })} onClick={() => setOpen(false)}>Ouvrir l'application</Link> : (
                   <>
-                    <Link to="/connexion" className="flex-1" onClick={() => setOpen(false)}><Button variant="secondary" fullWidth>Connexion</Button></Link>
-                    <Link to="/demo" className="flex-1" onClick={() => setOpen(false)}><Button fullWidth>Voir la démo</Button></Link>
+                    <Link to="/connexion" className={buttonClass({ variant: "secondary", className: "flex-1" })} onClick={() => setOpen(false)}>Connexion</Link>
+                    <Link to="/demo" className={buttonClass({ variant: "accent", className: "flex-1" })} onClick={() => setOpen(false)}>Voir la démo</Link>
                   </>
                 )}
               </li>

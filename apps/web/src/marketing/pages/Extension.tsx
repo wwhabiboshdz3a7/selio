@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { MousePointerClick, PenLine, Scale } from "lucide-react";
-import { Button } from "@selio/ui";
+import { buttonClass } from "@selio/ui";
 import { usePageMeta } from "../../lib/seo";
 import { CheckList, CtaBand, FeatureCard, MarketingSection, PlannedList } from "../components";
 
@@ -27,7 +27,7 @@ export default function Extension() {
           </div>
         </div>
         <div className="mt-8 flex flex-wrap gap-2">
-          <Link to="/inscription"><Button>Créer un compte pour associer l'extension</Button></Link>
+          <Link to="/inscription" className={buttonClass({ variant: "accent" })}>Créer un compte pour associer l'extension</Link>
         </div>
         <p className="mt-3 text-xs text-text-muted">Installation non empaquetée documentée dans le dépôt (docs/EXTENSION-INSTALL.md). Pas encore publiée sur le Chrome Web Store.</p>
       </MarketingSection>
