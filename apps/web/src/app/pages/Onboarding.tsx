@@ -74,11 +74,11 @@ export default function Onboarding() {
             <div className="mt-4 flex flex-col gap-3 text-sm">
               <ol className="list-decimal pl-5 text-text-muted">
                 <li>Installez l'extension (installation non empaquetée, voir docs/EXTENSION-INSTALL.md).</li>
-                <li>Créez un jeton d'extension dans <Link to="/app/settings/connections" className="text-text underline underline-offset-2">Paramètres › Connexions</Link>.</li>
+                <li>Créez un jeton d'extension dans <Link to="/app/accounts" className="text-text underline underline-offset-2">Comptes Vinted › Avancé</Link>.</li>
                 <li>Collez le jeton dans la page Options de l'extension, puis lancez le diagnostic.</li>
               </ol>
               <p className="text-xs text-text-muted">Le jeton est limité, révocable et renouvelable. Aucun mot de passe Vinted n'est demandé.</p>
-              <div className="flex gap-2"><Link to="/app/settings/connections"><Button variant="secondary">Ouvrir les connexions</Button></Link><Button onClick={() => complete.mutate(step.key)} loading={complete.isPending} iconRight={<ChevronRight />}>Continuer</Button></div>
+              <div className="flex gap-2"><Link to="/app/accounts"><Button variant="secondary">Ouvrir les comptes Vinted</Button></Link><Button onClick={() => complete.mutate(step.key)} loading={complete.isPending} iconRight={<ChevronRight />}>Continuer</Button></div>
             </div>
           ) : null}
           {step.key === "ai" ? (

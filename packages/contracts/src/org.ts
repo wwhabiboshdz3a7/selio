@@ -66,6 +66,8 @@ export const autoBuySettings = z.object({
   maxItemCents: nonNegCents.default(6_000),
   /** Délai pendant lequel l'achat automatique peut être annulé. */
   cancelWindowMinutes: z.number().int().min(0).max(1440).default(30),
+  /** Compte « Achat » utilisé (null = le premier compte Achat actif). Jamais un compte Perso. */
+  connectionId: id.nullable().default(null),
 });
 export type AutoBuySettings = z.infer<typeof autoBuySettings>;
 

@@ -14,7 +14,7 @@ Contrôle facultatif dans Chromium (service worker, popup, options) : `cd apps/e
 3. La page Options s'ouvre automatiquement à la première installation.
 
 ## Associer à un compte Selio
-1. Dans l'application Selio (mode connecté) : Paramètres › Connexions › **Créer un jeton** (nommer l'appareil). Le secret s'affiche une seule fois.
+1. Dans l'application Selio (mode connecté) : Comptes Vinted › « Avancé — relier l'extension Selio » › **Créer un jeton** (nommer l'appareil). Le secret s'affiche une seule fois.
 2. Dans les Options de l'extension : saisir l'URL de l'API (ex. `https://api.exemple.fr`) et coller le jeton, puis **Associer**. Chrome demande l'autorisation d'accès à l'origine de l'API (nécessaire, limitée à cette origine).
 3. Le popup indique « Associé » et le nom de l'organisation. Les connexions Vinted de l'organisation passent en « Connecté » tant que l'extension donne signe de vie.
 
@@ -31,7 +31,7 @@ En mode démonstration (sans API), l'association n'est pas possible : l'extensio
 - Le jeton reste dans le stockage de l'extension (service worker) ; révocable depuis Selio ; expiration 90 jours.
 
 ## Révoquer / dissocier
-- Depuis Selio : Paramètres › Connexions › Jetons › **Révoquer** (effet immédiat : le popup affiche « Jeton refusé »).
+- Depuis Selio : Comptes Vinted › « Avancé » › Jetons › **Révoquer** (effet immédiat : le popup affiche « Jeton refusé »).
 - Depuis l'extension : Options › **Dissocier** (efface le stockage local).
 
 ## Mettre à jour un adaptateur

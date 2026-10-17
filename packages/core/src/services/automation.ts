@@ -1,6 +1,6 @@
 import { automationRuleCreate, jobQuery, type AutomationRule, type Job } from "@selio/contracts";
 import { repos, type Tx } from "@selio/db";
-import { daysInStock, evaluateOffer, gateRule, jobDedupeKey, localDayKey, renderTemplate, retryDelayMs } from "@selio/domain";
+import { PERSONAL_ACCOUNT_SKIP, daysInStock, evaluateOffer, gateRule, isAutomatable, jobDedupeKey, localDayKey, renderTemplate, retryDelayMs } from "@selio/domain";
 import { AppError, nowIso, requireAction, withOrg, type OrgContext } from "../context";
 import type { AutomationState } from "../types-data";
 import { sendMessageTx } from "./messaging";
@@ -63,8 +63,23 @@ export function listJobs(ctx: OrgContext, raw: unknown) {
   return withOrg(ctx, (tx) => repos.jobs.list(tx, q.data));
 }
 
+/** Identifiants des comptes Perso de l'organisation. */
+async function personalAccountIds(tx: Tx): Promise<Set<string>> {
+  return new Set((await repos.connections.list(tx)).filter((c) => !isAutomatable(c)).map((c) => c.id));
+}
+
 /** Exécute une tâche (serveur). Les tâches « navigateur » ne sont exécutables que par l'extension. */
 export async function executeJobTx(ctx: OrgContext, tx: Tx, job: Job): Promise<Job> {
+  // Le compte a pu passer en « Perso » entre la planification et la validation : on n'agit pas.
+  const personal = await personalAccountIds(tx);
+  if (personal.size > 0) {
+    const convId = typeof job.payload.conversationId === "string" ? job.payload.conversationId : null;
+    const itemId = typeof job.payload.itemId === "string" ? job.payload.itemId : null;
+    const target = convId ? await repos.conversations.byId(tx, convId).catch(() => null) : itemId ? await repos.items.byId(tx, itemId).catch(() => null) : null;
+    if (target?.connectionId && personal.has(target.connectionId)) {
+      return repos.jobs.update(tx, job.id, { status: "skipped", result: { reason: PERSONAL_ACCOUNT_SKIP }, finishedAt: nowIso(ctx) });
+    }
+  }
   if (job.runsIn === "browser") {
     // En mode connecté, une action navigateur est remise à l'extension : on la marque en file pour elle.
     const conv = typeof job.payload.conversationId === "string" ? await repos.conversations.byId(tx, job.payload.conversationId).catch(() => null) : null;
@@ -115,9 +130,11 @@ export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): 
   const dayStart = new Date(now); dayStart.setUTCHours(0, 0, 0, 0);
   let evaluated = 0, created = 0;
   const targets: { targetId: string; payload: Record<string, unknown>; kind: Job["kind"] }[] = [];
+  const personal = await personalAccountIds(tx);
   if (["reply_on_new_message", "follow_up_no_reply", "auto_negotiate", "post_sale_message"].includes(rule.kind)) {
     for (const conv of await repos.conversations.open(tx)) {
       evaluated++;
+      if (conv.connectionId && personal.has(conv.connectionId)) { skip(PERSONAL_ACCOUNT_SKIP); continue; }
       const msgs = await repos.messages.forConversation(tx, conv.id);
       const last = msgs[msgs.length - 1];
       if (!last) continue;
@@ -144,6 +161,7 @@ export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): 
   } else {
     for (const item of (await repos.items.all(tx)).filter((i) => i.status === "listed")) {
       evaluated++;
+      if (item.connectionId && personal.has(item.connectionId)) { skip(PERSONAL_ACCOUNT_SKIP); continue; }
       if (daysInStock(item, now) < (rule.config.staleDays ?? 45)) { skip("Article pas encore dormant"); continue; }
       if (rule.kind === "price_drop_stale" && (item.listedPriceCents ?? 0) <= (item.floorPriceCents ?? 0)) { skip("Déjà au prix plancher"); continue; }
       targets.push({ targetId: item.id, kind: "automation.evaluate", payload: { itemId: item.id, ruleName: rule.name } });

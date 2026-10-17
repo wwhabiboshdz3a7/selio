@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Bot, Check, Images, User, X } from "lucide-react";
 import type { PurchaseRequest } from "@selio/contracts";
-import { REVIEW_THRESHOLD, dealEconomics } from "@selio/domain";
+import { REVIEW_THRESHOLD, dealEconomics, resolvePurchaseAccount } from "@selio/domain";
 import { Alert, Button, Card, ConfirmDialog, EmptyState, PageHeader, StatusBadge, Tag, formatCents, formatDateTime } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { QueryBoundary } from "../components/common";
@@ -28,6 +28,10 @@ export default function Purchase() {
   const cancel = useAppMutation((id: string) => client.cancelPurchaseRequest(id), { invalidate: ["purchases", "opportunities"], success: "Demande annulée" });
   const canBuy = session.role !== "viewer";
   const fees = session.org.settings.buyerFees;
+  // Compte Vinted « Achat » utilisé par la validation en un clic (jamais un compte Perso).
+  const connections = useQuery({ queryKey: ["connections"], queryFn: () => client.listConnections() });
+  const buyer = resolvePurchaseAccount(connections.data ?? [], session.org.settings.autoBuy.connectionId);
+  const buyerName = buyer ? (typeof buyer.config.displayHandle === "string" && buyer.config.displayHandle ? `@${buyer.config.displayHandle}` : buyer.label) : null;
 
   return (
     <>
@@ -40,8 +44,14 @@ export default function Purchase() {
       <Alert tone="warning" className="mb-5" title="Achat réel désactivé">Valider déclenche un achat SIMULÉ, avec tous les contrôles (prix maximal, budget, plafond du jour, doublon, marge positive). Aucun paiement ni commande chez un vendeur tant qu'un connecteur d'achat autorisé n'existe pas.</Alert>
 
       <section className="mb-10">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 className="text-md font-semibold">Affaires à valider <span className="num text-text-muted">({toReview.data?.length ?? 0})</span></h2>
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <h2 className="shrink-0 text-md font-semibold">Affaires à valider <span className="num text-text-muted">({toReview.data?.length ?? 0})</span></h2>
+          {connections.data ? (
+            <p className="text-xs text-text-muted">
+              {buyer ? <>Achats faits avec le compte Achat <span className="font-medium text-text">{buyerName}</span> · </> : "Aucun compte Achat : "}
+              <Link to={buyer ? "/app/accounts?categorie=achat" : "/app/accounts?categorie=achat&ajouter=1"} className="underline underline-offset-2 hover:text-text">{buyer ? "changer" : "en ajouter un"}</Link>
+            </p>
+          ) : null}
         </div>
         <QueryBoundary query={toReview} empty={(d) => d.length === 0 ? <EmptyState icon={<Check />} title="Rien à valider" description="Toutes les bonnes affaires ont été traitées. Lancez une analyse dans « Bonnes affaires » pour en trouver d'autres." action={<Link to="/app/radar"><Button variant="secondary">Bonnes affaires</Button></Link>} /> : null}>
           {(list) => (

@@ -1,9 +1,9 @@
 import type {
-  AiRequest, AiStatus, AuditLog, ListingDraft, ListingGenerationInput, AutomationRule, AutomationRuleCreate, BulkItemAction, ConnectionCreate, ConnectionTestResult, Conversation, ConversationQuery, Customer, CustomerCreate, CustomerQuery, CustomerUpdate, ExtensionToken, InventoryEvent, InventoryItem, InventoryItemCreate, InventoryItemUpdate, InventoryQuery, Job, JobQuery, MarketplaceConnection, Membership, Message, Opportunity, Order, OrderCreate, OrderQuery, OrderStatus, Organization, OrgSettings, Page, Plan, PurchaseRequest, RadarSearch, RadarSearchCreate, Role, Shipment, Subscription, UsageEvent, User,
+  AiRequest, AiStatus, AuditLog, ListingDraft, ListingGenerationInput, AutomationRule, AutomationRuleCreate, BulkItemAction, ConnectionCreate, ConnectionTestResult, ConnectionUpdate, Conversation, ConversationQuery, Customer, CustomerCreate, CustomerQuery, CustomerUpdate, ExtensionToken, InventoryEvent, InventoryItem, InventoryItemCreate, InventoryItemUpdate, InventoryQuery, Job, JobQuery, MarketplaceConnection, Membership, Message, Opportunity, Order, OrderCreate, OrderQuery, OrderStatus, Organization, OrgSettings, Page, Plan, PurchaseRequest, RadarSearch, RadarSearchCreate, Role, Shipment, Subscription, UsageEvent, User,
 } from "@selio/contracts";
 import type { ConnectorDescriptor } from "@selio/connectors";
 import type { ReplySuggestion } from "@selio/contracts";
-import type { BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
+import type { AccountStats, BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
 
 export type VariantLeaderboardRow = ReturnType<typeof variantLeaderboard>[number];
 
@@ -156,6 +156,8 @@ export interface AutoBuyRunResult {
   bought: number;
   spentCents: number;
   skipped: { reason: string; count: number }[];
+  /** Compte Achat utilisé (null = aucun compte Achat actif). */
+  account?: { id: string; label: string } | null;
 }
 
 export interface DataClient {
@@ -254,6 +256,10 @@ export interface DataClient {
   describeConnectors(): Promise<ConnectorDescriptor[]>;
   listConnections(): Promise<MarketplaceConnection[]>;
   createConnection(input: ConnectionCreate): Promise<MarketplaceConnection>;
+  /** Renomme un compte, change sa catégorie (vente, achat, perso) ou son pseudo Vinted affiché. */
+  updateConnection(id: string, input: ConnectionUpdate): Promise<MarketplaceConnection>;
+  /** Chiffres utiles par compte : annonces en ligne, ventes du mois, achats, conversations ouvertes. */
+  getConnectionStats(): Promise<AccountStats[]>;
   testConnection(id: string): Promise<ConnectionTestResult>;
   syncConnection(id: string): Promise<{ conversations: number; items: number; orders: number; simulated: boolean }>;
   disconnectConnection(id: string): Promise<MarketplaceConnection>;

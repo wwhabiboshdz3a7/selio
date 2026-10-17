@@ -80,7 +80,7 @@ Mêmes variables base / Redis / chiffrement / IA que l'API. Les cadences ont des
 
 ## Réglages faits dans l'application (pas des clés)
 
-- **Extension navigateur** : Pas de variable : dans Selio › Paramètres › Connexions, créez un jeton d'extension, puis collez l'adresse de l'API et le jeton dans les options de l'extension.
+- **Extension navigateur** : Pas de variable : dans Selio › Comptes Vinted › « Avancé — relier l'extension Selio », créez un jeton d'extension, puis collez l'adresse de l'API et le jeton dans les options de l'extension.
 - **Achat auto** : Page « Achat auto » : seuil de note (85 conseillé), plafond par jour, prix maximal par article, délai d'annulation. Désactivé par défaut.
 - **Coût réel d'achat** : Page « Achat auto » : protection acheteurs = part fixe + pourcentage (par défaut 0,70 € + 5 %, modifiable).
 - **Dressing intelligent** : Republication conseillée après 7 jours (réglable : 5 à 30 jours).

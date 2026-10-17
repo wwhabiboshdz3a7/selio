@@ -178,7 +178,10 @@ test.describe("parcours de référence en démonstration", () => {
     await expect(page.getByRole("heading", { name: "Articles et stock" })).toBeVisible();
     await gotoApp(page, "/app/settings/security");
     await expect(page.getByText("Journal d'audit")).toBeVisible();
+    // L'ancienne page des connexions redirige vers « Comptes Vinted » ; les jetons sont dans « Avancé ».
     await gotoApp(page, "/app/settings/connections");
+    await expect(page).toHaveURL(/\/app\/accounts$/);
+    await page.getByText("Avancé — relier l'extension Selio").click();
     await page.getByRole("button", { name: "Créer un jeton" }).click();
     await expect(page.getByRole("dialog", { name: "Jeton créé" })).toBeVisible();
     await page.getByRole("button", { name: "J'ai copié le jeton" }).click();

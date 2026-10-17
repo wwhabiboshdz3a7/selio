@@ -22,8 +22,8 @@ export function getOverview(ctx: OrgContext, rawPeriod: unknown): Promise<Overvi
     const connections = await repos.connections.list(tx);
     const alerts: OverviewData["alerts"] = [];
     for (const c of connections) {
-      if (c.status === "expired" || c.status === "disconnected" || c.status === "degraded") alerts.push({ id: `conn-${c.id}`, tone: c.status === "degraded" ? "warning" : "danger", title: `Connexion « ${c.label} » ${c.status === "degraded" ? "dégradée" : c.status === "expired" ? "expirée" : "déconnectée"}`, description: c.lastError ?? "Vérifiez la connexion dans les paramètres.", to: "/app/settings/connections" });
-      if (c.status === "ready") alerts.push({ id: `conn-ready-${c.id}`, tone: "info", title: `Connexion « ${c.label} » en attente de l'extension`, description: "Associez l'extension Selio pour activer la lecture des pages.", to: "/app/settings/connections" });
+      if (c.status === "expired" || c.status === "disconnected" || c.status === "degraded") alerts.push({ id: `conn-${c.id}`, tone: c.status === "degraded" ? "warning" : "danger", title: `Connexion « ${c.label} » ${c.status === "degraded" ? "dégradée" : c.status === "expired" ? "expirée" : "déconnectée"}`, description: c.lastError ?? "Vérifiez le compte dans « Comptes Vinted ».", to: "/app/accounts" });
+      if (c.status === "ready") alerts.push({ id: `conn-ready-${c.id}`, tone: "info", title: `Connexion « ${c.label} » en attente de l'extension`, description: "Associez l'extension Selio pour activer la lecture des pages.", to: "/app/accounts" });
     }
     if ((jobCounts.failed ?? 0) > 0) alerts.push({ id: "jobs-failed", tone: "danger", title: `${jobCounts.failed} tâche(s) d'automatisation en échec`, description: (await repos.jobs.recentErrors(tx, 1))[0]?.error ?? "", to: "/app/automations?tab=jobs&status=failed" });
     if ((jobCounts.awaiting_approval ?? 0) > 0) alerts.push({ id: "jobs-awaiting", tone: "warning", title: `${jobCounts.awaiting_approval} action(s) automatique(s) à valider`, description: "Ces actions attendent votre validation avant exécution.", to: "/app/automations?tab=jobs&status=awaiting_approval" });
