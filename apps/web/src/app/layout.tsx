@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Bot, Boxes, ChevronDown, ClipboardList, Gauge, LogOut, Menu as MenuIcon, MessageSquare, Moon, Package, Radar, Settings, ShieldCheck, Shirt, ShoppingCart, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
+import { ArrowRight, Bot, Boxes, ChevronDown, CircleUser, ClipboardList, Gauge, LogOut, Menu as MenuIcon, MessageSquare, Moon, Package, Radar, Settings, ShieldCheck, Shirt, ShoppingCart, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
 import { Avatar, Banner, Button, IconButton, LoadingState, Menu, Tag, cn } from "@selio/ui";
 import { REVIEW_THRESHOLD } from "@selio/domain";
 import { useClient, useData, useRequiredSession, useSession } from "../lib/data/provider";
@@ -43,6 +43,9 @@ const GROUPS: NavGroup[] = [
     { to: "/app/radar", label: "Bonnes affaires", icon: <Radar />, hint: "Radar : chaque affaire notée /100" },
     { to: "/app/purchase", label: "À valider", icon: <ShoppingCart />, badgeKey: "toReview" },
     { to: "/app/auto-buy", label: "Achat auto", icon: <Bot /> },
+  ] },
+  { title: "Comptes", items: [
+    { to: "/app/accounts", label: "Comptes Vinted", icon: <CircleUser />, hint: "Comptes vente, achat et perso" },
   ] },
   { title: "Piloter", items: [
     { to: "/app/market", label: "Analyse revendeurs", icon: <TrendingUp />, hint: "Top vendeurs et niches" },

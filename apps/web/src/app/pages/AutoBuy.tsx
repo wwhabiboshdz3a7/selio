@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Bot, Check, Clock, Play, ShieldCheck, X } from "lucide-react";
-import { purchaseCost, scoreBand } from "@selio/domain";
-import type { AutoBuySettings, BuyerFees } from "@selio/contracts";
+import { isActiveAccount, purchaseCost, scoreBand } from "@selio/domain";
+import type { AutoBuySettings, BuyerFees, MarketplaceConnection } from "@selio/contracts";
 import { Alert, Button, Card, EmptyState, Field, Input, PageHeader, Select, StatusBadge, Toggle, cn, formatCents, formatDateTime } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { MoneyInput, QueryBoundary } from "../components/common";
@@ -28,6 +28,14 @@ export default function AutoBuy() {
   const [fees, setFees] = useState<BuyerFees>(session.org.settings.buyerFees);
   const [lastRun, setLastRun] = useState<Awaited<ReturnType<typeof client.runAutoBuy>> | null>(null);
   const purchases = useQuery({ queryKey: ["purchases"], queryFn: () => client.listPurchaseRequests() });
+  const connections = useQuery({ queryKey: ["connections"], queryFn: () => client.listConnections() });
+  // Comptes « Achat » actifs : jamais un compte Vente ou Perso.
+  const purchaseAccounts = (connections.data ?? []).filter((c) => c.usage === "purchase" && isActiveAccount(c));
+  const accountLabel = (id: string | null) => {
+    const c = id ? connections.data?.find((x) => x.id === id) : null;
+    if (!c) return null;
+    return typeof c.config.displayHandle === "string" && c.config.displayHandle ? `@${c.config.displayHandle}` : c.label;
+  };
   const canAdmin = session.role === "owner" || session.role === "admin";
   const canBuy = session.role !== "viewer";
   const dirty = JSON.stringify(settings) !== JSON.stringify(session.org.settings.autoBuy) || JSON.stringify(fees) !== JSON.stringify(session.org.settings.buyerFees);
@@ -67,6 +75,7 @@ export default function AutoBuy() {
               <Field label="Prix max par article" hint="Total payé.">{(p) => <MoneyInput id={p.id} aria-describedby={p.describedBy} value={settings.maxItemCents} onChange={(v) => setSettings({ ...settings, maxItemCents: v ?? 0 })} allowEmpty={false} disabled={!canAdmin} />}</Field>
               <Field label="Délai pour annuler">{(p) => <Select id={p.id} value={String(settings.cancelWindowMinutes)} onChange={(e) => setSettings({ ...settings, cancelWindowMinutes: Number(e.target.value) })} disabled={!canAdmin}>{[0, 10, 15, 30, 60, 120].map((m) => <option key={m} value={m}>{m === 0 ? "Aucun" : `${m} min`}</option>)}</Select>}</Field>
             </div>
+            <PurchaseAccountField accounts={purchaseAccounts} value={settings.connectionId} onChange={(id) => setSettings({ ...settings, connectionId: id })} disabled={!canAdmin} />
           </Card>
           <Card>
             <h2 className="text-md font-semibold">Coût réel d'un achat</h2>
@@ -98,7 +107,7 @@ export default function AutoBuy() {
             <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full bg-accent-vivid" style={{ width: `${Math.min(100, (spentToday / Math.max(1, session.org.settings.autoBuy.dailyCapCents)) * 100)}%` }} /></div>
             {lastRun ? (
               <div className="mt-3 rounded-md bg-surface-muted p-3 text-sm">
-                <p className="font-medium text-text">Dernier passage : {lastRun.evaluated} affaire(s) examinée(s), {lastRun.bought} achetée(s).</p>
+                <p className="font-medium text-text">Dernier passage : {lastRun.evaluated} affaire(s) examinée(s), {lastRun.bought} achetée(s){lastRun.account ? ` avec « ${lastRun.account.label} »` : ""}.</p>
                 {lastRun.skipped.length ? <ul className="mt-1 text-xs text-text-muted">{lastRun.skipped.map((s) => <li key={s.reason}>{s.count} × {s.reason}</li>)}</ul> : null}
               </div>
             ) : null}
@@ -117,7 +126,7 @@ export default function AutoBuy() {
                         {o?.observed.photoUrl ? <img src={o.observed.photoUrl} alt="" className="size-16 rounded-md object-cover" /> : <span className="size-16 rounded-md bg-surface-muted" />}
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-medium text-text">{o?.title ?? "Affaire supprimée"}</p>
-                          <p className="num text-xs text-text-muted">{formatDateTime(p.createdAt)} · total {formatCents(p.maxPriceCents)}{o ? ` · bénéfice estimé ${formatCents(o.estimate.marginCents)}` : ""}</p>
+                          <p className="num text-xs text-text-muted">{formatDateTime(p.createdAt)} · total {formatCents(p.maxPriceCents)}{o ? ` · bénéfice estimé ${formatCents(o.estimate.marginCents)}` : ""}{accountLabel(p.connectionId) ? ` · ${accountLabel(p.connectionId)}` : ""}</p>
                           <div className="mt-1 flex flex-wrap items-center gap-2">
                             <StatusBadge tone={p.status === "cancelled" ? "muted" : p.status === "blocked" ? "danger" : "success"}>{p.status === "cancelled" ? "Annulé" : p.status === "blocked" ? "Bloqué" : "Acheté (simulé)"}</StatusBadge>
                             {cancelable ? <span className="num inline-flex items-center gap-1 text-xs font-medium text-accent"><Clock className="size-3.5" aria-hidden />Annulable encore {left} min</span> : null}
@@ -139,5 +148,29 @@ export default function AutoBuy() {
         </div>
       </div>
     </>
+  );
+}
+
+/** Compte Vinted « Achat » utilisé par l'achat auto et par « À valider » (jamais un compte Perso). */
+function PurchaseAccountField({ accounts, value, onChange, disabled }: { accounts: MarketplaceConnection[]; value: string | null; onChange: (id: string | null) => void; disabled: boolean }) {
+  const name = (c: MarketplaceConnection) => (typeof c.config.displayHandle === "string" && c.config.displayHandle ? `@${c.config.displayHandle} — ${c.label}` : c.label);
+  if (accounts.length === 0) {
+    return (
+      <div className="mt-5 rounded-md bg-surface-muted px-3 py-2.5 text-sm">
+        <p className="font-medium text-text">Compte Achat utilisé</p>
+        <p className="mt-0.5 text-xs text-text-muted">Aucun compte Vinted classé « Achat » : les achats simulés ne sont rattachés à aucun compte. <Link to="/app/accounts?categorie=achat&ajouter=1" className="font-medium text-accent underline-offset-2 hover:underline">Ajouter un compte Achat</Link></p>
+      </div>
+    );
+  }
+  const current = accounts.find((c) => c.id === value) ?? null;
+  return (
+    <Field label="Compte Achat utilisé" className="mt-5" hint={<>Les achats sont faits avec ce compte. Les comptes Vente et Perso ne sont jamais utilisés. <Link to="/app/accounts?categorie=achat" className="underline underline-offset-2">Gérer les comptes</Link></>}>
+      {(p) => (
+        <Select id={p.id} aria-describedby={p.describedBy} value={current?.id ?? ""} onChange={(e) => onChange(e.target.value || null)} disabled={disabled}>
+          <option value="">Automatique : {name(accounts[0]!)}</option>
+          {accounts.map((c) => <option key={c.id} value={c.id}>{name(c)}</option>)}
+        </Select>
+      )}
+    </Field>
   );
 }
