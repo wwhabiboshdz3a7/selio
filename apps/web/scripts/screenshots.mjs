@@ -34,6 +34,6 @@ await shoot("app-messages-mobile", "/app/messages/conv-001", { width: 375, heigh
 await shoot("app-automations", "/app/automations", { demo: true, full: false });
 await shoot("app-radar", "/app/radar", { demo: true, full: false });
 await shoot("app-analytics-tablet", "/app/analytics", { width: 768, height: 1024, demo: true, full: false });
-await shoot("app-settings-connections", "/app/settings/connections", { demo: true, full: false });
+await shoot("app-accounts", "/app/accounts", { demo: true, full: false });
 await browser.close();
 console.log(errors.length ? "ERREURS:\n" + errors.join("\n") : "Aucune erreur JS ni débordement détecté.");
