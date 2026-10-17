@@ -13,11 +13,16 @@
   --cst-ink-subtle: color-mix(in oklab, var(--violet-200) 62%, var(--gray-500));
   --cst-hairline: color-mix(in oklab, var(--violet-200) 16%, transparent);
   --cst-card-w: 336px;
+  --cst-horizon-h: 240px;
+  --cst-fade-text: cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
   isolation: isolate;
   color: var(--cst-ink);
   background: var(--cst-night-deep);
   overflow-x: clip;
+  /* Le ciel passe sous l'en-tête (translucide « nuit ») : aucune bande claire au-dessus. */
+  margin-top: calc(-1 * var(--cst-header));
+  padding-top: var(--cst-header);
 }
 :root[data-theme="dark"] .cst-root {
   --cst-night: color-mix(in oklab, var(--violet-900) 34%, var(--gray-950));
@@ -33,21 +38,42 @@
 .cst-stage {
   position: relative;
   background:
+    var(--mk-grain, none),
     linear-gradient(to bottom, transparent 80%, var(--cst-night-deep)),
     radial-gradient(60% 55% at 50% 52%, color-mix(in oklab, var(--violet-500) 13%, transparent), transparent 72%),
     radial-gradient(90% 80% at 50% 45%, var(--cst-night), var(--cst-night-deep) 75%);
 }
 .cst-root[data-mode="live"] .cst-track {
-  height: calc(100vh - var(--cst-header) + 380vh);
-  height: calc(100svh - var(--cst-header) + 380vh);
+  height: calc(100vh - var(--cst-header) + 400vh);
+  height: calc(100svh - var(--cst-header) + 400vh);
+}
+@media (max-width: 1023px) {
+  .cst-root[data-mode="live"] .cst-track {
+    height: calc(100vh - var(--cst-header) + 360vh);
+    height: calc(100svh - var(--cst-header) + 360vh);
+  }
 }
 .cst-root[data-mode="live"] .cst-stage {
   position: sticky;
   top: var(--cst-header);
   height: calc(100vh - var(--cst-header));
   height: calc(100svh - var(--cst-header));
-  min-height: 520px;
+  min-height: min(520px, calc(100svh - var(--cst-header)));
   overflow: hidden;
+}
+/* Le bas de la scène finit exactement sur la couleur de l'horizon (aucune couture). */
+.cst-root[data-mode="live"] .cst-stage::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: min(14%, 120px);
+  z-index: 1;
+  pointer-events: none;
+  background:
+    var(--mk-grain, none) bottom / 140px 140px,
+    linear-gradient(in oklab to bottom, color-mix(in oklab, var(--cst-night-deep) 0%, transparent), var(--cst-night-deep));
 }
 .cst-root[data-mode="live"] .cst-scene { position: absolute; inset: 0; }
 .cst-root[data-mode="static"] .cst-scene { position: relative; overflow: hidden; }
@@ -100,6 +126,16 @@
   width: 100%;
   height: 100%;
   display: block;
+}
+/* Étiquettes des étoiles : canevas séparé, toujours à la définition native (texte net). */
+.cst-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
 }
 .cst-root[data-mode="live"] .cst-canvas { touch-action: pan-y; cursor: grab; }
 .cst-root[data-dragging] .cst-canvas { cursor: grabbing; }
@@ -161,7 +197,7 @@
      au repos) puis le dégradé améthyste → champagne. */
   background:
     linear-gradient(100deg, transparent 42%, color-mix(in oklab, var(--gold-50) 92%, transparent) 50%, transparent 58%) 0% 0% / 300% 100% no-repeat,
-    linear-gradient(100deg, var(--violet-300) 0%, var(--violet-200) 40%, var(--gold-200) 100%) 0% 0% / 100% 100% no-repeat;
+    linear-gradient(100deg, var(--violet-300) 0%, var(--violet-200) 38%, var(--gold-300) 100%) 0% 0% / 100% 100% no-repeat;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -174,8 +210,32 @@
   color: var(--cst-ink-muted);
 }
 .cst-ctas { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 10px; }
-.cst-ctas > span { display: inline-flex; }
-.cst-cta-link { display: inline-flex; border-radius: var(--radius-md); }
+.cst-cta-link { border-radius: var(--radius-md); }
+/* Lien d'évitement : invisible jusqu'au focus clavier, puis bien lisible sur la nuit. */
+.cst-skip-a11y {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.cst-skip-a11y:focus-visible {
+  position: static;
+  width: auto;
+  height: 44px;
+  overflow: visible;
+  clip-path: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  color: var(--cst-ink);
+  background: color-mix(in oklab, var(--violet-50) 10%, transparent);
+  outline: 2px solid var(--violet-200);
+  outline-offset: 3px;
+}
 .cst-ghost {
   display: inline-flex;
   align-items: center;
@@ -219,15 +279,30 @@
   .cst-hint { margin-top: 14px; }
 }
 
-/* Intro : invisible tant que le moteur n'a pas pris la main (filet de sécurité à 2 s). */
-.cst-root[data-intro="pending"] [data-cst-intro],
-.cst-root[data-intro="playing"] [data-cst-intro] { opacity: 0; }
-.cst-root[data-intro="pending"] [data-cst-intro] { animation: cst-failsafe 0.6s ease 2s forwards; }
-@keyframes cst-failsafe { to { opacity: 1; } }
-/* Pendant l'intro, chaque élément animé a son calque : le compositeur applique
-   flou, opacité et translation sans redessiner le texte à chaque image. */
-.cst-root[data-intro="playing"] [data-cst-intro] { will-change: transform, opacity; }
-.cst-root[data-intro="playing"] .cst-word { will-change: transform, opacity, filter; }
+/* Intro du texte : CSS pur, indépendante du moteur (le titre est visible dès les
+   premières images, même sur réseau lent). Le paragraphe ne fait que glisser :
+   il reste opaque, donc peint et compté tout de suite (LCP). */
+@media (prefers-reduced-motion: no-preference) {
+  .cst-root[data-text="play"] [data-cst-intro="eyebrow"] { animation: cst-rise 900ms var(--cst-fade-text) 120ms both; }
+  .cst-root[data-text="play"] [data-cst-intro="word"] {
+    animation: cst-word 1100ms var(--cst-fade-text) both;
+    animation-delay: calc(200ms + var(--i, 0) * 65ms);
+  }
+  .cst-root[data-text="play"] .cst-word-glow {
+    animation: cst-word 1100ms var(--cst-fade-text) calc(200ms + var(--i, 0) * 65ms) both, cst-glow-sweep 1500ms ease-in-out 2300ms both;
+  }
+  .cst-root[data-text="play"] [data-cst-intro="lead"] { animation: cst-slide 1000ms var(--cst-fade-text) 650ms both; }
+  .cst-root[data-text="play"] [data-cst-intro="cta"] { animation: cst-rise 900ms var(--cst-fade-text) both; animation-delay: calc(850ms + var(--i, 0) * 110ms); }
+  .cst-root[data-text="play"] [data-cst-intro="note"] { animation: cst-fade 900ms ease-out 1250ms both; }
+}
+@keyframes cst-word { from { opacity: 0; transform: translateY(0.5em); filter: blur(8px); } }
+@keyframes cst-rise { from { opacity: 0; transform: translateY(14px); } }
+@keyframes cst-slide { from { transform: translateY(16px); } }
+@keyframes cst-fade { from { opacity: 0; } }
+@keyframes cst-glow-sweep {
+  from { background-position: 100% 0%, 0% 0%; }
+  to { background-position: 0% 0%, 0% 0%; }
+}
 
 /* ---- Infobulle d'étoile --------------------------------------------------- */
 .cst-tip { position: absolute; left: 0; top: 0; z-index: 5; width: 288px; pointer-events: none; }
@@ -251,13 +326,15 @@
 
 /* ---- Repères de visite ---------------------------------------------------- */
 .cst-hud { z-index: 4; text-align: center; }
+/* Le HUD couvre la scène mais ne capte jamais la souris : seuls ses contrôles
+   (repères, lien d'évitement) la reçoivent, quand le moteur les active. */
 .cst-root[data-mode="live"] .cst-hud { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
 .cst-hud-top { padding: 0 16px; }
 .cst-root[data-mode="live"] .cst-hud-top { position: absolute; top: clamp(18px, 4vh, 40px); left: 0; right: 0; }
 .cst-hud-title {
   margin: 10px auto 0;
   max-width: 22em;
-  font-size: clamp(20px, 2.1vw, 30px);
+  font-size: clamp(22px, 2.1vw, 30px);
   line-height: 1.15;
   letter-spacing: -0.025em;
   font-weight: 600;
@@ -277,22 +354,52 @@
   color: var(--cst-ink-subtle);
 }
 .cst-counter { color: var(--cst-ink); font-weight: 500; letter-spacing: 0.04em; }
+@media (max-width: 639px) {
+  .cst-hud-bottom { gap: 10px; }
+  .cst-counter { display: none; }
+  .cst-dot-pair { padding: 0 4px; gap: 6px; }
+}
 .cst-counter-total { color: var(--cst-ink-subtle); }
-.cst-progress {
-  position: relative;
-  width: clamp(80px, 14vw, 180px);
-  height: 2px;
-  border-radius: 2px;
-  overflow: hidden;
+/* Mini-constellation de la visite : 7 paires, la paire de face en or. */
+.cst-dots { display: inline-flex; align-items: center; gap: 2px; position: relative; }
+.cst-dots::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 50%;
+  height: 1px;
   background: var(--cst-hairline);
 }
-.cst-progress > span {
-  position: absolute;
-  inset: 0;
-  transform-origin: left center;
-  transform: scaleX(0);
-  background: linear-gradient(90deg, var(--violet-400), var(--gold-300));
+.cst-dot-pair {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
 }
+.cst-dot-pair i {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--violet-200) 34%, transparent);
+  transition: background-color 300ms var(--ease), box-shadow 300ms var(--ease), transform 300ms var(--ease);
+}
+.cst-dot-pair i:first-child { transform: translateY(-4px); }
+.cst-dot-pair i:last-child { transform: translateY(4px); }
+.cst-dot-pair[data-state="past"] i { background: var(--violet-300); }
+.cst-dot-pair[data-state="current"] i {
+  background: var(--gold-200);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--gold-300) 22%, transparent), 0 0 12px 2px color-mix(in oklab, var(--gold-300) 45%, transparent);
+}
+.cst-dot-pair:hover i { background: var(--violet-100); }
+.cst-dot-pair[data-state="current"]:hover i { background: var(--gold-100); }
 .cst-skip { color: var(--cst-ink-muted); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--cst-hairline); border-radius: 4px; }
 .cst-skip:hover { color: var(--cst-ink); }
 
@@ -312,6 +419,15 @@
 }
 @media (max-width: 639px) {
   .cst-root { --cst-card-w: min(calc(100vw - 40px), 360px); }
+}
+@media (max-width: 1023px) {
+  .cst-root { --cst-horizon-h: 170px; }
+}
+@media (min-width: 640px) and (max-width: 1023px) {
+  .cst-root { --cst-card-w: clamp(300px, 52vw, 440px); }
+  .cst-hud-title { font-size: clamp(22px, 3.2vw, 30px); }
+  .cst-root[data-mode="live"] .cst-card-title { font-size: 19px; line-height: 25px; }
+  .cst-root[data-mode="live"] .cst-card-text { font-size: 14px; line-height: 21px; }
 }
 .cst-card {
   display: flex;
@@ -374,28 +490,89 @@
 
 /* Mode fixe (mouvement réduit ou moteur indisponible) : grille lisible. */
 .cst-root[data-mode="static"] .cst-hud { padding: 40px 0 28px; }
+/* 14 cartes sans trou : rangées complètes, ou dernière rangée centrée. */
 .cst-root[data-mode="static"] .cst-cards {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 12px;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 268px), 1fr));
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 16px 56px;
+  padding: 0 16px 32px;
+}
+.cst-root[data-mode="static"] .cst-card-item { flex: 0 1 268px; }
+@media (max-width: 639px) {
+  .cst-root[data-mode="static"] .cst-card-item { flex-basis: 100%; }
+}
+@media (min-width: 1280px) {
+  .cst-root[data-mode="static"] .cst-cards { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); max-width: 1560px; padding-inline: 32px; }
 }
 .cst-root[data-mode="static"] .cst-card { height: 100%; box-shadow: inset 0 1px 0 color-mix(in oklab, var(--violet-100) 14%, transparent); }
 
-/* Sortie : la nuit se dissout dans la page, sans bande lilas marquée. */
-.cst-horizon {
-  height: 200px;
-  background: linear-gradient(
-    to bottom,
-    var(--cst-night-deep),
-    color-mix(in oklab, var(--cst-night-deep) 82%, var(--violet-700)) 22%,
-    color-mix(in oklab, var(--cst-night-deep) 45%, var(--bg)) 52%,
-    color-mix(in oklab, var(--bg) 88%, var(--violet-200)) 80%,
-    var(--bg)
-  );
+/* ---- Quinzième carte : « Votre constellation commence ici » --------------- */
+.cst-finale { z-index: 5; display: flex; justify-content: center; padding: 0 16px; }
+.cst-root[data-mode="live"] .cst-finale {
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
 }
+.cst-root[data-mode="static"] .cst-finale { padding-bottom: 56px; }
+.cst-finale-card {
+  position: relative;
+  width: min(100%, 560px);
+  padding: 28px 28px 26px;
+  border-radius: 20px;
+  text-align: center;
+  color: var(--cst-ink);
+  pointer-events: auto;
+  background:
+    radial-gradient(80% 60% at 50% 0%, color-mix(in oklab, var(--gold-400) 16%, transparent), transparent 70%),
+    linear-gradient(165deg, color-mix(in oklab, var(--violet-800) 70%, transparent), transparent 70%),
+    color-mix(in oklab, var(--gray-950) 90%, transparent);
+  border: 1px solid color-mix(in oklab, var(--gold-300) 46%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--gold-100) 20%, transparent),
+    0 0 0 6px color-mix(in oklab, var(--gold-300) 6%, transparent),
+    0 30px 80px -30px color-mix(in oklab, var(--gold-400) 45%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.cst-finale-title {
+  margin-top: 12px;
+  font-size: clamp(24px, 2.6vw, 32px);
+  line-height: 1.12;
+  letter-spacing: -0.028em;
+  font-weight: 600;
+  text-wrap: balance;
+}
+.cst-finale-text { margin: 10px auto 0; max-width: 34em; font-size: 14px; line-height: 21px; color: var(--cst-ink-muted); text-wrap: pretty; }
+.cst-finale-ctas { justify-content: center; margin-top: 22px; }
+.cst-root .cst-finale .cst-cta-link:focus-visible,
+.cst-root .cst-finale .cst-ghost:focus-visible { outline: 2px solid var(--gold-200); outline-offset: 3px; }
+
+/* Sortie : la nuit se dissout dans la page. Dégradé monotone, interpolé en
+   oklab et adouci aux deux bouts (pas de bande, pas de gris boueux), avec grain. */
+.cst-horizon {
+  position: relative;
+  height: var(--cst-horizon-h);
+  background:
+    var(--mk-grain, none) top / 140px 140px,
+    linear-gradient(
+      in oklab to bottom,
+      var(--cst-night-deep) 0%,
+      color-mix(in oklab, var(--cst-night-deep) 93%, var(--bg)) 16%,
+      color-mix(in oklab, var(--cst-night-deep) 72%, var(--bg)) 36%,
+      color-mix(in oklab, var(--cst-night-deep) 38%, var(--bg)) 60%,
+      color-mix(in oklab, var(--cst-night-deep) 11%, var(--bg)) 83%,
+      var(--bg) 100%
+    );
+}
+
+/* Zone « nuit » pour l'en-tête : du haut du ciel jusqu'au milieu de l'horizon. */
+.cst-night-zone { position: absolute; left: 0; top: 0; bottom: calc(var(--cst-horizon-h) / 2); width: 1px; pointer-events: none; }
 
 /* ---- Le parcours : un chemin d'étoiles ----------------------------------- */
 .cst-path { list-style: none; margin: 0; padding: 0; }

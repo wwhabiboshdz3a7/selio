@@ -4,6 +4,36 @@
    Aucune couleur en dur : tout dérive des jetons.
    ========================================================================== */
 
+/* ---- Ciel nocturne partagé (en-tête « nuit », bandeaux) ------------------- */
+.mk-scope {
+  --mk-night-deep: color-mix(in oklab, var(--violet-900) 20%, var(--gray-950));
+  --mk-hairline: color-mix(in oklab, var(--violet-200) 16%, transparent);
+}
+:root {
+  /* Grain photographique (2 à 3 %) : supprime le crénelage des dégradés sombres
+     sur les écrans 8 bits. Points clairs et sombres, aucune teinte. */
+  --mk-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='a'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' seed='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 -1.6 1'/%3E%3C/filter%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -1.6 1'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23a)' opacity='.05'/%3E%3Crect width='140' height='140' filter='url(%23b)' opacity='.07'/%3E%3C/svg%3E");
+}
+:root[data-theme="dark"] .mk-scope { --mk-night-deep: color-mix(in oklab, var(--violet-900) 10%, var(--gray-950)); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .mk-scope { --mk-night-deep: color-mix(in oklab, var(--violet-900) 10%, var(--gray-950)); }
+}
+
+/* ---- En-tête posé sur le ciel nocturne de l'accueil ---------------------- */
+.mk-header { transition: background-color 300ms var(--ease), border-color 300ms var(--ease); }
+.mk-header[data-over-night] {
+  background: color-mix(in oklab, var(--mk-night-deep) 72%, transparent);
+  border-color: var(--mk-hairline);
+}
+.mk-header[data-over-night] nav a { color: var(--violet-100); }
+.mk-header[data-over-night] nav a[aria-current="page"],
+.mk-header[data-over-night] nav a:hover { color: var(--violet-50); }
+.mk-header[data-over-night] .mk-header-ghost,
+.mk-header[data-over-night] button[aria-label] { color: var(--violet-100); }
+.mk-header[data-over-night] .mk-header-ghost:hover,
+.mk-header[data-over-night] button[aria-label]:hover { color: var(--violet-50); background: color-mix(in oklab, var(--violet-50) 10%, transparent); }
+.mk-header[data-over-night] :focus-visible { outline-color: var(--violet-200); }
+
 /* ---- Sur-titre : étoile or + libellé ------------------------------------- */
 .mk-eyebrow {
   display: inline-flex;
@@ -155,6 +185,22 @@
 }
 .mk-index a[data-tone="gold"]::before { background: var(--gold); box-shadow: 0 0 0 3px color-mix(in oklab, var(--gold) 22%, transparent); }
 .mk-index a:hover { color: var(--text); border-color: color-mix(in oklab, var(--accent) 40%, var(--border)); }
+/* Mobile : une seule rangée qui défile horizontalement, fondue sur les bords. */
+@media (max-width: 639px) {
+  .mk-index {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    margin-inline: -16px;
+    padding: 2px 16px 6px;
+    scroll-padding-inline: 16px;
+    -webkit-mask-image: linear-gradient(90deg, transparent, black 16px, black calc(100% - 24px), transparent);
+    mask-image: linear-gradient(90deg, transparent, black 16px, black calc(100% - 24px), transparent);
+  }
+  .mk-index::-webkit-scrollbar { display: none; }
+  .mk-index a { flex: none; scroll-snap-align: start; }
+}
 
 /* ---- Panneau « ciel nocturne » (bandeau d'appel, constellation IA) -------- */
 .mk-night {
@@ -173,9 +219,13 @@
     radial-gradient(60% 90% at 85% 10%, color-mix(in oklab, var(--violet-500) 26%, transparent), transparent 70%),
     radial-gradient(40% 70% at 10% 100%, color-mix(in oklab, var(--gold-400) 9%, transparent), transparent 70%),
     linear-gradient(160deg, var(--night), var(--night-deep));
+  background-image: var(--mk-grain),
+    radial-gradient(60% 90% at 85% 10%, color-mix(in oklab, var(--violet-500) 26%, transparent), transparent 70%),
+    radial-gradient(40% 70% at 10% 100%, color-mix(in oklab, var(--gold-400) 9%, transparent), transparent 70%),
+    linear-gradient(160deg, var(--night), var(--night-deep));
   box-shadow: inset 0 0 0 1px var(--hairline), 0 24px 60px -32px color-mix(in oklab, var(--violet-700) 70%, transparent);
 }
-.mk-night-title { color: var(--ink); }
+.mk-night-title { color: var(--ink); text-wrap: balance; }
 .mk-night-text { color: var(--ink-muted); }
 .mk-night .mk-eyebrow { color: var(--ink-muted); }
 .mk-night .mk-eyebrow-star { color: var(--gold-300); }
@@ -203,16 +253,18 @@
 .mk-sky { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; pointer-events: none; }
 .mk-sky-star { fill: var(--violet-100); }
 .mk-sky-star[data-tone="gold"] { fill: var(--gold-200); }
-.mk-sky-halo { fill: var(--violet-300); }
-.mk-sky-halo[data-tone="gold"] { fill: var(--gold-300); }
-.mk-sky-line { fill: none; stroke: var(--violet-200); stroke-width: 1; opacity: 0.32; vector-effect: non-scaling-stroke; }
-.mk-sky-line[data-tone="gold"] { stroke: var(--gold-300); opacity: 0.4; }
-@media (max-width: 639px) {
-  .mk-sky-line, .mk-sky-halo { display: none; }
+.mk-sky-star[data-masked] { display: none; }
+.mk-sky-stop { stop-color: var(--violet-300); }
+.mk-sky-stop[data-tone="gold"] { stop-color: var(--gold-300); }
+.mk-sky-line { fill: none; stroke: var(--violet-200); stroke-width: 1; opacity: 0.34; vector-effect: non-scaling-stroke; }
+/* Le « S » de Selio ne s'affiche que là où il tient entre le texte et les boutons. */
+@media (max-width: 1023px) {
+  .mk-sky-line, .mk-sky-halo, .mk-sky-figure { display: none; }
 }
 
 /* ---- Constellation d'une réponse (page Assistant IA) ---------------------- */
-.mk-flow { list-style: none; margin: 0; padding: 0; display: grid; gap: 28px; }
+/* Pas de « margin » ici : ce CSS est hors couche et écraserait l'utilitaire mt-10. */
+.mk-flow { list-style: none; padding: 0; display: grid; gap: 28px; }
 .mk-flow-step { position: relative; padding-left: 44px; }
 .mk-flow-node {
   position: absolute;
@@ -258,4 +310,102 @@
     background: linear-gradient(to right, color-mix(in oklab, var(--violet-300) 70%, transparent), color-mix(in oklab, var(--violet-300) 25%, transparent));
   }
   .mk-flow-step:nth-last-child(2) .mk-flow-link { background: linear-gradient(to right, color-mix(in oklab, var(--violet-300) 70%, transparent), color-mix(in oklab, var(--gold-300) 60%, transparent)); }
+}
+
+/* ---- L'application : le produit sort du ciel nocturne -------------------- */
+.mk-showcase { position: relative; z-index: 1; margin-top: -168px; padding-bottom: 16px; }
+@media (max-width: 1023px) { .mk-showcase { margin-top: -112px; } }
+.mk-showcase-stage {
+  position: relative;
+  max-width: 1120px;
+  margin: 0 auto;
+  perspective: 1700px;
+  perspective-origin: 50% 0%;
+}
+.mk-shot {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid color-mix(in oklab, var(--violet-300) 42%, transparent);
+  box-shadow:
+    0 0 0 6px color-mix(in oklab, var(--violet-200) 8%, transparent),
+    0 44px 110px -40px color-mix(in oklab, var(--violet-600) 70%, transparent),
+    0 18px 40px -26px color-mix(in oklab, var(--gray-950) 55%, transparent);
+  transform-origin: 50% 0%;
+}
+/* Le cadre se redresse au défilement (animation liée au défilement, sans JS ni
+   minuterie) ; sans prise en charge ou en mouvement réduit, il reste à plat. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .mk-shot {
+      animation: mk-tilt linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 42%;
+    }
+  }
+}
+@keyframes mk-tilt {
+  from { transform: translateY(30px) rotateX(24deg) scale(0.9); }
+  to { transform: none; }
+}
+.mk-shot-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  background: var(--surface-muted);
+  border-bottom: 1px solid var(--border);
+}
+.mk-shot-bar i { width: 8px; height: 8px; border-radius: 999px; background: var(--border-strong); }
+.mk-shot-bar span { margin-left: 8px; font-size: 11px; color: var(--text-subtle); }
+.mk-shot-img { width: 100%; height: auto; }
+
+/* Anneau d'or en orbite autour du cadre : arc arrière derrière, arc avant devant,
+   une étoile qui fait le tour (animations de transformation, sans JS). */
+.mk-orbit {
+  position: absolute;
+  left: -6%;
+  width: 112%;
+  aspect-ratio: 112 / 40;
+  top: 60%;
+  translate: 0 -50%;
+  rotate: -6deg;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.mk-orbit-back { z-index: 0; border: 1px solid color-mix(in oklab, var(--gold-300) 40%, transparent); }
+.mk-orbit-front {
+  z-index: 2;
+  border: 1px solid color-mix(in oklab, var(--gold-300) 72%, transparent);
+  clip-path: inset(50% -20px -20px -20px);
+}
+.mk-orbit-path { position: absolute; left: 0; top: 50%; width: 100%; aspect-ratio: 1; translate: 0 -50%; scale: 1 0.357; }
+.mk-orbit-arm { position: absolute; inset: 0; transform: rotate(40deg); animation: mk-orbit-spin 26s linear infinite; }
+.mk-orbit-star {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px;
+  border-radius: 999px;
+  background: radial-gradient(circle, var(--gold-50) 0 18%, color-mix(in oklab, var(--gold-300) 80%, transparent) 34%, transparent 70%);
+  box-shadow: 0 0 14px 3px color-mix(in oklab, var(--gold-300) 45%, transparent);
+  transform: rotate(-40deg) scale(1, 2.8);
+  animation: mk-orbit-counter 26s linear infinite;
+}
+@keyframes mk-orbit-spin { from { transform: rotate(40deg); } to { transform: rotate(400deg); } }
+@keyframes mk-orbit-counter { from { transform: rotate(-40deg) scale(1, 2.8); } to { transform: rotate(-400deg) scale(1, 2.8); } }
+@media (prefers-reduced-motion: reduce) {
+  .mk-orbit-arm, .mk-orbit-star { animation: none; }
+}
+@media (max-width: 639px) {
+  .mk-shot { border-radius: 10px; }
+  .mk-shot-bar { height: 20px; padding: 0 8px; gap: 4px; }
+  .mk-shot-bar i { width: 5px; height: 5px; }
+  .mk-shot-bar span { display: none; }
 }

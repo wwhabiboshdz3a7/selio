@@ -21,7 +21,11 @@ export const router = createBrowserRouter([
     element: <MarketingLayout />,
     errorElement: <RouteError />,
     children: guarded([
-      { index: true, lazy: lazy(() => import("./marketing/pages/Home")) },
+      // Le moteur de la constellation (et anime.js) se charge en parallèle de la page.
+      { index: true, lazy: lazy(() => {
+        import("./marketing/constellation/engine").catch(() => undefined);
+        return import("./marketing/pages/Home");
+      }) },
       { path: "fonctionnalites", lazy: lazy(() => import("./marketing/pages/Features")) },
       { path: "extension", lazy: lazy(() => import("./marketing/pages/Extension")) },
       { path: "assistant-ia", lazy: lazy(() => import("./marketing/pages/Assistant")) },

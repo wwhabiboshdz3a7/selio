@@ -5,11 +5,16 @@
  * Chargé en import dynamique par ConstellationHero : rien de ce fichier
  * (ni anime.js) n'entre dans le bundle initial.
  *
- * Performances : DPR plafonné à 2, aucune lecture de mise en page dans la
- * boucle (mesures uniquement au redimensionnement), composition additive sans
- * tri, boucle suspendue hors écran et onglet masqué.
+ * Performances : DPR plafonné à 2 et adapté à la cadence réelle de l'écran,
+ * aucune lecture de mise en page dans la boucle (mesures uniquement au
+ * redimensionnement), composition additive sans tri, boucle suspendue hors
+ * écran et onglet masqué. Les étiquettes ont leur propre canevas, toujours à la
+ * définition native : le texte reste net même quand le ciel est allégé.
+ *
+ * Le texte du héros n'est pas animé ici (CSS pur, voir constellation.css) : il
+ * s'affiche sans attendre ce module.
  */
-import { animate, createScope, createTimeline, onScroll, stagger, utils } from "animejs";
+import { animate, createScope, createTimeline, stagger } from "animejs";
 import type { JSAnimation, Scope, Timeline } from "animejs";
 import { CONSTELLATION } from "./features";
 import {
@@ -17,6 +22,7 @@ import {
   STEP_ANGLE,
   clamp01,
   distanceForRadius,
+  DWELL_EDGE,
   dwell,
   easeInOutCubic,
   easeOutCubic,
@@ -38,9 +44,23 @@ import {
 
 export interface EngineOptions {
   mode: "live" | "still";
+  /** « short » : visite déjà vue dans la session, seules les lignes et l'éclat or s'animent. */
+  intro?: "full" | "short";
   onNavigate: (href: string) => void;
   onError?: (error: unknown) => void;
 }
+
+interface Box { l: number; t: number; r: number; b: number }
+
+/**
+ * Découpage du défilement de la piste (sur 1000) : plongée dans la sphère,
+ * visite des 7 paires, sortie (la caméra recule, la quinzième carte arrive),
+ * puis un temps de maintien sur cette dernière carte.
+ */
+const TL = { diveEnd: 200, ring0: 210, ring1: 820, exit0: 830, exit1: 950, total: 1000 } as const;
+/** Progression de défilement qui met la paire k de face (au centre de son plateau). */
+const pairProgress = (k: number) => (TL.ring0 + (k / (STEPS - 1)) * (TL.ring1 - TL.ring0)) / TL.total;
+const FINALE_PROGRESS = 0.985;
 
 type Rgb = [number, number, number];
 
@@ -208,8 +228,16 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
   const nebula = q(root, "nebula");
   const limbEl = q(root, "limb");
   const hud = q(root, "hud");
+  const hudTop = q(root, "hud-top");
+  const hudBottom = q(root, "hud-bottom");
   const counter = q(root, "counter");
-  const bar = q(root, "bar");
+  const skipEl = q(root, "skip");
+  const dotsEl = q(root, "dots");
+  const dotEls = Array.from(dotsEl?.querySelectorAll<HTMLElement>("[data-pair]") ?? []);
+  const finale = q(root, "finale");
+  const finaleCard = finale?.firstElementChild instanceof HTMLElement ? finale.firstElementChild : null;
+  const labelsCanvas = root.querySelector<HTMLCanvasElement>('canvas[data-cst="labels"]');
+  const lctx = labelsCanvas?.getContext("2d") ?? null;
   const tip = q(root, "tip");
   const tipInner = q(root, "tip-inner");
   const tipTitle = q(root, "tip-title");
@@ -230,6 +258,7 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
     g200: tok("--gold-200", W0),
     g300: tok("--gold-300", W0),
     g400: tok("--gold-400", W0),
+    night: tok("--gray-950", [18, 16, 23]),
   };
   const tints: Rgb[] = [C.white, C.v200, C.v400, C.g200, C.g400];
   const glow = tints.map((t) => glowSprite(t, C.white));
@@ -320,10 +349,17 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
   // ---- État animé (anime.js écrit dans ces objets, le rendu les lit) ----
   const intro = { rings: live ? 0 : 1, lines: live ? 0 : 1, labels: live ? 0 : 1, flash: live ? 0 : 1 };
   let introDone = !live;
+  // Éclat or de la quinzième carte (une fois par passage).
+  const finaleFx = { flash: 0 };
+  let finaleFlashed = false;
   // Étoile filante occasionnelle (héros uniquement, après l'intro).
   const meteor = { t: -1, x: 0, y: 0, dx: 0, dy: 0, speed: 0, len: 0, life: 1, gold: false };
   let nextMeteor = 5 + rnd() * 3;
+  // La timeline de défilement écrit la cible ; la caméra la suit en douceur dans
+  // render() (lissage maison : aucune minuterie anime.js ne tourne au repos).
+  const camT = { dive: 0, ring: 0, exit: 0 };
   const cam = { dive: 0, ring: 0, exit: 0 };
+  let snapCam = true;
   const view = { yaw: 0, pitch: 0 };
   const focus = { amount: 0 };
   // Vitesse de rotation propre : rapide à l'intro, puis apaisée (animée par anime.js).
@@ -338,19 +374,38 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
   // chargée, en mouvement rapide) se joue à 1,25 au plus ; la pleine définition
   // (≤ 2) vient ensuite si la machine suit, et redescend si les images tardent.
   const dprTarget = Math.min(coarse || smallScreen ? 1.5 : 2, window.devicePixelRatio || 1);
-  let dprMax = live ? Math.min(dprTarget, 1.25) : dprTarget;
-  let upgraded = false;
-  const perf = { ema: 16.7, frames: 0 };
-  let heroOx = 0, heroOy = 0, ringOy = 0, zRef = RC - CAM_IN, starK = 2;
+  let dprMax = live && opts.intro !== "short" ? Math.min(dprTarget, 1.25) : dprTarget;
+  // Cadence de référence de l'écran (médiane basse des premières images) : 16,7 ms
+  // à 60 Hz, 8,3 ms à 120 Hz. La définition remonte quand on la tient de nouveau.
+  const perf = { base: 0, samples: [] as number[], ema: 0, frames: 0, calmUntil: 0, backoff: 5 };
+  const labelDpr = Math.min(2, window.devicePixelRatio || 1);
+  let heroOx = 0, heroOy = 0, ringOy = 0, zRef = RC - CAM_IN, starK = 2, cardW = 336;
   let tipW = 280, tipH = 120;
-  const textBox = { l: 0, t: 0, r: 0, b: 0 };
+  const textBox: Box = { l: 0, t: 0, r: 0, b: 0 };
+  // Zones de texte de la visite (titre, compteur) : les étoiles s'y effacent.
+  const hudBoxes: Box[] = [];
+  const finaleBox: Box = { l: 0, t: 0, r: 0, b: 0 };
   let stickyTop = 0;
   const slots: CardSlot[] = cardEls.map((el) => ({ el, x: 0, y: 0, z: 0, angle: 0, last: { t: "", o: "", z: "", p: "" } }));
+
+  /** Plage de défilement de la piste : du haut de la piste sous l'en-tête à sa fin en bas d'écran. */
+  const scrollRange = { start: 0, distance: 1 };
+  function measureScroll() {
+    const r = track.getBoundingClientRect();
+    scrollRange.start = r.top + window.scrollY - stickyTop;
+    scrollRange.distance = Math.max(1, r.height - (window.innerHeight - stickyTop));
+  }
 
   function sizeCanvas() {
     dpr = Math.min(dprMax, window.devicePixelRatio || 1);
     canvas!.width = Math.round(W * dpr);
     canvas!.height = Math.round(H * dpr);
+  }
+  function sizeLabels() {
+    if (!labelsCanvas) return;
+    labelsCanvas.width = Math.round(W * labelDpr);
+    labelsCanvas.height = Math.round(H * labelDpr);
+    labelsDrawn = true;
   }
 
   function measure() {
@@ -368,24 +423,46 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
       heroOy = H * 0.5;
     } else {
       const tb = heroText ? heroText.getBoundingClientRect().bottom - rect.top : H * 0.5;
-      const avail = Math.max(120, H - tb);
-      rHero = Math.max(80, Math.min(W * 0.42, avail * 0.4));
+      const avail = Math.max(0, H - tb);
       heroOx = W / 2;
-      heroOy = tb + avail * 0.5;
+      if (W < 640) {
+        // Téléphone : une grande sphère se lève sous le titre, comme une planète,
+        // et déborde du bas de l'écran (sur les petits écrans, elle passe derrière
+        // le texte, atténuée).
+        rHero = W * 0.6;
+        heroOy = Math.min(tb + Math.max(avail * 0.5, rHero * 0.92), H - rHero * 0.42);
+      } else {
+        rHero = Math.max(80, Math.min(W * 0.42, Math.max(120, avail) * 0.4));
+        heroOy = tb + Math.max(120, avail) * 0.5;
+      }
     }
-    if (heroText) {
-      const tr = heroText.getBoundingClientRect();
-      textBox.l = tr.left - rect.left;
-      textBox.t = tr.top - rect.top;
-      textBox.r = tr.right - rect.left;
-      textBox.b = tr.bottom - rect.top;
+    const toBox = (el: Element, out: Box) => {
+      const r = el.getBoundingClientRect();
+      out.l = r.left - rect.left;
+      out.t = r.top - rect.top;
+      out.r = r.right - rect.left;
+      out.b = r.bottom - rect.top;
+      return out;
+    };
+    if (heroText) toBox(heroText, textBox);
+    if (finaleCard) toBox(finaleCard, finaleBox);
+    hudBoxes.length = 0;
+    for (const el of [...Array.from(hudTop?.children ?? []), hudBottom]) {
+      if (!el) continue;
+      const b = toBox(el, { l: 0, t: 0, r: 0, b: 0 });
+      if (b.r > b.l && b.b > b.t) hudBoxes.push(b);
     }
     D0 = distanceForRadius(RING, f, rHero);
     starK = Math.max(f, 560) * 0.0046;
     stickyTop = parseFloat(getComputedStyle(stage!).top) || 0;
+    measureScroll();
     // Cartes : taille réelle, puis position sur l'anneau.
     let cardH = 0;
-    for (const s of slots) cardH = Math.max(cardH, s.el.offsetHeight);
+    cardW = 0;
+    for (const s of slots) {
+      cardH = Math.max(cardH, s.el.offsetHeight);
+      cardW = Math.max(cardW, s.el.offsetWidth);
+    }
     const yOffPx = cardH / 2 + (compact ? 9 : 18);
     ringOy = H / 2 + (compact ? 14 : 28);
     zRef = RC - CAM_IN;
@@ -401,6 +478,7 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
       tipW = tip.offsetWidth || tipW;
       tipH = tip.offsetHeight || tipH;
     }
+    sizeLabels();
   }
 
   // ---- Rendu ----
@@ -411,7 +489,12 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
   let time = 0;
   let prevCamZ = Number.NaN;
   const labelWidth: number[] = new Array<number>(CONSTELLATION.length).fill(0);
-  let lastHero = "", lastHud = "", lastHudP = "", lastBar = "", lastNebula = "", lastTip = "", lastLimb = "", lastPair = -1;
+  const labelSlot: number[] = new Array<number>(CONSTELLATION.length).fill(-1);
+  const labelOrder = CONSTELLATION.map((_, i) => i);
+  const placed: Box[] = [];
+  let labelsDrawn = false;
+  let lastP = 0;
+  let lastHero = "", lastHud = "", lastSkipP = "", lastDotsP = "", lastNebula = "", lastTip = "", lastLimb = "", lastFinale = "", lastFinaleP = "", lastPair = -1;
 
   function setStyle(el: HTMLElement | null, key: "opacity" | "transform" | "pointerEvents" | "zIndex", value: string, cacheKey: string): string {
     if (el && cacheKey !== value) el.style[key] = value;
@@ -459,10 +542,92 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
     ctx!.stroke();
   }
 
+  const overlaps = (a: Box, b: Box) => a.l < b.r && a.r > b.l && a.t < b.b && a.b > b.t;
+  /** Positions candidates d'une étiquette : [dx, dy, aligné à gauche]. Hors de l'axe des aigrettes. */
+  const LABEL_SPOTS: [number, number, boolean][] = [[20, -9, true], [-20, -9, false], [14, -24, true], [-14, -24, false], [14, 13, true], [-14, 13, false]];
+
+  /**
+   * Étiquettes du ciel (écran large, vue extérieure) sur leur propre canevas, à la
+   * définition native. Placement glouton : les étoiles les plus en avant d'abord,
+   * aucune étiquette ne chevauche une autre ni le cœur d'une étoile ; une
+   * étiquette qui ne trouve pas de place n'est pas affichée.
+   */
+  function drawLabels(labelAlpha: number, dimOthers: number, ox: number) {
+    if (!lctx || !labelsCanvas) return;
+    const show = !compact && labelAlpha > 0.01;
+    if (!show) {
+      if (labelsDrawn) {
+        lctx.setTransform(1, 0, 0, 1, 0, 0);
+        lctx.clearRect(0, 0, labelsCanvas.width, labelsCanvas.height);
+        labelsDrawn = false;
+      }
+      return;
+    }
+    labelsDrawn = true;
+    lctx.setTransform(labelDpr, 0, 0, labelDpr, 0, 0);
+    lctx.clearRect(0, 0, W, H);
+    if (document.fonts?.status === "loading") labelWidth.fill(0);
+    lctx.font = '500 12px Inter, ui-sans-serif, system-ui, sans-serif';
+    lctx.textBaseline = "middle";
+    lctx.shadowColor = rgba(C.night, 0.9);
+    lctx.shadowBlur = 6;
+    labelOrder.sort((a, b) => (features[b]?.front ?? 0) - (features[a]?.front ?? 0));
+    placed.length = 0;
+    for (const i of labelOrder) {
+      const fs = features[i];
+      if (!fs || !fs.vis || fs.front < 0.55) continue;
+      const focused = i === focusIndex;
+      const a = labelAlpha * smoothstep(0.55, 0.8, fs.front) * (focused ? 1 : 0.8 * dimOthers);
+      if (a < 0.02) continue;
+      const label = CONSTELLATION[i]?.title ?? "";
+      const w = labelWidth[i] || (labelWidth[i] = lctx.measureText(label).width);
+      const prefRight = fs.px >= ox;
+      let chosen = -1;
+      let box: Box = { l: 0, t: 0, r: 0, b: 0 };
+      // La place de l'image précédente d'abord (pas de clignotement), puis le côté extérieur.
+      const tries = [labelSlot[i] ?? -1, ...(prefRight ? [0, 1, 2, 3, 4, 5] : [1, 0, 3, 2, 5, 4])];
+      for (const t of tries) {
+        const spot = LABEL_SPOTS[t];
+        if (!spot) continue;
+        const [dx, dy, leftAligned] = spot;
+        const x0 = leftAligned ? fs.px + dx : fs.px + dx - w;
+        const y0 = fs.py + dy;
+        box = { l: x0 - 3, t: y0 - 9, r: x0 + w + 3, b: y0 + 9 };
+        if (box.l < 8 || box.r > W - 12 || box.t < 8 || box.b > H - 8) continue;
+        if (box.l < textBox.r + 12 && box.b > textBox.t && box.t < textBox.b) continue;
+        if (placed.some((p) => overlaps(p, box))) continue;
+        if (features.some((o, j) => j !== i && o.vis && o.front > 0.35 && o.px > box.l - 5 && o.px < box.r + 5 && o.py > box.t - 5 && o.py < box.b + 5)) continue;
+        chosen = t;
+        break;
+      }
+      labelSlot[i] = chosen;
+      if (chosen < 0) continue;
+      placed.push(box);
+      const [dx, dy, leftAligned] = LABEL_SPOTS[chosen]!;
+      lctx.textAlign = leftAligned ? "left" : "right";
+      lctx.globalAlpha = a;
+      lctx.fillStyle = rgba(fs.gold ? C.g200 : C.v100, 1);
+      lctx.fillText(label, fs.px + dx, fs.py + dy);
+    }
+    lctx.shadowBlur = 0;
+    lctx.globalAlpha = 1;
+  }
+
   function render(now: number) {
     const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
     time += dt;
+    if (snapCam) {
+      cam.dive = camT.dive;
+      cam.ring = camT.ring;
+      cam.exit = camT.exit;
+      snapCam = false;
+    } else {
+      const k = 1 - Math.exp(-dt * 9);
+      cam.dive += (camT.dive - cam.dive) * k;
+      cam.ring += (camT.ring - cam.ring) * k;
+      cam.exit += (camT.exit - cam.exit) * k;
+    }
     const d = cam.dive, rr = cam.ring, ex = easeInOutCubic(cam.exit);
     if (live && d < 0.002 && !drag.active) ambient += dt * spin.speed * (1 - 0.85 * focus.amount);
 
@@ -494,13 +659,23 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
     const camY = parallax.y * lerp(0.1, 0.045, smoothstep(0.3, 1, d));
     const outside = clamp01((-camZ - 1.15) / 0.7);
     const heroMask = live ? 1 - smoothstep(0.02, 0.3, d) : 1;
-    const textFade = (px: number, py: number) => {
-      if (heroMask <= 0) return 1;
-      const dx = Math.max(textBox.l - px, 0, px - textBox.r);
-      const dy = Math.max(textBox.t - py, 0, py - textBox.b);
-      if (dx > 90 || dy > 90) return 1;
-      return 1 - 0.72 * heroMask * (1 - smoothstep(0, 90, Math.hypot(dx, dy)));
+    const hudMask = live ? smoothstep(0.6, 0.9, d) * (1 - smoothstep(0.15, 0.7, cam.exit)) : 0;
+    const finMask = live ? smoothstep(0.3, 0.8, cam.exit) : 0;
+    const boxFade = (px: number, py: number, b: Box, pad: number, strength: number) => {
+      const dx = Math.max(b.l - px, 0, px - b.r);
+      const dy = Math.max(b.t - py, 0, py - b.b);
+      if (dx > pad || dy > pad) return 1;
+      return 1 - strength * (1 - smoothstep(0, pad, Math.hypot(dx, dy)));
     };
+    // Les étoiles s'effacent sous les textes : héros, puis titre et compteur de la visite.
+    const textFade = (px: number, py: number) => {
+      let a = 1;
+      if (heroMask > 0) a *= boxFade(px, py, textBox, 90, 0.72 * heroMask);
+      if (hudMask > 0) for (const b of hudBoxes) a *= boxFade(px, py, b, 30, 0.9 * hudMask);
+      if (finMask > 0) a *= boxFade(px, py, finaleBox, 48, 0.88 * finMask);
+      return a;
+    };
+    const maskOn = hudMask > 0 || finMask > 0;
 
     ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx!.clearRect(0, 0, W, H);
@@ -636,7 +811,7 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
         const y = ok ? oy - (f * (v.y - camY)) / z : 0;
         const fr = clamp01(0.5 - v.z / (RING * 2));
         if (i > 0 && ok0 && ok) {
-          const al = baseAlpha * (0.25 + 0.75 * ((fr + fr0) / 2)) * smoothstep(NEAR, 0.4, z) * dimOthers;
+          const al = baseAlpha * (0.25 + 0.75 * ((fr + fr0) / 2)) * smoothstep(NEAR, 0.4, z) * dimOthers * (maskOn ? textFade((x + x0) / 2, (y + y0) / 2) : 1);
           batch.add(al, x0, y0, x, y);
           if (ticks && i % 5 === 0) {
             const major = i % 15 === 0;
@@ -693,7 +868,7 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
         const y = nok ? oy - (f * (v.y - camY)) / z : 0;
         if (ok && nok) {
           const fr = clamp01(0.5 - v.z / (RS * 1.6));
-          arcBatch.add((0.12 + 0.42 * fr) * lit * Math.min(fa?.ignite ?? 1, fb?.ignite ?? 1, 1) * smoothstep(NEAR, 0.35, z) * (touched ? 1.6 : 1), px, py, x, y);
+          arcBatch.add((0.12 + 0.42 * fr) * lit * Math.min(fa?.ignite ?? 1, fb?.ignite ?? 1, 1) * smoothstep(NEAR, 0.35, z) * (touched ? 1.6 : 1) * (maskOn ? textFade((px + x) / 2, (py + y) / 2) : 1), px, py, x, y);
         }
         px = x; py = y; ok = nok;
       }
@@ -707,7 +882,7 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
       const pulse = 1 + 0.06 * Math.sin(time * 1.7 + i);
       const size = fs.r * pulse * Math.max(0, fs.ignite) * (focused ? 1 + 0.55 * focus.amount : 1) * 6;
       let a = (0.35 + 0.65 * fs.front) * Math.min(1, fs.ignite) * (focused ? 1 : dimOthers);
-      if (live) a *= 1 - 0.45 * smoothstep(0.75, 1, d) * (1 - ex);
+      if (live) a *= (1 - 0.45 * smoothstep(0.75, 1, d) * (1 - ex)) * (maskOn ? textFade(fs.px, fs.py) : 1);
       ctx!.globalAlpha = clamp01(a);
       const spr = fs.gold ? flareGold : flareViolet;
       ctx!.drawImage(spr, fs.px - size / 2, fs.py - size / 2, size, size);
@@ -726,7 +901,7 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
 
     // Éclat or de fin d'intro : une onde quitte la sphère, l'étoile d'or la plus
     // en avant scintille fort, une fois.
-    const fl = intro.flash;
+    const fl = intro.flash > 0.001 && intro.flash < 0.999 ? intro.flash : finaleFx.flash;
     if (fl > 0.001 && fl < 0.999) {
       ctx!.globalAlpha = (1 - fl) ** 2 * 0.6;
       ctx!.strokeStyle = goldStroke;
@@ -750,30 +925,34 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
 
     if (live && introDone && d < 0.02) drawMeteor(dt);
 
-    // Étiquettes du ciel (écran large, vue extérieure uniquement).
-    ctx!.globalCompositeOperation = "source-over";
-    const labelAlpha = intro.labels * (1 - smoothstep(0.02, 0.2, d)) * (1 - ex);
-    if (!compact && labelAlpha > 0.01) {
-      if (document.fonts?.status === "loading") labelWidth.fill(0);
-      ctx!.font = '500 12px Inter, ui-sans-serif, system-ui, sans-serif';
-      ctx!.textBaseline = "middle";
-      features.forEach((fs, i) => {
-        if (!fs.vis || fs.front < 0.55) return;
-        const focused = i === focusIndex;
-        const a = labelAlpha * smoothstep(0.55, 0.8, fs.front) * (focused ? 1 : 0.78 * dimOthers);
-        if (a < 0.02) return;
-        const label = CONSTELLATION[i]?.title ?? "";
-        const w = labelWidth[i] || (labelWidth[i] = ctx!.measureText(label).width);
-        let left = fs.px < ox;
-        if (!left && fs.px + 16 + w > W - 12) left = true;
-        if (left && fs.px - 16 - w < textBox.r + 12) left = false;
-        ctx!.textAlign = left ? "right" : "left";
-        ctx!.globalAlpha = a;
-        ctx!.fillStyle = rgba(fs.gold ? C.g200 : C.v100, 1);
-        ctx!.fillText(label, fs.px + (left ? -16 : 16), fs.py);
-      });
+    // « Reliées entre elles » : pendant le plateau d'une paire, une impulsion or
+    // parcourt la ligne qui relie ses deux étoiles, puis celle qui mène à la suivante.
+    if (live && d > 0.9 && ex < 0.05) {
+      const pair = pairIndex(rr);
+      const frac = rr - Math.floor(rr);
+      const plateau = 1 - smoothstep(DWELL_EDGE - 0.08, DWELL_EDGE, Math.min(frac, 1 - frac));
+      const cyc = (time % 3.4) / 2.6;
+      const seg = cyc * 2;
+      const ai = 2 * pair + (seg < 1 ? 0 : 1);
+      const pts = arcs[ai];
+      if (plateau > 0.01 && cyc < 1 && pts && ai < arcs.length - 1) {
+        const u = seg % 1;
+        const idx = Math.min(SUB - 1, Math.floor(u * SUB));
+        const p0 = pts[idx]!, p1 = pts[idx + 1]!;
+        const w = u * SUB - idx;
+        rotate(m, lerp(p0.x, p1.x, w), lerp(p0.y, p1.y, w), lerp(p0.z, p1.z, w), v);
+        const z = v.z - camZ;
+        if (z > NEAR) {
+          const size = Math.min(34, (f * 0.11) / z) * 1.6;
+          ctx!.globalAlpha = 0.85 * plateau * Math.sin(Math.PI * u);
+          ctx!.drawImage(flareGold, ox + (f * (v.x - camX)) / z - size / 2, oy - (f * (v.y - camY)) / z - size / 2, size, size);
+        }
+      }
     }
+
+    ctx!.globalCompositeOperation = "source-over";
     ctx!.globalAlpha = 1;
+    drawLabels(intro.labels * (1 - smoothstep(0.02, 0.2, d)) * (1 - ex), dimOthers, ox);
 
     // Infobulle de l'étoile survolée.
     if (tip && focusIndex >= 0) {
@@ -851,7 +1030,12 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
       const scale = Math.min(1, zRef / z) * lerp(0.08, 1, e);
       const deg = (-ang * 0.9 * 180) / Math.PI;
       const side = compact ? 1 : 1 - 0.4 * smoothstep(0.3, 0.75, Math.abs(ang));
-      const o = clamp01(em * 1.35 - 0.25) * side;
+      let o = clamp01(em * 1.35 - 0.25) * side;
+      if (compact) {
+        // La paire sortante s'efface dès qu'elle déborde de l'écran.
+        const half = (cardW * scale) / 2;
+        o *= clamp01(1 - Math.max(0, half - px + 8, px + half - W + 8) / 40);
+      }
       st.t = setStyle(s.el, "transform", `translate3d(${(px - W / 2).toFixed(1)}px, ${(py - H / 2).toFixed(1)}px, 0) translate(-50%, -50%) scale(${scale.toFixed(4)}) perspective(1100px) rotateY(${deg.toFixed(2)}deg)`, st.t);
       st.o = setStyle(s.el, "opacity", o.toFixed(3), st.o);
       st.z = setStyle(s.el, "zIndex", String(1000 - Math.round(z * 100)), st.z);
@@ -859,17 +1043,37 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
     });
 
     // Repères de visite.
+    // Le HUD ne capte jamais la souris : seuls ses contrôles l'acceptent, et
+    // seulement quand il est visible (les cartes restent cliquables dessous).
     const hudA = smoothstep(0.72, 0.95, d) * (1 - smoothstep(0.15, 0.7, cam.exit));
     lastHud = setStyle(hud, "opacity", hudA.toFixed(3), lastHud);
-    lastHudP = setStyle(hud, "pointerEvents", hudA > 0.5 ? "auto" : "none", lastHudP);
-    const progress = clamp01(dwell(rr) / (STEPS - 1));
-    lastBar = setStyle(bar, "transform", `scaleX(${progress.toFixed(4)})`, lastBar);
+    const hudOn = hudA > 0.5 ? "auto" : "none";
+    lastSkipP = setStyle(skipEl, "pointerEvents", hudOn, lastSkipP);
+    lastDotsP = setStyle(dotsEl, "pointerEvents", hudOn, lastDotsP);
     const pair = pairIndex(rr);
-    if (counter && pair !== lastPair) {
-      const a = String(pair * 2 + 1).padStart(2, "0");
-      const b = String(pair * 2 + 2).padStart(2, "0");
-      counter.textContent = `${a}–${b}`;
+    if (pair !== lastPair) {
+      if (counter) counter.textContent = `${String(pair * 2 + 1).padStart(2, "0")}–${String(pair * 2 + 2).padStart(2, "0")}`;
+      dotEls.forEach((el, k) => {
+        el.dataset.state = k < pair ? "past" : k === pair ? "current" : "next";
+      });
       lastPair = pair;
+    }
+
+    // Quinzième carte : elle arrive quand la caméra ressort de la sphère.
+    const fin = smoothstep(0.55, 0.88, cam.exit);
+    const finKey = fin.toFixed(3);
+    if (finale && finKey !== lastFinale) {
+      finale.style.opacity = finKey;
+      finale.style.transform = `translate3d(0, ${((1 - fin) * 28).toFixed(1)}px, 0) scale(${(0.96 + 0.04 * fin).toFixed(4)})`;
+      lastFinale = finKey;
+    }
+    lastFinaleP = setStyle(finaleCard, "pointerEvents", fin > 0.6 ? "auto" : "none", lastFinaleP);
+    if (!finaleFlashed && cam.exit > 0.55) {
+      finaleFlashed = true;
+      finaleAnim?.cancel();
+      finaleAnim = animate(finaleFx, { flash: [0, 1], duration: 1600, ease: "outSine" });
+    } else if (finaleFlashed && cam.exit < 0.2) {
+      finaleFlashed = false;
     }
     if (d > 0.05 && focusIndex >= 0 && !focusLeaving) setFocus(-1);
   }
@@ -890,24 +1094,38 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
     }
   };
   /**
-   * Définition adaptative. Redimensionner efface le canevas : on le fait donc
-   * toujours avant de dessiner, jamais entre un dessin et l'affichage.
+   * Définition adaptative, calée sur la cadence réelle de l'écran. Redimensionner
+   * efface le canevas : on le fait donc toujours avant de dessiner, jamais entre
+   * un dessin et l'affichage. Après une baisse, on retente plus tard (5 s, puis
+   * 10 s, 20 s…) au lieu de renoncer définitivement.
    */
   const adaptQuality = (dtMs: number) => {
-    if (++perf.frames > 12) perf.ema = lerp(perf.ema, Math.min(100, dtMs), 0.08);
-    if (perf.frames > 40 && perf.ema > 19 && dpr > 1) {
+    if (!(dtMs > 0) || dtMs > 250) return;
+    if (!perf.base) {
+      perf.samples.push(dtMs);
+      if (perf.samples.length >= 30) {
+        const sorted = [...perf.samples].sort((a, b) => a - b);
+        perf.base = Math.max(4, sorted[Math.floor(sorted.length * 0.3)] ?? 16.7);
+        perf.ema = perf.base;
+      }
+      return;
+    }
+    perf.ema = lerp(perf.ema, dtMs, 0.08);
+    perf.frames++;
+    if (perf.frames > 40 && perf.ema > perf.base * 1.3 + 1.5 && dpr > 1) {
       dprMax = Math.max(1, dpr - 0.25);
-      // Une baisse pendant l'intro n'interdit pas la remontée une fois au calme.
-      if (introDone) upgraded = true;
       sizeCanvas();
       perf.frames = 0;
-      perf.ema = 16.7;
-    } else if (!upgraded && introDone && perf.frames > 60 && perf.ema < 15 && dprMax < dprTarget) {
-      upgraded = true;
-      dprMax = dprTarget;
+      perf.ema = perf.base;
+      if (introDone) {
+        perf.calmUntil = time + perf.backoff;
+        perf.backoff = Math.min(80, perf.backoff * 2);
+      }
+    } else if (introDone && perf.frames > 60 && time > perf.calmUntil && perf.ema < perf.base * 1.1 && dprMax < dprTarget) {
+      dprMax = Math.min(dprTarget, dprMax + 0.25);
       sizeCanvas();
       perf.frames = 0;
-      perf.ema = 16.7;
+      perf.ema = perf.base;
     }
   };
   const frame = (now: number) => {
@@ -955,6 +1173,7 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
       drawOnce();
       return;
     }
+    syncScroll();
     // Le canevas vient d'être effacé : on le redessine avant l'affichage.
     if (inView && !document.hidden) paint(last);
     start();
@@ -965,6 +1184,7 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
   let focusAnim: JSAnimation | null = null;
   let tipAnim: JSAnimation | null = null;
   let cameraAnim: JSAnimation | null = null;
+  let finaleAnim: JSAnimation | null = null;
   let focusLeaving = false;
 
   function setFocus(i: number) {
@@ -1143,10 +1363,10 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
   };
 
   // ---- Clavier : la caméra suit le focus ----
-  const scrollToProgress = (p: number) => {
-    if (!scrollObserver) return;
-    const top = scrollObserver.offsetStart + clamp01(p) * scrollObserver.distance;
-    window.scrollTo({ top, behavior: "instant" });
+  const scrollToProgress = (p: number, behavior: ScrollBehavior = "instant") => {
+    if (!scrollTl) return;
+    const top = scrollRange.start + clamp01(p) * scrollRange.distance;
+    window.scrollTo({ top, behavior });
   };
   const onFocusIn = (e: FocusEvent) => {
     const target = e.target as HTMLElement | null;
@@ -1155,10 +1375,88 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
     if (card) {
       if (!target.matches(":focus-visible")) return;
       const i = cardEls.indexOf(card);
-      if (i >= 0) scrollToProgress((230 + (Math.floor(i / 2) / (STEPS - 1)) * 680) / 1000);
+      if (i >= 0) scrollToProgress(pairProgress(Math.floor(i / 2)));
+      return;
+    }
+    if (finale && finale.contains(target)) {
+      if (target.matches(":focus-visible") && cam.exit < 0.9) scrollToProgress(FINALE_PROGRESS);
+      return;
+    }
+    if (target.closest(".cst-skip") && cam.dive < 0.9) {
+      scrollToProgress(pairProgress(0));
       return;
     }
     if (hero && hero.contains(target) && cam.dive > 0.05) scrollToProgress(0);
+  };
+  // Mini-constellation : un clic amène la paire de face.
+  const onDotsClick = (e: MouseEvent) => {
+    const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-pair]");
+    const k = Number(btn?.dataset.pair);
+    if (btn && Number.isFinite(k)) scrollToProgress(pairProgress(k), "smooth");
+  };
+
+  // ---- Défilement : progression, aimantation tactile, rotation de l'écran ----
+  let snapTimer = 0;
+  let resizeTimer = 0;
+  let savedP = -1;
+  let lastWidth = window.innerWidth;
+  const ringOf = (p: number) => ((p * TL.total - TL.ring0) / (TL.ring1 - TL.ring0)) * (STEPS - 1);
+  const progressOfRing = (r: number) => (TL.ring0 + (r / (STEPS - 1)) * (TL.ring1 - TL.ring0)) / TL.total;
+  /** Écran tactile : arrêté entre deux paires, on glisse vers le plateau le plus proche. */
+  const snapToPair = () => {
+    if (destroyed || !scrollTl || drag.down) return;
+    const r = ringOf(lastP);
+    if (r <= 0 || r >= STEPS - 1) return;
+    const k = Math.floor(r);
+    const x = r - k;
+    if (x <= DWELL_EDGE || x >= 1 - DWELL_EDGE) return;
+    const target = x < 0.5 ? k + DWELL_EDGE - 0.03 : k + 1 - DWELL_EDGE + 0.03;
+    scrollToProgress(progressOfRing(target), "smooth");
+  };
+  /**
+   * La timeline de défilement est pilotée directement par la position (sans
+   * ScrollObserver d'anime.js, dont une minuterie interne ne s'arrête jamais) :
+   * au repos, aucune boucle ne tourne.
+   */
+  const syncScroll = () => {
+    lastP = (window.scrollY - scrollRange.start) / scrollRange.distance;
+    const t = clamp01(lastP) * TL.total;
+    if (scrollTl && t !== lastSeek) {
+      lastSeek = t;
+      scrollTl.seek(t);
+    }
+  };
+  const onWinScroll = () => {
+    syncScroll();
+    if (!coarse) return;
+    window.clearTimeout(snapTimer);
+    snapTimer = window.setTimeout(snapToPair, 160);
+  };
+  /**
+   * Changement de largeur (rotation d'une tablette, fenêtre redimensionnée) en
+   * pleine visite : la piste change de hauteur. On garde la même progression,
+   * sans rejouer la plongée. La hauteur seule (barre d'adresse mobile) est ignorée.
+   */
+  const onWinResize = () => {
+    if (window.innerWidth === lastWidth) {
+      // Hauteur seule (barre d'adresse mobile) : on recale la plage, sans saut.
+      measureScroll();
+      syncScroll();
+      return;
+    }
+    lastWidth = window.innerWidth;
+    if (savedP < 0) savedP = lastP;
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(() => {
+      const p = savedP;
+      savedP = -1;
+      if (destroyed || !scrollTl) return;
+      measureScroll();
+      if (p > 0.005 && p < 0.995) {
+        scrollToProgress(p);
+        snapCam = true;
+      }
+    }, 320);
   };
 
   if (live) {
@@ -1171,55 +1469,75 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
     root.addEventListener("focusin", onFocusIn);
     stage.addEventListener("pointermove", onStageMove);
     stage.addEventListener("pointerleave", onStageLeave);
+    dotsEl?.addEventListener("click", onDotsClick);
+    window.addEventListener("scroll", onWinScroll, { passive: true });
+    window.addEventListener("resize", onWinResize);
   }
 
   // ---- Orchestration anime.js : intro et défilement ----
   let scope: Scope | null = null;
-  let scrollObserver: ReturnType<typeof onScroll> | null = null;
+  let scrollTl: Timeline | null = null;
+  let lastSeek = -1;
   let introTl: Timeline | null = null;
+
 
   measure();
 
   if (live) {
-    const pick = (name: string) => Array.from(root.querySelectorAll<HTMLElement>(`[data-cst-intro="${name}"]`));
     scope = createScope({ root });
     scope.add(() => {
-      root.dataset.intro = "playing";
-      introTl = createTimeline({
-        defaults: { ease: "outExpo" },
-        onComplete: () => {
-          introDone = true;
-          root.dataset.intro = "done";
-          if (introTl) utils.cleanInlineStyles(introTl);
-        },
-      });
-      introTl
-        .add(stars, { k: [0, 1], duration: 2100, ease: "outQuart", delay: stagger(smallScreen ? 2.6 : 1.5, { from: "random", seed: 11 }) }, 0)
-        .add(intro, { rings: [0, 1], duration: 2000, ease: "inOutCubic" }, 450)
-        .add(features, { ignite: [0, 1], duration: 1000, ease: "outBack(1.8)", delay: stagger(75) }, 850)
-        .add(intro, { lines: [0, 1], duration: 1700, ease: "inOutSine" }, 1150)
-        .add(intro, { labels: [0, 1], duration: 900, ease: "outCubic" }, 2300)
-        .add(spin, { speed: [0.9, 0.07], duration: 3400, ease: "outCubic" }, 0)
-        .add(pick("eyebrow"), { opacity: [0, 1], translateY: [10, 0], duration: 900 }, 120)
-        .add(pick("word"), { opacity: [0, 1], translateY: ["0.5em", "0em"], filter: ["blur(8px)", "blur(0px)"], duration: 1200, delay: stagger(65) }, 220)
-        .add(pick("lead"), { opacity: [0, 1], translateY: [16, 0], duration: 1100 }, 850)
-        .add(pick("cta"), { opacity: [0, 1], translateY: [16, 0], duration: 1000, delay: stagger(110) }, 1050)
-        .add(pick("note"), { opacity: [0, 1], duration: 1000, delay: stagger(120) }, 1500)
-        .add(intro, { flash: [0, 1], duration: 1700, ease: "outSine" }, 2650)
-        .add(Array.from(root.querySelectorAll<HTMLElement>(".cst-word-glow")), { backgroundPosition: ["100% 0%, 0% 0%", "0% 0%, 0% 0%"], duration: 1500, ease: "inOutSine" }, 2700);
-
-      const scrollTl = createTimeline({
-        autoplay: (scrollObserver = onScroll({
-          target: track,
-          enter: { container: stickyTop, target: "top" },
-          leave: { container: "bottom", target: "bottom" },
-          sync: 0.22,
-        })),
-      });
+      // Défilement d'abord : il dit si l'on arrive en pleine visite.
+      const hold = { v: 0 };
+      scrollTl = createTimeline({ autoplay: false });
       scrollTl
-        .add(cam, { dive: [0, 1], duration: 220, ease: "inOutSine" }, 0)
-        .add(cam, { ring: [0, STEPS - 1], duration: 680, ease: "linear" }, 230)
-        .add(cam, { exit: [0, 1], duration: 90, ease: "inOutSine" }, 910);
+        .add(camT, { dive: [0, 1], duration: TL.diveEnd, ease: "inOutSine" }, 0)
+        .add(camT, { ring: [0, STEPS - 1], duration: TL.ring1 - TL.ring0, ease: "linear" }, TL.ring0)
+        .add(camT, { exit: [0, 1], duration: TL.exit1 - TL.exit0, ease: "inOutSine" }, TL.exit0)
+        .add(hold, { v: [0, 1], duration: TL.total - TL.exit1, ease: "linear" }, TL.exit1);
+      syncScroll();
+      // La caméra se place directement (montage, retour arrière) : pas de plongée rejouée.
+      snapCam = true;
+
+      // Intro : complète la première fois, courte ensuite, aucune si l'on arrive
+      // au milieu de la visite (retour arrière, rechargement plus bas).
+      const midVisit = window.scrollY > scrollRange.start + 40;
+      const introMode = midVisit ? "none" : opts.intro ?? "full";
+      const finish = () => {
+        introDone = true;
+        root.dataset.intro = "done";
+      };
+      if (introMode === "none") {
+        for (const st of stars) st.k = 1;
+        for (const fs of features) fs.ignite = 1;
+        intro.rings = intro.lines = intro.labels = intro.flash = 1;
+        spin.speed = 0.07;
+        ambient = 0.42;
+        dprMax = dprTarget;
+        finish();
+        return;
+      }
+      root.dataset.intro = "playing";
+      introTl = createTimeline({ defaults: { ease: "outExpo" }, onComplete: finish });
+      if (introMode === "short") {
+        for (const st of stars) st.k = 1;
+        for (const fs of features) fs.ignite = 1;
+        intro.rings = 1;
+        ambient = 0.12;
+        introTl
+          .add(intro, { lines: [0, 1], duration: 900, ease: "inOutSine" }, 0)
+          .add(intro, { labels: [0, 1], duration: 500, ease: "outCubic" }, 350)
+          .add(intro, { flash: [0, 1], duration: 1300, ease: "outSine" }, 250)
+          .add(spin, { speed: [0.35, 0.07], duration: 1600, ease: "outCubic" }, 0);
+        return;
+      }
+      introTl
+        .add(stars, { k: [0, 1], duration: 1800, ease: "outQuart", delay: stagger(smallScreen ? 2 : 1.1, { from: "random", seed: 11 }) }, 0)
+        .add(intro, { rings: [0, 1], duration: 1700, ease: "inOutCubic" }, 350)
+        .add(features, { ignite: [0, 1], duration: 900, ease: "outBack(1.8)", delay: stagger(65) }, 700)
+        .add(intro, { lines: [0, 1], duration: 1400, ease: "inOutSine" }, 950)
+        .add(intro, { labels: [0, 1], duration: 800, ease: "outCubic" }, 1900)
+        .add(spin, { speed: [0.9, 0.07], duration: 3000, ease: "outCubic" }, 0)
+        .add(intro, { flash: [0, 1], duration: 1500, ease: "outSine" }, 2100);
     });
     start();
   } else {
@@ -1237,7 +1555,7 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
       s.el.style.removeProperty("z-index");
       s.el.style.removeProperty("pointer-events");
     }
-    for (const el of [hero, hud, nebula, tip, tipInner, bar, limbEl]) {
+    for (const el of [hero, hud, nebula, tip, tipInner, limbEl, skipEl, dotsEl, finale, finaleCard]) {
       el?.style.removeProperty("transform");
       el?.style.removeProperty("opacity");
       el?.style.removeProperty("pointer-events");
@@ -1261,15 +1579,23 @@ export function mountConstellation(root: HTMLElement, opts: EngineOptions): () =
     root.removeEventListener("focusin", onFocusIn);
     stage!.removeEventListener("pointermove", onStageMove);
     stage!.removeEventListener("pointerleave", onStageLeave);
-    for (const a of [focusAnim, tipAnim, inertia, cameraAnim]) a?.revert();
+    dotsEl?.removeEventListener("click", onDotsClick);
+    window.removeEventListener("scroll", onWinScroll);
+    window.removeEventListener("resize", onWinResize);
+    window.clearTimeout(snapTimer);
+    window.clearTimeout(resizeTimer);
+    for (const a of [focusAnim, tipAnim, inertia, cameraAnim, finaleAnim]) a?.revert();
     scope?.revert();
-    scrollObserver?.revert();
     clearInline();
     delete root.dataset.dragging;
     root.dataset.intro = "done";
     // Libère la mémoire du canevas.
     canvas!.width = 0;
     canvas!.height = 0;
+    if (labelsCanvas) {
+      labelsCanvas.width = 0;
+      labelsCanvas.height = 0;
+    }
   }
 
   function fail(error: unknown) {

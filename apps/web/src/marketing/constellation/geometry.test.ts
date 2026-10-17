@@ -23,8 +23,11 @@ describe("géométrie de la constellation", () => {
   it("dwell marque une pause sur chaque paire et reste monotone", () => {
     expect(dwell(0)).toBe(0);
     expect(dwell(3)).toBeCloseTo(3, 9);
-    // Pente nulle autour des entiers : un peu de défilement ne bouge presque pas l'anneau.
-    expect(dwell(2.05) - 2).toBeLessThan(0.002);
+    // Vrai plateau autour des entiers : l'anneau ne bouge pas du tout.
+    expect(dwell(2.05)).toBe(2);
+    expect(dwell(2.29)).toBe(2);
+    expect(dwell(2.71)).toBe(3);
+    expect(dwell(2.5)).toBeCloseTo(2.5, 9);
     let prev = -1;
     for (let r = 0; r <= STEPS - 1; r += 0.01) {
       const v = dwell(r);

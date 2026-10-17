@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { Alert, Button, formatCents } from "@selio/ui";
+import { Alert, buttonClass, formatCents } from "@selio/ui";
 import { usePageMeta } from "../../lib/seo";
 import { CheckList, Container, Eyebrow, MarketingSection } from "../components";
 import { PLAN_CARDS } from "@selio/demo-data";
@@ -25,8 +25,8 @@ export default function Pricing() {
               </p>
               <div className="mt-4 flex-1"><CheckList items={p.features} /></div>
               <div className="mt-6">
-                <Link to={p.plan === "free" ? "/demo" : "/inscription"}>
-                  <Button variant={p.plan === "starter" ? "accent" : "secondary"} fullWidth>{p.plan === "free" ? "Essayer la démo" : "Créer un compte"}</Button>
+                <Link to={p.plan === "free" ? "/demo" : "/inscription"} className={buttonClass({ variant: p.plan === "starter" ? "accent" : "secondary", fullWidth: true })}>
+                  {p.plan === "free" ? "Essayer la démo" : "Créer un compte"}
                 </Link>
               </div>
             </article>
@@ -36,7 +36,7 @@ export default function Pricing() {
       <section className="py-12 md:py-16">
         <Container>
           <Eyebrow>Tarifs</Eyebrow>
-          <h2 className="mt-3 text-xl font-semibold tracking-[-0.015em] text-text">Questions fréquentes sur les tarifs</h2>
+          <h2 className="mt-3 text-xl font-semibold tracking-[-0.015em] text-balance text-text">Questions fréquentes sur les tarifs</h2>
           <dl className="mt-6 grid gap-4 md:grid-cols-2">
             <div className="card p-5"><dt className="text-sm font-medium text-text">Y a-t-il un engagement ?</dt><dd className="mt-1 text-sm text-text-muted">La structure prévue est mensuelle sans engagement. Les conditions définitives seront publiées avec l'ouverture des abonnements.</dd></div>
             <div className="card p-5"><dt className="text-sm font-medium text-text">Que se passe-t-il si je dépasse un quota ?</dt><dd className="mt-1 text-sm text-text-muted">L'application affiche la consommation et bloque proprement l'action concernée en expliquant la limite. Aucune facturation surprise.</dd></div>

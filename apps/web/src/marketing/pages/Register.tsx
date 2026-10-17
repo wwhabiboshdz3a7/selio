@@ -55,7 +55,7 @@ export default function Register() {
           <Field label="Email" required error={errors.email}>{(p) => <Input id={p.id} type="email" invalid={p.invalid} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" />}</Field>
           <Field label="Mot de passe" required error={errors.password} hint="Dix caractères minimum.">{(p) => <Input id={p.id} type="password" invalid={p.invalid} aria-describedby={p.describedBy} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="new-password" />}</Field>
           {error ? <Alert tone="danger">{error}</Alert> : null}
-          <Button type="submit" loading={loading} disabled={mode === "connected" && !connectedModeAvailable} fullWidth>Créer le compte</Button>
+          <Button type="submit" variant="accent" loading={loading} disabled={mode === "connected" && !connectedModeAvailable} fullWidth>Créer le compte</Button>
           <p className="text-center text-sm text-text-muted">Déjà inscrit ? <Link to="/connexion" className="font-medium text-text underline underline-offset-2">Se connecter</Link></p>
         </form>
       </Container>

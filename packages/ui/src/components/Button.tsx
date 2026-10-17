@@ -30,6 +30,16 @@ const sizeClass: Record<ButtonSize, string> = {
   lg: "h-11 px-4 text-base gap-2",
 };
 
+const baseClass = "inline-flex shrink-0 items-center justify-center rounded-md font-medium whitespace-nowrap select-none transition-colors";
+
+/**
+ * Classes d'un bouton, pour un lien qui en a l'apparence (<Link className={buttonClass(…)}>) :
+ * un seul élément interactif, jamais un bouton dans un lien.
+ */
+export function buttonClass({ variant = "primary", size = "md", fullWidth, className }: { variant?: ButtonVariant; size?: ButtonSize; fullWidth?: boolean; className?: string } = {}): string {
+  return cn(baseClass, variantClass[variant], sizeClass[size], "[&>svg]:size-4", fullWidth && "w-full", className);
+}
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   { variant = "primary", size = "md", loading, icon, iconRight, fullWidth, className, children, disabled, type = "button", ...rest },
   ref,
@@ -41,7 +51,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-md font-medium whitespace-nowrap select-none transition-colors",
+        baseClass,
         "disabled:cursor-not-allowed disabled:opacity-50",
         variantClass[variant],
         sizeClass[size],
