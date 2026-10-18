@@ -22,6 +22,7 @@ const PAGES: { href: string; heading: RegExp }[] = [
   { href: "/app/analytics", heading: /Analyses/ },
   { href: "/app/automations", heading: /Automatisations/ },
   { href: "/app/studio", heading: /Générateur d'annonces/ },
+  { href: "/app/help", heading: /^Aide$/ },
   { href: "/app/settings", heading: /Paramètres/ },
   { href: "/app", heading: /Bonjour/ },
 ];

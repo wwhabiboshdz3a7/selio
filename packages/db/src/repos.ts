@@ -570,8 +570,9 @@ export const aiRequests = {
   async list(tx: Tx, limit = 50): Promise<AiRequest[]> {
     return (await tx.query("select * from ai_requests where org_id = $1 order by created_at desc limit $2", [tx.orgId, limit])).map((r) => parse(aiRequest, r));
   },
+  /** Requêtes décomptées du quota IA mensuel : les questions d'aide (help_answer) n'y entrent pas. */
   async countSince(tx: Tx, since: string): Promise<number> {
-    return tx.count("select count(*) from ai_requests where org_id = $1 and created_at >= $2", [tx.orgId, since]);
+    return tx.count("select count(*) from ai_requests where org_id = $1 and created_at >= $2 and kind <> 'help_answer'", [tx.orgId, since]);
   },
   /** Requêtes depuis une date (état de l'IA), plafonnées : le quota mensuel le plus large reste bien en dessous. */
   async listSince(tx: Tx, since: string, limit = 10_000): Promise<AiRequest[]> {

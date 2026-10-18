@@ -4,6 +4,7 @@ import type {
 import type { ConnectorDescriptor } from "@selio/connectors";
 import type { ReplySuggestion } from "@selio/contracts";
 import type { TrialDays } from "@selio/contracts";
+import type { HelpAnswer } from "@selio/contracts";
 import type { AccountStats, AiHealthSummary, BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
 
 export type VariantLeaderboardRow = ReturnType<typeof variantLeaderboard>[number];
@@ -300,6 +301,8 @@ export interface DataClient {
   resetDemo(): Promise<void>;
   // Usage (pour la page Consommation)
   listUsageEvents(limit?: number): Promise<UsageEvent[]>;
+  // Aide : réponse rédigée à partir de la FAQ (IA en mode connecté, recherche locale en démo)
+  askHelp(question: string): Promise<HelpAnswer>;
 }
 
 export class DataError extends Error {
