@@ -76,9 +76,15 @@ describe("entrée de la démonstration", () => {
     const { demoTarget } = await import("./pages/DemoEntry");
     expect(demoTarget("/app/dressing")).toBe("/app/dressing");
     expect(demoTarget("/app/items/item-014")).toBe("/app/items/item-014");
-    expect(demoTarget(null)).toBe("/app");
-    expect(demoTarget("https://exemple.com")).toBe("/app");
-    expect(demoTarget("//exemple.com/app")).toBe("/app");
-    expect(demoTarget("/app/../admin")).toBe("/app");
+    expect(demoTarget("/app")).toBe("/app");
+    // Les espaces Studio, Agence et Global sont des destinations valides.
+    expect(demoTarget("/studio/performances")).toBe("/studio/performances");
+    expect(demoTarget("/agence")).toBe("/agence");
+    // Sans destination (ou destination refusée) : l'accueil central des espaces.
+    expect(demoTarget(null)).toBe("/app/espaces");
+    expect(demoTarget("https://exemple.com")).toBe("/app/espaces");
+    expect(demoTarget("//exemple.com/app")).toBe("/app/espaces");
+    expect(demoTarget("/app/../admin")).toBe("/app/espaces");
+    expect(demoTarget("/studiox")).toBe("/app/espaces");
   });
 });

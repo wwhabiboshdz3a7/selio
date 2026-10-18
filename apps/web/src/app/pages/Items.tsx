@@ -59,7 +59,7 @@ export default function Items() {
             <Button variant="secondary" icon={<Download />} onClick={() => exportCsv.mutate(undefined)} loading={exportCsv.isPending}>Exporter CSV</Button>
             {canWrite ? <Link to="/app/items/import"><Button variant="secondary" icon={<Upload />}>Importer</Button></Link> : null}
             {canWrite ? <Link to="/app/items/new"><Button variant="secondary" icon={<Plus />}>Nouvel article</Button></Link> : null}
-            {canWrite ? <Link to="/app/studio"><Button variant="brand" icon={<Sparkles />}>Générer avec l'IA</Button></Link> : null}
+            {canWrite ? <Link to="/studio"><Button variant="brand" icon={<Sparkles />}>Générer avec l'IA</Button></Link> : null}
           </>
         }
       />

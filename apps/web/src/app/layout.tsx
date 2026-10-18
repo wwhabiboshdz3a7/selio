@@ -9,6 +9,8 @@ import { useTheme } from "../lib/theme";
 import { Logo } from "../components/Logo";
 import { ROLE_LABELS } from "@selio/contracts";
 import { HandCoins } from "lucide-react";
+import { HUB_PATH, SPACE_GROUPS, readLastSpace, spaceForPath, writeLastSpace, type SpaceArea } from "./spaces/spaces";
+import { SpacePill, SpaceSwitcher } from "./spaces/SpaceSwitcher";
 
 export function RequireSession({ children }: { children: ReactNode }) {
   const session = useSession();
@@ -25,15 +27,15 @@ export function RequireOperator({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-interface NavItem { to: string; label: string; icon: ReactNode; end?: boolean; badgeKey?: "unread" | "awaiting" | "toReview" | "dressingDue"; hint?: string }
-interface NavGroup { title?: string; items: NavItem[] }
+export interface NavItem { to: string; label: string; icon: ReactNode; end?: boolean; badgeKey?: "unread" | "awaiting" | "toReview" | "dressingDue"; hint?: string }
+export interface NavGroup { title?: string; items: NavItem[] }
 
 const GROUPS: NavGroup[] = [
   { items: [
     { to: "/app", label: "Vue d'ensemble", icon: <Gauge />, end: true },
   ] },
   { title: "Vendre", items: [
-    { to: "/app/studio", label: "Générateur d'annonces", icon: <Sparkles />, hint: "Photos → annonce rédigée par l'IA" },
+    { to: "/studio", label: "Générateur d'annonces", icon: <Sparkles />, hint: "Ouvre Selio Studio : photos → annonce rédigée par l'IA" },
     { to: "/app/dressing", label: "Dressing intelligent", icon: <Shirt />, badgeKey: "dressingDue", hint: "Notes, rendement, republications" },
     { to: "/app/items", label: "Articles et stock", icon: <Boxes /> },
     { to: "/app/messages", label: "Messagerie", icon: <MessageSquare />, badgeKey: "unread" },
@@ -100,15 +102,28 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
   }, [location.pathname]);
   const onboardingDone = s.org.settings.onboarding.dismissed || s.org.settings.onboarding.completedSteps.length >= 6;
   const autoBuyOn = s.org.settings.autoBuy.enabled;
+  // Espace affiché : celui de l'adresse ; les pages communes (paramètres, administration) gardent le dernier.
+  const ownedArea = spaceForPath(location.pathname);
+  const area: SpaceArea = ownedArea ?? readLastSpace();
+  useEffect(() => {
+    if (ownedArea) writeLastSpace(ownedArea);
+  }, [ownedArea]);
+  const groups = area === "selio" ? GROUPS : SPACE_GROUPS[area];
 
   const sidebar = (
     <div className="flex h-full flex-col">
-      <div className="flex h-16 shrink-0 items-center justify-between px-4">
-        <Link to="/app" aria-label="Selio, vue d'ensemble"><Logo height={22} /></Link>
+      <div className="space-rule shrink-0" aria-hidden />
+      <div className="flex h-16 shrink-0 items-center justify-between gap-1 px-2">
+        <SpaceSwitcher area={area} />
         <IconButton label="Fermer le menu" className="md:hidden" onClick={() => setOpen(false)} size="sm"><X /></IconButton>
       </div>
-      <div className="shrink-0 px-3 pb-3">
-        <Link to="/app/studio" className="group bg-brand flex items-center gap-3 rounded-lg px-3 py-2.5 text-white shadow-sm ring-1 ring-white/10 ring-inset transition-[filter] hover:brightness-110">
+      {area === "agence" || area === "global" ? (
+        <p className="mx-3 mb-3 shrink-0 rounded-md bg-surface-muted px-3 py-2 text-xs text-text-muted">
+          <span className="font-medium text-text">{area === "agence" ? "Aperçu" : "En préparation"}</span> — {area === "agence" ? "boutiques d'exemple fictives, rien n'est facturé." : "le convertisseur de tailles est déjà utilisable."}
+        </p>
+      ) : null}
+      {area === "selio" ? <div className="shrink-0 px-3 pb-3">
+        <Link to="/studio" className="group bg-brand flex items-center gap-3 rounded-lg px-3 py-2.5 text-white shadow-sm ring-1 ring-white/10 ring-inset transition-[filter] hover:brightness-110">
           <Sparkles className="size-[18px] shrink-0 text-gold-300" aria-hidden />
           <span className="min-w-0 flex-1">
             <span className="block text-base leading-tight font-semibold">Générer une annonce</span>
@@ -116,14 +131,14 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
           </span>
           <ArrowRight className="size-4 shrink-0 text-white/70 transition-transform group-hover:translate-x-0.5" aria-hidden />
         </Link>
-      </div>
+      </div> : null}
       <nav aria-label="Navigation de l'application" className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 scrollbar-thin">
-        {!onboardingDone ? (
+        {!onboardingDone && area === "selio" ? (
           <NavLink to="/app/onboarding" className={linkClass}>
             <Zap aria-hidden /> Démarrage
           </NavLink>
         ) : null}
-        {GROUPS.map((g, gi) => (
+        {groups.map((g, gi) => (
           <div key={gi} className={cn(gi > 0 && "mt-4")}>
             {g.title ? <p className="px-2.5 pb-1.5 text-[11px] font-medium tracking-wider text-text-muted uppercase">{g.title}</p> : null}
             <ul className="flex flex-col gap-0.5">
@@ -180,7 +195,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
   );
 
   return (
-    <div className="app-shell flex bg-bg">
+    <div className="app-shell flex bg-bg" data-space={area}>
       <a href="#contenu-app" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2">Aller au contenu</a>
       {/* Barre latérale : collée en haut et haute d'un écran, elle suit le défilement ; le bloc compte reste toujours visible. */}
       <aside className="sticky top-0 hidden h-dvh w-sidebar shrink-0 self-start border-r border-border bg-surface-sidebar md:block">{sidebar}</aside>
@@ -200,9 +215,9 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
         ) : null}
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-surface/90 px-4 backdrop-blur md:hidden">
           <IconButton label="Ouvrir le menu" onClick={() => setOpen(true)}><MenuIcon /></IconButton>
-          <Link to="/app" className="flex-1" aria-label="Selio"><Logo height={20} /></Link>
+          <Link to={HUB_PATH} className="flex min-w-0 flex-1 items-center gap-2" aria-label="Selio, vos espaces"><Logo height={20} /><SpacePill area={area} /></Link>
           {admin ? <Tag>Admin</Tag> : null}
-          <Link to="/app/studio" aria-label="Générer une annonce" className="bg-brand inline-flex size-9 items-center justify-center rounded-md text-white"><Sparkles className="size-4 text-gold-300" aria-hidden /></Link>
+          <Link to="/studio" aria-label="Générer une annonce" className="bg-brand inline-flex size-9 items-center justify-center rounded-md text-white"><Sparkles className="size-4 text-gold-300" aria-hidden /></Link>
           <IconButton label={resolved === "dark" ? "Mode clair" : "Mode sombre"} size="sm" onClick={() => setPreference(resolved === "dark" ? "light" : "dark")}>{resolved === "dark" ? <Sun /> : <Moon />}</IconButton>
         </header>
         <main id="contenu-app" className="mx-auto w-full max-w-content flex-1 px-4 py-6 md:px-8 md:py-10 xl:px-12">

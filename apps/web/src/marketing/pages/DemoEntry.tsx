@@ -5,10 +5,14 @@ import { usePageMeta } from "../../lib/seo";
 import { Container } from "../components";
 import { useData } from "../../lib/data/provider";
 import { errorMessage } from "../../lib/errors";
+import { APP_PATH_PATTERN, HUB_PATH } from "../../app/spaces/paths";
 
-/** Page d'arrivée demandée (?vers=/app/…), limitée à l'application : aucune redirection externe. */
+/**
+ * Page d'arrivée demandée (?vers=/app/…, /studio, /agence, /global), limitée à l'application :
+ * aucune redirection externe. Sans demande : l'accueil central des espaces.
+ */
 export function demoTarget(raw: string | null): string {
-  return raw && /^\/app(\/[a-z0-9-]+)*$/.test(raw) ? raw : "/app";
+  return raw && APP_PATH_PATTERN.test(raw) ? raw : HUB_PATH;
 }
 
 /** Entrée directe dans la démonstration : force le mode démo, ouvre la session, redirige. */

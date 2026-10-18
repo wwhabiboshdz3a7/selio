@@ -1,4 +1,7 @@
 User-agent: *
 Allow: /
 Disallow: /app
+Disallow: /studio
+Disallow: /agence
+Disallow: /global
 Disallow: /admin
