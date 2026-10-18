@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { MemoryDemoStorage } from "@selio/demo-data";
+import { isGenerated, listingInsights } from "@selio/domain";
 import { DemoClient } from "./client";
 
 let client: DemoClient;
@@ -194,5 +195,28 @@ describe("aide et essai Découverte (démonstration)", () => {
     await client.register({ email: "lea@exemple.fr", password: "motdepasse-long", displayName: "Léa", orgName: "Boutique Léa", trialDays: 30 });
     sub = await client.getSubscription();
     expect(days(sub.currentPeriodEnd)).toBe(30);
+  });
+});
+
+describe("espaces Selio (démonstration)", () => {
+  it("enregistre la marque blanche de Selio Agence, la valide et la remet à zéro avec la démo", async () => {
+    expect(await client.getWhiteLabel()).toBeNull();
+    await expect(client.saveWhiteLabel({ name: "Dépôt Lumière", initials: "D?", accent: "jade" })).rejects.toThrow(/Lettres ou chiffres/);
+    const saved = await client.saveWhiteLabel({ name: "  Dépôt Lumière ", initials: "dl", accent: "jade", tagline: "Votre dépôt-vente en ligne" });
+    expect(saved).toMatchObject({ name: "Dépôt Lumière", initials: "DL", accent: "jade", poweredBy: true, updatedAt: "2026-10-08T12:00:00.000Z" });
+    expect(await client.getWhiteLabel()).toEqual(saved);
+    expect((await client.listAuditLogs()).some((a) => a.action === "agency.white_label_updated")).toBe(true);
+    await client.resetDemo();
+    expect(await client.getWhiteLabel()).toBeNull();
+  });
+
+  it("Studio : annonces générées et enseignements calculés depuis les données de la démo", async () => {
+    const items = (await client.listItems({ pageSize: 200 })).items;
+    expect(items.filter(isGenerated).length).toBeGreaterThan(0);
+    const orders = (await client.listOrders({ pageSize: 200 })).items;
+    const insights = listingInsights(items, orders.map((o) => ({ itemId: o.itemId, brand: o.item?.brand ?? null, category: o.item?.category ?? null, salePriceCents: o.salePriceCents })));
+    expect(insights.sample.listed).toBe(items.filter((i) => i.listedAt && i.status !== "in_stock").length);
+    expect(insights.sample.sold).toBe(items.filter((i) => i.status === "sold").length);
+    expect(insights.dimensions.find((d) => d.key === "title")!.buckets.length).toBeGreaterThan(1);
   });
 });

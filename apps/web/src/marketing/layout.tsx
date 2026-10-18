@@ -6,9 +6,11 @@ import { useTheme } from "../lib/theme";
 import { Logo } from "../components/Logo";
 import { useSession } from "../lib/data/provider";
 import { getOverNight, getOverNightServer, subscribeOverNight } from "./nightHeader";
+import { HUB_PATH } from "../app/spaces/paths";
 
 const NAV = [
   { to: "/fonctionnalites", label: "Fonctionnalités" },
+  { to: "/plateforme", label: "Plateforme" },
   { to: "/extension", label: "Extension" },
   { to: "/assistant-ia", label: "Assistant IA" },
   { to: "/tarifs", label: "Tarifs" },
@@ -55,7 +57,7 @@ export function MarketingLayout() {
               {resolved === "dark" ? <Sun /> : <Moon />}
             </IconButton>
             {session.data ? (
-              <Link to="/app" className={buttonClass({ variant: "accent", size: "sm", className: "max-md:hidden" })}>Ouvrir l'application</Link>
+              <Link to={HUB_PATH} className={buttonClass({ variant: "accent", size: "sm", className: "max-md:hidden" })}>Ouvrir l'application</Link>
             ) : (
               <>
                 <Link to="/connexion" className={buttonClass({ variant: "ghost", size: "sm", className: "mk-header-ghost max-md:hidden" })}>Connexion</Link>
@@ -74,7 +76,7 @@ export function MarketingLayout() {
                 <li key={n.to}><NavLink to={n.to} onClick={() => setOpen(false)} className={({ isActive }) => cn("block rounded-md px-3 py-2.5 text-base font-medium", isActive ? "bg-surface-muted text-text" : "text-text-muted")}>{n.label}</NavLink></li>
               ))}
               <li className="mt-2 flex gap-2">
-                {session.data ? <Link to="/app" className={buttonClass({ variant: "accent", className: "flex-1" })} onClick={() => setOpen(false)}>Ouvrir l'application</Link> : (
+                {session.data ? <Link to={HUB_PATH} className={buttonClass({ variant: "accent", className: "flex-1" })} onClick={() => setOpen(false)}>Ouvrir l'application</Link> : (
                   <>
                     <Link to="/connexion" className={buttonClass({ variant: "secondary", className: "flex-1" })} onClick={() => setOpen(false)}>Connexion</Link>
                     <Link to="/demo" className={buttonClass({ variant: "accent", className: "flex-1" })} onClick={() => setOpen(false)}>Voir la démo</Link>
@@ -95,7 +97,7 @@ export function MarketingLayout() {
             <Logo height={22} />
             <p className="mt-3 max-w-xs text-sm text-text-muted">L'outil de gestion des revendeurs : stock, conversations, clients, commandes et marges au même endroit.</p>
           </div>
-          <FooterCol title="Produit" links={[["/fonctionnalites", "Fonctionnalités"], ["/extension", "Extension navigateur"], ["/assistant-ia", "Assistant IA"], ["/tarifs", "Tarifs"]]} />
+          <FooterCol title="Produit" links={[["/fonctionnalites", "Fonctionnalités"], ["/plateforme", "Les espaces Selio"], ["/extension", "Extension navigateur"], ["/assistant-ia", "Assistant IA"], ["/tarifs", "Tarifs"]]} />
           <FooterCol title="Aide" links={[["/faq", "FAQ"], ["/contact", "Contact"], ["/demo", "Démonstration"], ["/connexion", "Connexion"]]} />
           <FooterCol title="Légal" links={[["/mentions-legales", "Mentions légales"], ["/confidentialite", "Confidentialité"], ["/conditions", "Conditions d'utilisation"]]} />
         </div>

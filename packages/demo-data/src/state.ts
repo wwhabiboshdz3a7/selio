@@ -1,8 +1,9 @@
 import type {
-  AiRequest, AuditLog, AutomationRule, Conversation, Customer, ExtensionToken, InventoryEvent, InventoryItem, Job, MarketplaceConnection, Membership, Message, Opportunity, Order, Organization, PurchaseRequest, RadarSearch, Shipment, Subscription, UsageEvent, User,
+  AiRequest, AuditLog, AutomationRule, Conversation, Customer, ExtensionToken, InventoryEvent, InventoryItem, Job, MarketplaceConnection, Membership, Message, Opportunity, Order, Organization, PurchaseRequest, RadarSearch, Shipment, Subscription, UsageEvent, User, WhiteLabel,
 } from "@selio/contracts";
 
-export const DEMO_STATE_VERSION = 7;
+/** v8 : marque blanche de Selio Agence (aperçu). */
+export const DEMO_STATE_VERSION = 8;
 export const DEMO_STORAGE_KEY = "selio.demo.v1";
 
 export interface DemoState {
@@ -31,6 +32,8 @@ export interface DemoState {
   usage: UsageEvent[];
   subscription: Subscription;
   audit: AuditLog[];
+  /** Selio Agence (aperçu) : marque blanche enregistrée dans la démonstration (null = pas encore personnalisée). */
+  whiteLabel: WhiteLabel | null;
   /** Mot de passe de démo (jamais un vrai compte). */
   passwordHint: string;
 }

@@ -30,6 +30,7 @@ export const router = createBrowserRouter([
       { path: "extension", lazy: lazy(() => import("./marketing/pages/Extension")) },
       { path: "assistant-ia", lazy: lazy(() => import("./marketing/pages/Assistant")) },
       { path: "tarifs", lazy: lazy(() => import("./marketing/pages/Pricing")) },
+      { path: "plateforme", lazy: lazy(() => import("./marketing/pages/Platform")) },
       { path: "faq", lazy: lazy(() => import("./marketing/pages/Faq")) },
       { path: "contact", lazy: lazy(() => import("./marketing/pages/Contact")) },
       { path: "mentions-legales", lazy: lazy(() => import("./marketing/pages/Legal")) },
@@ -50,7 +51,10 @@ export const router = createBrowserRouter([
     errorElement: <RouteError />,
     children: guarded([
       { index: true, lazy: lazy(() => import("./app/pages/Overview")) },
-      { path: "studio", lazy: lazy(() => import("./app/pages/Studio")) },
+      // Accueil central : les quatre espaces Selio (page d'arrivée après connexion).
+      { path: "espaces", lazy: lazy(() => import("./app/spaces/pages/Hub")) },
+      // Le générateur d'annonces vit dans Selio Studio ; l'ancienne adresse y mène.
+      { path: "studio", element: <Navigate to="/studio" replace /> },
       { path: "dressing", lazy: lazy(() => import("./app/pages/Dressing")) },
       { path: "market", lazy: lazy(() => import("./app/pages/Market")) },
       { path: "auto-buy", lazy: lazy(() => import("./app/pages/AutoBuy")) },
@@ -88,6 +92,53 @@ export const router = createBrowserRouter([
         { path: "status", lazy: lazy(() => import("./app/pages/settings/Status")) },
       ] },
       { path: "*", element: <Navigate to="/app" replace /> },
+    ]),
+  },
+  // Espaces Selio Studio, Agence (aperçu) et Global (en préparation) : même mise en page, menu propre.
+  {
+    path: "/studio",
+    element: (
+      <RequireSession>
+        <AppLayout />
+      </RequireSession>
+    ),
+    errorElement: <RouteError />,
+    children: guarded([
+      { index: true, lazy: lazy(() => import("./app/pages/Studio")) },
+      { path: "annonces", lazy: lazy(() => import("./app/spaces/pages/StudioGenerated")) },
+      { path: "performances", lazy: lazy(() => import("./app/spaces/pages/StudioInsights")) },
+      { path: "*", element: <Navigate to="/studio" replace /> },
+    ]),
+  },
+  {
+    path: "/agence",
+    element: (
+      <RequireSession>
+        <AppLayout />
+      </RequireSession>
+    ),
+    errorElement: <RouteError />,
+    children: guarded([
+      { index: true, lazy: lazy(() => import("./app/spaces/pages/AgencyClients")) },
+      { path: "marque-blanche", lazy: lazy(() => import("./app/spaces/pages/AgencyBranding")) },
+      { path: "equipe", lazy: lazy(() => import("./app/spaces/pages/AgencyTeam")) },
+      { path: "facturation", lazy: lazy(() => import("./app/spaces/pages/AgencyBilling")) },
+      { path: "*", element: <Navigate to="/agence" replace /> },
+    ]),
+  },
+  {
+    path: "/global",
+    element: (
+      <RequireSession>
+        <AppLayout />
+      </RequireSession>
+    ),
+    errorElement: <RouteError />,
+    children: guarded([
+      { index: true, lazy: lazy(() => import("./app/spaces/pages/GlobalMarkets")) },
+      { path: "tailles", lazy: lazy(() => import("./app/spaces/pages/GlobalSizes")) },
+      { path: "places-de-marche", lazy: lazy(() => import("./app/spaces/pages/GlobalMarketplaces")) },
+      { path: "*", element: <Navigate to="/global" replace /> },
     ]),
   },
   {

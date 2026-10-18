@@ -1,6 +1,7 @@
 import type {
   AiRequest, AiStatus, AuditLog, ListingDraft, ListingGenerationInput, AutomationRule, AutomationRuleCreate, BulkItemAction, ConnectionCreate, ConnectionTestResult, ConnectionUpdate, Conversation, ConversationQuery, Customer, CustomerCreate, CustomerQuery, CustomerUpdate, ExtensionToken, InventoryEvent, InventoryItem, InventoryItemCreate, InventoryItemUpdate, InventoryQuery, Job, JobQuery, MarketplaceConnection, Membership, Message, Opportunity, Order, OrderCreate, OrderQuery, OrderStatus, Organization, OrgSettings, Page, Plan, PurchaseRequest, RadarSearch, RadarSearchCreate, Role, Shipment, Subscription, UsageEvent, User,
 } from "@selio/contracts";
+import type { WhiteLabel, WhiteLabelInput } from "@selio/contracts";
 import type { ConnectorDescriptor } from "@selio/connectors";
 import type { ReplySuggestion } from "@selio/contracts";
 import type { TrialDays } from "@selio/contracts";
@@ -297,6 +298,11 @@ export interface DataClient {
   getAdminOverview(): Promise<AdminOverview>;
   adminSetPlan(orgId: string, plan: Plan): Promise<void>;
   adminListAudit(limit?: number): Promise<AuditLog[]>;
+  // Selio Agence (aperçu) : marque blanche
+  /** Marque blanche enregistrée (null tant qu'elle n'est pas personnalisée, et toujours en mode connecté). */
+  getWhiteLabel(): Promise<WhiteLabel | null>;
+  /** Enregistre la marque blanche dans la démonstration. Mode connecté : aperçu non enregistré (erreur « preview_only »). */
+  saveWhiteLabel(input: WhiteLabelInput): Promise<WhiteLabel>;
   // Démo
   resetDemo(): Promise<void>;
   // Usage (pour la page Consommation)

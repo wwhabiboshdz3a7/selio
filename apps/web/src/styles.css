@@ -47,6 +47,109 @@ tr[tabindex]:focus-visible {
   .hide-mobile { display: none; }
 }
 
+/* Espaces Selio : teinte d'identité discrète de chaque espace (pastille, tuile, filet).
+   Jamais pour du texte courant ; l'action principale reste en améthyste. */
+[data-space] {
+  --space-tint: var(--accent-vivid);
+  --space-tint-soft: var(--accent-soft);
+  --space-tint-ink: var(--accent);
+}
+[data-space="studio"] {
+  --space-tint: var(--gold);
+  --space-tint-soft: var(--gold-soft);
+  --space-tint-ink: var(--gold-text);
+}
+[data-space="agence"] {
+  --space-tint: var(--tone-indigo);
+  --space-tint-soft: var(--tone-indigo-soft);
+  --space-tint-ink: var(--tone-indigo);
+}
+[data-space="global"] {
+  --space-tint: var(--tone-teal);
+  --space-tint-soft: var(--tone-teal-soft);
+  --space-tint-ink: var(--tone-teal);
+}
+.space-tile {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--space-tint-soft);
+  color: var(--space-tint-ink);
+}
+.space-tile > svg {
+  width: 50%;
+  height: 50%;
+}
+.space-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--space-tint);
+}
+.space-pill {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--space-tint-soft);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+/* Filet supérieur du menu latéral, à la teinte de l'espace. */
+.space-rule {
+  height: 2px;
+  background: linear-gradient(90deg, var(--space-tint), transparent 85%);
+}
+
+/* Selio Agence › marque blanche : couleurs d'accent proposées, toutes tirées de la charte.
+   Les tons sont foncés (clair) ou éclaircis (sombre) avec la couleur du texte pour garder
+   un contraste ≥ 5:1 avec le texte des boutons, dans les deux modes. */
+[data-accent="pervenche"] {
+  --accent: color-mix(in srgb, var(--tone-indigo) 85%, var(--text));
+  --accent-hover: color-mix(in srgb, var(--tone-indigo) 72%, var(--text));
+  --accent-soft: var(--tone-indigo-soft);
+  --accent-vivid: var(--tone-indigo);
+}
+[data-accent="jade"] {
+  --accent: color-mix(in srgb, var(--tone-teal) 85%, var(--text));
+  --accent-hover: color-mix(in srgb, var(--tone-teal) 72%, var(--text));
+  --accent-soft: var(--tone-teal-soft);
+  --accent-vivid: var(--tone-teal);
+}
+[data-accent="orchidee"] {
+  --accent: color-mix(in srgb, var(--tone-rose) 85%, var(--text));
+  --accent-hover: color-mix(in srgb, var(--tone-rose) 72%, var(--text));
+  --accent-soft: var(--tone-rose-soft);
+  --accent-vivid: var(--tone-rose);
+}
+[data-accent="acier"] {
+  --accent: color-mix(in srgb, var(--tone-sky) 85%, var(--text));
+  --accent-hover: color-mix(in srgb, var(--tone-sky) 72%, var(--text));
+  --accent-soft: var(--tone-sky-soft);
+  --accent-vivid: var(--tone-sky);
+}
+[data-accent="champagne"] {
+  --accent: var(--gold-text);
+  --accent-hover: color-mix(in srgb, var(--gold-text) 85%, var(--text));
+  --accent-soft: var(--gold-soft);
+  --accent-vivid: var(--gold);
+}
+[data-accent="encre"] {
+  --accent: var(--primary);
+  --accent-hover: var(--primary-hover);
+  --accent-soft: var(--surface-muted);
+  --accent-vivid: var(--text-muted);
+  --on-accent: var(--on-primary);
+}
+
 /* Vitrine : l'avertissement prend l'or Champagne de la charte (jamais d'orange). */
 .mk-scope { --warning: var(--gold-600); }
 :root[data-theme="dark"] .mk-scope { --warning: var(--gold-300); }

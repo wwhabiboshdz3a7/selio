@@ -409,3 +409,12 @@
   .mk-shot-bar i { width: 5px; height: 5px; }
   .mk-shot-bar span { display: none; }
 }
+
+/* ---- Constellation des espaces (page « Une plateforme, puis des filiales ») -- */
+.mk-spaces-map { display: block; width: 100%; max-width: 760px; height: auto; margin: 0 auto; overflow: visible; }
+.mk-spaces-link { stroke: var(--violet-200); stroke-width: 1; opacity: 0.5; vector-effect: non-scaling-stroke; }
+.mk-spaces-link[data-planned] { stroke-dasharray: 4 6; opacity: 0.38; }
+.mk-spaces-halo { fill: color-mix(in oklab, var(--violet-300) 16%, transparent); }
+.mk-spaces-halo[data-tone="gold"] { fill: color-mix(in oklab, var(--gold-300) 16%, transparent); }
+.mk-spaces-label { fill: var(--ink); font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+.mk-spaces-sub { fill: var(--ink-muted); font-size: 11px; }

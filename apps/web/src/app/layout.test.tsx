@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider, useRouteError } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "@selio/ui";
@@ -114,5 +114,52 @@ describe("mise en page de l'application", () => {
     expect(screen.queryByTestId("route-error")).toBeNull();
     // La dernière session connue reste affichée jusqu'à la redirection.
     expect(screen.getByText(/page-accueil ·/)).toBeTruthy();
+  });
+});
+
+describe("espaces Selio dans la mise en page", () => {
+  it("affiche le menu de l'espace, le garde sur les pages communes et propose les quatre espaces", async () => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+    await getDemoClient().login({ email: "marie@demo.selio.local", password: "demo" });
+    queryClient.clear();
+    const shell = (
+      <RequireSession>
+        <AppLayout />
+      </RequireSession>
+    );
+    const router = createMemoryRouter(
+      [
+        { path: "/studio", element: shell, errorElement: <Failure />, children: [{ index: true, element: <p>page-studio</p> }] },
+        { path: "/app", element: shell, errorElement: <Failure />, children: [{ index: true, element: <p>page-selio</p> }, { path: "settings", element: <p>page-parametres</p> }] },
+      ],
+      { initialEntries: ["/studio"] },
+    );
+    render(
+      <DataProvider forceMode="demo">
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
+      </DataProvider>,
+    );
+    const menu = () => screen.getByRole("navigation", { name: "Navigation de l'application" });
+    expect(await screen.findByText("page-studio")).toBeTruthy();
+    expect(within(menu()).getByRole("link", { name: /Annonces générées/ })).toBeTruthy();
+    expect(within(menu()).queryByRole("link", { name: /Articles et stock/ })).toBeNull();
+    // Paramètres : page commune, le menu de Studio reste affiché.
+    await act(() => router.navigate("/app/settings"));
+    expect(await screen.findByText("page-parametres")).toBeTruthy();
+    expect(within(menu()).getByRole("link", { name: /Annonces générées/ })).toBeTruthy();
+    await act(() => router.navigate("/app"));
+    expect(await screen.findByText("page-selio")).toBeTruthy();
+    expect(within(menu()).getByRole("link", { name: /Articles et stock/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Changer d'espace/ }));
+    const picker = screen.getByRole("navigation", { name: "Changer d'espace" });
+    expect(within(picker).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual(["/app", "/studio", "/agence", "/global", "/app/espaces"]);
+    // Échap referme la liste et rend le focus au sélecteur.
+    within(picker).getAllByRole("link")[1]!.focus();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("navigation", { name: "Changer d'espace" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Changer d'espace/ }));
+    expect(screen.queryByTestId("route-error")).toBeNull();
   });
 });

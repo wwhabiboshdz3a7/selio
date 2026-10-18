@@ -1,10 +1,17 @@
 import { expect, type Page } from "@playwright/test";
 
-/** Ouvre la démonstration (jeu de données fictif réinitialisé pour ce contexte). */
-export async function openDemo(page: Page): Promise<void> {
-  await page.goto("/demo");
-  await page.waitForURL(/\/app/, { timeout: 20_000 });
-  await expect(page.getByRole("status").filter({ hasText: "Démonstration" })).toBeVisible();
+/**
+ * Ouvre la démonstration (jeu de données fictif réinitialisé pour ce contexte).
+ * Sans destination, /demo mène à l'accueil central des espaces ; les parcours
+ * existants partent de la vue d'ensemble de Selio (`vers` = "/app").
+ */
+export async function openDemo(page: Page, vers: string | null = "/app"): Promise<void> {
+  await page.goto(vers ? `/demo?vers=${vers}` : "/demo");
+  // On attend le CHEMIN d'arrivée : « /demo?vers=/app » se termine déjà par « /app ».
+  const target = vers ?? "/app/espaces";
+  await page.waitForURL((url) => url.pathname === target, { timeout: 20_000 });
+  // Le bandeau de la démo (d'autres pages ont leur propre encart « démonstration »).
+  await expect(page.getByRole("status").filter({ hasText: "Démonstration — données fictives" })).toBeVisible();
 }
 
 export async function gotoApp(page: Page, path: string): Promise<void> {

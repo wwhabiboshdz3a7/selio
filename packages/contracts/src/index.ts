@@ -12,3 +12,4 @@ export * from "./api";
 export * from "./labels";
 export * from "./studio";
 export * from "./help";
+export * from "./spaces";
