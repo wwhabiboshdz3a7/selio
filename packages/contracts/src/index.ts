@@ -11,3 +11,4 @@ export * from "./ai";
 export * from "./api";
 export * from "./labels";
 export * from "./studio";
+export * from "./spaces";
