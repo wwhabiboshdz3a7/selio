@@ -17,4 +17,5 @@ export * as studio from "./services/studio";
 export * as dressing from "./services/dressing";
 export * as aiHealth from "./services/ai-health";
 export * as market from "./services/market";
+export * as help from "./services/help";
 export type { QueueStats, QueueStatsProvider } from "./services/admin";

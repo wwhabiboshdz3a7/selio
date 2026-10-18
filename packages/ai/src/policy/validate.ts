@@ -1,5 +1,5 @@
-import type { ReplySuggestion } from "@selio/contracts";
-import { scanForInjection, type NegotiationResult } from "@selio/domain";
+import type { HelpAnswerOutput, ReplySuggestion } from "@selio/contracts";
+import { helpTokens, normalizeHelpText, scanForInjection, type NegotiationResult } from "@selio/domain";
 
 export interface ValidationContext {
   decision: NegotiationResult | null;
@@ -89,4 +89,57 @@ export function fallbackReply(ctx: { decision: NegotiationResult | null; offerCe
   if (d === "escalate" || d === "hold")
     return { reply: `Bonjour${name}, merci pour votre message. Je reviens vers vous rapidement.${sig}`, intent: "escalate", proposedPriceCents: null, confidence: 1, notes: "Gabarit sans IA" };
   return { reply: `Bonjour${name}, oui l'article est toujours disponible. N'hésitez pas si vous avez des questions.${sig}`, intent: "answer", proposedPriceCents: null, confidence: 1, notes: "Gabarit sans IA" };
+}
+
+export type HelpValidationOutcome = { ok: true; output: HelpAnswerOutput } | { ok: false; code: string; reason: string };
+
+/** Nombres d'un texte (séparateurs de milliers retirés, virgule décimale normalisée). */
+function numbersIn(text: string): Set<string> {
+  const flat = text.replace(/(\d)[\s  ](?=\d{3}\b)/g, "$1");
+  return new Set([...flat.matchAll(/\d+(?:[.,]\d+)?/g)].map((m) => m[0].replace(",", ".").replace(/^0+(?=\d)/, "")));
+}
+
+/** Domaines cités en clair (ex. « exemple.com »). */
+function domainsIn(text: string): string[] {
+  return [...text.toLowerCase().matchAll(/\b[a-z0-9-]+\.(?:fr|com|net|org|io|be|eu|app|dev|co|ai|info|biz|shop)\b/g)].map((m) => m[0]);
+}
+
+/**
+ * Une réponse d'aide rédigée par l'IA n'est montrée que si elle reste dans les passages :
+ * aucun lien ni adresse, pas de HTML, aucun motif d'injection repris, uniquement des sources
+ * fournies, aucun chiffre absent des passages et un vocabulaire majoritairement tiré d'eux.
+ */
+export function validateHelpAnswer(out: HelpAnswerOutput, passages: { id: string; question: string; answer: string }[]): HelpValidationOutcome {
+  const answer = out.answer.trim();
+  const corpus = passages.map((p) => `${p.question}\n${p.answer}`).join("\n");
+  if (answer.length < 10) return { ok: false, code: "too_short", reason: "Réponse trop courte." };
+  if (/<[a-z!/][^>]*>/i.test(answer)) return { ok: false, code: "html", reason: "La réponse contient du HTML." };
+  if (/https?:\/\/|www\.|\]\(/i.test(answer)) return { ok: false, code: "link", reason: "La réponse contient un lien." };
+  if (/[^\s@]+@[^\s@]+\.[a-z]{2,}/i.test(answer)) return { ok: false, code: "contact", reason: "La réponse contient une adresse email." };
+  const knownDomains = new Set(domainsIn(corpus));
+  const foreign = domainsIn(answer).find((d) => !knownDomains.has(d));
+  if (foreign) return { ok: false, code: "link", reason: `La réponse cite une adresse absente des passages (${foreign}).` };
+  const scan = scanForInjection(answer);
+  if (scan.suspicious) return { ok: false, code: "injection_echo", reason: `La réponse reprend un motif suspect (${scan.matches[0]}).` };
+
+  const ids = new Set(passages.map((p) => p.id));
+  const unknown = out.sourceIds.find((id) => !ids.has(id));
+  if (unknown) return { ok: false, code: "unknown_source", reason: `Source inconnue : ${unknown.slice(0, 40)}.` };
+  const sourceIds = [...new Set(out.sourceIds)];
+  if (out.outOfScope) return { ok: true, output: { answer, sourceIds, outOfScope: true } };
+  if (sourceIds.length === 0) return { ok: false, code: "no_source", reason: "Aucun passage cité." };
+
+  const known = numbersIn(corpus);
+  const invented = [...numbersIn(answer)].find((n) => !known.has(n));
+  if (invented) return { ok: false, code: "invented_number", reason: `Chiffre absent des passages : ${invented}.` };
+
+  // Vocabulaire : au moins la moitié des mots porteurs de sens doivent venir des passages.
+  const corpusTokens = new Set(helpTokens(corpus));
+  const words = helpTokens(answer).filter((t) => t.length >= 4 && !/^\d+$/.test(t));
+  if (words.length >= 6) {
+    const inCorpus = words.filter((t) => corpusTokens.has(t) || [...corpusTokens].some((c) => c.length >= 4 && (c.startsWith(t) || t.startsWith(c)))).length;
+    if (inCorpus / words.length < 0.5) return { ok: false, code: "off_passages", reason: "La réponse s'éloigne des passages de la FAQ." };
+  }
+  if (normalizeHelpText(answer).length === 0) return { ok: false, code: "too_short", reason: "Réponse vide." };
+  return { ok: true, output: { answer, sourceIds, outOfScope: false } };
 }

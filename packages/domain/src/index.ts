@@ -21,3 +21,5 @@ export * from "./untrusted";
 export * from "./ids";
 export * from "./permissions";
 export * from "./accounts";
+// Contenu de l'aide : « @selio/domain/help » (chargé à la demande) ; ici, les outils de texte.
+export * from "./help-text";

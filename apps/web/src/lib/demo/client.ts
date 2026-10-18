@@ -17,6 +17,7 @@ import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilter
 import type { AiHealthData } from "../data/types";
 import { effectiveAiQuota, summarizeAiRequests } from "@selio/domain";
 import { DEFAULT_TRIAL_DAYS, type TrialDays } from "@selio/contracts";
+import { helpAskInput, type HelpAnswer } from "@selio/contracts";
 
 function paginate<T>(items: T[], page = 1, pageSize = 25): Page<T> {
   const total = items.length;
@@ -1378,6 +1379,15 @@ export class DemoClient implements DataClient {
   }
   async listUsageEvents(limit = 50): Promise<UsageEvent[]> {
     return this.s.usage.slice(0, limit);
+  }
+  /** Aide en démonstration : réponse tirée de la FAQ par recherche locale, signalée (aucune IA). */
+  async askHelp(question: string): Promise<HelpAnswer> {
+    const parsed = helpAskInput.safeParse({ question });
+    if (!parsed.success) throw new DataError("validation", parsed.error.issues[0]?.message ?? "Question invalide", 400);
+    // Contenu de la FAQ chargé à la demande (il n'alourdit pas le premier chargement).
+    const [{ answerFromHelp, toHelpSource }] = await Promise.all([import("@selio/domain/help"), this.delay(250)]);
+    const faq = answerFromHelp(parsed.data.question);
+    return { question: parsed.data.question, answer: faq.answer, found: faq.found, source: "faq", sources: faq.sources.map(toHelpSource), simulated: true, provider: null, model: null, fallbackReason: "Démonstration : réponse tirée de la FAQ par recherche locale, sans IA." };
   }
 
   // ---------- sécurité et données ----------

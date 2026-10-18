@@ -1,10 +1,10 @@
-import type { AiStatus, ListingGenerationOutput, ReplySuggestion } from "@selio/contracts";
+import type { AiStatus, HelpAnswerOutput, ListingGenerationOutput, ReplySuggestion } from "@selio/contracts";
 import { scanForInjection } from "@selio/domain";
 import { CircuitBreaker } from "./circuit-breaker";
 import { AIMetrics } from "./metrics";
 import { AIQueue } from "./queue";
-import { buildListingGenerationRequest, buildListingRequest, buildReplyRequest, type ListingContext, type ListingGenerationContext, type ReplyContext } from "./prompts";
-import { fallbackReply, validateReplySuggestion } from "./policy/validate";
+import { buildHelpAnswerRequest, buildListingGenerationRequest, buildListingRequest, buildReplyRequest, type HelpAnswerContext, type ListingContext, type ListingGenerationContext, type ReplyContext } from "./prompts";
+import { fallbackReply, validateHelpAnswer, validateReplySuggestion } from "./policy/validate";
 import { AIError, toAIError, type AIProvider, type GenerateOptions, type HealthResult } from "./types";
 
 export interface QuotaGuard {
@@ -48,6 +48,14 @@ export interface GenerateListingResult {
   latencyMs: number;
   usage: { promptTokens: number; outputTokens: number };
   warnings: string[];
+}
+
+export interface HelpAnswerResult {
+  data: HelpAnswerOutput;
+  provider: string;
+  model: string;
+  latencyMs: number;
+  usage: { promptTokens: number; outputTokens: number };
 }
 
 /** Passerelle IA : file, disjoncteur, quotas, métriques, validation. */
@@ -166,6 +174,23 @@ export class AIService {
       warnings.push(`IA indisponible (${e.code}) : gabarit déterministe utilisé, relisez l'annonce.`);
       return { data: opts.fallback(), source: "fallback", provider: this.opts.provider.name, model: this.opts.provider.model, latencyMs: 0, usage: { promptTokens: 0, outputTokens: 0 }, warnings };
     }
+  }
+
+  /**
+   * Assistant d'aide : l'IA rédige à partir des passages de la FAQ retenus, et sa sortie
+   * n'est acceptée que si elle reste dans ces passages (validateHelpAnswer). Toute
+   * défaillance remonte une AIError : l'appelant affiche alors la réponse de la FAQ,
+   * signalée comme telle (jamais un texte simulé présenté comme venant du modèle).
+   */
+  async answerHelp(orgId: string, ctx: HelpAnswerContext, opts: { signal?: AbortSignal } = {}): Promise<HelpAnswerResult> {
+    const req = buildHelpAnswerRequest(ctx);
+    const res = await this.run(orgId, "help_answer", (o) => this.opts.provider.generateStructured(req, o), opts.signal);
+    const v = validateHelpAnswer(res.data, ctx.passages);
+    if (!v.ok) {
+      this.metrics.failure("help_answer", "invalid_output");
+      throw new AIError("invalid_output", `Réponse d'aide écartée (${v.code}) : ${v.reason}`, false, res.raw);
+    }
+    return { data: v.output, provider: res.provider, model: res.model, latencyMs: res.latencyMs, usage: res.usage };
   }
 
   async describeListing(orgId: string, ctx: ListingContext, signal?: AbortSignal) {
