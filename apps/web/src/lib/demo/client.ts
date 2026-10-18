@@ -16,6 +16,7 @@ import { PLAN_QUOTAS } from "@selio/demo-data";
 import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
 import type { AiHealthData } from "../data/types";
 import { effectiveAiQuota, summarizeAiRequests } from "@selio/domain";
+import { DEFAULT_TRIAL_DAYS, type TrialDays } from "@selio/contracts";
 
 function paginate<T>(items: T[], page = 1, pageSize = 25): Page<T> {
   const total = items.length;
@@ -158,13 +159,16 @@ export class DemoClient implements DataClient {
     this.persist();
     return this.session();
   }
-  async register(input: { email: string; password: string; displayName: string; orgName: string }): Promise<Session> {
+  async register(input: { email: string; password: string; displayName: string; orgName: string; trialDays?: TrialDays }): Promise<Session> {
     await this.delay(200);
     this.state = buildDemoState(this.clock());
     this.state.user = { ...this.state.user, email: input.email, displayName: input.displayName };
     this.state.users[0] = this.state.user;
     this.state.org = { ...this.state.org, name: input.orgName, settings: { ...this.state.org.settings, onboarding: { completedSteps: ["account"], dismissed: false } } };
-    this.audit("auth.register", null, null, { mode: "demo" });
+    // Essai Découverte choisi à l'inscription (même règle que le serveur).
+    const trialDays = input.trialDays ?? DEFAULT_TRIAL_DAYS;
+    this.state.subscription = { ...this.state.subscription, status: "trialing", currentPeriodEnd: new Date(this.clock().getTime() + trialDays * 86_400_000).toISOString() };
+    this.audit("auth.register", null, null, { mode: "demo", trialDays });
     this.persist();
     return this.session();
   }

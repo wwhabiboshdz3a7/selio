@@ -3,6 +3,7 @@ import type {
 } from "@selio/contracts";
 import type { ConnectorDescriptor } from "@selio/connectors";
 import type { ReplySuggestion } from "@selio/contracts";
+import type { TrialDays } from "@selio/contracts";
 import type { AccountStats, AiHealthSummary, BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
 
 export type VariantLeaderboardRow = ReturnType<typeof variantLeaderboard>[number];
@@ -171,7 +172,8 @@ export interface DataClient {
   // Session
   getSession(): Promise<Session | null>;
   login(input: { email: string; password: string }): Promise<Session>;
-  register(input: { email: string; password: string; displayName: string; orgName: string }): Promise<Session>;
+  /** `trialDays` : durée de l'essai Découverte choisie (7 par défaut, ou 30). */
+  register(input: { email: string; password: string; displayName: string; orgName: string; trialDays?: TrialDays }): Promise<Session>;
   logout(): Promise<void>;
   switchOrg(orgId: string): Promise<Session>;
   // Organisation

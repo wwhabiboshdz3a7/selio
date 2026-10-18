@@ -55,11 +55,18 @@ describe("API Selio (mode connecté, base réelle)", () => {
     orgIdA = a.json.org.id;
     expect(a.json.org.name).toBe("Boutique A");
     expect(a.json.user.isOperator).toBe(true);
-    const b = await call("POST", "/api/auth/register", { email: "bob@test.local", password: "motdepasse-B1", displayName: "Bob", orgName: "Boutique B" });
+    const b = await call("POST", "/api/auth/register", { email: "bob@test.local", password: "motdepasse-B1", displayName: "Bob", orgName: "Boutique B", trialDays: 30 });
     expect(b.status).toBe(201);
     cookies.b = cookieOf(b.res);
     const dup = await call("POST", "/api/auth/register", { email: "bob@test.local", password: "motdepasse-B1", displayName: "Bob", orgName: "X" });
     expect(dup.status).toBe(409);
+    // Essai Découverte : fonctions du plan Pro, 1 semaine par défaut ou 1 mois, sans paiement.
+    const days = (iso: string) => Math.round((new Date(iso).getTime() - Date.now()) / 86_400_000);
+    const subA = await call("GET", "/api/billing/subscription");
+    expect(subA.json).toMatchObject({ plan: "pro", status: "trialing", provider: "none", quotas: { connections: 5, members: 10 } });
+    expect(days(subA.json.currentPeriodEnd)).toBe(7);
+    expect(days((await call("GET", "/api/billing/subscription", undefined, "b")).json.currentPeriodEnd)).toBe(30);
+    expect((await call("POST", "/api/auth/register", { email: "carl@test.local", password: "motdepasse-C1", displayName: "Carl", orgName: "C", trialDays: 12 }, "none")).status).toBe(400);
     const bad = await call("POST", "/api/auth/login", { email: "bob@test.local", password: "mauvais" }, "none");
     expect(bad.status).toBe(401);
     const anon = await call("GET", "/api/items", undefined, "none");
@@ -159,6 +166,8 @@ describe("API Selio (mode connecté, base réelle)", () => {
 
   it("rôles : un lecteur ne peut pas écrire", async () => {
     if (!available) return;
+    // Sans abonnement (accès de base, hors essai) : une seule personne.
+    expect((await call("POST", `/api/admin/orgs/${a_org()}/plan`, { plan: "free" })).status).toBe(204);
     const quota = await call("POST", "/api/org/members", { email: "lecteur@test.local", role: "viewer" });
     expect(quota.status).toBe(402);
     const plan = await call("POST", `/api/admin/orgs/${a_org()}/plan`, { plan: "starter" });
