@@ -487,6 +487,7 @@ export function buildDemoState(now = new Date()): DemoState {
     usage,
     subscription,
     audit,
+    whiteLabel: null,
     passwordHint: "demo",
   };
 }

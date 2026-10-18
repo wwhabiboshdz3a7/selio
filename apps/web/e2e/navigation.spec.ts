@@ -21,10 +21,13 @@ const PAGES: { href: string; heading: RegExp }[] = [
   { href: "/app/market", heading: /Analyse/ },
   { href: "/app/analytics", heading: /Analyses/ },
   { href: "/app/automations", heading: /Automatisations/ },
-  { href: "/app/studio", heading: /Générateur d'annonces/ },
   { href: "/app/help", heading: /^Aide$/ },
   { href: "/app/settings", heading: /Paramètres/ },
   { href: "/app", heading: /Bonjour/ },
+  // Le générateur vit dans Selio Studio : le lien du menu de Selio y mène (et le menu devient celui de Studio).
+  { href: "/studio", heading: /Générateur d'annonces/ },
+  { href: "/studio/annonces", heading: /Annonces générées/ },
+  { href: "/studio/performances", heading: /Ce qui performe/ },
 ];
 
 async function clickNav(page: Page, href: string): Promise<void> {

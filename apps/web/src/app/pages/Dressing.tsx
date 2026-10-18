@@ -47,7 +47,7 @@ export default function Dressing() {
       <PageHeader
         title="Dressing intelligent"
         description="Chaque annonce en ligne reçoit une note sur 100 : visibilité (vues par jour), attractivité (favoris, offres), qualité (photos, titre, description) et prix face au marché. Dès 7 jours en ligne, republiez avec l'une des 10 variantes déjà prêtes."
-        actions={<Link to="/app/studio"><Button variant="brand" icon={<Sparkles />}>Générer une annonce</Button></Link>}
+        actions={<Link to="/studio"><Button variant="brand" icon={<Sparkles />}>Générer une annonce</Button></Link>}
       />
       <QueryBoundary query={q}>
         {(d) => (
@@ -90,7 +90,7 @@ export default function Dressing() {
                   </div>
                 </div>
                 {d.listings.length === 0 ? (
-                  <EmptyState title="Aucune annonce pour ce filtre" description="Changez de filtre, ou mettez des articles en vente depuis le générateur." action={<Link to="/app/studio"><Button icon={<Sparkles />}>Générer une annonce</Button></Link>} />
+                  <EmptyState title="Aucune annonce pour ce filtre" description="Changez de filtre, ou mettez des articles en vente depuis le générateur." action={<Link to="/studio"><Button icon={<Sparkles />}>Générer une annonce</Button></Link>} />
                 ) : (
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                     {d.listings.map((l) => <ListingCard key={l.item.id} listing={l} canWrite={canWrite} onRepublish={() => setRepublish(l)} onInsight={() => setInsight(l)} />)}
