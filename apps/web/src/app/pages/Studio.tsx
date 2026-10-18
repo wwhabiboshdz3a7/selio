@@ -76,6 +76,8 @@ export default function Studio() {
   const [draft, setDraft] = useState<ListingDraft | null>(null);
   const [form, setForm] = useState<DraftForm | null>(null);
   const [saved, setSaved] = useState<{ item: InventoryItem; published: boolean } | null>(null);
+  // Selio Studio : les annonces créées à la suite pendant cette visite (la plus récente en tête).
+  const [series, setSeries] = useState<{ item: InventoryItem; published: boolean }[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const canWrite = session.role !== "viewer";
@@ -128,7 +130,7 @@ export default function Studio() {
       attributes: { colors: form.colors.split(",").map((c) => c.trim()).filter(Boolean).slice(0, 3), material: form.material.trim() || null, generatedBy: draft?.source ?? "manual" },
     });
     return { item, published: publish };
-  }, { invalidate: ["items", "overview", "nav-counts", "dressing"], success: (r) => (r.published ? "Annonce mise en vente" : "Brouillon enregistré"), onSuccess: (r) => setSaved(r) });
+  }, { invalidate: ["items", "overview", "nav-counts", "dressing"], success: (r) => (r.published ? "Annonce mise en vente" : "Brouillon enregistré"), onSuccess: (r) => { setSaved(r); setSeries((s) => [r, ...s]); } });
 
   const reset = () => { setPhotos([]); setDraft(null); setForm(null); setSaved(null); setHints({ brand: "", size: "", notes: "", purchasePriceCents: null }); };
   const copy = (text: string) => { void navigator.clipboard?.writeText(text); };
@@ -138,7 +140,8 @@ export default function Studio() {
     <>
       <PageHeader
         title="Générateur d'annonces"
-        description="Ajoutez seulement vos photos : l'IA reconnaît l'article et rédige l'annonce (titre, description, marque, taille, état, couleurs). Vous relisez, puis vous enregistrez en brouillon ou publiez directement sur le compte choisi."
+        eyebrow="Selio Studio · Créer"
+        description="Ajoutez seulement vos photos : l'IA reconnaît l'article et rédige l'annonce (titre, description, marque, taille, état, couleurs). Vous relisez, puis vous enregistrez en brouillon ou publiez directement sur le compte choisi — et vous enchaînez avec l'article suivant."
         actions={draft ? <Button variant="secondary" icon={<ArrowLeft />} onClick={reset}>Nouvelle annonce</Button> : undefined}
       />
 
@@ -164,6 +167,24 @@ export default function Studio() {
           );
         })}
       </ol>
+
+      {series.length > 0 ? (
+        <section aria-label="Série en cours" className="card mb-6 flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3">
+          <p className="text-sm font-medium text-text">Série en cours <span className="num font-normal text-text-muted">· {series.length} annonce{series.length > 1 ? "s" : ""} ({series.filter((s) => s.published).length} en vente)</span></p>
+          <ul className="flex min-w-0 flex-1 flex-wrap gap-2">
+            {series.slice(0, 8).map(({ item, published }) => (
+              <li key={item.id}>
+                <Link to={`/app/items/${item.id}`} className="flex max-w-56 items-center gap-2 rounded-md border border-border py-1 pr-2.5 pl-1 text-xs text-text hover:bg-surface-muted" title={item.title}>
+                  {item.photos[0] ? <img src={item.photos[0].url} alt="" className="size-7 rounded-sm object-cover" /> : <span className="size-7 rounded-sm bg-surface-muted" aria-hidden />}
+                  <span className="min-w-0 truncate">{item.title}</span>
+                  <span className={cn("size-1.5 shrink-0 rounded-full", published ? "bg-success" : "bg-border-strong")} aria-label={published ? "en vente" : "brouillon"} />
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <Link to="/studio/annonces" className="text-sm font-medium text-accent hover:underline">Annonces générées</Link>
+        </section>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         <div className="flex flex-col gap-4">
@@ -249,7 +270,7 @@ export default function Studio() {
               <div className="flex flex-wrap justify-center gap-2">
                 <Link to={`/app/items/${saved.item.id}`}><Button variant="secondary">Voir l'article</Button></Link>
                 {saved.published ? <Link to="/app/dressing"><Button variant="secondary">Ouvrir le dressing</Button></Link> : null}
-                <Button icon={<Sparkles />} onClick={reset}>Générer une autre annonce</Button>
+                <Button icon={<Sparkles />} onClick={reset}>Article suivant</Button>
               </div>
             </Card>
           ) : !form || !draft ? (
