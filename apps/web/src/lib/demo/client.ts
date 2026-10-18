@@ -16,6 +16,8 @@ import { PLAN_QUOTAS } from "@selio/demo-data";
 import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
 import type { AiHealthData } from "../data/types";
 import { effectiveAiQuota, summarizeAiRequests } from "@selio/domain";
+import { DEFAULT_TRIAL_DAYS, type TrialDays } from "@selio/contracts";
+import { helpAskInput, type HelpAnswer } from "@selio/contracts";
 
 function paginate<T>(items: T[], page = 1, pageSize = 25): Page<T> {
   const total = items.length;
@@ -158,13 +160,16 @@ export class DemoClient implements DataClient {
     this.persist();
     return this.session();
   }
-  async register(input: { email: string; password: string; displayName: string; orgName: string }): Promise<Session> {
+  async register(input: { email: string; password: string; displayName: string; orgName: string; trialDays?: TrialDays }): Promise<Session> {
     await this.delay(200);
     this.state = buildDemoState(this.clock());
     this.state.user = { ...this.state.user, email: input.email, displayName: input.displayName };
     this.state.users[0] = this.state.user;
     this.state.org = { ...this.state.org, name: input.orgName, settings: { ...this.state.org.settings, onboarding: { completedSteps: ["account"], dismissed: false } } };
-    this.audit("auth.register", null, null, { mode: "demo" });
+    // Essai Découverte choisi à l'inscription (même règle que le serveur).
+    const trialDays = input.trialDays ?? DEFAULT_TRIAL_DAYS;
+    this.state.subscription = { ...this.state.subscription, status: "trialing", currentPeriodEnd: new Date(this.clock().getTime() + trialDays * 86_400_000).toISOString() };
+    this.audit("auth.register", null, null, { mode: "demo", trialDays });
     this.persist();
     return this.session();
   }
@@ -1374,6 +1379,15 @@ export class DemoClient implements DataClient {
   }
   async listUsageEvents(limit = 50): Promise<UsageEvent[]> {
     return this.s.usage.slice(0, limit);
+  }
+  /** Aide en démonstration : réponse tirée de la FAQ par recherche locale, signalée (aucune IA). */
+  async askHelp(question: string): Promise<HelpAnswer> {
+    const parsed = helpAskInput.safeParse({ question });
+    if (!parsed.success) throw new DataError("validation", parsed.error.issues[0]?.message ?? "Question invalide", 400);
+    // Contenu de la FAQ chargé à la demande (il n'alourdit pas le premier chargement).
+    const [{ answerFromHelp, toHelpSource }] = await Promise.all([import("@selio/domain/help"), this.delay(250)]);
+    const faq = answerFromHelp(parsed.data.question);
+    return { question: parsed.data.question, answer: faq.answer, found: faq.found, source: "faq", sources: faq.sources.map(toHelpSource), simulated: true, provider: null, model: null, fallbackReason: "Démonstration : réponse tirée de la FAQ par recherche locale, sans IA." };
   }
 
   // ---------- sécurité et données ----------

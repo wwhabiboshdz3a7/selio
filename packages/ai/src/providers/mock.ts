@@ -83,6 +83,7 @@ export class MockAIProvider implements AIProvider {
   private renderStructured(req: StructuredRequest<unknown>): unknown {
     const hints = readHints(req.prompt);
     if (req.schemaName === "listing_generation") return mockGeneratedListing(hints);
+    if (req.schemaName === "help_answer") return mockHelpAnswer(req.prompt);
     if (req.schemaName === "listing_description") {
       return {
         title: `${hints.brand ? hints.brand + " " : ""}${hints.title ?? "Article"}`.slice(0, 120),
@@ -138,6 +139,18 @@ function readHints(prompt: string): Hints {
 
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+/**
+ * Assistant d'aide simulé : reprend les premières phrases du passage le plus pertinent
+ * (le premier fourni), sans rien y ajouter. Aucun passage : hors du champ de l'aide.
+ */
+function mockHelpAnswer(prompt: string): { answer: string; sourceIds: string[]; outOfScope: boolean } {
+  const m = prompt.match(/<<<PASSAGE id=([a-z0-9-]+)>>>\nQuestion : [^\n]*\nRéponse : ([\s\S]*?)\n<<<FIN_PASSAGE>>>/);
+  if (!m) return { answer: "L'aide de Selio ne couvre pas cette question.", sourceIds: [], outOfScope: true };
+  const text = m[2]!.replace(/\s+/g, " ").trim();
+  const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+  return { answer: sentences.slice(0, 3).join(" ").trim().slice(0, 1500), sourceIds: [m[1]!], outOfScope: false };
 }
 
 // ---------------------------------------------------------------------------

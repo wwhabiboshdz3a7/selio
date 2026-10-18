@@ -1,4 +1,4 @@
-import { loginInput, registerInput, orgSettings } from "@selio/contracts";
+import { PLAN_QUOTAS, TRIAL_PLAN, loginInput, registerInput, orgSettings } from "@selio/contracts";
 import { repos, hashPassword, verifyPassword, newSecret, DbError } from "@selio/db";
 import { AppError, type Services } from "../context";
 
@@ -22,7 +22,7 @@ export async function register(services: Services, raw: unknown, meta: { ip: str
   if (!parsed.success) throw new AppError("validation", "Inscription invalide", 400, parsed.error.flatten());
   const input = parsed.data;
   const { hash, salt } = await hashPassword(input.password);
-  return services.db.withGlobal(async (tx) => {
+  const info = await services.db.withGlobal(async (tx) => {
     if (await repos.users.byEmail(tx, input.email)) throw new AppError("conflict", "Un compte existe déjà avec cet email.", 409);
     const isOperator = meta.operatorEmails.includes(input.email.toLowerCase());
     const user = await repos.users.create(tx, { email: input.email, displayName: input.displayName, passwordHash: hash, passwordSalt: salt, isOperator });
@@ -33,9 +33,20 @@ export async function register(services: Services, raw: unknown, meta: { ip: str
     const sessionId = newSecret(32);
     await repos.sessions.create(tx, { id: sessionId, userId: user.id, orgId: org.id, expiresAt: expiry(services), ip: meta.ip, userAgent: meta.userAgent });
     await tx.query("select set_config('app.org_id', $1, true)", [org.id]);
-    await repos.audit.add(tx, { orgId: org.id, actorUserId: user.id, action: "auth.register", ip: meta.ip });
+    await repos.audit.add(tx, { orgId: org.id, actorUserId: user.id, action: "auth.register", ip: meta.ip, meta: { trialDays: input.trialDays } });
     return { sessionId, userId: user.id, orgId: org.id };
   });
+  // Essai Découverte : toutes les fonctions (et limites) du plan Pro pendant la durée choisie,
+  // sans paiement. Les abonnements payants n'étant pas ouverts, la fin d'essai n'est pas appliquée.
+  await services.db.withOrg(info.orgId, (tx) => repos.subscriptions.upsert(tx, {
+    plan: TRIAL_PLAN,
+    status: "trialing",
+    provider: "none",
+    quotas: PLAN_QUOTAS[TRIAL_PLAN],
+    currentPeriodEnd: new Date(services.now().getTime() + input.trialDays * 86_400_000).toISOString(),
+    testMode: true,
+  }));
+  return info;
 }
 
 export async function login(services: Services, raw: unknown, meta: { ip: string | null; userAgent: string | null }): Promise<SessionInfo> {

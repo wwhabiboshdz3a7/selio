@@ -3,7 +3,7 @@ import type { ItemCategory, ItemCondition, ItemStatus } from "./inventory";
 import type { MessageStatus } from "./messaging";
 import type { OrderStatus } from "./orders";
 import type { JobStatus, RuleKind } from "./automation";
-import type { Plan } from "./org";
+import type { Plan, SubscriptionStatus } from "./org";
 import type { Role } from "./common";
 
 /** Libellés français partagés (web, extension, exports). */
@@ -111,4 +111,18 @@ export const ROLE_LABELS: Record<Role, string> = {
   viewer: "Lecture seule",
 };
 
-export const PLAN_LABELS: Record<Plan, string> = { free: "Découverte", starter: "Essentiel", pro: "Pro" };
+/**
+ * « free » est l'accès minimal sans abonnement (hors essai) : « Découverte » désigne l'essai
+ * gratuit à durée choisie (TRIAL_DAYS_OPTIONS), qui donne les fonctions du plan Pro.
+ */
+export const PLAN_LABELS: Record<Plan, string> = { free: "Accès de base", starter: "Essentiel", pro: "Pro" };
+
+/** États d'un abonnement, en français (jamais le code brut à l'écran). */
+export const SUBSCRIPTION_STATUS_LABELS: Record<SubscriptionStatus, string> = {
+  none: "Sans abonnement",
+  trialing: "Essai en cours",
+  active: "Actif",
+  past_due: "Paiement en retard",
+  canceled: "Résilié",
+  incomplete: "Incomplet",
+};

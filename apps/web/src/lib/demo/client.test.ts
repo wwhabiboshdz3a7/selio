@@ -172,3 +172,27 @@ describe("comptes Vinted catégorisés (démonstration)", () => {
     expect(created.some((j) => j.payload.conversationId === "conv-001")).toBe(false);
   });
 });
+
+describe("aide et essai Découverte (démonstration)", () => {
+  it("répond depuis la FAQ, signale la simulation et cite des sources", async () => {
+    const a = await client.askHelp("Selio est-il affilié à Vinted ?");
+    expect(a).toMatchObject({ found: true, source: "faq", simulated: true, provider: null });
+    expect(a.sources[0]).toMatchObject({ id: "affiliation-vinted", categoryTitle: "Démarrer" });
+    expect(a.answer).toMatch(/indépendant/);
+    expect(a.fallbackReason).toMatch(/Démonstration/);
+    const none = await client.askHelp("Quelle est la météo demain ?");
+    expect(none).toMatchObject({ found: false, sources: [] });
+    await expect(client.askHelp("?")).rejects.toThrow(/trois caractères/);
+  });
+
+  it("inscription : essai d'une semaine par défaut, ou d'un mois, toutes les fonctions du plan Pro", async () => {
+    const days = (iso: string | null) => Math.round((new Date(iso!).getTime() - new Date("2026-10-08T12:00:00Z").getTime()) / 86_400_000);
+    await client.register({ email: "lea@exemple.fr", password: "motdepasse-long", displayName: "Léa", orgName: "Boutique Léa" });
+    let sub = await client.getSubscription();
+    expect(sub).toMatchObject({ plan: "pro", status: "trialing" });
+    expect(days(sub.currentPeriodEnd)).toBe(7);
+    await client.register({ email: "lea@exemple.fr", password: "motdepasse-long", displayName: "Léa", orgName: "Boutique Léa", trialDays: 30 });
+    sub = await client.getSubscription();
+    expect(days(sub.currentPeriodEnd)).toBe(30);
+  });
+});

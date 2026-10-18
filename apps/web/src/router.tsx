@@ -72,6 +72,7 @@ export const router = createBrowserRouter([
       { path: "radar", lazy: lazy(() => import("./app/pages/Radar")) },
       { path: "purchase", lazy: lazy(() => import("./app/pages/Purchase")) },
       { path: "accounts", lazy: lazy(() => import("./app/pages/Accounts")) },
+      { path: "help", lazy: lazy(() => import("./app/pages/Help")) },
       { path: "settings", lazy: lazy(() => import("./app/pages/Settings")), children: [
         { index: true, element: <Navigate to="organisation" replace /> },
         { path: "organisation", lazy: lazy(() => import("./app/pages/settings/Organisation")) },

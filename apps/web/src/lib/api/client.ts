@@ -2,6 +2,7 @@ import type {
   AiRequest, AiStatus, AuditLog, ListingDraft, ListingGenerationInput, AutomationRule, AutomationRuleCreate, BulkItemAction, ConnectionCreate, ConnectionTestResult, ConnectionUpdate, Conversation, ConversationQuery, Customer, CustomerCreate, CustomerQuery, CustomerUpdate, ExtensionToken, InventoryEvent, InventoryItem, InventoryItemCreate, InventoryItemUpdate, InventoryQuery, Job, JobQuery, MarketplaceConnection, Membership, Message, Opportunity, Order, OrderCreate, OrderQuery, OrderStatus, Organization, OrgSettings, Page, Plan, PurchaseRequest, RadarSearch, RadarSearchCreate, Role, Shipment, Subscription, UsageEvent, User,
 } from "@selio/contracts";
 import type { ConnectorDescriptor } from "@selio/connectors";
+import type { HelpAnswer } from "@selio/contracts";
 import type { AccountStats, NegotiationResult, PeriodPreset } from "@selio/domain";
 import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
 import type { AiHealthData } from "../data/types";
@@ -185,4 +186,6 @@ export class ApiClient implements DataClient {
   async resetDemo() {
     throw new DataError("conflict", "La réinitialisation n'existe qu'en mode démonstration.", 409);
   }
+
+  askHelp(question: string) { return this.post<HelpAnswer>("/api/help/ask", { question }); }
 }

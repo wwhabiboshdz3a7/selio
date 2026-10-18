@@ -28,6 +28,7 @@ const KIND_LABELS: Partial<Record<AiRequest["kind"], string>> = {
   listing_generation: "Génération d'annonce",
   summary: "Résumé",
   health: "Contrôle de santé",
+  help_answer: "Question d'aide",
 };
 const kindLabel = (k: string) => KIND_LABELS[k as AiRequest["kind"]] ?? "Autre requête";
 
