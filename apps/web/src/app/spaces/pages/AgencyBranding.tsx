@@ -136,7 +136,7 @@ function Editor({ saved }: { saved: WhiteLabel | null }) {
         </Field>
         <Toggle checked={form.poweredBy} onChange={(v) => set("poweredBy", v)} label="Mention « Propulsé par Selio »" description="En pied de l'écran de connexion." />
         {mode === "connected" ? (
-          <Alert tone="info">L'aperçu fonctionne en direct, mais rien n'est enregistré sur votre compte tant que Selio Agence n'est pas ouvert. Essayez l'enregistrement dans la démonstration.</Alert>
+          <Alert tone="info">L'aperçu fonctionne en direct, mais rien n'est enregistré sur votre compte tant que Selio Agents n'est pas ouvert. Essayez l'enregistrement dans la démonstration.</Alert>
         ) : !allowed ? (
           <Alert tone="info">Seuls un administrateur ou le propriétaire peuvent enregistrer la marque blanche.</Alert>
         ) : null}
@@ -157,11 +157,11 @@ export default function AgencyBranding() {
   return (
     <>
       <PageHeader
-        eyebrow="Selio Agence · Aperçu"
+        eyebrow="Selio Agents · Aperçu"
         title="Marque blanche"
         description="L'outil Selio aux couleurs de votre agence : votre nom, votre logo texte et votre couleur, pour vos clients. L'aperçu se met à jour pendant que vous tapez."
       />
-      <PreviewNotice space="agence">La marque blanche s'enregistre dans la démonstration pour que vous puissiez l'essayer ; elle ne s'applique pas encore à l'outil de vos clients.</PreviewNotice>
+      <PreviewNotice space="agents">La marque blanche s'enregistre dans la démonstration pour que vous puissiez l'essayer ; elle ne s'applique pas encore à l'outil de vos clients.</PreviewNotice>
       <QueryBoundary query={q}>{(saved) => <Editor key={saved?.updatedAt ?? "nouvelle"} saved={saved} />}</QueryBoundary>
     </>
   );

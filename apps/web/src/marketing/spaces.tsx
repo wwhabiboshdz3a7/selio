@@ -3,15 +3,17 @@ import { ArrowRight, Check, Clock } from "lucide-react";
 import { SPACES, type SpaceDef } from "../app/spaces/spaces";
 
 /**
- * Les quatre espaces Selio sur la vitrine (même source que l'application :
- * app/spaces/spaces.tsx). État honnête, formulé pour la vitrine : le
- * générateur reste « en démonstration » (IA simulée hors modèle branché).
+ * Selio et ses filiales sur la vitrine (même source que l'application :
+ * app/spaces/spaces.tsx). État honnête, formulé pour la vitrine : Studio
+ * reste « en démonstration » (IA simulée hors modèle branché).
  */
 const SHOWCASE_STATE: Record<SpaceDef["id"], { label: string; value: "available" | "demo" | "experimental" | "planned" }> = {
   selio: { label: "Disponible", value: "available" },
   studio: { label: "En démonstration", value: "demo" },
-  agence: { label: "Aperçu dans la démo", value: "experimental" },
-  global: { label: "En préparation", value: "planned" },
+  agents: { label: "Aperçu dans la démo", value: "experimental" },
+  track: { label: "En développement", value: "planned" },
+  cloud: { label: "En développement", value: "planned" },
+  generateur: { label: "En développement", value: "planned" },
 };
 
 export function SpaceStateBadge({ id }: { id: SpaceDef["id"] }) {
@@ -28,7 +30,7 @@ export function SpaceShowcaseCard({ space, compact = false }: { space: SpaceDef;
         <span className="mk-icon" data-tone={space.id === "studio" ? "gold" : undefined} aria-hidden>{space.icon}</span>
         <SpaceStateBadge id={space.id} />
       </div>
-      <h3 id={`vitrine-espace-${space.id}`} className="mt-4 text-md font-semibold text-text">{space.name}</h3>
+      <h3 id={`vitrine-espace-${space.id}`} className="mt-4 text-md font-bold text-text">{space.name}</h3>
       <p className="mt-0.5 text-sm font-medium text-text-muted">{space.tagline}</p>
       <p className="mt-2 text-sm text-text-muted">{space.description}</p>
       {compact ? null : (
@@ -43,7 +45,7 @@ export function SpaceShowcaseCard({ space, compact = false }: { space: SpaceDef;
       )}
       <p className="mt-auto pt-5">
         <Link to={`/demo?vers=${space.home}`} className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">
-          {space.state === "planned" ? "Voir l'aperçu dans la démo" : `Ouvrir ${space.name} dans la démo`} <ArrowRight className="size-4" aria-hidden />
+          {space.state === "development" ? "Voir ce qui arrive, dans la démo" : `Ouvrir ${space.name} dans la démo`} <ArrowRight className="size-4" aria-hidden />
         </Link>
       </p>
     </article>
@@ -51,14 +53,14 @@ export function SpaceShowcaseCard({ space, compact = false }: { space: SpaceDef;
 }
 
 /**
- * Constellation des espaces (décor, écran large) : Selio au centre, les trois
- * autres espaces reliés ; trait plein pour ce qui fonctionne, pointillé pour
- * ce qui est en aperçu ou en préparation.
+ * Constellation des filiales (décor, écran large) : Selio au centre, les
+ * filiales reliées ; trait plein pour ce qui fonctionne, pointillé pour ce
+ * qui est en aperçu ou en développement.
  */
 export function SpacesConstellation() {
-  const pos: Record<SpaceDef["id"], [number, number]> = { selio: [320, 122], studio: [128, 62], agence: [512, 62], global: [440, 214] };
+  const pos: Record<SpaceDef["id"], [number, number]> = { selio: [320, 130], generateur: [320, 30], studio: [110, 70], agents: [530, 70], track: [130, 196], cloud: [510, 196] };
   return (
-    <svg viewBox="0 0 640 260" className="mk-spaces-map" role="img" aria-label="Selio au centre, relié à Selio Studio, Selio Agence et Selio Global">
+    <svg viewBox="0 0 640 260" className="mk-spaces-map" role="img" aria-label="Selio au centre, relié à Selio Studio, Selio Agents, Selio Track, Selio Cloud et au générateur de compte Vinted">
       {SPACES.filter((s) => s.id !== "selio").map((s) => (
         <line key={s.id} x1={pos.selio[0]} y1={pos.selio[1]} x2={pos[s.id][0]} y2={pos[s.id][1]} className="mk-spaces-link" data-planned={s.state === "available" ? undefined : ""} />
       ))}

@@ -197,6 +197,7 @@ export class DemoClient implements DataClient {
       buyerFees: { ...st.org.settings.buyerFees, ...(input.settings?.buyerFees ?? {}) },
       autoBuy: { ...st.org.settings.autoBuy, ...(input.settings?.autoBuy ?? {}) },
       dressing: { ...st.org.settings.dressing, ...(input.settings?.dressing ?? {}) },
+      automation: { ...st.org.settings.automation, ...(input.settings?.automation ?? {}) },
       retentionDays: { ...st.org.settings.retentionDays, ...(input.settings?.retentionDays ?? {}) },
       onboarding: { ...st.org.settings.onboarding, ...(input.settings?.onboarding ?? {}) },
     });
@@ -1461,7 +1462,7 @@ export class DemoClient implements DataClient {
     return this.s.audit.filter((a) => a.action.startsWith("admin.") || a.action.startsWith("auth.") || a.action.startsWith("token.") || a.action.startsWith("connection.")).slice(0, limit);
   }
 
-  // ---------- Selio Agence (aperçu) ----------
+  // ---------- Selio Agents (aperçu) ----------
   async getWhiteLabel(): Promise<WhiteLabel | null> {
     return this.s.whiteLabel ?? null;
   }

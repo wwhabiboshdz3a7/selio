@@ -4,6 +4,7 @@ import { Alert, Card, KpiCard, PageHeader, Select, StatusBadge, Table, TableWrap
 import { useClient } from "../../lib/data/provider";
 import { QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { AdminTabs } from "./admin-tabs";
 
 export default function Admin() {
   const client = useClient();
@@ -12,7 +13,8 @@ export default function Admin() {
   const setPlan = useAppMutation(({ orgId, plan }: { orgId: string; plan: Plan }) => client.adminSetPlan(orgId, plan), { invalidate: ["admin-overview", "subscription", "usage"], success: "Plan mis à jour (action journalisée)" });
   return (
     <>
-      <PageHeader title="Administration opérateur" description="Santé des services, files, connecteurs, consommation IA, plans et quotas. Aucun secret n'est affiché ici ; toutes les actions sont journalisées." />
+      <PageHeader eyebrow="Opérateur" title="Administration" description="Santé des services, files, connecteurs, consommation IA, plans et quotas, puis les comptes et accès de l'équipe. Aucun secret n'est affiché ici ; toutes les actions sont journalisées." />
+      <AdminTabs />
       <QueryBoundary query={q}>
         {(d) => (
           <div className="flex flex-col gap-6">

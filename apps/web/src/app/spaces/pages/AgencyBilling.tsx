@@ -14,11 +14,11 @@ export default function AgencyBilling() {
   return (
     <>
       <PageHeader
-        eyebrow="Selio Agence · Aperçu"
+        eyebrow="Selio Agents · Aperçu"
         title="Facturation des clients"
         description="Comment votre agence facturerait ses boutiques clientes : un forfait mensuel, plus une commission sur les ventes si vous le souhaitez. Rien n'est facturé ni encaissé."
       />
-      <PreviewNotice space="agence">Tous les montants de cette page sont des exemples fictifs, calculés à partir des boutiques d'exemple. Aucun paiement n'est actif.</PreviewNotice>
+      <PreviewNotice space="agents">Tous les montants de cette page sont des exemples fictifs, calculés à partir des boutiques d'exemple. Aucun paiement n'est actif.</PreviewNotice>
 
       {/* Mobile : une carte par client. */}
       <ul className="flex flex-col gap-3 md:hidden" aria-label="Facturation des clients (exemples)">

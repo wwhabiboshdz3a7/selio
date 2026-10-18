@@ -118,7 +118,7 @@ describe("mise en page de l'application", () => {
 });
 
 describe("espaces Selio dans la mise en page", () => {
-  it("affiche le menu de l'espace, le garde sur les pages communes et propose les quatre espaces", async () => {
+  it("affiche le menu de l'espace, le garde sur les pages communes et propose Selio et ses filiales", async () => {
     vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
     await getDemoClient().login({ email: "marie@demo.selio.local", password: "demo" });
     queryClient.clear();
@@ -154,7 +154,7 @@ describe("espaces Selio dans la mise en page", () => {
     expect(within(menu()).getByRole("link", { name: /Articles et stock/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Changer d'espace/ }));
     const picker = screen.getByRole("navigation", { name: "Changer d'espace" });
-    expect(within(picker).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual(["/app", "/studio", "/agence", "/global", "/app/espaces"]);
+    expect(within(picker).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual(["/app", "/studio", "/agents", "/track", "/cloud", "/generateur", "/app/espaces"]);
     // Échap referme la liste et rend le focus au sélecteur.
     within(picker).getAllByRole("link")[1]!.focus();
     fireEvent.keyDown(document, { key: "Escape" });

@@ -7,9 +7,9 @@ import { scanForInjection } from "./untrusted";
 const top = (q: string) => searchHelp(q, { limit: 1 })[0]?.entry.id;
 
 describe("aide : contenu de la FAQ", () => {
-  it("au moins 40 questions, onze catégories toutes remplies, identifiants uniques et partageables", () => {
+  it("au moins 40 questions, douze catégories toutes remplies, identifiants uniques et partageables", () => {
     expect(helpEntries().length).toBeGreaterThanOrEqual(40);
-    expect(HELP_CATEGORIES).toHaveLength(11);
+    expect(HELP_CATEGORIES).toHaveLength(12);
     for (const c of HELP_CATEGORIES) expect(helpEntries().filter((e) => e.categoryId === c.id).length, c.id).toBeGreaterThanOrEqual(3);
     const ids = helpEntries().map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -39,11 +39,11 @@ describe("aide : contenu de la FAQ", () => {
     expect(helpEntryById("essai-decouverte")!.answer).toMatch(/1 semaine \(7 jours, par défaut\) ou 1 mois \(30 jours\)/);
   });
 
-  it("les produits à venir sont marqués « en préparation »", () => {
-    for (const e of helpEntries().filter((x) => x.categoryId === "filiales")) {
-      expect(e.status, e.id).toBe("planned");
-      expect(e.answer, e.id).toMatch(/en préparation/);
-    }
+  it("les produits à venir sont marqués « en développement »", () => {
+    const planned = helpEntries().filter((x) => x.categoryId === "filiales" && x.status === "planned");
+    expect(planned.length).toBeGreaterThanOrEqual(4);
+    for (const e of planned) expect(e.answer, e.id).toMatch(/en développement/);
+    expect(helpEntries().some((e) => /Selio Global/.test(e.answer))).toBe(false);
   });
 });
 

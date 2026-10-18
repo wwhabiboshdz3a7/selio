@@ -2,35 +2,30 @@ import { expect, test } from "@playwright/test";
 import { gotoApp, isMobile, openDemo } from "./helpers";
 
 test.describe("réglages : négociation, comptes et accès, assistant IA", () => {
-  test("négociation et marges : préréglage, simulateur branché sur le moteur, enregistrement", async ({ page }) => {
+  test("négociation automatique : parcours vertical sans profil tout fait, illustrations qui suivent les réglages", async ({ page }) => {
     await openDemo(page);
-    // On y arrive depuis la négociation elle-même, dans la Messagerie.
+    // On y arrive depuis la négociation elle-même, dans la Messagerie ; l'ancienne adresse redirige.
     await gotoApp(page, "/app/messages/conv-001");
     await page.getByRole("link", { name: /Calculé avec vos règles de négociation/ }).click();
-    await expect(page).toHaveURL(/\/app\/selling-rules$/);
-    await expect(page.getByRole("heading", { name: "Négociation et marges", level: 1 })).toBeVisible();
+    await expect(page).toHaveURL(/\/app\/automatisation\/negociation$/);
+    await expect(page.getByRole("heading", { name: "Négociation automatique", level: 1 })).toBeVisible();
+    await gotoApp(page, "/app/selling-rules");
+    await expect(page).toHaveURL(/\/app\/automatisation\/negociation$/);
+    // Plus de profils « Prudent / Équilibré / Écouler vite » : dix étapes, de haut en bas.
+    await expect(page.getByRole("radio", { name: /Prudent|Équilibré|Écouler vite/ })).toHaveCount(0);
+    await expect(page.getByRole("list", { name: "Étapes de la négociation automatique" }).getByRole("heading", { level: 2 })).toHaveCount(10);
 
-    await page.getByRole("radio", { name: /Prudent/ }).click();
-    await expect(page.getByRole("radio", { name: /Prudent/ })).toHaveAttribute("aria-checked", "true");
-    await expect(page.getByLabel("Remise maximale (%)")).toHaveValue("10");
+    // Article d'exemple à 15 € : tranche 10 à 19,99 €, marge 15 % → jamais sous 12,50 €.
+    const step1 = page.getByRole("listitem").filter({ has: page.getByRole("heading", { name: /Règles de négociation/ }) });
+    await expect(step1.getByText(/jamais sous/)).toContainText("12,50");
+    await page.getByLabel("Marge de la tranche 2 (%)").fill("30");
+    await expect(step1.getByText(/jamais sous/)).toContainText("10,50");
     await expect(page.getByText("Modifications non enregistrées.")).toBeVisible();
 
-    // Veste à 40 € achetée 15 €, offre à 25 € : remise de 37,5 % > 10 % → contre-proposition à 40 € − 4 %.
-    await page.getByLabel("Offre de l'acheteur").fill("25");
-    const result = page.getByTestId("simulation-result");
-    await expect(result).toContainText(/Contre-proposition à 38,40\s€/);
-    await expect(result).toContainText(/Acceptée d'office dès\s*36,00\s€/);
-    await expect(page.getByText("L'offre vous est confiée", { exact: true })).toBeVisible();
-
-    // Une règle écrite en phrase se modifie directement et le simulateur suit.
-    await page.getByLabel("Remise maximale (%)").fill("40");
-    await expect(result).toContainText("Offre acceptée");
-
     await page.getByRole("button", { name: "Enregistrer" }).click();
-    await expect(page.getByText("Règles de négociation enregistrées")).toBeVisible();
+    await expect(page.getByText("Négociation enregistrée", { exact: true })).toBeVisible();
     await page.reload();
-    await expect(page.getByLabel("Remise maximale (%)")).toHaveValue("40");
-    await expect(page.getByLabel("Marge minimale (%)")).toHaveValue("35");
+    await expect(page.getByLabel("Marge de la tranche 2 (%)")).toHaveValue("30");
   });
 
   test("organisation : réglages généraux seulement, avec renvoi vers les règles de vente et d'achat", async ({ page }) => {
@@ -40,8 +35,8 @@ test.describe("réglages : négociation, comptes et accès, assistant IA", () =>
     await expect(page.getByText("Règles de marge et de négociation")).toHaveCount(0);
     await expect(page.getByLabel("Remise maximale (%)")).toHaveCount(0);
     await expect(page.getByRole("link", { name: /Achat auto/ }).last()).toHaveAttribute("href", "/app/auto-buy");
-    await page.getByRole("link", { name: /Négociation et marges · Vendre/ }).click();
-    await expect(page).toHaveURL(/\/app\/selling-rules$/);
+    await page.getByRole("link", { name: /Négociation automatique · Automatisation/ }).click();
+    await expect(page).toHaveURL(/\/app\/automatisation\/negociation$/);
   });
 
   test("comptes et accès : rôles expliqués, matrice issue des permissions, ancienne adresse redirigée", async ({ page }) => {

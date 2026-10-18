@@ -66,12 +66,12 @@ export default function AgencyClients() {
   return (
     <>
       <PageHeader
-        eyebrow="Selio Agence · Aperçu"
+        eyebrow="Selio Agents · Aperçu"
         title="Clients"
         description="Les boutiques que votre agence suit : comptes Vinted gérés, annonces en ligne, ventes du mois et note du dressing. Votre boutique est réelle ; les autres lignes sont des exemples fictifs pour montrer l'écran."
         actions={<Button variant="secondary" icon={<UserPlus />} disabled title="Aperçu : l'invitation de boutiques clientes n'est pas encore ouverte">Inviter une boutique</Button>}
       />
-      <PreviewNotice space="agence">Aucune boutique cliente n'est reliée et rien n'est facturé. Les chiffres marqués « Exemple fictif » sont inventés pour l'illustration.</PreviewNotice>
+      <PreviewNotice space="agents">Aucune boutique cliente n'est reliée et rien n'est facturé. Les chiffres marqués « Exemple fictif » sont inventés pour l'illustration.</PreviewNotice>
 
       {/* Mobile : une carte par boutique (pas de tableau à faire défiler de côté). */}
       <ul className="flex flex-col gap-3 md:hidden" aria-label="Boutiques suivies">
@@ -142,8 +142,8 @@ export default function AgencyClients() {
         <Card className="flex flex-col gap-3">
           <h2 className="text-md font-semibold text-text">Déjà prêt dans cet aperçu</h2>
           <p className="text-sm text-text-muted">La marque blanche : le nom, le logo texte et la couleur de l'outil de votre agence, avec l'aperçu en direct.</p>
-          <Link to="/agence/marque-blanche" className="text-sm font-medium text-accent hover:underline">Personnaliser la marque blanche →</Link>
-          <Link to="/agence/equipe" className="text-sm font-medium text-accent hover:underline">Équipe et accès →</Link>
+          <Link to="/agents/marque-blanche" className="text-sm font-medium text-accent hover:underline">Personnaliser la marque blanche →</Link>
+          <Link to="/agents" className="text-sm font-medium text-accent hover:underline">Équipe et accès →</Link>
         </Card>
       </div>
     </>

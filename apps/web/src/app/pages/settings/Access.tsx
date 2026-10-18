@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Minus } from "lucide-react";
 import { ROLES, ROLE_LABELS, type Role } from "@selio/contracts";
 import { ACTIONS, ACTION_LABELS, PERMISSION_GROUPS, ROLES_BY_RANK, actionsUnlockedAt, can, type Action } from "@selio/domain";
-import { Alert, Avatar, Button, Card, ConfirmDialog, Field, Input, Select, Table, TableWrap, Tag, Td, Th, Tr, cn, formatDate } from "@selio/ui";
+import { Alert, Avatar, Button, Card, ConfirmDialog, Field, Input, PageHeader, Select, Table, TableWrap, Tag, Td, Th, Tr, cn, formatDate } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../../lib/data/provider";
 import { QueryBoundary } from "../../components/common";
 import { useAppMutation } from "../../components/hooks";
+import { AdminTabs } from "../admin-tabs";
 
 /** À qui s'adresse chaque rôle, en une phrase, et ce qu'il fait au quotidien. */
 const ROLE_GUIDE: Record<Role, { forWhom: string; summary: string }> = {
@@ -34,9 +35,12 @@ export default function Access() {
   const manage = can(session.role, "members.manage");
   const isOwner = session.role === "owner";
   const assignable = ROLES.filter((r) => r !== "owner" || isOwner);
+  // Même page dans Paramètres et dans Opérateur › Administration (en-tête et onglets propres à l'administration).
+  const inAdmin = useLocation().pathname.startsWith("/admin");
 
   return (
     <div className="flex flex-col gap-4">
+      {inAdmin ? <div><PageHeader eyebrow="Opérateur" title="Administration" description="Les comptes et accès de l'équipe : qui est membre, avec quel rôle, et ce que chaque rôle permet. Les mêmes réglages restent dans Paramètres › Comptes et accès." /><AdminTabs /></div> : null}
       <Card>
         <h2 className="text-md font-semibold">Qui accède à Selio</h2>
         <p className="mt-1 max-w-2xl text-sm text-text-muted">Chaque personne a son propre identifiant et un rôle dans l'organisation. Le rôle décide de ce qu'elle peut voir et faire ; ses actions sont tracées dans le <Link to="/app/settings/security" className="font-medium text-accent hover:underline">journal d'audit</Link>. Ces accès concernent l'application : vos comptes Vinted se gèrent dans <Link to="/app/accounts" className="font-medium text-accent hover:underline">Comptes Vinted</Link>.</p>

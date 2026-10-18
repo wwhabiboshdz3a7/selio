@@ -4,7 +4,7 @@ import { isoDate } from "./common";
 /**
  * Espaces Selio : l'outil de gestion (Selio) et les espaces qui s'appuient
  * sur ses données (Studio, Agence, Global). Seule la marque blanche de
- * Selio Agence (aperçu) a une donnée propre, enregistrée en démonstration.
+ * Selio Agents (aperçu) a une donnée propre, enregistrée en démonstration.
  */
 
 /** Couleurs d'accent proposées pour la marque blanche : toutes issues de la charte (jamais une couleur libre). */

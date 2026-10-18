@@ -77,6 +77,107 @@ export const dressingSettings = z.object({
 });
 export type DressingSettings = z.infer<typeof dressingSettings>;
 
+/** Tranche de prix : jusqu'à `upToCents` (null = au-delà), marge de négociation accordée. */
+export const priceBand = z.object({
+  upToCents: nonNegCents.nullable(),
+  /** Marge de négociation : remise maximale accordée sur le prix affiché. */
+  marginRate: rate,
+});
+export type PriceBand = z.infer<typeof priceBand>;
+
+const message = (fallback: string) => z.string().trim().max(600).default(fallback);
+
+/**
+ * Négociation automatique, réglée étape par étape (Automatisation ›
+ * Négociation automatique) : marge par tranche de prix, paliers de
+ * réduction, lots, baisses de prix, messages et délais.
+ */
+export const negotiationAutomation = z.object({
+  enabled: z.boolean().default(true),
+  bands: z.array(priceBand).min(1).max(8).default([
+    { upToCents: 999, marginRate: 0.1 },
+    { upToCents: 1999, marginRate: 0.15 },
+    { upToCents: 4999, marginRate: 0.2 },
+    { upToCents: null, marginRate: 0.25 },
+  ]),
+  /** Paliers : part de la marge accordée à chaque contre-offre (0,6 → 60 %). Le dernier vaut 1. */
+  steps: z.array(z.number().min(0.05).max(1)).min(1).max(5).default([0.6, 0.75, 1]),
+  lot: z.object({
+    enabled: z.boolean().default(true),
+    twoItemsRate: rate.default(0.1),
+    threePlusRate: rate.default(0.15),
+  }).default({}),
+  priceDrops: z.object({
+    enabled: z.boolean().default(false),
+    afterDays: z.number().int().min(1).max(90).default(10),
+    rate: rate.default(0.05),
+    /** Jamais en dessous de cette part du prix initial. */
+    floorRate: rate.default(0.7),
+  }).default({}),
+  messages: z.object({
+    greeting: message("Bonjour {prenom}, merci pour votre intérêt pour « {article} » !"),
+    counter: message("Je ne peux pas descendre jusque-là, mais je vous propose {prix}. Ça vous va ?"),
+    final: message("C'est mon dernier prix : {prix}. Je ne peux pas faire mieux, l'article est en très bon état."),
+    afterFinal: message("Si vous changez d'avis, l'offre à {prix} reste valable jusqu'à ce soir."),
+    accepted: message("Parfait, c'est d'accord pour {prix} ! Je prépare le colis dès votre achat."),
+    fallback: message("Je comprends, ce prix est trop bas pour moi. Ajoutez l'article en favori : je vous préviendrai en cas de baisse."),
+  }).default({}),
+  timing: z.object({
+    minDelayMinutes: z.number().int().min(0).max(240).default(2),
+    maxDelayMinutes: z.number().int().min(0).max(480).default(15),
+    activeFrom: z.number().int().min(0).max(23).default(8),
+    activeTo: z.number().int().min(1).max(24).default(22),
+    /** Envoyer la contre-offre comme offre Vinted (bouton « Acheter à ce prix »), pas seulement en message. */
+    sendOffers: z.boolean().default(true),
+    offerValidityHours: z.number().int().min(1).max(72).default(24),
+  }).default({}),
+});
+export type NegotiationAutomation = z.infer<typeof negotiationAutomation>;
+
+/** Onglet Automatisation : messages, négociation, après-vente et stock automatique. */
+export const automationSettings = z.object({
+  favorites: z.object({
+    enabled: z.boolean().default(true),
+    delayMinutes: z.number().int().min(0).max(1440).default(30),
+    /** Remise proposée avec le message (0 = message seul). */
+    offerRate: rate.default(0.1),
+    message: message("Bonjour {prenom} ! J'ai vu que « {article} » vous plaît : je peux vous le laisser à {prix}, livraison rapide."),
+    onlyOncePerBuyer: z.boolean().default(true),
+  }).default({}),
+  autoReply: z.object({
+    enabled: z.boolean().default(true),
+    /** Réponses IA envoyées seules (sinon : brouillon à valider). */
+    sendWithoutApproval: z.boolean().default(false),
+    topics: z.object({
+      availability: z.boolean().default(true),
+      size: z.boolean().default(true),
+      condition: z.boolean().default(true),
+      shipping: z.boolean().default(true),
+      bundle: z.boolean().default(true),
+      photos: z.boolean().default(false),
+    }).default({}),
+    awayMessage: message("Merci pour votre message ! Je vous réponds dès demain matin."),
+  }).default({}),
+  negotiation: negotiationAutomation.default({}),
+  afterSale: z.object({
+    autoLabels: z.boolean().default(true),
+    autoPrint: z.boolean().default(false),
+    printer: z.string().trim().max(80).default(""),
+    soldMessage: z.object({ enabled: z.boolean().default(true), text: message("Merci pour votre achat ! Je prépare votre colis, je vous l'envoie très vite.") }).default({}),
+    completedMessage: z.object({ enabled: z.boolean().default(true), text: message("Merci d'avoir validé la commande, j'espère que l'article vous plaît ! À bientôt, abonnez-vous si vous voulez : j'en mettrai d'autres.") }).default({}),
+    pickupReminder: z.object({ enabled: z.boolean().default(true), afterHours: z.number().int().min(1).max(168).default(24), text: message("Bonjour {prenom}, votre colis vous attend au point relais depuis hier : pensez à le récupérer !") }).default({}),
+  }).default({}),
+  stock: z.object({
+    enabled: z.boolean().default(false),
+    /** Remettre en ligne seulement s'il reste du stock (quantité > 1). */
+    onlyWithStock: z.boolean().default(true),
+    delayMinutes: z.number().int().min(0).max(1440).default(10),
+    /** Comptes dont les ventes déclenchent la remise en ligne (vide = tous les comptes Vente). */
+    connectionIds: z.array(id).max(50).default([]),
+  }).default({}),
+});
+export type AutomationSettings = z.infer<typeof automationSettings>;
+
 export const notificationSettings = z.object({
   emailDigest: z.boolean().default(false),
   newMessage: z.boolean().default(true),
@@ -94,6 +195,7 @@ export const orgSettings = z.object({
   buyerFees: buyerFees.default({}),
   autoBuy: autoBuySettings.default({}),
   dressing: dressingSettings.default({}),
+  automation: automationSettings.default({}),
   retentionDays: z.object({
     messages: z.number().int().min(30).max(3650).default(730),
     auditLogs: z.number().int().min(90).max(3650).default(365),

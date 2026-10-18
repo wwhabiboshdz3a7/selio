@@ -51,12 +51,12 @@ export const router = createBrowserRouter([
     errorElement: <RouteError />,
     children: guarded([
       { index: true, lazy: lazy(() => import("./app/pages/Overview")) },
-      // Accueil central : les quatre espaces Selio (page d'arrivée après connexion).
+      // Accueil central : Selio et ses filiales (page d'arrivée après connexion).
       { path: "espaces", lazy: lazy(() => import("./app/spaces/pages/Hub")) },
       // Le générateur d'annonces vit dans Selio Studio ; l'ancienne adresse y mène.
       { path: "studio", element: <Navigate to="/studio" replace /> },
       { path: "dressing", lazy: lazy(() => import("./app/pages/Dressing")) },
-      { path: "market", lazy: lazy(() => import("./app/pages/Market")) },
+      { path: "market", element: <Navigate to="/track" replace /> },
       { path: "auto-buy", lazy: lazy(() => import("./app/pages/AutoBuy")) },
       { path: "onboarding", lazy: lazy(() => import("./app/pages/Onboarding")) },
       { path: "items", lazy: lazy(() => import("./app/pages/Items")) },
@@ -64,7 +64,13 @@ export const router = createBrowserRouter([
       { path: "items/import", lazy: lazy(() => import("./app/pages/ItemImport")) },
       { path: "items/:id", lazy: lazy(() => import("./app/pages/ItemDetail")) },
       { path: "items/:id/edit", lazy: lazy(() => import("./app/pages/ItemForm")) },
-      { path: "selling-rules", lazy: lazy(() => import("./app/pages/SellingRules")) },
+      { path: "selling-rules", element: <Navigate to="/app/automatisation/negociation" replace /> },
+      { path: "automatisation", lazy: lazy(() => import("./app/pages/automation/AutomationHub")) },
+      { path: "automatisation/favoris", lazy: lazy(() => import("./app/pages/automation/Favorites")) },
+      { path: "automatisation/reponse", lazy: lazy(() => import("./app/pages/automation/AutoReply")) },
+      { path: "automatisation/negociation", lazy: lazy(() => import("./app/pages/automation/Negotiation")) },
+      { path: "automatisation/apres-vente", lazy: lazy(() => import("./app/pages/automation/AfterSale")) },
+      { path: "automatisation/stock", lazy: lazy(() => import("./app/pages/automation/AutoStock")) },
       { path: "messages", lazy: lazy(() => import("./app/pages/Messages")) },
       { path: "messages/:id", lazy: lazy(() => import("./app/pages/Messages")) },
       { path: "customers", lazy: lazy(() => import("./app/pages/Customers")) },
@@ -94,7 +100,7 @@ export const router = createBrowserRouter([
       { path: "*", element: <Navigate to="/app" replace /> },
     ]),
   },
-  // Espaces Selio Studio, Agence (aperçu) et Global (en préparation) : même mise en page, menu propre.
+  // Filiales : Selio Studio, Selio Agents (aperçu), Selio Track, Selio Cloud et le générateur de compte (en développement).
   {
     path: "/studio",
     element: (
@@ -111,7 +117,7 @@ export const router = createBrowserRouter([
     ]),
   },
   {
-    path: "/agence",
+    path: "/agents",
     element: (
       <RequireSession>
         <AppLayout />
@@ -119,15 +125,15 @@ export const router = createBrowserRouter([
     ),
     errorElement: <RouteError />,
     children: guarded([
-      { index: true, lazy: lazy(() => import("./app/spaces/pages/AgencyClients")) },
+      { index: true, lazy: lazy(() => import("./app/spaces/pages/AgencyTeam")) },
+      { path: "clients", lazy: lazy(() => import("./app/spaces/pages/AgencyClients")) },
       { path: "marque-blanche", lazy: lazy(() => import("./app/spaces/pages/AgencyBranding")) },
-      { path: "equipe", lazy: lazy(() => import("./app/spaces/pages/AgencyTeam")) },
       { path: "facturation", lazy: lazy(() => import("./app/spaces/pages/AgencyBilling")) },
-      { path: "*", element: <Navigate to="/agence" replace /> },
+      { path: "*", element: <Navigate to="/agents" replace /> },
     ]),
   },
   {
-    path: "/global",
+    path: "/track",
     element: (
       <RequireSession>
         <AppLayout />
@@ -135,12 +141,43 @@ export const router = createBrowserRouter([
     ),
     errorElement: <RouteError />,
     children: guarded([
-      { index: true, lazy: lazy(() => import("./app/spaces/pages/GlobalMarkets")) },
-      { path: "tailles", lazy: lazy(() => import("./app/spaces/pages/GlobalSizes")) },
-      { path: "places-de-marche", lazy: lazy(() => import("./app/spaces/pages/GlobalMarketplaces")) },
-      { path: "*", element: <Navigate to="/global" replace /> },
+      { index: true, lazy: lazy(() => import("./app/pages/Market")) },
+      { path: "*", element: <Navigate to="/track" replace /> },
     ]),
   },
+  {
+    path: "/cloud",
+    element: (
+      <RequireSession>
+        <AppLayout />
+      </RequireSession>
+    ),
+    errorElement: <RouteError />,
+    children: guarded([
+      { index: true, lazy: lazy(() => import("./app/spaces/pages/SpaceDevelopment")) },
+      { path: "*", element: <Navigate to="/cloud" replace /> },
+    ]),
+  },
+  {
+    path: "/generateur",
+    element: (
+      <RequireSession>
+        <AppLayout />
+      </RequireSession>
+    ),
+    errorElement: <RouteError />,
+    children: guarded([
+      { index: true, lazy: lazy(() => import("./app/spaces/pages/SpaceDevelopment")) },
+      { path: "*", element: <Navigate to="/generateur" replace /> },
+    ]),
+  },
+  // Anciennes adresses : Selio Agence est devenu Selio Agents ; Selio Global (nom de l'entreprise) n'est plus un espace.
+  { path: "/agence", element: <Navigate to="/agents/clients" replace /> },
+  { path: "/agence/equipe", element: <Navigate to="/agents" replace /> },
+  { path: "/agence/marque-blanche", element: <Navigate to="/agents/marque-blanche" replace /> },
+  { path: "/agence/facturation", element: <Navigate to="/agents/facturation" replace /> },
+  { path: "/agence/*", element: <Navigate to="/agents" replace /> },
+  { path: "/global/*", element: <Navigate to="/app/espaces" replace /> },
   {
     path: "/admin",
     element: (
@@ -151,7 +188,11 @@ export const router = createBrowserRouter([
       </RequireSession>
     ),
     errorElement: <RouteError />,
-    children: guarded([{ index: true, lazy: lazy(() => import("./app/pages/Admin")) }]),
+    children: guarded([
+      { index: true, lazy: lazy(() => import("./app/pages/Admin")) },
+      // Comptes et accès : aussi dans Paramètres ; ici, à portée de l'opérateur.
+      { path: "acces", lazy: lazy(() => import("./app/pages/settings/Access")) },
+    ]),
   },
   { path: "*", element: <Navigate to="/" replace /> },
 ]);

@@ -28,6 +28,7 @@ export async function updateOrg(ctx: OrgContext, raw: unknown): Promise<Organiza
       buyerFees: { ...org.settings.buyerFees, ...(input.buyerFees ?? {}) },
       autoBuy: { ...org.settings.autoBuy, ...(input.autoBuy ?? {}) },
       dressing: { ...org.settings.dressing, ...(input.dressing ?? {}) },
+      automation: { ...org.settings.automation, ...(input.automation ?? {}) },
       retentionDays: { ...org.settings.retentionDays, ...(input.retentionDays ?? {}) },
       onboarding: { ...org.settings.onboarding, ...(input.onboarding ?? {}) },
     });

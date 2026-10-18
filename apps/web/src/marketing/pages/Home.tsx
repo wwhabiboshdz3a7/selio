@@ -71,8 +71,8 @@ export default function Home() {
         </ol>
       </MarketingSection>
 
-      <MarketingSection reveal id="espaces" className="scroll-mt-14 border-t border-border" eyebrow="Une plateforme, puis des filiales" title="Quatre espaces, une seule IA" lead="Selio gère votre activité au quotidien. Sur ses données, trois espaces s'ajoutent : Studio écrit les annonces, Agence met l'outil à vos couleurs, Global prépare les autres pays.">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <MarketingSection reveal id="espaces" className="scroll-mt-14 border-t border-border" eyebrow="Une plateforme, puis des filiales" title="Selio et ses filiales, une seule IA" lead="Selio gère votre activité au quotidien, du sourcing à la remise en ligne. Sur ses données : Studio écrit les annonces, Agents organise l'équipe et les accès, Track montre où sourcer ; Cloud et le générateur de compte Vinted sont en développement.">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {SPACES.map((s) => <SpaceShowcaseCard key={s.id} space={s} compact />)}
         </div>
         <p className="mt-6">
@@ -85,7 +85,7 @@ export default function Home() {
           <div className="rounded-xl border border-border bg-bg p-6" data-reveal="">
             <h3 className="text-md font-semibold text-text">Disponible maintenant</h3>
             <div className="mt-4">
-              <CheckList items={["Gestion du stock, des clients, des commandes et des analyses", "Règles de marge et politique de négociation déterministe", "Messagerie avec brouillons et suggestions de réponse validées par vos règles", "Automatisations avec file de tâches, historique, pause et arrêt global", "Mode démonstration complet, données fictives et réinitialisables", "Modes clair et sombre, application installable (PWA)"]} />
+              <CheckList items={["Gestion du stock, des clients, des commandes et des analyses", "Règles de marge et politique de négociation déterministe", "Messagerie avec brouillons et suggestions de réponse validées par vos règles", "Onglet Automatisation : messages aux favoris, réponse et négociation automatiques, après-vente, bordereaux et stock automatique", "Mode démonstration complet, données fictives et réinitialisables", "Modes clair et sombre, application installable (PWA)"]} />
             </div>
           </div>
           <div className="rounded-xl border border-border bg-bg p-6" data-reveal="">

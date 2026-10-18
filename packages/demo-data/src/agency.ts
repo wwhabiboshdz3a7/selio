@@ -1,5 +1,5 @@
 /**
- * Selio Agence (aperçu) : boutiques clientes d'EXEMPLE, entièrement fictives.
+ * Selio Agents (aperçu) : boutiques clientes d'EXEMPLE, entièrement fictives.
  * Elles illustrent l'écran « Clients » et la facturation des clients ; aucune
  * n'existe, aucun chiffre n'est mesuré, rien n'est encaissé. L'interface les
  * marque toujours « Exemple fictif ».

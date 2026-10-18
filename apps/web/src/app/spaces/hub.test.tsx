@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 describe("accueil central des espaces", () => {
-  it("présente les quatre espaces, leur état et des chiffres tirés des données de la démo", async () => {
+  it("présente Selio et ses filiales, leur état et des chiffres tirés des données de la démo", async () => {
     const client = getDemoClient();
     await client.resetDemo();
     await client.login({ email: "marie@demo.selio.local", password: "demo" });
@@ -29,24 +29,22 @@ describe("accueil central des espaces", () => {
       </DataProvider>,
     );
 
-    expect(await screen.findByRole("heading", { name: "Vos espaces Selio" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Selio et ses filiales" })).toBeTruthy();
     const card = (name: string) => screen.getByRole("article", { name });
-    for (const name of ["Selio", "Selio Studio", "Selio Agence", "Selio Global"]) expect(card(name)).toBeTruthy();
+    for (const name of ["Selio", "Selio Studio", "Selio Agents", "Selio Track", "Selio Cloud", "Générateur de compte Vinted"]) expect(card(name)).toBeTruthy();
+    expect(screen.queryByRole("article", { name: "Selio Global" })).toBeNull();
     // États honnêtes.
     expect(within(card("Selio")).getByText("Disponible")).toBeTruthy();
-    expect(within(card("Selio Agence")).getByText("Aperçu")).toBeTruthy();
-    expect(within(card("Selio Global")).getByText("En préparation")).toBeTruthy();
-    expect(within(card("Selio Agence")).getAllByText(/Exemple fictif|exemples fictifs/).length).toBeGreaterThan(0);
+    expect(within(card("Selio Agents")).getAllByText("Aperçu").length).toBeGreaterThan(0);
+    for (const name of ["Selio Track", "Selio Cloud", "Générateur de compte Vinted"]) expect(within(card(name)).getByText("En développement")).toBeTruthy();
+    expect(within(card("Selio Agents")).getAllByText(/fictives|exemples fictifs/).length).toBeGreaterThan(0);
     // Studio : nombre d'annonces générées calculé depuis l'état de la démo, et leurs vignettes.
     const studio = card("Selio Studio");
     const figure = await within(studio).findByText("Annonces générées");
     expect(figure.nextElementSibling?.textContent).toBe(String(generated.length));
     expect(within(studio).getByRole("list", { name: "Dernières annonces générées" }).children.length).toBe(Math.min(5, generated.length));
-    // Global : la France seule est ouverte, les autres marchés sont listés.
-    const markets = within(card("Selio Global")).getByRole("list", { name: "Marchés" });
-    expect(within(markets).getByText(/France : Disponible/)).toBeTruthy();
-    expect(within(markets).getAllByRole("listitem").length).toBe(10);
-    // Chaque espace s'ouvre depuis sa carte.
-    expect(screen.getByRole("link", { name: "Ouvrir Selio Agence" }).getAttribute("href")).toBe("/agence");
+    // Chaque filiale s'ouvre depuis sa carte.
+    expect(screen.getByRole("link", { name: "Ouvrir Selio Agents" }).getAttribute("href")).toBe("/agents");
+    expect(screen.getByRole("link", { name: "Découvrir Selio Cloud" }).getAttribute("href")).toBe("/cloud");
   });
 });

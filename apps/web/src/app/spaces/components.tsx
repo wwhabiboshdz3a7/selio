@@ -3,12 +3,13 @@ import { Alert } from "@selio/ui";
 import { useData } from "../../lib/data/provider";
 
 /**
- * Bandeau des espaces en aperçu (Agence) ou en préparation (Global) : ce qui
- * existe, ce qui n'existe pas encore, et ce que le mode connecté enregistre.
+ * Bandeau des espaces en aperçu (Agents) ou en développement (Track, Cloud,
+ * générateur de compte) : ce qui existe, ce qui n'existe pas encore, et ce que
+ * le mode connecté enregistre.
  */
-export function PreviewNotice({ space, children }: { space: "agence" | "global"; children?: ReactNode }) {
+export function PreviewNotice({ space, children }: { space: "agents" | "development"; children?: ReactNode }) {
   const { mode } = useData();
-  const title = space === "agence" ? "Selio Agence est en aperçu" : "Selio Global est en préparation";
+  const title = space === "agents" ? "Selio Agents est en aperçu" : "En développement";
   return (
     <Alert tone="info" className="mb-6" title={title}>
       {children}

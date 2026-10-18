@@ -41,7 +41,7 @@ export default function Organisation() {
         <h2 className="text-md font-semibold">Règles de vente et d'achat</h2>
         <p className="mt-1 text-sm text-text-muted">Elles ont leur propre page, là où vous vendez et achetez.</p>
         <ul className="mt-3 flex flex-col">
-          <RuleLink to="/app/selling-rules" title="Négociation et marges" section="Vendre">Marge minimale, remise maximale, contre-propositions et frais vendeur : la réponse donnée à chaque offre d'acheteur, avec un simulateur.</RuleLink>
+          <RuleLink to="/app/automatisation/negociation" title="Négociation automatique" section="Automatisation">Marges par tranche de prix, paliers de réduction, lots, messages et délais : la réponse donnée à chaque offre d'acheteur, étape par étape.</RuleLink>
           <RuleLink to="/app/auto-buy" title="Achat auto" section="Acheter">Seuil de note, plafond par jour, prix maximal par article et frais acheteur (protection acheteurs).</RuleLink>
         </ul>
       </Card>

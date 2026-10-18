@@ -1,7 +1,6 @@
-import { CONNECTION_USAGE_LABELS, DEFAULT_TRIAL_DAYS, PLAN_QUOTAS, RULE_KIND_LABELS, autoBuySettings, buyerFees, marginRules, orgSettings, ruleLimits, schedule } from "@selio/contracts";
+import { CONNECTION_USAGE_LABELS, DEFAULT_TRIAL_DAYS, PLAN_QUOTAS, RULE_KIND_LABELS, autoBuySettings, buyerFees, orgSettings, ruleLimits, schedule } from "@selio/contracts";
 import { REVIEW_THRESHOLD, SCORE_BANDS } from "./buying";
 import { helpTokens, normalizeHelpText } from "./help-text";
-import { MARGIN_PRESETS } from "./margin-presets";
 import { DEFAULT_REPUBLISH_AFTER_DAYS } from "./online";
 import { MIN_REPUBLISH_VARIANTS } from "./republish";
 
@@ -26,6 +25,7 @@ export type HelpCategoryId =
   | "dressing"
   | "achats"
   | "messagerie"
+  | "automatisation"
   | "gestion"
   | "equipe"
   | "tarifs"
@@ -78,12 +78,13 @@ export const HELP_CATEGORIES: readonly HelpCategory[] = [
   { id: "generateur", title: "Générateur d'annonces et IA", summary: "Des photos à l'annonce, le prix conseillé, le rôle exact de l'IA." },
   { id: "dressing", title: "Dressing et republication", summary: "La note de chaque annonce et les republications pré-faites." },
   { id: "achats", title: "Bonnes affaires, À valider, Achat auto", summary: "Le radar, la note sur 100, la validation et l'achat automatique simulé." },
-  { id: "messagerie", title: "Messagerie, négociation et marges", summary: "Les réponses aux acheteurs, la décision sur une offre, les automatisations." },
+  { id: "messagerie", title: "Messagerie et marges", summary: "Les réponses aux acheteurs, la décision sur une offre, le calcul de la marge." },
+  { id: "automatisation", title: "Automatisation", summary: "Messages aux favoris, réponse et négociation automatiques, après-vente, bordereaux et stock automatique." },
   { id: "gestion", title: "Stock, commandes et analyses", summary: "Articles, import CSV, commandes, expédition, clients et indicateurs." },
   { id: "equipe", title: "Équipe, comptes et accès", summary: "Propriétaire, administrateur, opérateur, lecture seule ; inviter et retirer." },
   { id: "tarifs", title: "Tarifs et abonnement", summary: "L'essai Découverte, les plans Essentiel et Pro, les limites et le paiement." },
   { id: "donnees", title: "Données, sécurité et confidentialité", summary: "Où sont vos données, export, suppression, protection du compte, IA." },
-  { id: "filiales", title: "Selio Studio, Agence et Global", summary: "Les prochaines lignes de produit, en préparation." },
+  { id: "filiales", title: "Les filiales Selio", summary: "Selio Studio, Selio Agents, Selio Track, Selio Cloud et le générateur de compte Vinted." },
 ];
 
 let ENTRIES: readonly HelpEntry[] | null = null;
@@ -101,11 +102,11 @@ function buildHelpEntries(): HelpEntry[] {
   const Q = PLAN_QUOTAS;
   const AUTO_BUY = autoBuySettings.parse({});
   const BUYER_FEES = buyerFees.parse({});
-  const MARGIN = marginRules.parse({});
   const RETENTION = orgSettings.parse({}).retentionDays;
   const LIMITS = ruleLimits.parse({});
   const SCHEDULE = schedule.parse({});
-  const BALANCED = MARGIN_PRESETS.find((p) => p.id === "balanced");
+  const AUTOMATION = orgSettings.parse({}).automation;
+  const NEGO = AUTOMATION.negotiation;
   return [
   // ---- Démarrer -----------------------------------------------------------
   {
@@ -382,10 +383,10 @@ function buildHelpEntries(): HelpEntry[] {
   {
     id: "analyse-revendeurs",
     categoryId: "achats",
-    question: "À quoi sert l'analyse des revendeurs ?",
+    question: "À quoi sert Selio Track (l'analyse des revendeurs) ?",
     answer: "Elle montre qui vend le plus, dans quelles niches, à quel prix et à quel rythme, et fait ressortir les niches à forte demande et peu concurrencées, sur lesquelles lancer une recherche « Bonnes affaires ». En démonstration, le marché est simulé ; en mode connecté, l'analyse ne retient que des annonces réellement observées et reste vide tant qu'il n'y en a pas. Les chiffres d'affaires sont des estimations ; aucune donnée privée des vendeurs n'est consultée.",
-    keywords: ["revendeurs", "concurrents", "niches", "marché", "top vendeurs", "tendances"],
-    link: { label: "Analyse revendeurs", href: "/app/market" },
+    keywords: ["revendeurs", "concurrents", "niches", "marché", "top vendeurs", "tendances", "track", "sourcing", "resell track"],
+    link: { label: "Selio Track", href: "/track" },
   },
 
   // ---- Messagerie, négociation et marges ---------------------------------
@@ -406,11 +407,11 @@ function buildHelpEntries(): HelpEntry[] {
   },
   {
     id: "regles-marge",
-    categoryId: "messagerie",
+    categoryId: "automatisation",
     question: "Où régler mes marges et ma négociation ?",
-    answer: `Dans Vendre › Négociation et marges : marge minimale (taux et montant), remise maximale, pas de contre-proposition, nombre de contre-propositions par acheteur, frais vendeur et port. Trois préréglages remplissent les valeurs : ${MARGIN_PRESETS.map((p) => p.label).join(", ")}${BALANCED ? ` (« ${BALANCED.label} » correspond aux réglages par défaut : marge minimale ${pct(MARGIN.minMarginRate)} et ${eur(MARGIN.minMarginCents)}, remise maximale ${pct(MARGIN.maxDiscountRate)}, ${MARGIN.maxRoundsPerCustomer} contre-propositions)` : ""}. Un simulateur montre la réponse exacte à une offre, même sans enregistrer. Seuls le propriétaire et les administrateurs peuvent modifier ces règles.`,
-    keywords: ["marge", "négociation", "règles", "remise", "préréglage", "simulateur", "réglages vente"],
-    link: { label: "Négociation et marges", href: "/app/selling-rules" },
+    answer: `Dans Automatisation › Négociation automatique, un parcours en ${10} étapes, de la plus simple à la plus avancée. D'abord la marge de négociation par tranche de prix (par défaut ${NEGO.bands.map((b) => pct(b.marginRate)).join(", ")} selon le prix), puis les paliers de réduction : chaque contre-offre accorde une part de cette marge (${NEGO.steps.map((x) => pct(x)).join(", puis ")} : la dernière est l'offre finale). Ensuite les lots, les baisses de prix, les messages (contre-offre, offre finale, acceptation, repli) et les délais d'envoi. Chaque étape montre, à droite, une conversation d'exemple qui suit vos réglages. Il n'y a plus de profil tout fait : vous réglez, l'IA rédige les messages, et votre marge minimale reste un garde-fou. Seuls le propriétaire et les administrateurs peuvent modifier ces règles.`,
+    keywords: ["marge", "négociation", "règles", "remise", "paliers", "tranche de prix", "contre-offre", "offre finale", "réglages vente"],
+    link: { label: "Négociation automatique", href: "/app/automatisation/negociation" },
   },
   {
     id: "calcul-marge",
@@ -428,11 +429,35 @@ function buildHelpEntries(): HelpEntry[] {
   },
   {
     id: "automatisations",
-    categoryId: "messagerie",
-    question: "Que peuvent faire les automatisations ?",
-    answer: `Six types de règles : ${Object.values(RULE_KIND_LABELS).map((l) => l.charAt(0).toLowerCase() + l.slice(1)).join(", ")}. Chacune a des horaires (par défaut de ${SCHEDULE.startHour} h à ${SCHEDULE.endHour} h), des limites (${LIMITS.maxPerDay} actions par jour, ${LIMITS.maxPerCustomerPerDay} par acheteur, ${LIMITS.minMinutesBetweenActions} minutes entre deux actions par défaut) et une validation humaine activée par défaut ; un bouton met tout en pause. Les comptes Perso ne sont jamais concernés, et les actions sur Vinted exigent un navigateur ouvert avec l'extension.`,
+    categoryId: "automatisation",
+    question: "Que contient l'onglet Automatisation ?",
+    answer: `Quatre blocs (messages aux favoris, réponse automatique, négociation automatique, messages après-vente), plus l'après-vente sans action manuelle (bordereaux commandés et imprimés, relance du colis) et le stock automatique. Le journal des tâches garde en plus six types de règles : ${Object.values(RULE_KIND_LABELS).map((l) => l.charAt(0).toLowerCase() + l.slice(1)).join(", ")}. Chacune a des horaires (par défaut de ${SCHEDULE.startHour} h à ${SCHEDULE.endHour} h), des limites (${LIMITS.maxPerDay} actions par jour, ${LIMITS.maxPerCustomerPerDay} par acheteur, ${LIMITS.minMinutesBetweenActions} minutes entre deux actions par défaut) et une validation humaine activée par défaut ; un bouton met tout en pause. Les comptes Perso ne sont jamais concernés, et les actions sur Vinted exigent un navigateur ouvert avec l'extension.`,
     keywords: ["automatisation", "règle", "relance", "automatique", "pause", "baisse de prix", "programmer"],
-    link: { label: "Automatisations", href: "/app/automations" },
+    link: { label: "Automatisation", href: "/app/automatisation" },
+  },
+  {
+    id: "apres-vente",
+    categoryId: "automatisation",
+    question: "Que fait l'après-vente automatique ?",
+    answer: `Dès qu'un article se vend, Selio commande le bordereau d'envoi (il est prêt à l'avance) et peut l'imprimer seul si vous cochez « Impression automatique ». Il envoie un message de remerciement après la vente, un autre quand la commande est finalisée (argent reçu), et relance l'acheteur ${AUTOMATION.afterSale.pickupReminder.afterHours} h après le dépôt du colis au point relais pour qu'il pense à le récupérer. Chaque message se modifie dans Automatisation › Après-vente. En démonstration, tout est simulé ; avec Vinted, ces actions passent par l'extension, navigateur ouvert.`,
+    keywords: ["après-vente", "bordereau", "étiquette", "imprimer", "impression", "relance", "colis", "point relais", "remerciement", "merci"],
+    link: { label: "Après-vente", href: "/app/automatisation/apres-vente" },
+  },
+  {
+    id: "stock-automatique",
+    categoryId: "automatisation",
+    question: "Qu'est-ce que le stock automatique ?",
+    answer: "Une fois activé, quand un article d'un dressing suivi se vend, Selio le remet en ligne automatiquement (nouvelle annonce identique) tant qu'il vous en reste en stock. Vous choisissez les comptes concernés et le délai avant la remise en ligne. Il est désactivé par défaut ; les comptes Perso ne sont jamais concernés.",
+    keywords: ["stock automatique", "remise en ligne", "remettre en ligne", "relister", "republier", "quantité", "vendu"],
+    link: { label: "Stock automatique", href: "/app/automatisation/stock" },
+  },
+  {
+    id: "messages-favoris",
+    categoryId: "automatisation",
+    question: "À quoi servent les messages aux favoris ?",
+    answer: `Quand un acheteur ajoute un de vos articles en favori, Selio peut lui écrire après un délai (par défaut ${AUTOMATION.favorites.delayMinutes} minutes), avec une petite remise s'il le faut (par défaut ${pct(AUTOMATION.favorites.offerRate)}), une seule fois par acheteur. La réponse automatique, elle, répond aux questions courantes (disponibilité, taille, état, envoi, lot) à partir de la fiche de l'article ; par défaut, ses réponses restent des brouillons à valider.`,
+    keywords: ["favori", "favoris", "like", "coeur", "relance", "réponse automatique", "question", "répondre"],
+    link: { label: "Messages aux favoris", href: "/app/automatisation/favoris" },
   },
 
   // ---- Stock, commandes et analyses --------------------------------------
@@ -620,37 +645,60 @@ function buildHelpEntries(): HelpEntry[] {
     link: { label: "Paramètres › Organisation", href: "/app/settings/organisation" },
   },
 
-  // ---- Selio Studio, Agence et Global ------------------------------------
+  // ---- Les filiales Selio -------------------------------------------------
   {
     id: "filiales-selio",
     categoryId: "filiales",
-    question: "Que sont Selio Studio, Selio Agence et Selio Global ?",
-    answer: "Les prochaines lignes de produit, construites sur la même IA une fois l'outil de gestion installé chez les revendeurs. Selio Studio : la génération d'annonces optimisées à partir de vos photos (titre, description, attributs et prix), nourrie par ce qui fonctionne. Selio Agence : l'outil Selio en marque blanche pour les agences de revente, les dépôts-vente et les équipes, avec la gestion de leurs propres clients. Selio Global : une application par pays. Toutes trois sont en préparation ; aucune n'est commercialisée aujourd'hui.",
-    keywords: ["filiales", "studio", "agence", "global", "nouveaux produits", "à venir", "feuille de route"],
+    question: "Quelles sont les filiales Selio ?",
+    answer: "Selio est l'outil de gestion du revendeur. Autour de lui : Selio Studio (disponible) écrit vos annonces à partir de vos photos ; Selio Agents (en aperçu) gère l'administrateur, les équipes et les accès ; Selio Track, Selio Cloud et le générateur de compte Vinted sont en développement. On passe de l'un à l'autre depuis le bloc en haut du menu.",
+    keywords: ["filiales", "studio", "agents", "track", "cloud", "générateur de compte", "nouveaux produits", "à venir", "feuille de route"],
     status: "planned",
   },
   {
     id: "studio-ou-generateur",
     categoryId: "filiales",
     question: "Selio Studio remplace-t-il le générateur d'annonces ?",
-    answer: "Non. Le générateur d'annonces fait partie de Selio dès aujourd'hui. Selio Studio est prévu comme un produit dédié qui s'appuiera sur les données de performance des annonces pour les écrire automatiquement. Il est en préparation, sans date annoncée.",
+    answer: "Selio Studio, c'est le générateur d'annonces : vos photos deviennent une annonce complète (titre, description, attributs, prix), article après article, avec l'historique des annonces générées et ce qui performe. Le bouton « Générer une annonce » du menu y mène directement.",
     keywords: ["studio", "générateur", "remplacer", "différence", "annonces optimisées"],
+  },
+  {
+    id: "selio-track",
+    categoryId: "filiales",
+    question: "Qu'est-ce que Selio Track ?",
+    answer: "Selio Track remplace l'analyse des revendeurs : suivre le sourcing de comptes Vinted (ce qu'ils vendent, à quel prix, à quel rythme) pour savoir quoi acheter. Il est en développement ; une première version est déjà dans la démonstration (top revendeurs, niches, marques, tranches de prix), très simple à prendre en main.",
+    keywords: ["track", "resell track", "sourcing", "suivre", "revendeurs", "concurrents", "comptes suivis"],
+    status: "planned",
+  },
+  {
+    id: "selio-cloud",
+    categoryId: "filiales",
+    question: "Qu'est-ce que Selio Cloud ?",
+    answer: "Selio Cloud est en développement : vos automatisations (messages, négociation, après-vente, stock automatique) tourneront sur nos serveurs, sans laisser votre ordinateur allumé avec l'extension. Aujourd'hui, les actions sur Vinted passent encore par l'extension, navigateur ouvert.",
+    keywords: ["cloud", "serveur", "ordinateur éteint", "24h/24", "en continu", "sans extension"],
+    status: "planned",
+  },
+  {
+    id: "generateur-compte",
+    categoryId: "filiales",
+    question: "Qu'est-ce que le générateur de compte Vinted ?",
+    answer: "Un assistant en développement pour préparer un nouveau compte vendeur : pseudo, présentation, photo de profil, réglages d'envoi et premières annonces. Le compte est créé par vous, à votre nom, dans le respect des règles de Vinted ; Selio ne crée aucun compte à votre place.",
+    keywords: ["générateur de compte", "nouveau compte", "créer un compte", "ouvrir un compte", "profil vinted"],
     status: "planned",
   },
   {
     id: "agence-marque-blanche",
     categoryId: "filiales",
-    question: "Je gère une agence ou un dépôt-vente : Selio est-il fait pour moi ?",
-    answer: `Aujourd'hui, le plan Pro permet de travailler en équipe (jusqu'à ${Q.pro.members} personnes, avec rôles et journal d'audit) sur plusieurs comptes Vinted. La marque blanche, à vos couleurs et avec la gestion de vos propres clients, est l'objet de Selio Agence, en préparation.`,
-    keywords: ["agence", "dépôt-vente", "marque blanche", "professionnel", "équipe de revendeurs", "clients"],
+    question: "Je travaille en équipe ou en agence : où gérer les accès ?",
+    answer: `Dans Selio Agents : l'administrateur, les équipes et les accès (propriétaire, administrateur, opérateur, lecture seule), avec le journal d'audit ; le plan Pro accepte jusqu'à ${Q.pro.members} personnes. Les boutiques clientes et la marque blanche y sont en aperçu, en développement pour les agences et dépôts-vente. Les mêmes accès restent dans Paramètres › Comptes et accès.`,
+    keywords: ["agence", "agents", "équipe", "accès", "administrateur", "dépôt-vente", "marque blanche", "professionnel", "clients"],
     status: "planned",
   },
   {
     id: "global-pays",
     categoryId: "filiales",
     question: "Selio sera-t-il disponible dans d'autres pays et sur d'autres plateformes ?",
-    answer: "C'est l'objet de Selio Global, en préparation : une application locale par pays, avec ses codes, ses marques et sa langue, d'abord en Europe, puis aux États-Unis et en Australie, et ensuite d'autres plateformes comme Leboncoin, eBay, Etsy et Shopify. Aujourd'hui, Selio est en français et ne relie que Vinted, par l'extension, à titre expérimental.",
-    keywords: ["pays", "international", "langue", "anglais", "leboncoin", "ebay", "etsy", "shopify", "global"],
+    answer: "C'est en développement, sans date : d'autres pays d'Europe, puis d'autres plateformes comme Leboncoin, eBay ou Etsy. Aujourd'hui, Selio est en français et ne relie que Vinted, par l'extension, à titre expérimental.",
+    keywords: ["pays", "international", "langue", "anglais", "leboncoin", "ebay", "etsy", "shopify"],
     status: "planned",
   },
   ];
@@ -685,7 +733,7 @@ const SYNONYM_GROUPS: string[][] = [
   ["photo", "photos", "image", "images"],
   ["automatique", "automatisation", "automatisations", "automatiser", "auto"],
   ["limite", "limites", "quota", "quotas", "plafond", "maximum", "depasser", "depassement"],
-  ["filiale", "filiales", "studio", "agence", "global", "international", "pays"],
+  ["filiale", "filiales", "studio", "agents", "agence", "track", "cloud", "international", "pays"],
   ["affilie", "officiel", "partenaire", "approuve"],
   ["demo", "demonstration", "fictif", "exemple"],
   ["vendre", "vente", "vendeur", "vendu"],

@@ -16,16 +16,17 @@ async function noHorizontalOverflow(page: Page): Promise<void> {
   expect(overflow).toBe(false);
 }
 
-test.describe("espaces Selio", () => {
+test.describe("Selio et ses filiales", () => {
   test("accueil central après /demo, sélecteur d'espace et menus propres", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await openDemo(page, null);
-    await expect(page.getByRole("heading", { name: "Vos espaces Selio" })).toBeVisible();
-    for (const name of ["Selio", "Selio Studio", "Selio Agence", "Selio Global"]) await expect(page.getByRole("article", { name, exact: true })).toBeVisible();
-    await expect(page.getByRole("article", { name: "Selio Agence" }).getByText("Aperçu", { exact: true })).toBeVisible();
-    await expect(page.getByRole("article", { name: "Selio Global" }).getByText("En préparation", { exact: true })).toBeVisible();
-    await expect(page.getByText("Comment les espaces s'enchaînent")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Selio et ses filiales" })).toBeVisible();
+    for (const name of ["Selio", "Selio Studio", "Selio Agents", "Selio Track", "Selio Cloud", "Générateur de compte Vinted"]) await expect(page.getByRole("article", { name, exact: true })).toBeVisible();
+    await expect(page.getByRole("article", { name: "Selio Global" })).toHaveCount(0);
+    await expect(page.getByRole("article", { name: "Selio Agents" }).getByText("Aperçu", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("article", { name: "Selio Cloud" }).getByText("En développement", { exact: true })).toBeVisible();
+    await expect(page.getByText("Comment les filiales s'enchaînent")).toBeVisible();
     // Chiffres de Selio calculés depuis les données de la démo (plus de tiret une fois chargés).
     await expect(page.getByRole("article", { name: "Selio", exact: true }).getByRole("definition").first()).not.toHaveText("—");
     await noHorizontalOverflow(page);
@@ -34,23 +35,28 @@ test.describe("espaces Selio", () => {
     await expect(page).toHaveURL(/\/studio$/);
     await expect(page.getByRole("heading", { name: "Générateur d'annonces" })).toBeVisible();
 
-    await switchSpace(page, /^Selio Agence/);
-    await expect(page).toHaveURL(/\/agence$/);
-    await expect(page.getByRole("heading", { name: "Clients" })).toBeVisible();
-    // Tableau sur grand écran, cartes sur mobile : on vérifie ce qui est affiché.
-    await expect(page.getByText("Exemple fictif", { exact: true }).filter({ visible: true }).first()).toBeVisible();
-    await expect(page.getByText("Vos données", { exact: true }).filter({ visible: true })).toHaveCount(1);
+    await switchSpace(page, /^Selio Agents/);
+    await expect(page).toHaveURL(/\/agents$/);
+    await expect(page.getByRole("heading", { name: "Équipe et accès" })).toBeVisible();
 
-    await switchSpace(page, /^Selio Global/);
-    await expect(page).toHaveURL(/\/global$/);
-    await expect(page.getByRole("heading", { name: "Marchés" })).toBeVisible();
+    await switchSpace(page, /^Selio Track/);
+    await expect(page).toHaveURL(/\/track$/);
+    await expect(page.getByText("Top revendeurs")).toBeVisible();
 
-    await switchSpace(page, /^Selio\b(?! Studio| Agence| Global)/);
+    await switchSpace(page, /^Selio Cloud/);
+    await expect(page).toHaveURL(/\/cloud$/);
+    await expect(page.getByRole("heading", { name: "Comment ça marchera" })).toBeVisible();
+
+    await switchSpace(page, /^Selio\b(?! Studio| Agents| Track| Cloud)/);
     await expect(page).toHaveURL(/\/app$/);
     await expect(page.getByRole("heading", { name: /Bonjour/ })).toBeVisible();
-    // L'ancienne adresse du générateur mène à Selio Studio.
+    // Anciennes adresses : générateur → Studio, Agence → Agents, Global → accueil des filiales.
     await gotoApp(page, "/app/studio");
     await expect(page).toHaveURL(/\/studio$/);
+    await gotoApp(page, "/agence/equipe");
+    await expect(page).toHaveURL(/\/agents$/);
+    await gotoApp(page, "/global/tailles");
+    await expect(page).toHaveURL(/\/app\/espaces$/);
     await expect(page.getByText("Cette page a rencontré un problème")).toHaveCount(0);
     expect(errors).toEqual([]);
   });
@@ -59,9 +65,9 @@ test.describe("espaces Selio", () => {
     await page.goto("/connexion");
     await page.getByRole("button", { name: "Entrer dans la démonstration" }).click();
     await page.waitForURL((url) => url.pathname === "/app/espaces");
-    await expect(page.getByRole("heading", { name: "Vos espaces Selio" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Selio et ses filiales" })).toBeVisible();
     // Depuis n'importe quel espace, le sélecteur ramène à cet accueil.
-    await page.goto("/global/tailles");
+    await page.goto("/generateur");
     if (isMobile(page)) await page.getByRole("button", { name: "Ouvrir le menu" }).click();
     await page.getByRole("button", { name: /Changer d'espace/ }).last().click();
     await page.getByRole("link", { name: /accueil central/ }).click();
@@ -98,48 +104,46 @@ test.describe("espaces Selio", () => {
     await noHorizontalOverflow(page);
   });
 
-  test("Selio Agence : marque blanche en aperçu direct, enregistrée dans la démo", async ({ page }) => {
-    await openDemo(page, "/agence/marque-blanche");
-    await expect(page.getByText("Selio Agence est en aperçu")).toBeVisible();
+  test("Selio Agents : marque blanche en aperçu direct, enregistrée dans la démo ; comptes et accès dans l'administration", async ({ page }) => {
+    await openDemo(page, "/agents/marque-blanche");
+    await expect(page.getByText("Selio Agents est en aperçu")).toBeVisible();
     await page.getByLabel("Nom de l'agence").fill("Dépôt Lumière");
     await page.getByLabel("Logo texte").fill("dl");
     await page.getByRole("radio", { name: "Jade" }).click();
     await expect(page.getByRole("radio", { name: "Jade" })).toHaveAttribute("aria-checked", "true");
     const preview = page.getByLabel("Aperçu en direct de la marque blanche");
     await expect(preview.getByText("Dépôt Lumière").filter({ visible: true }).first()).toBeVisible();
-    await expect(preview.getByText("DL", { exact: true }).filter({ visible: true }).first()).toBeVisible();
     await page.getByRole("button", { name: "Enregistrer" }).click();
     await expect(page.getByText("Marque blanche enregistrée dans la démonstration")).toBeVisible();
     await page.reload();
     await expect(page.getByLabel("Nom de l'agence")).toHaveValue("Dépôt Lumière");
-    await expect(page.getByText(/Enregistrée le/)).toBeVisible();
     await gotoApp(page, "/app/espaces");
-    // L'accueil central reprend la marque enregistrée (logo texte et nom).
-    const agencyCard = page.getByRole("article", { name: "Selio Agence" });
-    await expect(agencyCard.getByText("Dépôt Lumière").first()).toBeVisible();
-    await expect(agencyCard.getByText("DL", { exact: true })).toBeVisible();
-    await gotoApp(page, "/agence/facturation");
+    await expect(page.getByRole("article", { name: "Selio Agents" }).getByText("DL", { exact: true })).toBeVisible();
+    await gotoApp(page, "/agents/facturation");
     await expect(page.getByText("Non facturé · aperçu").filter({ visible: true })).toHaveCount(5);
-    await expect(page.getByText("Total du mois (exemple)").filter({ visible: true })).toHaveCount(1);
-    await gotoApp(page, "/agence/equipe");
+    await gotoApp(page, "/agents");
     await expect(page.getByRole("link", { name: /Gérer dans Paramètres/ })).toHaveAttribute("href", "/app/settings/access");
+    // Comptes et accès : dans Paramètres et dans Opérateur › Administration.
+    await gotoApp(page, "/admin/acces");
+    await expect(page.getByRole("navigation", { name: "Sections de l'administration" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Qui peut faire quoi" })).toBeVisible();
   });
 
-  test("Selio Global : convertisseur de tailles et places de marché dans l'ordre", async ({ page }) => {
-    await openDemo(page, "/global/tailles");
-    await expect(page.getByRole("heading", { name: "Convertisseur de tailles" })).toBeVisible();
-    await page.getByLabel("Système de la taille").selectOption("UK");
-    await page.getByLabel("Taille", { exact: true }).selectOption("14");
-    await expect(page.getByText("UK 14 correspond à :")).toBeVisible();
-    const fr = page.locator("li", { has: page.getByText("FR", { exact: true }) });
-    await expect(fr.getByText("42", { exact: true })).toBeVisible();
-    await page.getByRole("radio", { name: "Chaussures homme" }).click();
-    await expect(page.getByText("EU 41 correspond à :")).toBeVisible();
-    await expect(page.locator("li", { has: page.getByText("US", { exact: true }) }).getByText("8", { exact: true })).toBeVisible();
+  test("Automatisation : les quatre blocs, l'après-vente sans action manuelle et le stock automatique", async ({ page }) => {
+    await openDemo(page, "/app/automatisation");
+    await expect(page.getByRole("heading", { name: "Tout le parcours, automatisé" })).toBeVisible();
+    for (const name of ["Messages aux favoris", "Réponse automatique", "Négociation automatique", "Message après-vente"]) await expect(page.getByRole("link", { name: new RegExp(name) }).filter({ visible: true }).first()).toBeVisible();
+    await gotoApp(page, "/app/automatisation/apres-vente");
+    await page.getByLabel("Impression automatique des bordereaux").check();
+    await page.getByLabel("Imprimante").fill("Imprimante du bureau");
+    await expect(page.getByText(/Commandé et imprimé sur « Imprimante du bureau »/)).toBeVisible();
+    await page.getByRole("button", { name: "Enregistrer" }).click();
+    await expect(page.getByText("Réglages enregistrés", { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("Impression automatique des bordereaux")).toBeChecked();
+    await gotoApp(page, "/app/automatisation/stock");
+    await page.getByRole("switch", { name: /Remettre en ligne automatiquement/ }).click();
+    await expect(page.getByText(/Remis en ligne automatiquement/).first()).toBeVisible();
     await noHorizontalOverflow(page);
-    await gotoApp(page, "/global/places-de-marche");
-    const names = await page.getByRole("list", { name: "Places de marché, dans l'ordre prévu" }).getByRole("heading").allTextContents();
-    expect(names).toEqual(["Vinted", "Leboncoin", "eBay", "Etsy", "Shopify"]);
-    await expect(page.getByText("Prévu", { exact: true })).toHaveCount(4);
   });
 });

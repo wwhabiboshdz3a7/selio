@@ -77,9 +77,11 @@ describe("entrée de la démonstration", () => {
     expect(demoTarget("/app/dressing")).toBe("/app/dressing");
     expect(demoTarget("/app/items/item-014")).toBe("/app/items/item-014");
     expect(demoTarget("/app")).toBe("/app");
-    // Les espaces Studio, Agence et Global sont des destinations valides.
+    // Les filiales (Studio, Agents, Track…) sont des destinations valides ; plus l'ancien espace Global.
     expect(demoTarget("/studio/performances")).toBe("/studio/performances");
-    expect(demoTarget("/agence")).toBe("/agence");
+    expect(demoTarget("/agents")).toBe("/agents");
+    expect(demoTarget("/track")).toBe("/track");
+    expect(demoTarget("/global")).toBe("/app/espaces");
     // Sans destination (ou destination refusée) : l'accueil central des espaces.
     expect(demoTarget(null)).toBe("/app/espaces");
     expect(demoTarget("https://exemple.com")).toBe("/app/espaces");

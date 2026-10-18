@@ -58,7 +58,7 @@ export default function Messages() {
           </div>
         </aside>
         <section className={cn("min-h-0 min-w-0", !id && "hidden md:block")} aria-label="Conversation">
-          {id ? <ConversationView id={id} /> : <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center"><MessagesSquare className="size-10 text-text-subtle" aria-hidden /><h2 className="text-md font-semibold">Sélectionnez une conversation</h2><p className="max-w-sm text-sm text-text-muted">Les conversations non lues ont une pastille. Les offres des acheteurs sont évaluées avec vos règles de marge.</p><Link to="/app/selling-rules" className="text-sm font-medium text-accent hover:underline">Régler la négociation et les marges</Link></div>}
+          {id ? <ConversationView id={id} /> : <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center"><MessagesSquare className="size-10 text-text-subtle" aria-hidden /><h2 className="text-md font-semibold">Sélectionnez une conversation</h2><p className="max-w-sm text-sm text-text-muted">Les conversations non lues ont une pastille. Les offres des acheteurs sont évaluées avec vos règles de marge.</p><Link to="/app/automatisation/negociation" className="text-sm font-medium text-accent hover:underline">Régler la négociation automatique</Link></div>}
         </section>
       </div>
     </>
@@ -209,7 +209,7 @@ function ConversationView({ id }: { id: string }) {
               <div className="rounded-lg bg-surface-muted p-3 text-xs text-text-muted">
                 <p className="mb-1 flex items-center gap-1.5 font-semibold text-text"><ShieldCheck className="size-3.5" aria-hidden />Vos règles protègent la marge</p>
                 L'IA rédige, mais la décision (accepter, contre-proposer, refuser) vient de vos règles : jamais sous le plancher, jamais de prix inventé.
-                <Link to="/app/selling-rules" className="mt-2 block font-medium text-accent hover:underline">Régler mes règles et tester une offre</Link>
+                <Link to="/app/automatisation/negociation" className="mt-2 block font-medium text-accent hover:underline">Régler la négociation automatique</Link>
               </div>
               <Link to={`/app/customers/${customer.id}`} className="flex items-center gap-3 rounded-lg border border-border p-3 hover:bg-surface-muted">
                 <Avatar name={customer.displayName} size={34} />
@@ -283,7 +283,7 @@ function OfferPanel({ buyer, listedCents, offerCents, evaluation, onCreateOrder,
         {onCreateOrder && evaluation.counterCents !== null && (evaluation.decision === "accept" || evaluation.decision === "counter") ? <Button size="sm" variant="secondary" onClick={() => onCreateOrder(evaluation.counterCents!)}>Créer la commande à <Money cents={evaluation.counterCents} /></Button> : null}
         {onDecline && evaluation.decision !== "accept" ? <Button size="sm" variant="ghost" icon={<X />} onClick={onDecline}>Refuser poliment</Button> : null}
       </div>
-      <Link to="/app/selling-rules" className="mt-3 inline-block text-xs font-medium text-accent hover:underline">Calculé avec vos règles de négociation : les voir ou les régler</Link>
+      <Link to="/app/automatisation/negociation" className="mt-3 inline-block text-xs font-medium text-accent hover:underline">Calculé avec vos règles de négociation : les voir ou les régler</Link>
     </div>
   );
 }
