@@ -5,6 +5,7 @@ import type { ConnectorDescriptor } from "@selio/connectors";
 import type { AccountStats, NegotiationResult, PeriodPreset } from "@selio/domain";
 import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
 import type { AiHealthData } from "../data/types";
+import type { WhiteLabel, WhiteLabelInput } from "@selio/contracts";
 
 type Query = Record<string, string | number | boolean | undefined | null>;
 
@@ -181,6 +182,15 @@ export class ApiClient implements DataClient {
   getAdminOverview() { return this.get<AdminOverview>("/api/admin/overview"); }
   adminSetPlan(orgId: string, plan: Plan) { return this.post<void>(`/api/admin/orgs/${orgId}/plan`, { plan }); }
   adminListAudit(limit = 100) { return this.get<AuditLog[]>("/api/admin/audit", { limit }); }
+
+  // Selio Agence est en aperçu : aucune donnée serveur, rien n'est enregistré sur le compte.
+  async getWhiteLabel(): Promise<WhiteLabel | null> {
+    return null;
+  }
+  async saveWhiteLabel(input: WhiteLabelInput): Promise<WhiteLabel> {
+    void input;
+    throw new DataError("preview_only", "Selio Agence est en aperçu : la marque blanche n'est pas encore enregistrée sur votre compte. Essayez-la dans la démonstration.", 501);
+  }
 
   async resetDemo() {
     throw new DataError("conflict", "La réinitialisation n'existe qu'en mode démonstration.", 409);

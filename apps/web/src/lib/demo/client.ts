@@ -16,6 +16,8 @@ import { PLAN_QUOTAS } from "@selio/demo-data";
 import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
 import type { AiHealthData } from "../data/types";
 import { effectiveAiQuota, summarizeAiRequests } from "@selio/domain";
+import { can } from "@selio/domain";
+import { whiteLabelInput as whiteLabelInputSchema, type WhiteLabel, type WhiteLabelInput } from "@selio/contracts";
 
 function paginate<T>(items: T[], page = 1, pageSize = 25): Page<T> {
   const total = items.length;
@@ -1443,6 +1445,21 @@ export class DemoClient implements DataClient {
   async adminListAudit(limit = 100): Promise<AuditLog[]> {
     if (!this.s.user.isOperator) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
     return this.s.audit.filter((a) => a.action.startsWith("admin.") || a.action.startsWith("auth.") || a.action.startsWith("token.") || a.action.startsWith("connection.")).slice(0, limit);
+  }
+
+  // ---------- Selio Agence (aperçu) ----------
+  async getWhiteLabel(): Promise<WhiteLabel | null> {
+    return this.s.whiteLabel ?? null;
+  }
+  async saveWhiteLabel(input: WhiteLabelInput): Promise<WhiteLabel> {
+    if (!can(this.session().role, "org.update")) throw new DataError("forbidden", "Seuls un administrateur ou le propriétaire peuvent modifier la marque blanche.", 403);
+    const parsed = whiteLabelInputSchema.safeParse(input);
+    if (!parsed.success) throw new DataError("validation", parsed.error.issues[0]?.message ?? "Marque blanche invalide", 400, parsed.error.flatten());
+    const saved: WhiteLabel = { ...parsed.data, updatedAt: this.now() };
+    this.s.whiteLabel = saved;
+    this.audit("agency.white_label_updated", "organization", this.s.org.id, { name: saved.name, accent: saved.accent });
+    this.persist();
+    return saved;
   }
 
   // ---------- démo ----------
