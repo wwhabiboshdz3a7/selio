@@ -10,9 +10,9 @@ import { PreviewNotice } from "../components";
 
 /** Les rôles Selio, lus du point de vue d'une agence (les droits sont exactement ceux de Paramètres › Comptes et accès). */
 const AGENCY_ROLES: Record<Role, { who: string; does: string }> = {
-  owner: { who: "La direction de l'agence", does: "Tout, y compris l'abonnement, la facturation des clients et la suppression." },
+  owner: { who: "Le propriétaire (vous, ou la direction de l'agence)", does: "Tout, y compris l'abonnement, la facturation des clients et la suppression." },
   admin: { who: "Un ou une responsable de compte", does: "Règle l'outil pour l'équipe : réglages, membres, comptes connectés, automatisations." },
-  operator: { who: "Les opérateurs de l'agence", does: "Traitent les boutiques au quotidien : stock, annonces, messages, commandes." },
+  operator: { who: "Les opérateurs de l'équipe", does: "Traitent les boutiques au quotidien : stock, annonces, messages, commandes." },
   viewer: { who: "Un client qui suit sa boutique", does: "Consulte ventes, annonces et analyses, sans rien modifier ni envoyer." },
 };
 
@@ -24,16 +24,16 @@ export default function AgencyTeam() {
   return (
     <>
       <PageHeader
-        eyebrow="Selio Agence · Aperçu"
+        eyebrow="Selio Agents · Aperçu"
         title="Équipe et accès"
-        description="Qui, dans l'agence, fait quoi. Les rôles et les membres sont ceux de votre organisation Selio : ils se gèrent au même endroit pour tous les espaces."
+        description="L'administrateur, les équipes et leurs accès : qui peut faire quoi sur vos comptes Vinted. Les rôles et les membres sont ceux de votre organisation : ils s'appliquent à tous les espaces et se gèrent aussi dans Paramètres › Comptes et accès."
         actions={<Link to="/app/settings/access" className={buttonClass({ variant: "primary" })}>Gérer dans Paramètres <ArrowRight aria-hidden /></Link>}
       />
-      <PreviewNotice space="agence">Les rôles s'appliquent déjà à toute l'organisation. Les accès limités à une boutique cliente sont en préparation.</PreviewNotice>
+      <PreviewNotice space="agents">Les rôles s'appliquent déjà à toute l'organisation. Les accès limités à un seul compte ou à une boutique cliente sont en développement.</PreviewNotice>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <Card>
-          <h2 className="text-md font-semibold text-text">Les rôles, côté agence</h2>
+          <h2 className="text-md font-semibold text-text">Les rôles et ce qu'ils permettent</h2>
           <ul className="mt-4 grid gap-3 sm:grid-cols-2">
             {ROLES_BY_RANK.map((r) => (
               <li key={r} className={cn("rounded-lg border p-3", r === session.role ? "border-accent/50 bg-accent-soft/40" : "border-border")}>

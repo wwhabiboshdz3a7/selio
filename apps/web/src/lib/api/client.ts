@@ -184,13 +184,13 @@ export class ApiClient implements DataClient {
   adminSetPlan(orgId: string, plan: Plan) { return this.post<void>(`/api/admin/orgs/${orgId}/plan`, { plan }); }
   adminListAudit(limit = 100) { return this.get<AuditLog[]>("/api/admin/audit", { limit }); }
 
-  // Selio Agence est en aperçu : aucune donnée serveur, rien n'est enregistré sur le compte.
+  // Selio Agents est en aperçu : aucune donnée serveur, rien n'est enregistré sur le compte.
   async getWhiteLabel(): Promise<WhiteLabel | null> {
     return null;
   }
   async saveWhiteLabel(input: WhiteLabelInput): Promise<WhiteLabel> {
     void input;
-    throw new DataError("preview_only", "Selio Agence est en aperçu : la marque blanche n'est pas encore enregistrée sur votre compte. Essayez-la dans la démonstration.", 501);
+    throw new DataError("preview_only", "Selio Agents est en aperçu : la marque blanche n'est pas encore enregistrée sur votre compte. Essayez-la dans la démonstration.", 501);
   }
 
   async resetDemo() {

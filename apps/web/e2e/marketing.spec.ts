@@ -70,12 +70,13 @@ test.describe("vitrine", () => {
     await expect(page.locator("details#essai-decouverte")).toHaveAttribute("open", "");
   });
 
-  test("plateforme : les quatre espaces, chacun avec son état honnête", async ({ page }) => {
+  test("plateforme : Selio et ses filiales, chacune avec son état honnête", async ({ page }) => {
     await page.goto("/plateforme");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Une plateforme, puis des filiales");
-    for (const name of ["Selio", "Selio Studio", "Selio Agence", "Selio Global"]) await expect(page.getByRole("article", { name, exact: true })).toBeVisible();
-    await expect(page.getByRole("article", { name: "Selio Agence" }).getByText("Aperçu dans la démo")).toBeVisible();
-    await expect(page.getByRole("article", { name: "Selio Global" }).getByText("En préparation")).toBeVisible();
+    for (const name of ["Selio", "Selio Studio", "Selio Agents", "Selio Track", "Selio Cloud", "Générateur de compte Vinted"]) await expect(page.getByRole("article", { name, exact: true })).toBeVisible();
+    await expect(page.getByRole("article", { name: "Selio Global" })).toHaveCount(0);
+    await expect(page.getByRole("article", { name: "Selio Agents" }).getByText("Aperçu dans la démo")).toBeVisible();
+    await expect(page.getByRole("article", { name: "Selio Cloud" }).getByText("En développement")).toBeVisible();
     await expect(page.getByRole("link", { name: /Ouvrir Selio Studio dans la démo/ })).toHaveAttribute("href", "/demo?vers=/studio");
     await expect(page.getByText(/ni affilié à Vinted/).first()).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);

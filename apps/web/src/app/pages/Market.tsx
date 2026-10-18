@@ -34,8 +34,9 @@ export default function Market() {
   return (
     <>
       <PageHeader
-        title="Analyse des revendeurs"
-        description="Qui vend le plus, dans quelles niches, à quel prix et à quel rythme. Repérez les niches à forte demande et peu concurrencées, puis lancez une recherche « Bonnes affaires » dessus."
+        eyebrow="Selio Track · En développement"
+        title="Le sourcing des comptes Vinted"
+        description="Selio Track suit les autres comptes Vinted : qui vend le plus, quoi, à quel prix et à quel rythme. Repérez les niches à forte demande et peu concurrencées, puis lancez une recherche « Bonnes affaires » dessus pour acheter au bon endroit."
         actions={<>
           <Segmented ariaLabel="Période" size="sm" value={windowDays} onChange={setWindowDays} items={WINDOWS.map((w) => ({ value: w.value, label: w.label }))} />
           <Select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Catégorie" className="w-auto"><option value="">Toutes catégories</option>{ITEM_CATEGORIES.map((c) => <option key={c} value={c}>{ITEM_CATEGORY_LABELS[c]}</option>)}</Select>

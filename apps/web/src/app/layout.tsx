@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Bot, Boxes, ChevronDown, CircleUser, ClipboardList, Gauge, LogOut, Menu as MenuIcon, MessageSquare, Moon, Package, Radar, Settings, ShieldCheck, Shirt, ShoppingCart, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
+import { ArrowRight, Bot, Boxes, ChevronDown, CircleUser, ClipboardList, Gauge, Heart, ListChecks, LogOut, Menu as MenuIcon, MessageSquare, MessagesSquare, Moon, Package, Printer, Radar, RefreshCw, Settings, ShieldCheck, Shirt, ShoppingCart, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
 import { Avatar, Banner, Button, IconButton, LoadingState, Menu, Tag, cn } from "@selio/ui";
 import { REVIEW_THRESHOLD } from "@selio/domain";
 import { useClient, useData, useRequiredSession, useSession } from "../lib/data/provider";
@@ -31,31 +31,42 @@ export function RequireOperator({ children }: { children: ReactNode }) {
 export interface NavItem { to: string; label: string; icon: ReactNode; end?: boolean; badgeKey?: "unread" | "awaiting" | "toReview" | "dressingDue"; hint?: string }
 export interface NavGroup { title?: string; items: NavItem[] }
 
+/**
+ * Menu de Selio, dans l'ordre du parcours du revendeur : sourcing, achat,
+ * vente, puis l'automatisation (bordereaux, après-vente, remise en ligne).
+ */
 const GROUPS: NavGroup[] = [
   { items: [
     { to: "/app", label: "Vue d'ensemble", icon: <Gauge />, end: true },
   ] },
-  { title: "Vendre", items: [
+  { title: "Sourcing", items: [
+    { to: "/track", label: "Selio Track", icon: <TrendingUp />, hint: "Le sourcing des comptes Vinted (en développement)" },
+    { to: "/app/radar", label: "Bonnes affaires", icon: <Radar />, hint: "Radar : chaque affaire notée /100" },
+  ] },
+  { title: "Achat", items: [
+    { to: "/app/purchase", label: "À valider", icon: <ShoppingCart />, badgeKey: "toReview", hint: "Achat assisté : vous validez chaque achat" },
+    { to: "/app/auto-buy", label: "Achat auto", icon: <Bot /> },
+  ] },
+  { title: "Vente", items: [
     { to: "/studio", label: "Générateur d'annonces", icon: <Sparkles />, hint: "Ouvre Selio Studio : photos → annonce rédigée par l'IA" },
     { to: "/app/dressing", label: "Dressing intelligent", icon: <Shirt />, badgeKey: "dressingDue", hint: "Notes, rendement, republications" },
     { to: "/app/items", label: "Articles et stock", icon: <Boxes /> },
     { to: "/app/messages", label: "Messagerie", icon: <MessageSquare />, badgeKey: "unread" },
     { to: "/app/orders", label: "Commandes", icon: <Package /> },
     { to: "/app/customers", label: "Clients", icon: <Users /> },
-    { to: "/app/selling-rules", label: "Négociation et marges", icon: <HandCoins />, hint: "Marges, remises, contre-propositions et simulateur" },
   ] },
-  { title: "Acheter", items: [
-    { to: "/app/radar", label: "Bonnes affaires", icon: <Radar />, hint: "Radar : chaque affaire notée /100" },
-    { to: "/app/purchase", label: "À valider", icon: <ShoppingCart />, badgeKey: "toReview" },
-    { to: "/app/auto-buy", label: "Achat auto", icon: <Bot /> },
-  ] },
-  { title: "Comptes", items: [
-    { to: "/app/accounts", label: "Comptes Vinted", icon: <CircleUser />, hint: "Comptes vente, achat et perso" },
+  { title: "Automatisation", items: [
+    { to: "/app/automatisation", label: "Tout le parcours", icon: <Workflow />, end: true, hint: "Les automatisations, du message à la remise en ligne" },
+    { to: "/app/automatisation/favoris", label: "Messages aux favoris", icon: <Heart /> },
+    { to: "/app/automatisation/reponse", label: "Réponse automatique", icon: <MessagesSquare /> },
+    { to: "/app/automatisation/negociation", label: "Négociation automatique", icon: <HandCoins />, hint: "Marges par tranche de prix, paliers, messages" },
+    { to: "/app/automatisation/apres-vente", label: "Après-vente et bordereaux", icon: <Printer /> },
+    { to: "/app/automatisation/stock", label: "Stock automatique", icon: <RefreshCw />, hint: "Remise en ligne automatique après une vente" },
+    { to: "/app/automations", label: "Journal des tâches", icon: <ListChecks />, badgeKey: "awaiting", hint: "Tâches, validations et règles" },
   ] },
   { title: "Piloter", items: [
-    { to: "/app/market", label: "Analyse revendeurs", icon: <TrendingUp />, hint: "Top vendeurs et niches" },
+    { to: "/app/accounts", label: "Comptes Vinted", icon: <CircleUser />, hint: "Comptes vente, achat et perso" },
     { to: "/app/analytics", label: "Analyses", icon: <ClipboardList /> },
-    { to: "/app/automations", label: "Automatisations", icon: <Workflow />, badgeKey: "awaiting" },
   ] },
   { items: [
     { to: "/app/help", label: "Aide", icon: <LifeBuoy />, hint: "FAQ et assistant" },
@@ -82,6 +93,14 @@ export function useNavCounts() {
     return { unread: convs.total, awaiting: jobs.total, toReview: opps.filter((o) => o.score >= REVIEW_THRESHOLD).length, dressingDue: dressing.listings.length };
   }, refetchInterval: 30_000 });
 }
+
+/** Bandeau sous le sélecteur, pour les filiales qui ne sont pas encore ouvertes. */
+const SPACE_NOTES: Partial<Record<SpaceArea, { label: string; text: string }>> = {
+  agents: { label: "Aperçu", text: "l'équipe et les accès sont réels ; les boutiques clientes sont des exemples fictifs." },
+  track: { label: "En développement", text: "première version, sur un marché simulé en démonstration." },
+  cloud: { label: "En développement", text: "ce qui arrive, et ce qui marche déjà dans Selio." },
+  generateur: { label: "En développement", text: "ce qui arrive, et ce qui marche déjà dans Selio." },
+};
 
 export function AppLayout({ admin = false }: { admin?: boolean }) {
   // Pas de `useSession().data!` : à la fin de la session, la mise en page peut être rendue une
@@ -121,9 +140,9 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
         <SpaceSwitcher area={area} />
         <IconButton label="Fermer le menu" className="md:hidden" onClick={() => setOpen(false)} size="sm"><X /></IconButton>
       </div>
-      {area === "agence" || area === "global" ? (
+      {SPACE_NOTES[area] ? (
         <p className="mx-3 mb-3 shrink-0 rounded-md bg-surface-muted px-3 py-2 text-xs text-text-muted">
-          <span className="font-medium text-text">{area === "agence" ? "Aperçu" : "En préparation"}</span> — {area === "agence" ? "boutiques d'exemple fictives, rien n'est facturé." : "le convertisseur de tailles est déjà utilisable."}
+          <span className="font-semibold text-text">{SPACE_NOTES[area]!.label}</span> — {SPACE_NOTES[area]!.text}
         </p>
       ) : null}
       {area === "selio" ? <div className="shrink-0 px-3 pb-3">
@@ -144,7 +163,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
         ) : null}
         {groups.map((g, gi) => (
           <div key={gi} className={cn(gi > 0 && "mt-4")}>
-            {g.title ? <p className="px-2.5 pb-1.5 text-[11px] font-medium tracking-wider text-text-muted uppercase">{g.title}</p> : null}
+            {g.title ? <p className="px-2.5 pb-1.5 text-xs font-bold tracking-wider text-text uppercase">{g.title}</p> : null}
             <ul className="flex flex-col gap-0.5">
               {g.items.map((it) => {
                 const badge = it.badgeKey ? counts.data?.[it.badgeKey] : 0;
@@ -165,10 +184,11 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
         ))}
         {s.user.isOperator ? (
           <div className="mt-3">
-            <p className="px-2.5 pb-1.5 text-[11px] font-medium tracking-wider text-text-muted uppercase">Opérateur</p>
-            <NavLink to="/admin" className={linkClass}>
-              <ShieldCheck /> Administration
-            </NavLink>
+            <p className="px-2.5 pb-1.5 text-xs font-bold tracking-wider text-text uppercase">Opérateur</p>
+            <ul className="flex flex-col gap-0.5">
+              <li><NavLink to="/admin" end className={linkClass}><ShieldCheck /> Administration</NavLink></li>
+              <li><NavLink to="/admin/acces" className={linkClass}><Users /> Comptes et accès</NavLink></li>
+            </ul>
           </div>
         ) : null}
       </nav>

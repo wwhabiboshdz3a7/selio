@@ -33,7 +33,7 @@ test.describe("nouveaux modules", () => {
 
   test("analyse des revendeurs, achat auto et galerie de graphiques", async ({ page }) => {
     await openDemo(page);
-    await gotoApp(page, "/app/market");
+    await gotoApp(page, "/track");
     await expect(page.getByText("Top revendeurs")).toBeVisible();
     await expect(page.getByText("Opportunités de niche")).toBeVisible();
     await gotoApp(page, "/app/auto-buy");

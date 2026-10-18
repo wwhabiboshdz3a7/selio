@@ -1,22 +1,24 @@
 import type { ReactNode } from "react";
-import { Building2, Calculator, FileStack, Gauge, Globe2, HandCoins, LayoutGrid, Lightbulb, Palette, Ruler, Settings, Shirt, Sparkles, Store, Users } from "lucide-react";
+import { Bot, Calculator, Cloud, Gauge, HandCoins, LayoutGrid, Lightbulb, FileStack, Palette, Radar, Settings, ShieldCheck, Shirt, Sparkles, Store, TrendingUp, UserPlus, Users, Workflow } from "lucide-react";
 import type { NavGroup } from "../layout";
 
 /**
- * Les quatre espaces Selio. Selio est l'outil de gestion (l'application
- * historique, /app) ; Studio, Agence et Global s'appuient sur ses données.
- * Chaque espace a son menu et une teinte d'identité discrète (styles.css,
- * [data-space]) ; l'accueil central (/app/espaces) les présente tous.
+ * Selio et ses filiales. Selio est l'outil de gestion (l'application
+ * historique, /app) ; Studio, Agents, Track, Cloud et le générateur de compte
+ * s'appuient sur ses données. Chaque espace a son menu et une teinte
+ * d'identité discrète (styles.css, [data-space]) ; l'accueil central
+ * (/app/espaces) les présente tous. « Selio Global » est le nom de
+ * l'entreprise, pas un produit : il n'a pas d'espace.
  */
-export type SpaceId = "selio" | "studio" | "agence" | "global";
+export type SpaceId = "selio" | "studio" | "agents" | "track" | "cloud" | "generateur";
 /** Zone affichée : un espace, ou l'accueil central. */
 export type SpaceArea = SpaceId | "hub";
-export type SpaceState = "available" | "preview" | "planned";
+export type SpaceState = "available" | "preview" | "development";
 
 export const SPACE_STATE_LABEL: Record<SpaceState, string> = {
   available: "Disponible",
   preview: "Aperçu",
-  planned: "En préparation",
+  development: "En développement",
 };
 
 export interface SpaceDef {
@@ -35,37 +37,51 @@ export interface SpaceDef {
   does: string[];
 }
 
-export { APP_PATH_PATTERN, HUB_PATH } from "./paths";
-import { HUB_PATH } from "./paths";
+export { APP_PATH_PATTERN, HUB_PATH, SPACE_PREFIXES } from "./paths";
+import { HUB_PATH, SPACE_PREFIXES } from "./paths";
 
 export const SPACES: readonly SpaceDef[] = [
   {
     id: "selio", name: "Selio", short: "Gestion", tagline: "L'outil de gestion du revendeur",
-    description: "Votre activité au quotidien : stock, messages, négociation, commandes, achats et marges, sur tous vos comptes Vinted.",
+    description: "Votre activité au quotidien, sur tous vos comptes Vinted : sourcing, achat, vente, bordereaux, après-vente et remise en ligne.",
     forWhom: "Pour chaque revendeur, chaque jour",
     home: "/app", icon: <Gauge />, state: "available",
-    does: ["Stock, dressing et republications", "Messagerie et négociation selon vos règles", "Bonnes affaires, commandes et marges"],
+    does: ["Stock, dressing, messagerie et commandes", "Automatisation : favoris, réponses, négociation, après-vente", "Bonnes affaires, achat assisté et marges"],
   },
   {
-    id: "studio", name: "Selio Studio", short: "Studio", tagline: "Des annonces qui performent, écrites pour vous",
-    description: "Vos photos deviennent des annonces complètes, à la suite. Studio vous montre ce qui fait vendre dans vos propres annonces.",
+    id: "studio", name: "Selio Studio", short: "Studio", tagline: "Vos photos deviennent des annonces",
+    description: "Le générateur d'annonces : l'IA rédige titre, description, attributs et prix à partir de vos photos, article après article, et montre ce qui fait vendre.",
     forWhom: "Pour publier plus vite et mieux",
     home: "/studio", icon: <Sparkles />, state: "available",
     does: ["Annonces rédigées à partir des photos, à la suite", "Historique des annonces générées et leur note", "Ce qui performe : titres, photos, prix"],
   },
   {
-    id: "agence", name: "Selio Agence", short: "Agence", tagline: "L'outil Selio à vos couleurs",
-    description: "Pour les agences de revente, dépôts-vente et équipes : suivre plusieurs boutiques clientes, avec votre marque.",
-    forWhom: "Pour les professionnels qui gèrent d'autres boutiques",
-    home: "/agence", icon: <Building2 />, state: "preview",
-    does: ["Boutiques clientes et leurs chiffres", "Marque blanche : nom, logo texte, couleur", "Équipe, accès et facturation des clients"],
+    id: "agents", name: "Selio Agents", short: "Agents", tagline: "Administrateur, équipes et accès",
+    description: "Qui fait quoi sur vos comptes : l'administrateur, les membres de l'équipe et leurs accès. Les agences et dépôts-vente y suivent aussi leurs boutiques clientes.",
+    forWhom: "Pour travailler à plusieurs",
+    home: "/agents", icon: <Users />, state: "preview",
+    does: ["Administrateur, équipes et rôles", "Accès et journal d'audit", "Boutiques clientes et marque blanche (aperçu)"],
   },
   {
-    id: "global", name: "Selio Global", short: "Global", tagline: "Une application par pays",
-    description: "Chaque marché a ses codes, ses marques, ses tailles et sa langue : l'Europe d'abord, puis les États-Unis et l'Australie, et d'autres places de marché.",
-    forWhom: "Pour vendre au-delà de la France",
-    home: "/global", icon: <Globe2 />, state: "planned",
-    does: ["Marchés : langue, devise, tailles, marques", "Convertisseur de tailles, utilisable dès maintenant", "Places de marché prévues après Vinted"],
+    id: "track", name: "Selio Track", short: "Track", tagline: "Le sourcing des comptes Vinted, suivi pour vous",
+    description: "Suivez ce que vendent les autres comptes Vinted, à quel prix et à quel rythme, pour savoir quoi acheter. Très simple : on choisit, on regarde, on source.",
+    forWhom: "Pour sourcer au bon endroit",
+    home: "/track", icon: <TrendingUp />, state: "development",
+    does: ["Top revendeurs et leurs ventes", "Niches demandées et peu concurrencées", "Marques et tranches de prix qui partent"],
+  },
+  {
+    id: "cloud", name: "Selio Cloud", short: "Cloud", tagline: "Vos automatisations, même ordinateur éteint",
+    description: "Les messages, la négociation, l'après-vente et le stock automatique tourneront sur nos serveurs : plus besoin de laisser l'ordinateur allumé avec l'extension.",
+    forWhom: "Pour vendre 24 h/24",
+    home: "/cloud", icon: <Cloud />, state: "development",
+    does: ["Automatisations actives en continu", "Plusieurs comptes Vinted en parallèle", "Suivi et alertes sur téléphone"],
+  },
+  {
+    id: "generateur", name: "Générateur de compte Vinted", short: "Générateur", tagline: "Un nouveau compte vendeur prêt en quelques minutes",
+    description: "Un assistant pour préparer un nouveau compte vendeur : pseudo, présentation, photo de profil, réglages d'envoi et premières annonces. Le compte est créé par vous, à votre nom.",
+    forWhom: "Pour ouvrir une nouvelle boutique",
+    home: "/generateur", icon: <UserPlus />, state: "development",
+    does: ["Pseudo et présentation rédigés par l'IA", "Photo de profil et réglages d'envoi", "Premières annonces depuis votre stock"],
   },
 ];
 
@@ -79,36 +95,52 @@ const SETTINGS: NavGroup = { items: [{ to: "/app/settings", label: "Paramètres"
 export const SPACE_GROUPS: Record<Exclude<SpaceArea, "selio">, NavGroup[]> = {
   hub: [
     { items: [{ to: HUB_PATH, label: "Vos espaces", icon: <LayoutGrid />, end: true }] },
-    { title: "Espaces", items: SPACES.map((s) => ({ to: s.home, label: s.name, icon: s.icon, end: s.id === "selio", hint: s.tagline })) },
+    { title: "Disponibles", items: SPACES.filter((s) => s.state !== "development").map((s) => ({ to: s.home, label: s.name, icon: s.icon, end: s.id === "selio", hint: s.tagline })) },
+    { title: "En développement", items: SPACES.filter((s) => s.state === "development").map((s) => ({ to: s.home, label: s.name, icon: s.icon, hint: s.tagline })) },
     SETTINGS,
   ],
   studio: [
-    { items: [
+    { title: "Selio Studio", items: [
       { to: "/studio", label: "Créer", icon: <Sparkles />, end: true, hint: "Vos photos → annonce, article après article" },
       { to: "/studio/annonces", label: "Annonces générées", icon: <FileStack />, hint: "Historique et note du dressing" },
       { to: "/studio/performances", label: "Ce qui performe", icon: <Lightbulb />, hint: "Ce que vos ventes apprennent" },
     ] },
     { title: "Dans Selio", items: [
       { to: "/app/dressing", label: "Dressing intelligent", icon: <Shirt /> },
-      { to: "/app/selling-rules", label: "Négociation et marges", icon: <HandCoins /> },
+      { to: "/app/automatisation/negociation", label: "Négociation automatique", icon: <HandCoins /> },
     ] },
     SETTINGS,
   ],
-  agence: [
-    { items: [
-      { to: "/agence", label: "Clients", icon: <Store />, end: true, hint: "Boutiques clientes (exemples fictifs)" },
-      { to: "/agence/marque-blanche", label: "Marque blanche", icon: <Palette />, hint: "Nom, logo texte et couleur" },
-      { to: "/agence/equipe", label: "Équipe et accès", icon: <Users /> },
-      { to: "/agence/facturation", label: "Facturation des clients", icon: <Calculator />, hint: "Aperçu : rien n'est encaissé" },
+  agents: [
+    { title: "Selio Agents", items: [
+      { to: "/agents", label: "Équipe et accès", icon: <Users />, end: true, hint: "Membres, rôles et invitations" },
+      { to: "/app/settings/access", label: "Comptes et accès", icon: <ShieldCheck />, hint: "Qui peut faire quoi : la matrice des rôles" },
+    ] },
+    { title: "Agences (aperçu)", items: [
+      { to: "/agents/clients", label: "Boutiques clientes", icon: <Store />, hint: "Exemples fictifs" },
+      { to: "/agents/marque-blanche", label: "Marque blanche", icon: <Palette />, hint: "Nom, logo texte et couleur" },
+      { to: "/agents/facturation", label: "Facturation des clients", icon: <Calculator />, hint: "Aperçu : rien n'est encaissé" },
     ] },
     SETTINGS,
   ],
-  global: [
-    { items: [
-      { to: "/global", label: "Marchés", icon: <Globe2 />, end: true, hint: "Pays : langue, devise, tailles, marques" },
-      { to: "/global/tailles", label: "Convertisseur de tailles", icon: <Ruler />, hint: "FR, UK, US, IT, DE" },
-      { to: "/global/places-de-marche", label: "Places de marché", icon: <Store />, hint: "Vinted, puis Leboncoin, eBay, Etsy, Shopify" },
+  track: [
+    { title: "Selio Track", items: [
+      { to: "/track", label: "Revendeurs et niches", icon: <TrendingUp />, end: true, hint: "Top vendeurs, niches, marques, prix" },
     ] },
+    { title: "Dans Selio", items: [
+      { to: "/app/radar", label: "Bonnes affaires", icon: <Radar /> },
+      { to: "/app/auto-buy", label: "Achat auto", icon: <Bot /> },
+    ] },
+    SETTINGS,
+  ],
+  cloud: [
+    { title: "Selio Cloud", items: [{ to: "/cloud", label: "Présentation", icon: <Cloud />, end: true }] },
+    { title: "Dans Selio", items: [{ to: "/app/automatisation", label: "Automatisation", icon: <Workflow /> }] },
+    SETTINGS,
+  ],
+  generateur: [
+    { title: "Générateur de compte", items: [{ to: "/generateur", label: "Présentation", icon: <UserPlus />, end: true }] },
+    { title: "Dans Selio", items: [{ to: "/app/accounts", label: "Comptes Vinted", icon: <Users /> }] },
     SETTINGS,
   ],
 };
@@ -120,8 +152,8 @@ const SHARED_PREFIXES = ["/app/settings", "/admin"];
 export function spaceForPath(pathname: string): SpaceArea | null {
   if (SHARED_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return null;
   if (pathname === HUB_PATH || pathname.startsWith(`${HUB_PATH}/`)) return "hub";
-  for (const id of ["studio", "agence", "global"] as const) {
-    if (pathname === `/${id}` || pathname.startsWith(`/${id}/`)) return id;
+  for (const [prefix, id] of SPACE_PREFIXES) {
+    if (pathname === prefix || pathname.startsWith(`${prefix}/`)) return id;
   }
   return "selio";
 }
@@ -131,7 +163,7 @@ const LAST_SPACE_KEY = "selio.space";
 export function readLastSpace(): SpaceArea {
   try {
     const v = sessionStorage.getItem(LAST_SPACE_KEY);
-    return v === "hub" || v === "selio" || v === "studio" || v === "agence" || v === "global" ? v : "selio";
+    return v === "hub" || SPACES.some((sp) => sp.id === v) ? (v as SpaceArea) : "selio";
   } catch {
     return "selio";
   }

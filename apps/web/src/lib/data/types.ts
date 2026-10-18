@@ -298,7 +298,7 @@ export interface DataClient {
   getAdminOverview(): Promise<AdminOverview>;
   adminSetPlan(orgId: string, plan: Plan): Promise<void>;
   adminListAudit(limit?: number): Promise<AuditLog[]>;
-  // Selio Agence (aperçu) : marque blanche
+  // Selio Agents (aperçu) : marque blanche
   /** Marque blanche enregistrée (null tant qu'elle n'est pas personnalisée, et toujours en mode connecté). */
   getWhiteLabel(): Promise<WhiteLabel | null>;
   /** Enregistre la marque blanche dans la démonstration. Mode connecté : aperçu non enregistré (erreur « preview_only »). */

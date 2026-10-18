@@ -59,15 +59,25 @@ tr[tabindex]:focus-visible {
   --space-tint-soft: var(--gold-soft);
   --space-tint-ink: var(--gold-text);
 }
-[data-space="agence"] {
+[data-space="agents"] {
   --space-tint: var(--tone-indigo);
   --space-tint-soft: var(--tone-indigo-soft);
   --space-tint-ink: var(--tone-indigo);
 }
-[data-space="global"] {
+[data-space="track"] {
   --space-tint: var(--tone-teal);
   --space-tint-soft: var(--tone-teal-soft);
   --space-tint-ink: var(--tone-teal);
+}
+[data-space="cloud"] {
+  --space-tint: var(--tone-sky);
+  --space-tint-soft: var(--tone-sky-soft);
+  --space-tint-ink: var(--tone-sky);
+}
+[data-space="generateur"] {
+  --space-tint: var(--tone-rose);
+  --space-tint-soft: var(--tone-rose-soft);
+  --space-tint-ink: var(--tone-rose);
 }
 .space-tile {
   display: inline-flex;
