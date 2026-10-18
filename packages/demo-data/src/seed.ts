@@ -5,6 +5,7 @@ import { DEMO_STATE_VERSION, type DemoState } from "./state";
 import { PLAN_QUOTAS } from "./plans";
 import { REAL_CATALOG, type CatalogEntry } from "./catalog.generated";
 import { buildMarketObservations } from "./market";
+import { DEFAULT_TRIAL_DAYS } from "@selio/contracts";
 
 const CONDITIONS: ItemCondition[] = ["new_with_tags", "new_without_tags", "very_good", "very_good", "good", "good", "satisfactory"];
 const CUSTOMER_NAMES = ["Léa M.", "Thomas R.", "Camille B.", "Nina V.", "Julien D.", "Sarah K.", "Mehdi A.", "Chloé P.", "Antoine L."];
@@ -439,8 +440,8 @@ export function buildDemoState(now = new Date()): DemoState {
     { id: newId(), orgId, kind: "extension.capture", quantity: 1, meta: {}, createdAt: iso(daysAgo(2)) },
     { id: newId(), orgId, kind: "export.csv", quantity: 1, meta: {}, createdAt: iso(daysAgo(4)) },
   ];
-  // Plan Pro (essai) : plusieurs comptes Vinted connectés.
-  const subscription = subscriptionSchema.parse({ id: "sub-demo", orgId, plan: "pro", status: "trialing", provider: "none", externalRef: null, currentPeriodEnd: iso(addDays(now, 14)), quotas: PLAN_QUOTAS.pro, testMode: true, createdAt: iso(daysAgo(120)), updatedAt: iso(daysAgo(1)) });
+  // Essai Découverte (fonctions du plan Pro, 1 semaine par défaut) : plusieurs comptes Vinted connectés.
+  const subscription = subscriptionSchema.parse({ id: "sub-demo", orgId, plan: "pro", status: "trialing", provider: "none", externalRef: null, currentPeriodEnd: iso(addDays(now, DEFAULT_TRIAL_DAYS)), quotas: PLAN_QUOTAS.pro, testMode: true, createdAt: iso(daysAgo(120)), updatedAt: iso(daysAgo(1)) });
   const audit: AuditLog[] = [
     { id: newId(), orgId, actorUserId: userId, action: "auth.login", targetType: null, targetId: null, meta: { mode: "demo" }, ip: null, createdAt: iso(daysAgo(0, 7)) },
     { id: newId(), orgId, actorUserId: userId, action: "rule.updated", targetType: "automation_rule", targetId: "rule-4", meta: { enabled: true }, ip: null, createdAt: iso(daysAgo(3, 8)) },
