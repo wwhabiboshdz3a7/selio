@@ -9,6 +9,8 @@ Légende : **IT** implémenté et testé · **IV** implémenté, intégration ex
 | Module | Mode démonstration | Mode connecté | Notes |
 |---|---|---|---|
 | Vitrine (accueil, fonctionnalités, extension, assistant, tarifs, FAQ, contact, légal, connexion, inscription) | IT | IT | Textes légaux en brouillon ; formulaire de contact sans envoi (email non configuré) |
+| Aide (FAQ partagée de 69 questions, recherche instantanée, ancres, « Poser une question », page /app/help) | IT (réponse tirée de la FAQ, signalée) | IT avec simulateur IA ; Ollama **IV** | Vitrine : recherche locale, sans IA (D16). Test d'intégration API écrit ; à rejouer sur PostgreSQL |
+| Tarifs (essai Découverte d'une semaine ou d'un mois, plans par profil, comparatif, consommation en %) | IT | IT | Montants indicatifs, aucun paiement encaissé ; fin d'essai non appliquée tant que les abonnements ne sont pas ouverts |
 | Onboarding (compte, préférences, mode, extension, règles IA, checklist) | IT | IT | |
 | Vue d'ensemble (CA, marge, stock, alertes, filtres temporels) | IT | IT | Calculs depuis les données, aucun KPI aléatoire |
 | Articles et stock (CRUD, photos, prix, statuts, recherche/tri/pagination, import/export CSV, lot, historique) | IT | IT | Photos : data URL (démo) / URL en base (connecté) — stockage objet signé à brancher |
