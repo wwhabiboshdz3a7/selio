@@ -7,6 +7,7 @@ import { useData } from "../../lib/data/provider";
 import { connectedModeAvailable } from "../../lib/env";
 import { errorMessage } from "../../lib/errors";
 import type { Mode } from "../../lib/data/types";
+import { APP_PATH_PATTERN, HUB_PATH } from "../../app/spaces/paths";
 
 export default function Login() {
   usePageMeta("Connexion", "Connexion à l'application Selio.", { noindex: true });
@@ -23,7 +24,7 @@ export default function Login() {
     setLoading(true);
     try {
       await client.login({ email, password });
-      navigate(location.state?.from && location.state.from.startsWith("/app") ? location.state.from : "/app", { replace: true });
+      navigate(location.state?.from && APP_PATH_PATTERN.test(location.state.from) ? location.state.from : HUB_PATH, { replace: true });
     } catch (err) {
       setError(errorMessage(err));
     } finally {
