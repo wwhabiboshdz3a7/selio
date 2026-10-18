@@ -30,6 +30,7 @@ export const router = createBrowserRouter([
       { path: "extension", lazy: lazy(() => import("./marketing/pages/Extension")) },
       { path: "assistant-ia", lazy: lazy(() => import("./marketing/pages/Assistant")) },
       { path: "tarifs", lazy: lazy(() => import("./marketing/pages/Pricing")) },
+      { path: "plateforme", lazy: lazy(() => import("./marketing/pages/Platform")) },
       { path: "faq", lazy: lazy(() => import("./marketing/pages/Faq")) },
       { path: "contact", lazy: lazy(() => import("./marketing/pages/Contact")) },
       { path: "mentions-legales", lazy: lazy(() => import("./marketing/pages/Legal")) },
