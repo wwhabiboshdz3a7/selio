@@ -3,6 +3,7 @@ import { ArrowRight, MessageSquare, Package, ShoppingBag, Sparkles, TrendingUp }
 import { usePageMeta } from "../../lib/seo";
 import { CheckList, Container, CtaBand, Eyebrow, Lead, MarketingSection, PlannedList } from "../components";
 import { ConstellationHero } from "../constellation/ConstellationHero";
+import { SPACES, SpaceShowcaseCard } from "../spaces";
 import apercuClair from "../assets/apercu-clair.webp";
 import apercuSombre from "../assets/apercu-sombre.webp";
 
@@ -68,6 +69,15 @@ export default function Home() {
             </li>
           ))}
         </ol>
+      </MarketingSection>
+
+      <MarketingSection reveal id="espaces" className="scroll-mt-14 border-t border-border" eyebrow="Une plateforme, puis des filiales" title="Quatre espaces, une seule IA" lead="Selio gère votre activité au quotidien. Sur ses données, trois espaces s'ajoutent : Studio écrit les annonces, Agence met l'outil à vos couleurs, Global prépare les autres pays.">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {SPACES.map((s) => <SpaceShowcaseCard key={s.id} space={s} compact />)}
+        </div>
+        <p className="mt-6">
+          <Link to="/plateforme" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">Pourquoi cet ordre, et ce qui est prêt <ArrowRight className="size-4" aria-hidden /></Link>
+        </p>
       </MarketingSection>
 
       <MarketingSection reveal eyebrow="Transparence" title="Ce qui est disponible aujourd'hui, et ce qui ne l'est pas encore" className="border-t border-border bg-surface">
