@@ -146,6 +146,18 @@ export const PLAN_QUOTAS: Record<Plan, PlanQuotas> = {
 };
 
 export const SUBSCRIPTION_STATUSES = ["none", "trialing", "active", "past_due", "canceled", "incomplete"] as const;
+export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
+
+/**
+ * Offre Découverte : essai gratuit de toutes les fonctions du plan Pro, d'une durée
+ * choisie à l'inscription (1 semaine par défaut, ou 1 mois). Aucun paiement.
+ */
+export const TRIAL_DAYS_OPTIONS = [7, 30] as const;
+export type TrialDays = (typeof TRIAL_DAYS_OPTIONS)[number];
+export const DEFAULT_TRIAL_DAYS: TrialDays = 7;
+export const TRIAL_PLAN: Plan = "pro";
+export const trialDays = z.union([z.literal(7), z.literal(30)]);
+
 export const subscription = z.object({
   id,
   orgId: id,
@@ -190,6 +202,8 @@ export const registerInput = z.object({
   password: z.string().min(10).max(200),
   displayName: z.string().trim().min(1).max(80),
   orgName: z.string().trim().min(1).max(120),
+  /** Durée de l'essai Découverte choisie à l'inscription. */
+  trialDays: trialDays.default(DEFAULT_TRIAL_DAYS),
 });
 export const loginInput = z.object({ email, password: z.string().min(1).max(200) });
 

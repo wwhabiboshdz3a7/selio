@@ -33,7 +33,7 @@ export default function Security() {
       <Card>
         <h2 className="text-md font-semibold">Principes appliqués</h2>
         <ul className="mt-2 list-disc pl-5 text-sm text-text-muted">
-          <li>Session par cookie HttpOnly, SameSite strict, expiration glissante ; mots de passe hachés (scrypt).</li>
+          <li>Session par cookie HttpOnly, SameSite=Lax, expiration glissante de 30 jours ; mots de passe hachés (scrypt).</li>
           <li>Isolation par organisation vérifiée côté serveur et par politiques de sécurité par ligne en base.</li>
           <li>Secrets de connexion chiffrés avec une clé hors base ; jamais dans le navigateur, les journaux ou Git.</li>
           <li>Limitation de débit sur l'authentification et les endpoints sensibles ; validation stricte des entrées.</li>

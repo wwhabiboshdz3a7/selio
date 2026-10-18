@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { cents, id, isoDate } from "./common";
 
-export const AI_REQUEST_KINDS = ["reply_suggestion", "negotiation", "listing_description", "listing_generation", "summary", "health"] as const;
+export const AI_REQUEST_KINDS = ["reply_suggestion", "negotiation", "listing_description", "listing_generation", "summary", "health", "help_answer"] as const;
 export const aiRequestKind = z.enum(AI_REQUEST_KINDS);
 export type AiRequestKind = z.infer<typeof aiRequestKind>;
 
@@ -43,6 +43,18 @@ export const listingDescriptionOutput = z.object({
   description: z.string().min(10).max(2000),
   hashtags: z.array(z.string().max(30)).max(8).default([]),
 });
+
+/**
+ * Sortie structurée de l'assistant d'aide : une réponse rédigée UNIQUEMENT à partir des
+ * passages de la FAQ fournis, avec les identifiants des passages utilisés.
+ * `outOfScope` = les passages ne contiennent pas la réponse (l'IA ne doit rien inventer).
+ */
+export const helpAnswerOutput = z.object({
+  answer: z.string().min(1).max(1500),
+  sourceIds: z.array(z.string().max(80)).max(5).default([]),
+  outOfScope: z.boolean().default(false),
+});
+export type HelpAnswerOutput = z.infer<typeof helpAnswerOutput>;
 
 export const AI_STATUS = ["unconfigured", "healthy", "degraded", "unavailable", "circuit_open", "mock"] as const;
 export const aiStatus = z.object({

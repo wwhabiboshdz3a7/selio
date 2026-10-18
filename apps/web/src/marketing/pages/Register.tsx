@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router";
-import { registerInput } from "@selio/contracts";
+import { Link, useNavigate, useSearchParams } from "react-router";
+import { DEFAULT_TRIAL_DAYS, registerInput, type TrialDays } from "@selio/contracts";
 import { Alert, Button, Field, Input, Segmented } from "@selio/ui";
+import { TRIAL_DURATIONS } from "@selio/demo-data";
 import { usePageMeta } from "../../lib/seo";
 import { Container, Eyebrow } from "../components";
 import { useData } from "../../lib/data/provider";
@@ -13,13 +14,16 @@ export default function Register() {
   usePageMeta("Inscription", "Créer un compte Selio et une organisation.", { noindex: true });
   const { client, mode, setMode } = useData();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  // Durée de l'essai Découverte : celle choisie sur la page Tarifs (?essai=30), sinon 1 semaine.
+  const [trialDays, setTrialDays] = useState<TrialDays>(() => (params.get("essai") === "30" ? 30 : DEFAULT_TRIAL_DAYS));
   const [form, setForm] = useState({ displayName: "", orgName: "", email: "", password: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const parsed = registerInput.safeParse(form);
+    const parsed = registerInput.safeParse({ ...form, trialDays });
     if (!parsed.success) {
       const errs: Record<string, string> = {};
       for (const i of parsed.error.issues) errs[String(i.path[0])] = i.path[0] === "password" ? "Dix caractères minimum." : i.path[0] === "email" ? "Adresse email invalide." : "Champ requis.";
@@ -54,6 +58,11 @@ export default function Register() {
           <Field label="Nom de l'organisation" required error={errors.orgName} hint="Votre boutique, votre atelier, votre nom de vendeur.">{(p) => <Input id={p.id} invalid={p.invalid} aria-describedby={p.describedBy} value={form.orgName} onChange={(e) => setForm({ ...form, orgName: e.target.value })} autoComplete="organization" />}</Field>
           <Field label="Email" required error={errors.email}>{(p) => <Input id={p.id} type="email" invalid={p.invalid} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" />}</Field>
           <Field label="Mot de passe" required error={errors.password} hint="Dix caractères minimum.">{(p) => <Input id={p.id} type="password" invalid={p.invalid} aria-describedby={p.describedBy} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="new-password" />}</Field>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-text" aria-hidden>Durée de l'essai Découverte</span>
+            <Segmented ariaLabel="Durée de l'essai Découverte" value={String(trialDays)} onChange={(v) => setTrialDays(Number(v) as TrialDays)} items={TRIAL_DURATIONS.map((d) => ({ value: String(d.days), label: d.label }))} />
+            <span className="text-xs text-text-muted">Gratuit et sans carte bancaire : toutes les fonctions du plan Pro pendant {TRIAL_DURATIONS.find((d) => d.days === trialDays)?.long}. <Link to="/tarifs" className="underline underline-offset-2">Voir les tarifs</Link></span>
+          </div>
           {error ? <Alert tone="danger">{error}</Alert> : null}
           <Button type="submit" variant="accent" loading={loading} disabled={mode === "connected" && !connectedModeAvailable} fullWidth>Créer le compte</Button>
           <p className="text-center text-sm text-text-muted">Déjà inscrit ? <Link to="/connexion" className="font-medium text-text underline underline-offset-2">Se connecter</Link></p>

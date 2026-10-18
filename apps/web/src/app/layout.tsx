@@ -9,6 +9,7 @@ import { useTheme } from "../lib/theme";
 import { Logo } from "../components/Logo";
 import { ROLE_LABELS } from "@selio/contracts";
 import { HandCoins } from "lucide-react";
+import { LifeBuoy } from "lucide-react";
 
 export function RequireSession({ children }: { children: ReactNode }) {
   const session = useSession();
@@ -54,7 +55,10 @@ const GROUPS: NavGroup[] = [
     { to: "/app/analytics", label: "Analyses", icon: <ClipboardList /> },
     { to: "/app/automations", label: "Automatisations", icon: <Workflow />, badgeKey: "awaiting" },
   ] },
-  { items: [{ to: "/app/settings", label: "Paramètres", icon: <Settings /> }] },
+  { items: [
+    { to: "/app/help", label: "Aide", icon: <LifeBuoy />, hint: "FAQ et assistant" },
+    { to: "/app/settings", label: "Paramètres", icon: <Settings /> },
+  ] },
 ];
 
 /** Lien du menu : icônes neutres, élément actif en améthyste douce (fond teinté, icône violette). */
