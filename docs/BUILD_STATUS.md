@@ -1,6 +1,6 @@
 # État de construction
 
-Dernière mise à jour : 13 octobre 2026.
+Dernière mise à jour : 24 octobre 2026.
 
 ## Classification des modules
 
