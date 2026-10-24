@@ -1,0 +1,1 @@
+import{a_ as s}from"./index-Cjkq7SWu.js";function n(e){return e instanceof s||e&&typeof e=="object"&&"message"in e&&typeof e.message=="string"?e.message:"Une erreur inattendue est survenue."}export{n as e};

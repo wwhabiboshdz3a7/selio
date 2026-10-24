@@ -24,6 +24,8 @@ Ouvrir https://app.netlify.com/drop et y déposer le dossier `demo/` (ou l'archi
 - Page d'accueil : la vitrine (fonctionnalités, extension, assistant IA, tarifs, FAQ).
 - Bouton « Voir la démo » ou adresse `/demo` : ouvre l'application avec une boutique fictive.
 - Le bandeau « Démonstration — données fictives » reste visible dans l'application.
+- L'accueil des espaces (`/app/espaces`) présente Selio Gestion, Selio Studio et les filiales en préparation.
+- Fonctionne sur ordinateur, tablette et mobile, en mode clair ou sombre.
 
 ## Détails techniques
 
