@@ -82,7 +82,7 @@ function DevCard({ space }: { space: SpaceDef }) {
           </div>
         </div>
         <p className="text-sm text-text-muted">{space.description}</p>
-        <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-3">
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
           <StatusBadge tone="neutral">{SPACE_STATE_LABEL[space.state]}</StatusBadge>
           <Link to={space.home} className={buttonClass({ variant: "ghost", size: "sm" })} aria-label={`Découvrir ${space.name}`}>Découvrir <ArrowRight aria-hidden /></Link>
         </div>

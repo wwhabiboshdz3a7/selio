@@ -67,7 +67,7 @@ function Rules({ canWrite }: { canWrite: boolean }) {
                   <p className="text-xs text-text-muted">{loc.explanation}</p>
                   <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-xs text-text-muted">
                     <span>{r.lastRunAt ? `Dernière exécution ${formatRelative(r.lastRunAt)}` : "Jamais exécutée"}</span>
-                    <span className="flex gap-1">
+                    <span className="flex flex-wrap gap-1">
                       <Button size="sm" variant="secondary" icon={<RefreshCw />} onClick={() => run.mutate(r)} loading={run.isPending && run.variables?.id === r.id} disabled={!canWrite}>Exécuter maintenant</Button>
                       <Button size="sm" variant="ghost" onClick={() => setEditing(r)} disabled={!canWrite}>Modifier</Button>
                       <Button size="sm" variant="ghost" onClick={() => setDel(r)} disabled={!canWrite}>Supprimer</Button>

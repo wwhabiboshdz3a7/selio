@@ -24,7 +24,7 @@ export default function Messages() {
   return (
     <>
       <PageHeader title="Messagerie" description="Toutes vos conversations Vinted au même endroit, reliées à l'acheteur et à l'article. L'IA propose une réponse, vous validez : rien ne part sans votre clic." actions={mode === "demo" ? <Button variant="secondary" icon={<Zap />} onClick={() => simulate.mutate()} loading={simulate.isPending}>Simuler un message entrant</Button> : undefined} className={cn(id && "hidden md:flex")} />
-      <div className="card grid overflow-hidden p-0 md:h-[calc(100dvh-210px)] md:min-h-[580px] md:grid-cols-[320px_minmax(0,1fr)] lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="card grid grid-cols-[minmax(0,1fr)] overflow-hidden p-0 md:h-[calc(100dvh-210px)] md:min-h-[580px] md:grid-cols-[320px_minmax(0,1fr)] lg:grid-cols-[360px_minmax(0,1fr)]">
         <aside className={cn("flex min-h-[60dvh] flex-col border-border md:min-h-0 md:border-r", id && "hidden md:flex")} aria-label="Liste des conversations">
           <div className="flex flex-col gap-2 border-b border-border p-3">
             <Input placeholder="Rechercher un acheteur, un article…" prefix={<Search />} value={q} onChange={(e) => set("q", e.target.value)} aria-label="Rechercher une conversation" />

@@ -36,7 +36,7 @@ export default function Onboarding() {
     <>
       <PageHeader title="Démarrage" description="Six étapes courtes pour configurer Selio. Vous pouvez revenir ici à tout moment." actions={<Button variant="ghost" onClick={() => dismiss.mutate()} loading={dismiss.isPending}>Terminer plus tard</Button>} />
       <ProgressBar value={completed.size} max={STEPS.length} label="Progression" className="mb-6 max-w-md" />
-      <div className="grid gap-4 md:grid-cols-[260px_minmax(0,1fr)]">
+      <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
         <ol className="flex flex-col gap-1">
           {STEPS.map((s, i) => (
             <li key={s.key}>
