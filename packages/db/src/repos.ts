@@ -114,9 +114,13 @@ export const sessions = {
 };
 
 export const paymentEvents = {
-  /** Retourne false si l'événement a déjà été reçu (idempotence). */
+  /**
+   * Retourne false si l'événement a déjà été reçu ET traité (idempotence).
+   * Un événement reçu dont le traitement a échoué (processed_at nul) peut être retraité :
+   * sinon le renvoi de Stripe serait pris pour un doublon et l'abonnement resterait faux.
+   */
   async record(tx: Tx, input: { id: string; provider: string; type: string; payload: unknown }): Promise<boolean> {
-    const rows = await tx.query("insert into payment_events (id, provider, type, payload) values ($1, $2, $3, $4) on conflict (id) do nothing returning id", [input.id, input.provider, input.type, JSON.stringify(input.payload)]);
+    const rows = await tx.query("insert into payment_events (id, provider, type, payload) values ($1, $2, $3, $4) on conflict (id) do update set payload = excluded.payload where payment_events.processed_at is null returning id", [input.id, input.provider, input.type, JSON.stringify(input.payload)]);
     return rows.length > 0;
   },
   async markProcessed(tx: Tx, id: string): Promise<void> {
