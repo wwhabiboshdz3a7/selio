@@ -9,8 +9,10 @@ function preset(v: unknown): PeriodPreset {
   return PRESETS.includes(v as PeriodPreset) ? (v as PeriodPreset) : "30d";
 }
 
-export function getOverview(ctx: OrgContext, rawPeriod: unknown): Promise<OverviewData> {
+export async function getOverview(ctx: OrgContext, rawPeriod: unknown): Promise<OverviewData> {
   const period = preset(rawPeriod);
+  // Lu avant la transaction : un contrôle de santé lent ne doit pas immobiliser une connexion à la base.
+  const ai = await ctx.services.ai.status();
   return withOrg(ctx, async (tx) => {
     const now = ctx.services.now();
     const p = periodFromPreset(period, now);
@@ -28,9 +30,8 @@ export function getOverview(ctx: OrgContext, rawPeriod: unknown): Promise<Overvi
     if ((jobCounts.failed ?? 0) > 0) alerts.push({ id: "jobs-failed", tone: "danger", title: `${jobCounts.failed} tâche(s) d'automatisation en échec`, description: (await repos.jobs.recentErrors(tx, 1))[0]?.error ?? "", to: "/app/automations?tab=jobs&status=failed" });
     if ((jobCounts.awaiting_approval ?? 0) > 0) alerts.push({ id: "jobs-awaiting", tone: "warning", title: `${jobCounts.awaiting_approval} action(s) automatique(s) à valider`, description: "Ces actions attendent votre validation avant exécution.", to: "/app/automations?tab=jobs&status=awaiting_approval" });
     if (state.globalPaused) alerts.push({ id: "global-pause", tone: "warning", title: "Automatisations en arrêt global", description: "Aucune règle ne s'exécute tant que l'arrêt global est actif.", to: "/app/automations" });
-    const ai = await ctx.services.ai.status();
     if (ai.status === "unavailable" || ai.status === "circuit_open") alerts.push({ id: "ai", tone: "warning", title: "Assistant IA indisponible", description: `${ai.message}. Les gabarits déterministes restent utilisables.`, to: "/app/settings/ai" });
-    const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+    const org = await repos.orgs.byId(tx, ctx.orgId);
     const sales = comparablesFromSales(orders, new Map(items.map((i) => [i.id, i])));
     return {
       period, sales: salesKpis(orders, p), previousSales: salesKpis(orders, previousPeriod(p, period)), stock: stockKpis(items, now),

@@ -21,7 +21,7 @@ function parseQuery(raw: Record<string, unknown>): DressingFilters {
 export function getDressing(ctx: OrgContext, raw: Record<string, unknown>): Promise<DressingData> {
   const query = parseQuery(raw);
   return withOrg(ctx, async (tx) => {
-    const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+    const org = await repos.orgs.byId(tx, ctx.orgId);
     const items = await repos.items.all(tx);
     const sales = comparablesFromSales(await repos.orders.all(tx), new Map(items.map((i) => [i.id, i])));
     return buildDressing(items, sales, { now: ctx.services.now(), rules: org.settings.margin, republishAfterDays: org.settings.dressing.republishAfterDays }, query);
@@ -37,7 +37,7 @@ export function republishItem(ctx: OrgContext, id: string, variantId: unknown): 
   requireAction(ctx, "items.write");
   if (typeof variantId !== "string" || !/^v\d{1,2}$/.test(variantId)) throw new AppError("validation", "Variante invalide", 400);
   return withOrg(ctx, async (tx) => {
-    const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+    const org = await repos.orgs.byId(tx, ctx.orgId);
     const item = await repos.items.byId(tx, id);
     if (item.status !== "listed" && item.status !== "reserved") throw new AppError("validation", "Seule une annonce en ligne peut être republiée.", 400);
     const plan = republicationPlan(item, { now: ctx.services.now(), republishAfterDays: org.settings.dressing.republishAfterDays });

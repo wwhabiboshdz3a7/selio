@@ -140,6 +140,18 @@ describe("API Selio (mode connecté, base réelle)", () => {
     expect(timeline.json.totals.orders).toBe(1);
   });
 
+  it("charge : plus de requêtes simultanées que de connexions à la base, sans blocage", async () => {
+    if (!available) return;
+    // Régression : des lectures de l'organisation ouvraient une seconde connexion au milieu d'une transaction.
+    // Au-delà de 10 requêtes simultanées (taille de la réserve), tout se bloquait jusqu'au délai de connexion.
+    const urls = ["/api/analytics/overview", "/api/dressing", "/api/automations/state", "/api/conversations"];
+    const started = Date.now();
+    const results = await Promise.all(Array.from({ length: 32 }, (_, i) =>
+      built.app.inject({ method: "GET", url: urls[i % urls.length]!, headers: { cookie: cookies.a ?? "" }, remoteAddress: "10.9.0.1" })));
+    expect(results.map((r) => r.statusCode)).toEqual(Array(32).fill(200));
+    expect(Date.now() - started).toBeLessThan(8000);
+  }, 30_000);
+
   it("automatisations : règle, exécution idempotente, validation, arrêt global", async () => {
     if (!available) return;
     const rule = await call("POST", "/api/automations/rules", { name: "Accusé de réception", kind: "reply_on_new_message", enabled: true, requiresApproval: true, runsIn: "browser", schedule: { days: [0, 1, 2, 3, 4, 5, 6], startHour: 0, endHour: 24, timezone: "Europe/Paris" }, limits: { maxPerDay: 10, maxPerCustomerPerDay: 2, minMinutesBetweenActions: 0 }, config: { template: "Bonjour {{prenom}}, bien reçu." } });

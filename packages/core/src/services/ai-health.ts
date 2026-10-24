@@ -16,7 +16,7 @@ export function getAiHealth(ctx: OrgContext, rawWindowDays?: unknown): Promise<A
     const now = ctx.services.now();
     const from = new Date(now.getTime() - windowDays * 86_400_000).toISOString();
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
-    const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+    const org = await repos.orgs.byId(tx, ctx.orgId);
     const quotas = (await repos.subscriptions.get(tx))?.quotas ?? PLAN_QUOTAS.free;
     const summary = summarizeAiRequests(await repos.aiRequests.listSince(tx, from), { now, windowDays });
     const used = await repos.aiRequests.countSince(tx, monthStart);

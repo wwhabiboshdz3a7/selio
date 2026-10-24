@@ -48,7 +48,7 @@ function runSearchOnly(ctx: OrgContext, id: string): Promise<{ found: number }> 
   return withOrg(ctx, async (tx) => {
     const search = await repos.searches.byId(tx, id);
     const now = ctx.services.now();
-    const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+    const org = await repos.orgs.byId(tx, ctx.orgId);
     const existing = await repos.opportunities.list(tx, { searchId: id });
     const rnd = seededRandom(hashString(search.id + localDayKey(now, org.settings.timezone) + existing.length));
     const brands = search.criteria.brands.length ? search.criteria.brands : ["Nike", "Zara", "Levi's"];
@@ -102,7 +102,7 @@ export function createPurchase(ctx: OrgContext, raw: { opportunityId?: string; m
   requireAction(ctx, "purchase.simulate");
   if (!raw.opportunityId || !Number.isInteger(raw.maxPriceCents) || !Number.isInteger(raw.budgetCents)) throw new AppError("validation", "Demande invalide", 400);
   return withOrg(ctx, async (tx) => {
-    const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+    const org = await repos.orgs.byId(tx, ctx.orgId);
     const opp = await repos.opportunities.byId(tx, raw.opportunityId!);
     const existing = await repos.purchases.activeForOpportunity(tx, opp.id);
     if (existing) throw new AppError("conflict", "Une demande d'achat existe déjà pour cette opportunité (prévention des doublons).", 409, { existingId: existing.id });
@@ -119,7 +119,7 @@ export function confirmPurchase(ctx: OrgContext, id: string): Promise<PurchaseRe
 }
 
 async function confirmPurchaseTx(ctx: OrgContext, tx: Tx, id: string): Promise<PurchaseRequest> {
-  const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+  const org = await repos.orgs.byId(tx, ctx.orgId);
   const p = await repos.purchases.byId(tx, id);
   if (p.status !== "awaiting_confirmation") throw new AppError("conflict", "Cette demande n'est plus en attente de confirmation.", 409);
   const opp = await repos.opportunities.byId(tx, p.opportunityId);
@@ -152,7 +152,7 @@ export function cancelPurchase(ctx: OrgContext, id: string): Promise<PurchaseReq
 export function quickBuy(ctx: OrgContext, opportunityId: string): Promise<PurchaseRequest> {
   requireAction(ctx, "purchase.simulate");
   return withOrg(ctx, async (tx) => {
-    const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+    const org = await repos.orgs.byId(tx, ctx.orgId);
     const opp = await repos.opportunities.byId(tx, opportunityId);
     if (await repos.purchases.activeForOpportunity(tx, opp.id)) throw new AppError("conflict", "Une demande d'achat existe déjà pour cette affaire (prévention des doublons).", 409);
     const total = purchaseCost(opp.observed, org.settings.buyerFees).totalCents;
@@ -167,7 +167,7 @@ export function quickBuy(ctx: OrgContext, opportunityId: string): Promise<Purcha
 export function runAutoBuy(ctx: OrgContext): Promise<{ evaluated: number; bought: number; spentCents: number; skipped: { reason: string; count: number }[]; account: { id: string; label: string } | null }> {
   requireAction(ctx, "purchase.simulate");
   return withOrg(ctx, async (tx) => {
-    const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+    const org = await repos.orgs.byId(tx, ctx.orgId);
     const settings = org.settings.autoBuy;
     const account = await purchaseAccountTx(tx, org);
     const via = account ? ` via le compte Achat « ${account.label} »` : "";
