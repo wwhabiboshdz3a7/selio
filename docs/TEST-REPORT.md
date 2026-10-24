@@ -89,3 +89,25 @@ Après trois modifications de l'interface web (libellé de l'assistant IA, scrip
 | `pnpm deploy --legacy` de l'API et du worker, puis démarrage depuis le dossier déployé | ✔ (API : `/api/health` répond ; worker : démarrage et arrêt propre) |
 | Construction des images Docker | **non exécutée** (client Docker présent, démon injoignable dans l'environnement de test) |
 | `pnpm test` complet (PostgreSQL 16 et Redis 7 locaux) | ✔ 109/109 |
+
+## Vérifications du 24 octobre 2026
+
+Sur la dernière version (espaces Studio, Agents, Track, Cloud et générateur, onglet Automatisation, charte violet/or), puis après les correctifs du jour :
+
+| Vérification | Résultat |
+|---|---|
+| `pnpm lint` et `pnpm typecheck` | ✔ 0 erreur |
+| `pnpm test` (PostgreSQL 16 et Redis 7 locaux) | ✔ 237/237 (41 fichiers) |
+| `pnpm test:e2e` (desktop, tablette, mobile) | ✔ 116 réussis, 4 ignorés par conception, 0 échec |
+| Nouveau test `layout-clipping.spec.ts` : contenu coupé hors zone défilante, 46 pages, mobile et tablette | ✔ (6 pages en défaut avant correction) |
+| Archive `livraison/selio-demo-netlify.zip` servie avec ses `_headers` et `_redirects` | ✔ 21/21 |
+| Charge, serveur en mode production, 50 connexions, 15 s par route (machine 4 cœurs, base locale, données de démonstration) | ✔ 0 erreur : santé 1 094 req/s, conversations 286, articles 223, dressing 85, vue d'ensemble 41 |
+
+Défauts trouvés et corrigés :
+
+- **Blocage du serveur** dès 10 requêtes simultanées : 14 lectures de l'organisation ouvraient une seconde connexion au milieu d'une transaction (réserve de 10 connexions épuisée, délai de 10 s puis erreur). Vue d'ensemble : 0 req/s et 50 erreurs avant, 41 req/s et 0 erreur après. Test de non-régression dans `apps/api/test/api.test.ts`.
+- **Webhook Stripe** : un événement dont le traitement échouait était ensuite ignoré comme doublon. Seul un événement traité est désormais un doublon (test dans `packages/db`).
+- **Mobile et tablette** : messagerie, vue d'ensemble, en-tête de page, paramètres, démarrage, journal des tâches et accueil des espaces.
+- **Libellés** : le nom technique du serveur de modèle réapparaissait dans la vitrine, la FAQ, le Studio et les réglages IA.
+
+Non exécuté : construction des images Docker ; capacité du modèle IA réel (non raccordé) ; navigateurs autres que Chromium.
