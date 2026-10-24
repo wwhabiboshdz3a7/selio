@@ -146,7 +146,7 @@ export default function Studio() {
       />
 
       {mode === "demo" ? (
-        <Alert tone="info" className="mb-5" title="Démonstration : IA simulée">Le simulateur ne voit pas réellement vos photos : il s'appuie sur la marque, la taille, les notes et le nom des fichiers (ex. « ralph-lauren-pull-bleu-M.jpg »). Avec votre modèle IA branché (Ollama + modèle de vision), l'analyse des photos est réelle. Le prix conseillé vient toujours des ventes comparables, jamais de l'IA.</Alert>
+        <Alert tone="info" className="mb-5" title="Démonstration : IA simulée">Le simulateur ne voit pas réellement vos photos : il s'appuie sur la marque, la taille, les notes et le nom des fichiers (ex. « ralph-lauren-pull-bleu-M.jpg »). Avec mon modèle perso branché (texte + vision), l'analyse des photos est réelle. Le prix conseillé vient toujours des ventes comparables, jamais de l'IA.</Alert>
       ) : null}
 
       <ol className="mb-8 grid gap-4 sm:grid-cols-3" aria-label="Étapes">
