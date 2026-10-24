@@ -259,7 +259,7 @@ function buildHelpEntries(): HelpEntry[] {
     id: "modele-ia",
     categoryId: "generateur",
     question: "Quel modèle d'IA utilise Selio ?",
-    answer: "Un modèle privé servi par Ollama (par défaut qwen2.5:7b-instruct pour le texte et, s'il est configuré, un modèle de vision comme qwen2.5vl:7b pour lire les photos), appelé uniquement par le serveur Selio, jamais depuis votre navigateur. Sans modèle de vision, le générateur le signale : l'annonce est rédigée sans lire les photos. Son raccordement est en préparation : l'état de l'IA l'indique dans Paramètres › Assistant IA.\n\nEn démonstration, un simulateur déterministe le remplace : il ne voit pas les photos et s'appuie sur la marque, la taille, les notes et le nom des fichiers.",
+    answer: "Mon modèle perso : un modèle privé (un modèle de texte et, s'il est configuré, un modèle de vision pour lire les photos), appelé uniquement par le serveur Selio, jamais depuis votre navigateur. Sans modèle de vision, le générateur le signale : l'annonce est rédigée sans lire les photos. Son raccordement est en préparation : l'état de l'IA l'indique dans Paramètres › Assistant IA.\n\nEn démonstration, un simulateur déterministe le remplace : il ne voit pas les photos et s'appuie sur la marque, la taille, les notes et le nom des fichiers.",
     keywords: ["modèle", "ollama", "qwen", "vision", "ia personnelle", "serveur ia", "simulateur"],
     link: { label: "Paramètres › Assistant IA", href: "/app/settings/ai" },
   },
@@ -633,7 +633,7 @@ function buildHelpEntries(): HelpEntry[] {
     id: "ia-confidentialite",
     categoryId: "donnees",
     question: "Mes messages et mes photos sont-ils envoyés à un service d'IA tiers ?",
-    answer: "Aucun fournisseur d'IA tiers n'est intégré. Les photos et les messages passent par le serveur Selio, qui les transmet au modèle privé (Ollama) par un réseau privé ou une passerelle authentifiée ; votre navigateur ne l'appelle jamais. Les messages des acheteurs sont traités comme des données non fiables : nettoyés, balisés, et toute consigne cachée y est ignorée.",
+    answer: "Aucun fournisseur d'IA tiers n'est intégré. Les photos et les messages passent par le serveur Selio, qui les transmet à mon modèle perso, un modèle privé, par un réseau privé ou une passerelle authentifiée ; votre navigateur ne l'appelle jamais. Les messages des acheteurs sont traités comme des données non fiables : nettoyés, balisés, et toute consigne cachée y est ignorée.",
     keywords: ["confidentialité", "ia", "tiers", "openai", "photos", "messages", "vie privée"],
   },
   {

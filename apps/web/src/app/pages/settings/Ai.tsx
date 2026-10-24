@@ -193,8 +193,8 @@ function TechnicalDetails({ status, health }: { status?: AiStatus; health?: AiHe
       <h3 className="mt-5 text-base font-semibold">Générateur d'annonces : brancher votre modèle</h3>
       <p className="mt-1 text-sm text-text-muted">Le générateur envoie les photos au serveur Selio, qui les transmet à votre modèle IA. Pour qu'il « voie » vraiment les photos, il faut un modèle multimodal (vision) en plus du modèle de texte.</p>
       <ol className="mt-3 flex list-decimal flex-col gap-1.5 pl-5 text-sm text-text-muted">
-        <li>Sur le serveur IA : <code className="rounded bg-surface-muted px-1 text-text">ollama pull qwen2.5:7b-instruct</code> (texte) et <code className="rounded bg-surface-muted px-1 text-text">ollama pull qwen2.5vl:7b</code> (vision).</li>
-        <li>Côté API et worker : <code className="rounded bg-surface-muted px-1 text-text">AI_PROVIDER=ollama</code>, <code className="rounded bg-surface-muted px-1 text-text">OLLAMA_BASE_URL</code>, <code className="rounded bg-surface-muted px-1 text-text">OLLAMA_MODEL</code>, <code className="rounded bg-surface-muted px-1 text-text">OLLAMA_VISION_MODEL</code>.</li>
+        <li>Sur le serveur IA : installer le modèle de texte et le modèle de vision de mon modèle perso (guide d'installation du serveur IA dans <code className="rounded bg-surface-muted px-1 text-text">docs/</code>).</li>
+        <li>Côté API et worker : renseigner les variables de configuration de mon modèle perso (adresse du serveur, modèle de texte, modèle de vision), listées dans <code className="rounded bg-surface-muted px-1 text-text">.env.example</code>.</li>
         <li>Vérifier : <code className="rounded bg-surface-muted px-1 text-text">pnpm ai:diagnose</code> puis ce statut doit passer à « Opérationnel ».</li>
       </ol>
       <p className="mt-3 text-xs text-text-muted">Sans modèle de vision, le générateur fonctionne quand même à partir des indications (marque, taille, notes) et le signale. Le prix conseillé n'est jamais fixé par l'IA : il vient des ventes comparables.</p>

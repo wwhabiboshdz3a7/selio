@@ -40,7 +40,7 @@ export const MODULES: readonly CatalogModule[] = [
   { id: "analyses", title: "Analyses", summary: "Une galerie de graphiques : chiffre d'affaires, marge, rotation et objectif du mois.", href: "/fonctionnalites#analyses", tone: "violet", status: "available" },
   { id: "automatisations", title: "Automatisations", summary: "Des règles explicites, une validation humaine et un bouton d'arrêt.", href: "/fonctionnalites#automatisations", tone: "violet", status: "demo" },
   { id: "extension", title: "Extension navigateur", summary: "Capture d'un article et aide à la rédaction depuis la page Vinted ouverte.", href: "/fonctionnalites#extension", tone: "violet", status: "experimental" },
-  { id: "ia-perso", title: "Votre IA personnelle", summary: "Un modèle privé (Ollama) appelé par le serveur Selio, jamais depuis le navigateur.", href: "/fonctionnalites#ia-perso", tone: "gold", status: "planned" },
+  { id: "ia-perso", title: "Votre IA personnelle", summary: "Mon modèle perso, un modèle privé appelé par le serveur Selio, jamais depuis le navigateur.", href: "/fonctionnalites#ia-perso", tone: "gold", status: "planned" },
 ];
 
 export type ModuleId = (typeof MODULES)[number]["id"];
