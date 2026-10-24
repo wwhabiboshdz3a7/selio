@@ -26,7 +26,7 @@ export function createOrder(ctx: OrgContext, raw: unknown): Promise<{ order: Ord
   return withOrg(ctx, async (tx) => {
     const item = await repos.items.byId(tx, input.itemId);
     await repos.customers.byId(tx, input.customerId);
-    const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+    const org = await repos.orgs.byId(tx, ctx.orgId);
     const connection = item.connectionId ? await repos.connections.byId(tx, item.connectionId).catch(() => null) : null;
     const provider = connection?.provider ?? "demo";
     const dedupeKey = orderDedupeKey({ provider, externalRef: input.externalRef ?? null, itemId: item.id, customerId: input.customerId, day: localDayKey(ctx.services.now(), org.settings.timezone) });

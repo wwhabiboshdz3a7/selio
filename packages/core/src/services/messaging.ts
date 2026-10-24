@@ -20,7 +20,7 @@ async function lastOfferTx(tx: Tx, ctx: OrgContext, conv: Conversation): Promise
   const msgs = await repos.messages.forConversation(tx, conv.id);
   const lastInbound = [...msgs].reverse().find((m) => m.direction === "inbound" && m.offerCents);
   if (!lastInbound?.offerCents) return null;
-  const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+  const org = await repos.orgs.byId(tx, ctx.orgId);
   return { offerCents: lastInbound.offerCents, evaluation: evaluateOffer({ item, offerCents: lastInbound.offerCents, rules: org.settings.margin, roundsSoFar: conv.negotiationRounds, now: ctx.services.now() }) };
 }
 
@@ -114,7 +114,7 @@ export function evaluateConversationOffer(ctx: OrgContext, conversationId: strin
     const conv = await repos.conversations.byId(tx, conversationId);
     if (!conv.itemId) throw new AppError("validation", "Cette conversation n'est liée à aucun article.", 400);
     const item = await repos.items.byId(tx, conv.itemId);
-    const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+    const org = await repos.orgs.byId(tx, ctx.orgId);
     return evaluateOffer({ item, offerCents, rules: org.settings.margin, roundsSoFar: conv.negotiationRounds, now: ctx.services.now() });
   });
 }

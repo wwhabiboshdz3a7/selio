@@ -42,7 +42,7 @@ export function deleteRule(ctx: OrgContext, id: string): Promise<void> {
 export function getState(ctx: OrgContext): Promise<AutomationState> {
   return withOrg(ctx, async (tx) => {
     const s = await repos.automationState.get(tx);
-    const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+    const org = await repos.orgs.byId(tx, ctx.orgId);
     const today = localDayKey(ctx.services.now(), org.settings.timezone);
     const actionsToday = await tx.count("select count(*) from jobs where org_id = $1 and status = 'succeeded' and to_char(coalesce(finished_at, created_at) at time zone $2, 'YYYY-MM-DD') = $3", [ctx.orgId, org.settings.timezone, today]);
     return { globalPaused: s.globalPaused, pausedAt: s.pausedAt, actionsToday };
@@ -123,7 +123,7 @@ export interface RunResult { evaluated: number; created: number; skipped: { reas
 
 export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): Promise<RunResult> {
   const now = ctx.services.now();
-  const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
+  const org = await repos.orgs.byId(tx, ctx.orgId);
   const state = await repos.automationState.get(tx);
   const skipped = new Map<string, number>();
   const skip = (r: string) => skipped.set(r, (skipped.get(r) ?? 0) + 1);
