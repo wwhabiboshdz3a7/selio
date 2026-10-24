@@ -86,10 +86,13 @@ describe("base de données", () => {
       await repos.orders.create(tx, { itemId: item.id, customerId: cust.id, dedupeKey: "demo:tx-1", salePriceCents: 5000, statusHistory: [] });
       await expect(repos.orders.create(tx, { itemId: item.id, customerId: cust.id, dedupeKey: "demo:tx-1", salePriceCents: 5000, statusHistory: [] })).rejects.toMatchObject({ code: "conflict" });
     }).catch((e) => { if (!(e instanceof DbError)) throw e; });
-    const first = await app.withGlobal((tx) => repos.paymentEvents.record(tx, { id: "evt_1", provider: "stripe", type: "x", payload: {} }));
-    const second = await app.withGlobal((tx) => repos.paymentEvents.record(tx, { id: "evt_1", provider: "stripe", type: "x", payload: {} }));
-    expect(first).toBe(true);
-    expect(second).toBe(false);
+    const record = () => app.withGlobal((tx) => repos.paymentEvents.record(tx, { id: "evt_1", provider: "stripe", type: "x", payload: {} }));
+    expect(await record()).toBe(true);
+    // Reçu mais pas encore traité (traitement en échec) : le renvoi de Stripe doit pouvoir être retraité.
+    expect(await record()).toBe(true);
+    await app.withGlobal((tx) => repos.paymentEvents.markProcessed(tx, "evt_1"));
+    // Traité : un nouveau renvoi est un doublon.
+    expect(await record()).toBe(false);
   });
 
   it("limite le débit par fenêtre", async () => {
