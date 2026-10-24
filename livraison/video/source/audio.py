@@ -340,13 +340,45 @@ def sfx_sound(kind, p):
             i = int(k * 0.05 * SR)
             out[i:i + len(s)] += s[:len(out) - i]
         return out, 0
+    if kind == "slam":
+        d = 0.26
+        t = tt(d)
+        air = sweep(noise(d), lambda x: 300 + 1800 * (1 - x / d), lambda x: 1500 + 6000 * (1 - x / d)) * np.sin(np.pi * np.minimum(1, t / 0.16)) ** 2 * np.exp(-t / 0.12)
+        f = (85 + 12 * hash1(p)) * (1 + 0.6 * np.exp(-t / 0.03))
+        thud = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.07)
+        return (0.35 * air + 0.6 * thud) * 0.8, (hash1(p + 4) - 0.5) * 0.7
+    if kind == "beep":
+        t = tt(0.05)
+        return np.sin(2 * np.pi * (1400 + 120 * p) * t) * np.exp(-t / 0.015) * 0.3, 0.4
+    if kind == "type":
+        t = tt(0.03)
+        s = filt(noise(0.03), 2500, 9000) * np.exp(-t / 0.003) + 0.3 * np.sin(2 * np.pi * (2600 + 400 * hash1(p)) * t) * np.exp(-t / 0.004)
+        return s * 0.12, (hash1(p + 2) - 0.5) * 0.3
+    if kind == "heart":
+        t = tt(0.32)
+        one = lambda t0: np.where(t >= t0, np.sin(2 * np.pi * 58 * (t - t0)) * np.exp(-np.maximum(0, t - t0) / 0.06), 0)
+        return np.tanh(1.5 * (one(0.0) + 0.7 * one(0.13))) * 0.7, 0
+    if kind == "shine":
+        out = np.zeros(int(0.9 * SR))
+        for k, m in enumerate((88, 91, 95, 98, 100, 103)):
+            s = bell(hz(m), 0.6, 0.09, 0.16)
+            i = int(k * 0.06 * SR)
+            out[i:i + len(s)] += s[:len(out) - i]
+        return out, 0
+    if kind == "whip":
+        d = 0.24
+        t = tt(d)
+        u = t / d
+        s = sweep(noise(d), lambda x: 600 + 3000 * np.sin(np.pi * x / d), lambda x: 2500 + 7000 * np.sin(np.pi * x / d)) * np.sin(np.pi * u) ** 2
+        return s * 0.45, (0.5 if p else -0.5)
     return None, 0
 
 
 # Niveaux relatifs des bruitages (l'impact sert de référence, les petits sons sont remontés).
-GAIN = {"tick": 3.0, "pop": 1.8, "blip": 2.0, "error": 3.0, "notif": 1.5, "key": 2.5, "tap": 2.0, "riser": 1.0, "glitch": 1.5,
+GAIN = {"tick": 3.0, "pop": 1.8, "blip": 2.0, "error": 3.0, "notif": 1.5, "key": 2.5, "tap": 3.5, "riser": 1.0, "glitch": 1.5,
         "suck": 1.6, "impact": 0.6, "sparkle": 1.5, "swish": 1.6, "whoosh": 1.4, "kaching": 1.2, "coin": 1.5, "thud": 2.0,
-        "ding": 1.4, "check": 1.6, "shimmer": 1.8}
+        "ding": 1.4, "check": 1.6, "shimmer": 1.8,
+        "slam": 2.2, "beep": 3.5, "type": 3.2, "heart": 1.6, "shine": 1.4, "whip": 2.2}
 
 
 def build_sfx():
