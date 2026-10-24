@@ -166,7 +166,7 @@ export default function Overview() {
               </div>
             )}
 
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2">
               <section className="card p-0">
                 <div className="flex items-center justify-between px-4 pt-4"><h2 className="text-md font-semibold">Dernières conversations</h2><Link to="/app/messages" className="text-sm text-text-muted hover:text-text">Tout voir</Link></div>
                 <div className="mt-2 divide-y divide-border">
