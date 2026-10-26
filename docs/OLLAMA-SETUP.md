@@ -1,6 +1,6 @@
 # Ollama — construire maintenant, valider plus tard
 
-Le matériel IA n'est pas encore disponible. L'intégration est écrite, testée sur HTTP simulé et prête à être raccordée. **Aucune latence ni capacité n'a été mesurée sur le matériel cible : les chiffres viendront du diagnostic exécuté sur place.**
+La machine IA est achetée. L'intégration est écrite, testée sur HTTP simulé et prête à être raccordée. **Aucune latence ni capacité n'a encore été mesurée sur cette machine : les chiffres viendront du diagnostic et de la mesure (`pnpm ai:bench`) exécutés sur place.**
 
 ## Architecture cible
 
@@ -45,6 +45,13 @@ ALLOW_AI_FALLBACK=false      # obligatoire en production
 AI_PROVIDER=ollama OLLAMA_BASE_URL=http://10.0.0.5:11434 OLLAMA_MODEL=qwen2.5:7b-instruct pnpm ai:diagnose
 ```
 Vérifie la joignabilité (`/api/tags`), la présence du modèle, puis une génération structurée (JSON). Codes de sortie : 0 OK, 2 provider/modèle indisponible, 3 génération en échec.
+
+### Mesure de capacité et de coût
+
+```bash
+AI_PROVIDER=ollama OLLAMA_BASE_URL=http://10.0.0.5:11434 BENCH_SECONDS=120 BENCH_WATTS=300 pnpm ai:bench
+```
+Envoie des demandes de réponse acheteur réalistes pendant `BENCH_SECONDS`, `AI_MAX_CONCURRENCY` à la fois, et affiche les réponses par minute, les durées p50/p95 et les jetons par réponse. `BENCH_WATTS` est la puissance de la machine en charge lue au wattmètre (à défaut, `nvidia-smi --query-gpu=power.draw --format=csv -l 1` pendant la mesure donne celle de la carte seule) ; `BENCH_KWH_EUR` le prix du kWh (0,2001 € par défaut, tarif Bleu option Base au 1er août 2026). Le coût d'électricité par réponse = watts × secondes par réponse ÷ 3 600 000 × prix du kWh.
 
 En service : `GET /api/ai/health` (en-tête `x-health-token`) renvoie santé, métriques (p50/p95, échecs, sorties rejetées, jetons), état de la file et du disjoncteur. L'interface affiche le statut IA (Paramètres › Assistant IA, pastille dans la barre latérale, alerte sur la vue d'ensemble).
 

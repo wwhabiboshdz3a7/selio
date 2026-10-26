@@ -24,6 +24,7 @@
     "db:migrate": "pnpm --filter @selio/db migrate",
     "db:seed:demo": "pnpm --filter @selio/db seed:demo",
     "ai:diagnose": "pnpm --filter @selio/ai diagnose",
+    "ai:bench": "pnpm --filter @selio/ai bench",
     "format:check": "prettier --check ."
   },
   "devDependencies": {
