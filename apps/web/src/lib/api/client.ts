@@ -7,7 +7,9 @@ import type { AccountStats, NegotiationResult, PeriodPreset } from "@selio/domai
 import { DataError, type AdminOverview, type AdminUsageReport, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
 import type { AiHealthData } from "../data/types";
 import type { BillingCycle, Invoice, InvoiceView, PaidPlan, WhiteLabel, WhiteLabelInput } from "@selio/contracts";
-import type { CheckoutOutcome } from "../data/types";
+import type { CheckoutOutcome, CloudAccountView, CloudAvailabilityView, CloudJournalFilters, CloudLoginStart } from "../data/types";
+import type { CloudAccount, CloudAction, CloudActionLevel, CloudConsentView, CloudLoginTicket } from "@selio/contracts";
+import { loginSocketUrl } from "../cloud/login-protocol";
 
 type Query = Record<string, string | number | boolean | undefined | null>;
 
@@ -202,6 +204,29 @@ export class ApiClient implements DataClient {
   async saveWhiteLabel(input: WhiteLabelInput): Promise<WhiteLabel> {
     void input;
     throw new DataError("preview_only", "Selio Agents est en aperçu : la marque blanche n'est pas encore enregistrée sur votre compte. Essayez-la dans la démonstration.", 501);
+  }
+
+  // Selio Cloud (/api/cloud/*). La session Vinted ne transite jamais ici : seulement « une session existe » et sa date.
+  cloudAvailability() { return this.get<CloudAvailabilityView>("/api/cloud/availability"); }
+  cloudConsent() { return this.get<CloudConsentView>("/api/cloud/consent"); }
+  acceptCloudConsent(input: { version: string; accepted: true }) { return this.post<CloudConsentView>("/api/cloud/consent", input); }
+  cloudAccounts() { return this.get<CloudAccountView[]>("/api/cloud/accounts"); }
+  enableCloudAccount(connectionId: string) { return this.post<CloudAccount>("/api/cloud/accounts", { connectionId }); }
+  pauseCloudAccount(id: string) { return this.post<CloudAccount>(`/api/cloud/accounts/${encodeURIComponent(id)}/pause`); }
+  resumeCloudAccount(id: string, opts: { acknowledge?: boolean } = {}) { return this.post<CloudAccount>(`/api/cloud/accounts/${encodeURIComponent(id)}/resume`, { acknowledge: opts.acknowledge === true }); }
+  stopCloudAccount(id: string) { return this.post<CloudAccount>(`/api/cloud/accounts/${encodeURIComponent(id)}/stop`); }
+  deleteCloudSession(id: string) { return this.del<CloudAccount>(`/api/cloud/accounts/${encodeURIComponent(id)}/session`); }
+  updateCloudSettings(id: string, input: { levels: CloudActionLevel[] }) { return this.patch<CloudAccount>(`/api/cloud/accounts/${encodeURIComponent(id)}/settings`, input); }
+  cloudJournal(filters: CloudJournalFilters) { return this.get<Page<CloudAction>>("/api/cloud/journal", filters as Query); }
+  exportCloudJournalCsv(filters: CloudJournalFilters) { return this.request<string>("GET", "/api/cloud/journal.csv" + qs({ kind: filters.kind, status: filters.status, accountId: filters.accountId }), undefined, { raw: true }); }
+  async startCloudLogin(accountId: string): Promise<CloudLoginStart> {
+    const t = await this.post<CloudLoginTicket>(`/api/cloud/accounts/${encodeURIComponent(accountId)}/login`);
+    const href = typeof window !== "undefined" ? window.location.href : "http://localhost/";
+    return { ...t, socketUrl: loginSocketUrl(this.baseUrl, t.loginSessionId, t.ticket, href), simulated: false };
+  }
+  cancelCloudLogin(loginSessionId: string) { return this.post<void>(`/api/cloud/login/${encodeURIComponent(loginSessionId)}/cancel`); }
+  async completeSimulatedCloudLogin(): Promise<CloudAccount> {
+    throw new DataError("demo_only", "La connexion simulée n'existe qu'en démonstration : sur votre compte, connectez-vous dans la fenêtre sécurisée.", 409);
   }
 
   async resetDemo() {

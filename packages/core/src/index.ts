@@ -18,4 +18,7 @@ export * as dressing from "./services/dressing";
 export * as aiHealth from "./services/ai-health";
 export * as market from "./services/market";
 export * as help from "./services/help";
+export * as cloud from "./services/cloud";
+export type { CloudExecutor, CloudExecutorAction, CloudExecutorInput, CloudRunOutcome, CloudRunSummary, PlanAccountRunInput, PlanAccountRunResult } from "./services/cloud";
+export { FakeCloudExecutor, cloudConfigFromEnv } from "./services/cloud";
 export type { QueueStats, QueueStatsProvider } from "./services/admin";

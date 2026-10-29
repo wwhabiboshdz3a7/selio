@@ -14,9 +14,9 @@ Plusieurs comptes Vinted peuvent être connectés à une même organisation ; ch
 
 | Catégorie | Usage dans Selio |
 |---|---|
-| `sale` — Vente (défaut) | Annonces publiées et négociées : générateur d'annonces, dressing, messagerie, automatisations |
+| `sale` — Vente (défaut) | Annonces publiées et négociées : générateur d'annonces, dressing, messagerie, automatisations, Selio Cloud |
 | `purchase` — Achat | Compte qui achète les bonnes affaires : achats validés (« À valider ») et achat auto, enregistré sur chaque demande d'achat (`purchase_requests.connection_id`) |
-| `personal` — Perso | Compte personnel : jamais utilisé par les automatisations (tâches ignorées, même déjà planifiées) ni par l'achat auto |
+| `personal` — Perso | Compte personnel : jamais utilisé par les automatisations (tâches ignorées, même déjà planifiées), ni par l'achat auto, ni par Selio Cloud |
 
 Le générateur d'annonces ne propose que les comptes Vente (puis Perso, signalé). L'achat auto utilise le compte Achat choisi dans ses réglages (`autoBuy.connectionId`), sinon le premier compte Achat actif. Le simulateur de démonstration ne compte pas dans le quota de comptes du plan. `GET /api/connections/stats` renvoie par compte : annonces en ligne, ventes du mois, achats, conversations ouvertes.
 
@@ -43,6 +43,33 @@ Statut calculé depuis la dernière activité de l'extension (`extensionLastSeen
 - Le respect des conditions d'utilisation de la plateforme : aucune automatisation d'envoi, aucune collecte de session, aucun contournement de protection.
 
 Procédure : installer l'extension, ouvrir une page article, lancer « Diagnostic » dans le popup ; les champs manquants sont listés. Mettre à jour l'adaptateur en créant `v2.ts` (jamais modifier `v1` en place) et ajouter une fixture.
+
+## Vinted via Selio Cloud (transport `cloud`) — EXPÉRIMENTAL, NON VÉRIFIÉ, DÉSACTIVÉ PAR DÉFAUT
+
+À côté du transport `extension` (le navigateur du client, sa session, sur son ordinateur), le transport `cloud` agit **depuis notre machine**, dans un Chromium ouvert seulement pour une action, avec la session que le client a lui-même ouverte dans la fenêtre de connexion sécurisée. Fonctionnement, règles et limites : [CLOUD.md](CLOUD.md).
+
+C'est la **seule exception** au principe « le serveur ne possède jamais de session Vinted » (D08). Elle est voulue par les règles non négociables du projet : une session par compte, avec l'accord du client, chiffrée, isolée, jamais partagée, supprimée dès qu'il se déconnecte ou résilie. L'entrée correspondante du journal des décisions est à ajouter (voir BUILD_STATUS).
+
+Dans le code, `cloud` n'est pas (encore) une valeur de `transport` dans `ConnectorDescription` : c'est un chemin d'exécution à part. Les domaines reconnus forment une liste fermée (`VINTED_DOMAINS` des contrats), partagée par le filtre de session, l'exécuteur, la fenêtre de connexion et le réglage `vintedHost` d'une connexion (validé à la création). Les tâches `jobs.runs_in = 'cloud'` sont exécutées par le worker (`runDueCloudJobs` dans `packages/core`, `PlaywrightRunner` dans `packages/cloud`). `describe()` du connecteur Vinted ne change pas.
+
+| Action | Niveau | État | Détail |
+|---|---|---|---|
+| `reply` — répondre à un message | légère | expérimental | Règle « répondre à un nouveau message ». La conversation doit être reconnue par l'adaptateur avant d'écrire. Envoi compté comme fait seulement si le message apparaît, sinon jamais renvoyé |
+| `follow_up` — relancer après 24 h | légère | expérimental | Règle « relancer sans réponse », même déroulé |
+| `republish` — republier une annonce | lourde | fermé (`CLOUD_HEAVY_ACTIONS=false`, à décider par Ibrahim) | Écrit mais non vérifié |
+| `bulk_edit` — modifier en masse | lourde | indisponible | Aucune implémentation navigateur |
+| Lecture des conversations, synchronisation | — | indisponible | Le Cloud lit la page seulement pour vérifier ce qu'il fait ; il n'importe rien |
+
+Réutilisation de l'adaptateur DOM : la page de conversation est lue par `parseConversationPage` et `COMPOSER_SELECTORS` de l'adaptateur `v1` (`@selio/connectors/vinted-adapter`), exécutés sur la page vivante sans recopier les sélecteurs. Un test vérifie que le résultat est identique à l'analyse directe des fixtures.
+
+### Ce qui exige une validation dans un navigateur réel (en plus de l'adaptateur v1)
+- Les compléments propres au Cloud dans `packages/cloud/src/vinted.ts` : bouton d'envoi, menu du membre (« connecté »), noms des cookies de session (`access_token_web`, `refresh_token_web`), URL de la page de connexion, bouton de republication. Une fois validés sur un compte de test de l'équipe, ils sont à reporter dans un adaptateur `v2` du connecteur, avec ses fixtures.
+- Les motifs de détection des signaux de Vinted (`detectBlock` : CAPTCHA, avertissement, blocage, « trop de requêtes ») : écrits sans page réelle.
+- L'adresse d'une conversation : `https://www.vinted.fr/inbox/<référence>` par défaut. Un autre domaine Vinted peut être réglé par compte dans `connection.config.vintedHost` (contrôlé : vinted.\* seulement).
+- La connexion par Google, Facebook ou Apple, non prise en charge : les fenêtres surgissantes sont fermées.
+- Le respect des conditions d'utilisation de la plateforme : avis de l'avocat attendu avant toute activation client.
+
+Un compte de catégorie **Perso** n'est jamais utilisé par le Cloud. Déconnecter ou supprimer un compte Vinted arrête son compte Cloud et efface sa session.
 
 ## Paiement (Revolut Merchant API)
 

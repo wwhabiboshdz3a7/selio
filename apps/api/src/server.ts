@@ -1,15 +1,16 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
+import websocket from "@fastify/websocket";
 import { createAIService } from "@selio/ai";
 import { Db, SecretBox, createPool } from "@selio/db";
 import type { Services } from "@selio/core";
 import { createPaymentProvider, loadPaymentConfig } from "@selio/connectors";
 import { createEmailProvider, loadEmailConfig, type EmailLogger } from "@selio/email";
 import { createStorageClient, loadStorageConfig } from "@selio/storage";
-import { startupNotices, type ApiEnv } from "./config";
+import { cloudServicesConfig, startupNotices, type ApiEnv } from "./config";
 import { errorHandler } from "./errors";
 import authPlugin from "./plugins/auth";
 import authRoutes from "./routes/auth";
@@ -29,7 +30,9 @@ import extRoutes from "./routes/ext";
 import studioRoutes from "./routes/studio";
 import helpRoutes from "./routes/help";
 import uploadsRoutes from "./routes/uploads";
+import cloudRoutes from "./routes/cloud";
 import { createQueues, type QueueHandle } from "./queue";
+import { CLOUD_LOGIN_QUEUE, createRedisCloudRelay, maskSecretsInUrl, type CloudRelay } from "./cloud-relay";
 
 export const API_VERSION = "0.1.0";
 
@@ -37,6 +40,8 @@ export interface BuiltServer {
   app: FastifyInstance;
   services: Services;
   queues: QueueHandle;
+  /** Relais Redis de la fenêtre de connexion du Cloud (null sans CLOUD_ENABLED ou sans REDIS_URL). */
+  cloudRelay: CloudRelay | null;
 }
 
 export function buildServices(env: ApiEnv, overrides: Partial<Services> = {}, logger?: EmailLogger): Services {
@@ -57,6 +62,9 @@ export function buildServices(env: ApiEnv, overrides: Partial<Services> = {}, lo
     publicWebUrl: overrides.publicWebUrl ?? env.PUBLIC_WEB_URL,
     payments,
     billing: overrides.billing ?? { franchiseTva: env.FRANCHISE_TVA },
+    // Réglages du Cloud (actions lourdes, comptes par organisation, navigateurs, option Pro, heures, ticket).
+    // Aucun exécuteur de navigateur dans l'API : `cloud` reste absent, seul le worker agit.
+    config: overrides.config ?? cloudServicesConfig(env),
   };
 }
 
@@ -66,6 +74,10 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
       level: env.LOG_LEVEL,
       // Journalisation sans contenu sensible : cookies, autorisations et corps ne sont jamais loggés.
       redact: { paths: ["req.headers.cookie", "req.headers.authorization", "req.headers['x-health-token']", "res.headers['set-cookie']"], censor: "[masqué]" },
+      // Le ticket de la fenêtre de connexion du Cloud (?ticket=…) n'apparaît jamais dans les journaux.
+      serializers: {
+        req: (req: FastifyRequest) => ({ method: req.method, url: maskSecretsInUrl(req.url), host: req.host, remoteAddress: req.ip, remotePort: req.socket?.remotePort }),
+      },
       ...(env.NODE_ENV === "development" ? { transport: { target: "pino-pretty", options: { translateTime: "HH:MM:ss", ignore: "pid,hostname" } } } : {}),
     },
     trustProxy: env.TRUST_PROXY,
@@ -83,6 +95,8 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(cors, { origin: origins, credentials: true, methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"] });
   await app.register(cookie);
   await app.register(rateLimit, { global: true, max: 300, timeWindow: "1 minute", allowList: [], keyGenerator: (req) => req.ip });
+  // WebSocket de la fenêtre de connexion du Cloud : messages d'entrée courts (4 Kio au plus).
+  await app.register(websocket, { options: { maxPayload: 4096 } });
   await app.register(authPlugin, { services, operatorEmails: env.OPERATOR_EMAILS.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean) });
   app.setErrorHandler(errorHandler);
   app.setNotFoundHandler((req, reply) => reply.status(404).send({ error: { code: "not_found", message: `Route inconnue : ${req.method} ${req.url}` } }));
@@ -106,10 +120,15 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(studioRoutes);
   await app.register(helpRoutes);
   await app.register(uploadsRoutes, { storage });
+  // Selio Cloud : la fenêtre de connexion exige CLOUD_ENABLED et Redis (relais vers le worker).
+  const loginQueue = queues.queues.get(CLOUD_LOGIN_QUEUE);
+  const cloudRelay = env.CLOUD_ENABLED && env.REDIS_URL && loginQueue ? createRedisCloudRelay(env.REDIS_URL, loginQueue, { warn: (m) => app.log.warn(m) }) : null;
+  await app.register(cloudRoutes, { enabled: env.CLOUD_ENABLED, relay: cloudRelay, activeHours: env.CLOUD_ACTIVE_HOURS, allowedOrigins: origins });
 
   app.addHook("onClose", async () => {
+    await cloudRelay?.close();
     await queues.close();
     await services.db.close();
   });
-  return { app, services, queues };
+  return { app, services, queues, cloudRelay };
 }

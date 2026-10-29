@@ -10,6 +10,7 @@ export type Action =
   | "automations.read" | "automations.write"
   | "radar.read" | "radar.write" | "purchase.simulate" | "purchase.execute"
   | "connections.read" | "connections.manage"
+  | "cloud.read" | "cloud.manage"
   | "ai.use" | "ai.configure"
   | "tokens.manage" | "data.export" | "data.delete";
 
@@ -25,6 +26,7 @@ const MIN_ROLE: Record<Action, Role> = {
   "automations.read": "viewer", "automations.write": "admin",
   "radar.read": "viewer", "radar.write": "operator", "purchase.simulate": "operator", "purchase.execute": "owner",
   "connections.read": "viewer", "connections.manage": "admin",
+  "cloud.read": "viewer", "cloud.manage": "admin",
   "ai.use": "operator", "ai.configure": "admin",
   "tokens.manage": "operator", "data.export": "admin", "data.delete": "owner",
 };
@@ -73,6 +75,8 @@ export const ACTION_LABELS: Partial<Record<Action, string>> = {
   "purchase.execute": "Confirmer un achat réel",
   "connections.read": "Voir les comptes connectés",
   "connections.manage": "Connecter, tester et retirer des comptes",
+  "cloud.read": "Voir les comptes Cloud et leur journal d'actions",
+  "cloud.manage": "Activer, mettre en pause et arrêter le Cloud, accepter l'accord, effacer une session",
   "ai.use": "Utiliser l'IA (réponses, générateur d'annonces)",
   "ai.configure": "Régler l'assistant IA (ton, quota, validation)",
   "tokens.manage": "Créer et révoquer des jetons d'extension",
@@ -85,7 +89,7 @@ export const PERMISSION_GROUPS: { title: string; actions: Action[] }[] = [
   { title: "Vendre", actions: ["items.read", "items.write", "items.delete", "conversations.read", "messages.draft", "messages.send", "orders.read", "orders.write", "customers.read", "customers.write"] },
   { title: "Acheter", actions: ["radar.read", "radar.write", "purchase.simulate", "purchase.execute"] },
   { title: "Piloter", actions: ["analytics.read", "analytics.export", "automations.read", "automations.write", "ai.use", "ai.configure"] },
-  { title: "Comptes et extension", actions: ["connections.read", "connections.manage", "tokens.manage"] },
+  { title: "Comptes et extension", actions: ["connections.read", "connections.manage", "tokens.manage", "cloud.read", "cloud.manage"] },
   { title: "Organisation et données", actions: ["org.read", "org.update", "members.manage", "billing.manage", "data.export", "data.delete", "org.delete"] },
 ];
 

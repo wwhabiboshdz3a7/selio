@@ -17,11 +17,12 @@
   status = 200
 
 # CSP : script et iframes de Revolut Checkout (formulaire de paiement) autorisés depuis les deux hôtes
-# Revolut (production et bac à sable) ; tout le reste reste limité au site lui-même.
+# Revolut (production et bac à sable) ; wss: pour la fenêtre de connexion de Selio Cloud (WebSocket de l'API) ;
+# tout le reste reste limité au site lui-même.
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self' https://merchant.revolut.com https://sandbox-merchant.revolut.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https:; frame-src https://merchant.revolut.com https://sandbox-merchant.revolut.com; worker-src 'self'; manifest-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://merchant.revolut.com https://sandbox-merchant.revolut.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https: wss:; frame-src https://merchant.revolut.com https://sandbox-merchant.revolut.com; worker-src 'self'; manifest-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
     Strict-Transport-Security = "max-age=63072000; includeSubDomains; preload"
     X-Content-Type-Options = "nosniff"
     X-Frame-Options = "DENY"

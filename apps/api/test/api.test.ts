@@ -1,10 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createPool, runMigrations, MIGRATIONS_DIR, SecretBox, hashSecret } from "@selio/db";
+import IORedis from "ioredis";
+import type { WebSocket } from "ws";
+import { createPool, runMigrations, MIGRATIONS_DIR, SecretBox, hashSecret, repos as dbRepos } from "@selio/db";
 import { RevolutClient, computeRevolutSignature } from "@selio/connectors";
-import { quotasForPlan } from "@selio/contracts";
+import { CLOUD_CONSENT_VERSION, quotasForPlan } from "@selio/contracts";
+import { auth as authService, cloud as cloudService, type OrgContext } from "@selio/core";
 import { NoopEmailProvider, type EmailProvider } from "@selio/email";
 import { loadEnv } from "../src/config";
 import { buildServer, type BuiltServer } from "../src/server";
+import { maskSecretsInUrl, wsClientMessageSchema } from "../src/cloud-relay";
 
 const OWNER_URL = process.env.TEST_DATABASE_URL ?? "postgres://selio:selio@127.0.0.1:5432/selio_test_api";
 const APP_URL = process.env.TEST_DATABASE_URL_APP ?? "postgres://selio_app:selio_app@127.0.0.1:5432/selio_test_api";
@@ -1147,3 +1151,329 @@ let userIdA = "";
 function a_org(): string {
   return orgIdA;
 }
+
+// ---------------------------------------------------------------- Selio Cloud
+
+/**
+ * Selio Cloud par l'API : accord, comptes, journal, isolation, et fenêtre de connexion. Deux
+ * serveurs sur la même base : le principal (Cloud désactivé, sans Redis) et, si Redis répond, un
+ * second avec CLOUD_ENABLED=true pour le relais WebSocket ⇄ Redis (le worker y est simulé).
+ */
+describe("Selio Cloud (API)", () => {
+  const REDIS_URL = process.env.TEST_REDIS_URL ?? "redis://127.0.0.1:6379";
+  const WEB_ORIGIN = "https://app.selio.test";
+  const jar: Record<string, string> = {};
+  let ctxX: OrgContext;
+  let orgY = "";
+  let accountX = "";
+  let cloudServer: BuiltServer | null = null;
+
+  const as = async (who: "x" | "y" | "none", method: "GET" | "POST" | "PATCH" | "DELETE", url: string, body?: unknown, server: BuiltServer = built) => {
+    const res = await server.app.inject({ method, url, payload: body as object | undefined, headers: { cookie: who === "none" ? "" : jar[who] ?? "" } });
+    let json: unknown = null;
+    try { json = res.body ? JSON.parse(res.body) : null; } catch { json = res.body; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { status: res.statusCode, json: json as any, res };
+  };
+  /** Statut HTTP d'une mise à niveau refusée (`injectWS` rejette avec « Unexpected server response: N »). */
+  const wsRefusal = async (server: BuiltServer, url: string, headers: Record<string, string> = {}) => {
+    try {
+      const ws = await server.app.injectWS(url, { headers });
+      ws.terminate();
+      return 101;
+    } catch (err) {
+      const m = /(\d{3})/.exec(err instanceof Error ? err.message : String(err));
+      return m ? Number(m[1]) : -1;
+    }
+  };
+  const until = async (cond: () => boolean | Promise<boolean>, timeoutMs = 3000) => {
+    const start = Date.now();
+    while (!(await cond())) {
+      if (Date.now() - start > timeoutMs) throw new Error("délai dépassé");
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
+
+  beforeAll(async () => {
+    if (!available) return;
+    const meta = { ip: null, userAgent: null, operatorEmails: [] };
+    const x = await authService.register(built.services, { email: "cloud-x@test.local", password: "motdepasse-X1", displayName: "Xavier", orgName: "Cloud X" }, meta);
+    const y = await authService.register(built.services, { email: "cloud-y@test.local", password: "motdepasse-Y1", displayName: "Yasmine", orgName: "Cloud Y" }, meta);
+    jar.x = `selio_session=${x.sessionId}`;
+    jar.y = `selio_session=${y.sessionId}`;
+    orgY = y.orgId!;
+    ctxX = { services: built.services, orgId: x.orgId!, userId: x.userId, role: "owner", isOperator: false, ip: null };
+    for (const orgId of [x.orgId!, y.orgId!]) await built.services.db.withOrg(orgId, (tx) => dbRepos.subscriptions.upsert(tx, { plan: "agence", status: "active", quotas: quotasForPlan("agence") }));
+    await built.services.db.withOrg(x.orgId!, (tx) => dbRepos.connections.create(tx, { id: "cloud-x-vinted", provider: "vinted", label: "Vinted X", status: "connected", usage: "sale" }));
+    await built.services.db.withOrg(orgY, (tx) => dbRepos.connections.create(tx, { id: "cloud-y-vinted", provider: "vinted", label: "Vinted Y", status: "connected", usage: "sale" }));
+    // Redis local : sans lui, seuls les tests du relais sont sautés.
+    const probe = new IORedis(REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1, connectTimeout: 1000, retryStrategy: () => null });
+    probe.on("error", () => {});
+    const redisOk = await probe.connect().then(() => probe.ping()).then(() => true, () => false);
+    probe.disconnect();
+    if (redisOk) {
+      cloudServer = await buildServer(loadEnv({ ...baseEnv, REDIS_URL, CLOUD_ENABLED: "true", CORS_ORIGINS: WEB_ORIGIN }), { email: flakyEmail, payments: null });
+      await cloudServer.app.ready();
+    }
+  });
+
+  afterAll(async () => {
+    if (cloudServer) await cloudServer.app.close();
+  });
+
+  it("accord obligatoire avant toute activation ; disponibilité selon l'offre", async () => {
+    if (!available) return;
+    expect((await as("none", "GET", "/api/cloud/accounts")).status).toBe(401);
+    const av = await as("x", "GET", "/api/cloud/availability");
+    expect(av.status).toBe(200);
+    expect(av.json).toMatchObject({ plan: "agence", included: true, available: true, maxAccounts: 10, heavyActionsEnabled: false, maxBrowsers: 5, serverEnabled: false, activeHours: { startHour: 8, endHour: 23 } });
+    expect(av.json.capacityNote).toMatch(/hypothèse à mesurer/);
+    const consent = await as("x", "GET", "/api/cloud/consent");
+    expect(consent.json).toMatchObject({ version: CLOUD_CONSENT_VERSION, accepted: null, current: false });
+    expect(consent.json.text).toMatch(/Vinted/);
+    const refused = await as("x", "POST", "/api/cloud/accounts", { connectionId: "cloud-x-vinted" });
+    expect(refused.status).toBe(409);
+    expect(refused.json.error.code).toBe("consent_required");
+    expect((await as("x", "POST", "/api/cloud/consent", { version: CLOUD_CONSENT_VERSION, accepted: false })).status).toBe(400);
+    expect((await as("x", "POST", "/api/cloud/consent", { version: "ancienne", accepted: true })).status).toBe(409);
+    const ok = await as("x", "POST", "/api/cloud/consent", { version: CLOUD_CONSENT_VERSION, accepted: true });
+    expect(ok.status).toBe(200);
+    expect(ok.json).toMatchObject({ current: true, accepted: { version: CLOUD_CONSENT_VERSION } });
+    expect(ok.json.accepted.textHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("activation d'un compte : « connexion à faire », jamais de session dans la réponse", async () => {
+    if (!available) return;
+    const created = await as("x", "POST", "/api/cloud/accounts", { connectionId: "cloud-x-vinted" });
+    expect(created.status).toBe(201);
+    expect(created.json).toMatchObject({ connectionId: "cloud-x-vinted", status: "needs_login", hasSession: false, settings: { levels: ["light"] } });
+    accountX = created.json.id;
+    expect((await as("x", "POST", "/api/cloud/accounts", { connectionId: "cloud-x-vinted", extra: 1 })).status).toBe(400);
+    const list = await as("x", "GET", "/api/cloud/accounts");
+    expect(list.json).toHaveLength(1);
+    expect(list.json[0]).toMatchObject({ id: accountX, connectionLabel: "Vinted X", actionsToday: 0 });
+    // Session enregistrée (comme à la fin de la fenêtre de connexion) : jamais renvoyée par l'API.
+    const ticket = await cloudService.startLogin(ctxX, accountX);
+    await cloudService.completeLogin(built.services, ticket.loginSessionId, { cookies: [{ name: "_vinted_fr_session", value: "SECRET-SESSION-X", domain: ".vinted.fr", path: "/", expires: -1, httpOnly: true, secure: true, sameSite: "Lax" }], origins: [] });
+    const overview = await as("x", "GET", "/api/cloud/overview");
+    expect(overview.json.accounts[0]).toMatchObject({ status: "active", hasSession: true });
+    expect(overview.res.body).not.toContain("SECRET-SESSION-X");
+    expect((await as("x", "GET", "/api/cloud/accounts")).res.body).not.toContain("SECRET-SESSION-X");
+  });
+
+  it("pause et reprise en un clic ; reprise après un signal de Vinted : acquittement exigé ; actions lourdes fermées ; session supprimable", async () => {
+    if (!available) return;
+    const paused = await as("x", "POST", `/api/cloud/accounts/${accountX}/pause`);
+    expect(paused.json).toMatchObject({ status: "paused", pausedReason: "client" });
+    const resumed = await as("x", "POST", `/api/cloud/accounts/${accountX}/resume`);
+    expect(resumed.json).toMatchObject({ status: "active", pausedReason: null });
+    // Pause posée par le planificateur après un CAPTCHA : le client doit confirmer avoir vérifié son compte.
+    await built.services.db.withOrg(ctxX.orgId, (tx) => dbRepos.cloudAccounts.update(tx, accountX, { status: "paused", pausedReason: "captcha", pausedAt: new Date().toISOString() }));
+    const needAck = await as("x", "POST", `/api/cloud/accounts/${accountX}/resume`, {});
+    expect(needAck.status).toBe(409);
+    expect(needAck.json.error.code).toBe("acknowledge_required");
+    expect((await as("x", "POST", `/api/cloud/accounts/${accountX}/resume`, { acknowledge: true })).json).toMatchObject({ status: "active" });
+    const heavy = await as("x", "PATCH", `/api/cloud/accounts/${accountX}/settings`, { levels: ["light", "heavy"] });
+    expect(heavy.status).toBe(403);
+    expect(heavy.json.error.code).toBe("heavy_disabled");
+    expect((await as("x", "PATCH", `/api/cloud/accounts/${accountX}/settings`, { levels: ["light"] })).status).toBe(200);
+    const deleted = await as("x", "DELETE", `/api/cloud/accounts/${accountX}/session`);
+    expect(deleted.json).toMatchObject({ status: "needs_login", hasSession: false });
+  });
+
+  it("journal paginé, filtré et exporté en CSV (sans texte de message)", async () => {
+    if (!available) return;
+    await built.services.db.withOrg(ctxX.orgId, async (tx) => {
+      for (let i = 0; i < 27; i++) {
+        await dbRepos.cloudActions.add(tx, { accountId: accountX, kind: i % 3 === 0 ? "follow_up" : "reply", level: "light", status: i % 9 === 0 ? "failed" : "done", detail: { code: i % 9 === 0 ? "timeout" : "ok", conversationRef: String(7_000_000 + i), messageLength: 42, durationMs: 1500 }, createdAt: new Date(Date.now() - i * 60_000).toISOString() });
+      }
+    });
+    const p1 = await as("x", "GET", "/api/cloud/journal?pageSize=10");
+    expect(p1.json).toMatchObject({ total: 27, page: 1, pageSize: 10, pageCount: 3 });
+    expect(p1.json.items).toHaveLength(10);
+    const p3 = await as("x", "GET", "/api/cloud/journal?pageSize=10&page=3");
+    expect(p3.json.items).toHaveLength(7);
+    expect((await as("x", "GET", "/api/cloud/journal?status=failed")).json.total).toBe(3);
+    expect((await as("x", "GET", "/api/cloud/journal?kind=follow_up")).json.total).toBe(9);
+    expect((await as("x", "GET", "/api/cloud/journal?pageSize=1000")).status).toBe(400);
+    const csv = await as("x", "GET", "/api/cloud/journal.csv");
+    expect(csv.status).toBe(200);
+    expect(csv.res.headers["content-type"]).toMatch(/text\/csv/);
+    expect(csv.res.headers["content-disposition"]).toMatch(/selio-cloud-journal\.csv/);
+    expect(csv.res.body.split("\n")[0]).toMatch(/^\uFEFF?Date;Compte;Action/);
+    expect(csv.res.body).toContain("Vinted X");
+  });
+
+  it("isolation entre organisations : ni comptes, ni journal, ni actions sur le compte d'une autre", async () => {
+    if (!available) return;
+    expect((await as("y", "GET", "/api/cloud/accounts")).json).toEqual([]);
+    expect((await as("y", "GET", "/api/cloud/journal")).json.total).toBe(0);
+    for (const [method, url] of [["POST", `/api/cloud/accounts/${accountX}/pause`], ["POST", `/api/cloud/accounts/${accountX}/stop`], ["DELETE", `/api/cloud/accounts/${accountX}/session`], ["PATCH", `/api/cloud/accounts/${accountX}/settings`], ["POST", `/api/cloud/accounts/${accountX}/login`]] as const) {
+      const r = await as("y", method, url, method === "PATCH" ? { levels: ["light"] } : undefined);
+      expect([404, 409, 503]).toContain(r.status);
+      if (!url.endsWith("/login")) expect(r.status).toBe(404);
+    }
+    await as("y", "POST", "/api/cloud/consent", { version: CLOUD_CONSENT_VERSION, accepted: true });
+    expect((await as("y", "POST", "/api/cloud/accounts", { connectionId: "cloud-x-vinted" })).status).toBe(404);
+    // Le compte de X n'a pas bougé.
+    expect((await as("x", "GET", "/api/cloud/accounts")).json[0]).toMatchObject({ id: accountX, status: "needs_login" });
+  });
+
+  it("fenêtre de connexion : Cloud désactivé → 503 ; ticket invalide, d'une autre fenêtre ou expiré → 401 sur la WebSocket", async () => {
+    if (!available) return;
+    const off = await as("x", "POST", `/api/cloud/accounts/${accountX}/login`);
+    expect(off.status).toBe(503);
+    expect(off.json.error.code).toBe("cloud_disabled");
+    const ticket = await cloudService.startLogin(ctxX, accountX);
+    const other = await cloudService.startLogin({ ...ctxX }, accountX); // ferme la précédente
+    expect(await wsRefusal(built, `/api/cloud/login/${other.loginSessionId}/ws?ticket=${"x".repeat(43)}`)).toBe(401);
+    expect(await wsRefusal(built, `/api/cloud/login/${other.loginSessionId}/ws`)).toBe(401);
+    expect(await wsRefusal(built, `/api/cloud/login/pas-un-uuid/ws?ticket=${other.ticket}`)).toBe(401);
+    // Ticket d'une fenêtre fermée (remplacée) : refusé.
+    expect(await wsRefusal(built, `/api/cloud/login/${ticket.loginSessionId}/ws?ticket=${ticket.ticket}`)).toBe(401);
+    // Ticket valide mais pour une autre fenêtre : refusé.
+    expect(await wsRefusal(built, `/api/cloud/login/${ticket.loginSessionId}/ws?ticket=${other.ticket}`)).toBe(401);
+    // Ticket valide sur un serveur sans Cloud : 503 (rien n'est relayé).
+    expect(await wsRefusal(built, `/api/cloud/login/${other.loginSessionId}/ws?ticket=${other.ticket}`)).toBe(503);
+    // Ticket expiré : refusé.
+    await built.services.db.withOrg(ctxX.orgId, (tx) => tx.query("update cloud_login_sessions set expires_at = now() - interval '1 minute' where id = $1", [other.loginSessionId]));
+    expect(await wsRefusal(built, `/api/cloud/login/${other.loginSessionId}/ws?ticket=${other.ticket}`)).toBe(401);
+  });
+
+  it("configuration : Cloud désactivé par défaut, valeurs prudentes, Redis exigé quand il est activé", () => {
+    const env = loadEnv(baseEnv);
+    expect(env).toMatchObject({ CLOUD_ENABLED: false, CLOUD_MAX_BROWSERS: 5, CLOUD_MAX_ACCOUNTS_PER_ORG: 10, CLOUD_HEAVY_ACTIONS: false, CLOUD_PRO_OPTION: false, CLOUD_ACTIVE_HOURS: { startHour: 8, endHour: 23 }, CLOUD_LOGIN_TIMEOUT_MS: 300_000 });
+    expect(() => loadEnv({ ...baseEnv, CLOUD_ENABLED: "true" })).toThrow(/REDIS_URL/);
+    expect(() => loadEnv({ ...baseEnv, CLOUD_ACTIVE_HOURS: "22-6" })).toThrow(/CLOUD_ACTIVE_HOURS/);
+    expect(loadEnv({ ...baseEnv, CLOUD_ACTIVE_HOURS: "" }).CLOUD_ACTIVE_HOURS).toEqual({ startHour: 8, endHour: 23 });
+    expect(() => loadEnv({ ...baseEnv, CLOUD_LOGIN_TIMEOUT_MS: "1000" })).toThrow(/CLOUD_LOGIN_TIMEOUT_MS/);
+  });
+
+  it("validation stricte des entrées et ticket masqué dans les journaux", () => {
+    expect(wsClientMessageSchema.safeParse({ type: "text", text: "bonjour" }).success).toBe(true);
+    expect(wsClientMessageSchema.safeParse({ type: "key", action: "down", key: "Enter" }).success).toBe(true);
+    expect(wsClientMessageSchema.safeParse({ type: "mouse", action: "down", x: 10, y: 20, button: "left", clickCount: 1 }).success).toBe(true);
+    expect(wsClientMessageSchema.safeParse({ type: "cancel" }).success).toBe(true);
+    for (const bad of [
+      { type: "text", text: "" },
+      { type: "text", text: "a".repeat(257) },
+      { type: "text", text: "a", extra: true },
+      { type: "mouse", action: "move", x: -1, y: 0 },
+      { type: "mouse", action: "move", x: 0, y: 99999 },
+      { type: "mouse", action: "teleport", x: 1, y: 1 },
+      { type: "key", action: "down", key: "" },
+      { type: "key", action: "down", key: "a", text: "trop-long-pour-une-touche" },
+      { type: "script", code: "alert(1)" },
+      null,
+    ]) expect(wsClientMessageSchema.safeParse(bad).success).toBe(false);
+    expect(maskSecretsInUrl("/api/cloud/login/abc/ws?ticket=SECRET123&x=1")).toBe("/api/cloud/login/abc/ws?ticket=[masqué]&x=1");
+    expect(maskSecretsInUrl("/api/cloud/accounts")).toBe("/api/cloud/accounts");
+  });
+
+  it("relais (Cloud activé, Redis) : ticket, file du worker, images relayées, entrées validées, une seule WebSocket, « done » puis fermeture", async () => {
+    if (!available || !cloudServer) return;
+    const server = cloudServer;
+    expect((await as("x", "GET", "/api/cloud/availability", undefined, server)).json.serverEnabled).toBe(true);
+    const started = await as("x", "POST", `/api/cloud/accounts/${accountX}/login`, undefined, server);
+    expect(started.status).toBe(201);
+    expect(started.res.headers["cache-control"]).toBe("no-store");
+    const { loginSessionId, ticket, expiresAt } = started.json as { loginSessionId: string; ticket: string; expiresAt: string };
+    expect(ticket.length).toBeGreaterThanOrEqual(40);
+    // Validité alignée sur CLOUD_LOGIN_TIMEOUT_MS (5 min par défaut).
+    expect(new Date(expiresAt).getTime() - Date.now()).toBeLessThanOrEqual(5 * 60_000 + 5_000);
+    // Le worker reçoit l'identifiant de la fenêtre, jamais le ticket.
+    const job = await server.queues.queues.get("selio-cloud-login")!.getJob(loginSessionId);
+    expect(job?.name).toBe("cloud.login");
+    expect(job?.data).toEqual({ loginSessionId });
+    await job?.remove();
+
+    // Worker simulé : écoute les entrées, publie les images.
+    const workerSub = new IORedis(REDIS_URL, { maxRetriesPerRequest: 1 });
+    const workerPub = new IORedis(REDIS_URL, { maxRetriesPerRequest: 1 });
+    const received: { type: string; event?: Record<string, unknown> }[] = [];
+    workerSub.on("message", (_ch: string, raw: string) => received.push(JSON.parse(raw) as { type: string }));
+    await workerSub.subscribe(`cloud:input:${loginSessionId}`);
+    const url = `/api/cloud/login/${loginSessionId}/ws?ticket=${ticket}`;
+    try {
+      expect(await wsRefusal(server, url, { origin: "https://ailleurs.example" })).toBe(403);
+      const messages: { type: string; [k: string]: unknown }[] = [];
+      let closed = false;
+      const ws: WebSocket = await server.app.injectWS(url, { headers: { origin: WEB_ORIGIN } }, {
+        onInit: (socket) => {
+          socket.on("message", (data) => messages.push(JSON.parse(String(data)) as { type: string }));
+          socket.on("close", () => { closed = true; });
+        },
+      });
+      await until(() => messages.some((m) => m.type === "ready") && received.some((m) => m.type === "hello"));
+      expect(messages.find((m) => m.type === "ready")).toMatchObject({ loginSessionId, expiresAt });
+      // Une seule WebSocket par fenêtre : le ticket a été consommé par la première (le verrou Redis reste
+      // une seconde barrière pour deux connexions simultanées).
+      expect(await wsRefusal(server, url, { origin: WEB_ORIGIN })).toBe(401);
+
+      await workerPub.publish(`cloud:screen:${loginSessionId}`, JSON.stringify({ type: "frame", data: "/9j/4AAQSkZJRg==", width: 1280, height: 800 }));
+      await workerPub.publish(`cloud:screen:${loginSessionId}`, JSON.stringify({ type: "frame", data: "<script>", width: 1280, height: 800 }));
+      await until(() => messages.some((m) => m.type === "frame"));
+      expect(messages.filter((m) => m.type === "frame")).toEqual([{ type: "frame", data: "/9j/4AAQSkZJRg==", width: 1280, height: 800 }]);
+
+      ws.send(JSON.stringify({ type: "text", text: "motdepasse-tape" }));
+      ws.send(JSON.stringify({ type: "mouse", action: "down", x: 640, y: 400, button: "left", clickCount: 1 }));
+      ws.send(JSON.stringify({ type: "mouse", action: "move", x: -5, y: 1 }));
+      ws.send(JSON.stringify({ type: "text", text: "a", cle: "inconnue" }));
+      ws.send("pas du json");
+      await until(() => received.filter((m) => m.type === "input").length === 2);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(received.filter((m) => m.type === "input").map((m) => m.event)).toEqual([
+        { type: "text", text: "motdepasse-tape" },
+        { type: "mouse", action: "down", x: 640, y: 400, button: "left", clickCount: 1 },
+      ]);
+
+      // Le worker a détecté la connexion et enregistré la session : « done », fermeture propre.
+      await workerPub.publish(`cloud:screen:${loginSessionId}`, JSON.stringify({ type: "done" }));
+      await until(() => closed);
+      expect(messages.at(-1)).toEqual({ type: "done" });
+      // Ticket à usage unique : même après la fermeture, une seconde connexion avec ce ticket est refusée.
+      expect(await wsRefusal(server, url, { origin: WEB_ORIGIN })).toBe(401);
+      // « done » vient du worker : la fenêtre n'est pas annulée par la fermeture de la WebSocket.
+      await new Promise((r) => setTimeout(r, 100));
+      expect(received.some((m) => m.type === "cancel")).toBe(false);
+
+      // Onglet fermé ou coupure pendant la saisie : la fenêtre est annulée en base et le worker prévenu.
+      const second = await as("x", "POST", `/api/cloud/accounts/${accountX}/login`, undefined, server);
+      expect(second.status).toBe(201);
+      await server.queues.queues.get("selio-cloud-login")!.getJob(second.json.loginSessionId).then((j) => j?.remove());
+      await workerSub.subscribe(`cloud:input:${second.json.loginSessionId}`);
+      const secondUrl = `/api/cloud/login/${second.json.loginSessionId}/ws?ticket=${second.json.ticket}`;
+      const dropped: WebSocket = await server.app.injectWS(secondUrl, { headers: { origin: WEB_ORIGIN } });
+      await until(() => received.filter((m) => m.type === "hello").length >= 2);
+      dropped.terminate();
+      await until(() => received.some((m) => m.type === "cancel"));
+      await until(async () => (await built.services.db.withOrg(ctxX.orgId, (tx) => dbRepos.cloudLoginSessions.byId(tx, second.json.loginSessionId)))?.status === "cancelled");
+      expect(await wsRefusal(server, secondUrl, { origin: WEB_ORIGIN })).toBe(401);
+      // Annulation par le bouton : fenêtre close en base, message « cancel » pour le worker.
+      const next = await as("x", "POST", `/api/cloud/accounts/${accountX}/login`, undefined, server);
+      expect(next.status).toBe(201);
+      await server.queues.queues.get("selio-cloud-login")!.getJob(next.json.loginSessionId).then((j) => j?.remove());
+      expect((await as("x", "POST", `/api/cloud/login/${next.json.loginSessionId}/cancel`, undefined, server)).status).toBe(204);
+      expect(await wsRefusal(server, `/api/cloud/login/${next.json.loginSessionId}/ws?ticket=${next.json.ticket}`, { origin: WEB_ORIGIN })).toBe(401);
+      expect((await as("y", "POST", `/api/cloud/login/${next.json.loginSessionId}/cancel`, undefined, server)).status).toBe(404);
+    } finally {
+      workerSub.disconnect();
+      workerPub.disconnect();
+    }
+  });
+
+  it("POST login limité à 5 demandes par quart d'heure et par utilisateur", async () => {
+    if (!available || !cloudServer) return;
+    const statuses: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      const r = await as("x", "POST", `/api/cloud/accounts/${accountX}/login`, undefined, cloudServer);
+      statuses.push(r.status);
+      if (r.status === 201) await cloudServer.queues.queues.get("selio-cloud-login")!.getJob(r.json.loginSessionId).then((j) => j?.remove());
+    }
+    // Trois demandes au test précédent + deux ici = 5 ; la sixième est refusée.
+    expect(statuses.slice(0, 2)).toEqual([201, 201]);
+    expect(statuses[2]).toBe(429);
+    // Limite par utilisateur : une autre personne n'est pas bloquée (ici, compte d'une autre organisation → 404).
+    expect((await as("y", "POST", `/api/cloud/accounts/${accountX}/login`, undefined, cloudServer)).status).toBe(404);
+  });
+});

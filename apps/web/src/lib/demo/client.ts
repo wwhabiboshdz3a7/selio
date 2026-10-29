@@ -22,6 +22,15 @@ import { CYCLE_LABELS, addCycle, inTrial as trialRunning, isRunning, periodLabel
 import { helpAskInput, type HelpAnswer } from "@selio/contracts";
 import { can } from "@selio/domain";
 import { whiteLabelInput as whiteLabelInputSchema, type WhiteLabel, type WhiteLabelInput } from "@selio/contracts";
+import {
+  CLOUD_ACTION_KIND_LABELS, CLOUD_ACTION_LEVEL_LABELS, CLOUD_ACTION_STATUS_LABELS, CLOUD_CONSENT_TEXT, CLOUD_CONSENT_VERSION, CLOUD_LOGIN_TTL_MINUTES, CLOUD_PAUSE_REASON_LABELS, CLOUD_RUN_CODE_LABELS, CLOUD_SKIP_REASON_LABELS,
+  cloudAcceptConsentInput, cloudJournalQuery, cloudUpdateSettingsInput, isVintedPauseReason,
+  type CloudAccount, type CloudAction, type CloudActionLevel, type CloudAvailability, type CloudConsent, type CloudConsentView, type CloudSkipReason,
+} from "@selio/contracts";
+import type { Action } from "@selio/domain";
+import type { CloudAccountView, CloudJournalFilters, CloudLoginStart } from "../data/types";
+import { cloudAvailabilityFor } from "../cloud/availability";
+import { currentConsentHash, seedDemoCloud, type DemoCloudState } from "./cloud";
 
 function paginate<T>(items: T[], page = 1, pageSize = 25): Page<T> {
   const total = items.length;
@@ -42,6 +51,8 @@ type Subsidiaries = Pick<UsageSummary, "studio" | "track" | "cloud">;
  * simulé n'a eu lieu.
  */
 type DemoBillingState = DemoState & { invoices?: Invoice[] };
+/** Selio Cloud de la démonstration : même principe, créé au premier accès (voir ./cloud.ts). */
+type DemoCloudHolder = DemoState & { cloud?: DemoCloudState };
 
 const isPaid = (plan: Plan | null | undefined): plan is PaidPlan => (PAID_PLANS as readonly string[]).includes(plan ?? "");
 /** Identifiants fictifs du client et de la carte « enregistrée pour le marchand » (jamais une donnée de carte). */
@@ -1370,11 +1381,22 @@ export class DemoClient implements DataClient {
     c.status = "disconnected";
     c.hasSecret = false;
     c.updatedAt = this.now();
+    // Comme le serveur : le compte Cloud rattaché est arrêté et sa session effacée.
+    this.stopCloudForConnection(id, "connection_disconnected");
     this.audit("connection.revoked", "marketplace_connection", id, {});
     this.persist();
     return c;
   }
   async deleteConnection(id: string): Promise<void> {
+    this.stopCloudForConnection(id, "connection_deleted");
+    const cloud = (this.s as DemoCloudHolder).cloud;
+    if (cloud) {
+      // La suppression de la connexion supprime le compte Cloud et son journal (cascade côté serveur).
+      const removed = new Set(cloud.accounts.filter((a) => a.connectionId === id).map((a) => a.id));
+      cloud.accounts = cloud.accounts.filter((a) => !removed.has(a.id));
+      cloud.actions = cloud.actions.filter((a) => !removed.has(a.accountId));
+      cloud.logins = cloud.logins.filter((l) => !removed.has(l.accountId));
+    }
     this.s.connections = this.s.connections.filter((c) => c.id !== id);
     this.audit("connection.deleted", "marketplace_connection", id, {});
     this.persist();
@@ -1781,6 +1803,266 @@ export class DemoClient implements DataClient {
     this.audit("agency.white_label_updated", "organization", this.s.org.id, { name: saved.name, accent: saved.accent });
     this.persist();
     return saved;
+  }
+
+  // ---------- Selio Cloud (démonstration : rien ne touche Vinted) ----------
+  private requireCan(action: Action, message: string): void {
+    if (!can(this.session().role, action)) throw new DataError("forbidden", message, 403);
+  }
+  /** État Cloud, créé au premier accès ; une offre sans Cloud (accès de base, Starter) arrête les comptes. */
+  private cloud(): DemoCloudState {
+    const st = this.s as DemoCloudHolder;
+    if (!st.cloud) {
+      st.cloud = seedDemoCloud(st.org.id, st.connections, this.clock());
+      this.storage.save(st);
+    }
+    this.settleCloudForPlan(st.cloud);
+    return st.cloud;
+  }
+  /** Même règle que `cloudMaintenance` côté serveur : en accès de base ou Starter, comptes arrêtés et sessions effacées. */
+  private settleCloudForPlan(cloud: DemoCloudState): void {
+    const av = this.cloudAvailabilityNow();
+    if (av.available || av.optional) return;
+    let changed = false;
+    for (const a of cloud.accounts) {
+      if (a.status === "stopped" && !a.hasSession) continue;
+      this.stopCloudAccountTx(a, "plan");
+      changed = true;
+    }
+    if (changed) this.storage.save(this.s);
+  }
+  private cloudAvailabilityNow(): CloudAvailability {
+    const sub = this.s.subscription;
+    return cloudAvailabilityFor(sub.plan, sub.quotas);
+  }
+  private cloudAccountById(id: string): CloudAccount {
+    const a = this.cloud().accounts.find((x) => x.id === id);
+    if (!a) throw new DataError("not_found", "Compte Cloud introuvable", 404);
+    return a;
+  }
+  private async cloudConsentView(): Promise<CloudConsentView> {
+    const accepted = this.cloud().consent;
+    const hash = await currentConsentHash();
+    return { version: CLOUD_CONSENT_VERSION, text: CLOUD_CONSENT_TEXT, accepted, current: !!accepted && accepted.version === CLOUD_CONSENT_VERSION && accepted.textHash === hash };
+  }
+  private async requireCloudConsent(): Promise<void> {
+    if (!(await this.cloudConsentView()).current) throw new DataError("consent_required", "Acceptez d'abord les conditions de Selio Cloud (écran d'accord).", 409, { version: CLOUD_CONSENT_VERSION });
+  }
+  private requireCloudAvailable(): CloudAvailability {
+    const av = this.cloudAvailabilityNow();
+    if (!av.available) throw new DataError("cloud_unavailable", av.reason, 402, { plan: av.plan, optional: av.optional });
+    return av;
+  }
+  private updateCloudAccount(a: CloudAccount, patch: Partial<CloudAccount>): CloudAccount {
+    Object.assign(a, patch, { updatedAt: this.now() });
+    return a;
+  }
+  /** Arrêt : statut « arrêté », session effacée, fenêtres de connexion fermées. */
+  private stopCloudAccountTx(a: CloudAccount, reason: string): void {
+    const hadSession = a.hasSession;
+    this.updateCloudAccount(a, { status: "stopped", pausedReason: null, pausedAt: null, hasSession: false, sessionSavedAt: null });
+    for (const l of (this.s as DemoCloudHolder).cloud?.logins ?? []) if (l.accountId === a.id && l.status === "open") l.status = "cancelled";
+    this.audit("cloud.account.stopped", "cloud_account", a.id, { reason, sessionDeleted: hadSession });
+  }
+  private stopCloudForConnection(connectionId: string, reason: string): void {
+    const a = (this.s as DemoCloudHolder).cloud?.accounts.find((x) => x.connectionId === connectionId);
+    if (a && !(a.status === "stopped" && !a.hasSession)) this.stopCloudAccountTx(a, reason);
+  }
+  private cloudDayStart(): Date {
+    const now = this.clock();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  }
+
+  async cloudAvailability(): Promise<CloudAvailability> {
+    this.cloud();
+    return this.cloudAvailabilityNow();
+  }
+  async cloudConsent(): Promise<CloudConsentView> {
+    return this.cloudConsentView();
+  }
+  async acceptCloudConsent(input: { version: string; accepted: true }): Promise<CloudConsentView> {
+    this.requireCan("cloud.manage", "Seuls un administrateur ou le propriétaire peuvent accepter les conditions du Cloud.");
+    const parsed = cloudAcceptConsentInput.safeParse(input);
+    if (!parsed.success) throw new DataError("validation", "Cochez la case pour accepter les conditions du Cloud.", 400, parsed.error.flatten());
+    if (parsed.data.version !== CLOUD_CONSENT_VERSION) throw new DataError("conflict", "Le texte de l'accord a changé : relisez-le avant d'accepter.", 409, { version: CLOUD_CONSENT_VERSION });
+    const textHash = await currentConsentHash();
+    const consent: CloudConsent = { id: newId(), orgId: this.s.org.id, userId: this.s.user.id, version: CLOUD_CONSENT_VERSION, textHash, acceptedAt: this.now(), ip: null };
+    this.cloud().consent = consent;
+    this.audit("cloud.consent.accepted", "cloud_consent", consent.id, { version: consent.version, textHash });
+    this.persist();
+    return this.cloudConsentView();
+  }
+  async cloudAccounts(): Promise<CloudAccountView[]> {
+    const cloud = this.cloud();
+    const since = this.cloudDayStart().getTime();
+    const connections = new Map(this.s.connections.map((c) => [c.id, c]));
+    return cloud.accounts.map((a) => {
+      const c = connections.get(a.connectionId);
+      return {
+        ...a,
+        connectionLabel: c?.label ?? "Compte supprimé",
+        displayHandle: c && typeof c.config.displayHandle === "string" ? c.config.displayHandle : null,
+        actionsToday: cloud.actions.filter((x) => x.accountId === a.id && x.status !== "skipped" && new Date(x.createdAt).getTime() >= since).length,
+      };
+    });
+  }
+  async enableCloudAccount(connectionId: string): Promise<CloudAccount> {
+    this.requireCan("cloud.manage", "Seuls un administrateur ou le propriétaire peuvent activer le Cloud.");
+    const connection = this.s.connections.find((c) => c.id === connectionId);
+    if (!connection) throw new DataError("not_found", "Connexion introuvable", 404);
+    if (connection.provider !== "vinted") throw new DataError("validation", "Seul un compte Vinted peut être activé dans le Cloud.", 400);
+    if (connection.status === "disconnected") throw new DataError("conflict", "Ce compte Vinted est déconnecté : reconnectez-le avant d'activer le Cloud.", 409);
+    if (!isAutomatable(connection)) throw new DataError("validation", "Un compte Perso n'est jamais utilisé par les automatisations : changez sa catégorie pour l'activer dans le Cloud.", 400);
+    await this.requireCloudConsent();
+    const av = this.requireCloudAvailable();
+    const cloud = this.cloud();
+    const existing = cloud.accounts.find((a) => a.connectionId === connectionId);
+    if (existing && existing.status !== "stopped") return existing;
+    if (cloud.accounts.filter((a) => a.status !== "stopped").length >= av.maxAccounts) {
+      throw new DataError("quota_exceeded", `Limite de ${av.maxAccounts} comptes Cloud atteinte pour votre organisation : arrêtez un compte avant d'en activer un autre.`, 402, { maxAccounts: av.maxAccounts });
+    }
+    const now = this.now();
+    const account = existing
+      ? this.updateCloudAccount(existing, { status: "needs_login", pausedReason: null, pausedAt: null })
+      : { id: newId(), orgId: this.s.org.id, connectionId, status: "needs_login" as const, pausedReason: null, pausedAt: null, hasSession: false, sessionSavedAt: null, lastActionAt: null, warningsCount: 0, settings: { levels: ["light" as const] }, createdAt: now, updatedAt: now };
+    if (!existing) cloud.accounts.push(account);
+    this.audit("cloud.account.enabled", "cloud_account", account.id, { connectionId, reactivated: !!existing });
+    this.persist();
+    return account;
+  }
+  async pauseCloudAccount(id: string): Promise<CloudAccount> {
+    this.requireCan("cloud.manage", "Seuls un administrateur ou le propriétaire peuvent mettre le Cloud en pause.");
+    const a = this.cloudAccountById(id);
+    if (a.status === "stopped") throw new DataError("conflict", "Ce compte Cloud est arrêté.", 409);
+    if (a.status === "paused") return a;
+    this.updateCloudAccount(a, { status: "paused", pausedReason: "client", pausedAt: this.now() });
+    this.audit("cloud.account.paused", "cloud_account", id, { reason: "client" });
+    this.persist();
+    return a;
+  }
+  async resumeCloudAccount(id: string, opts: { acknowledge?: boolean } = {}): Promise<CloudAccount> {
+    this.requireCan("cloud.manage", "Seuls un administrateur ou le propriétaire peuvent reprendre le Cloud.");
+    const a = this.cloudAccountById(id);
+    if (a.status !== "paused") throw new DataError("conflict", "Ce compte Cloud n'est pas en pause.", 409);
+    const fromVinted = isVintedPauseReason(a.pausedReason);
+    if (fromVinted && opts.acknowledge !== true) {
+      throw new DataError("acknowledge_required", `${CLOUD_PAUSE_REASON_LABELS[a.pausedReason!]} : vérifiez le compte dans Vinted, puis confirmez en avoir pris connaissance pour reprendre.`, 409, { pausedReason: a.pausedReason });
+    }
+    await this.requireCloudConsent();
+    this.requireCloudAvailable();
+    const previousReason = a.pausedReason;
+    this.updateCloudAccount(a, { status: a.hasSession ? "active" : "needs_login", pausedReason: null, pausedAt: null });
+    this.audit("cloud.account.resumed", "cloud_account", id, { previousReason, acknowledged: fromVinted });
+    this.persist();
+    return a;
+  }
+  async stopCloudAccount(id: string): Promise<CloudAccount> {
+    this.requireCan("cloud.manage", "Seuls un administrateur ou le propriétaire peuvent arrêter le Cloud.");
+    const a = this.cloudAccountById(id);
+    this.stopCloudAccountTx(a, "client");
+    this.persist();
+    return a;
+  }
+  async deleteCloudSession(id: string): Promise<CloudAccount> {
+    this.requireCan("cloud.manage", "Seuls un administrateur ou le propriétaire peuvent effacer une session.");
+    const a = this.cloudAccountById(id);
+    const hadSession = a.hasSession;
+    this.updateCloudAccount(a, { hasSession: false, sessionSavedAt: null, ...(a.status === "active" ? { status: "needs_login" as const } : {}) });
+    this.audit("cloud.session.deleted", "cloud_account", id, { hadSession });
+    this.persist();
+    return a;
+  }
+  async updateCloudSettings(id: string, input: { levels: CloudActionLevel[] }): Promise<CloudAccount> {
+    this.requireCan("cloud.manage", "Seuls un administrateur ou le propriétaire peuvent modifier le Cloud.");
+    const parsed = cloudUpdateSettingsInput.safeParse(input);
+    if (!parsed.success) throw new DataError("validation", "Réglages Cloud invalides", 400, parsed.error.flatten());
+    const levels = [...new Set(parsed.data.levels)];
+    if (levels.includes("heavy") && !this.cloudAvailabilityNow().heavyActionsEnabled) {
+      throw new DataError("heavy_disabled", "Les actions lourdes (republier, modifier en masse) ne sont pas ouvertes sur l'adresse partagée : décision à prendre par Ibrahim.", 403);
+    }
+    const a = this.cloudAccountById(id);
+    if (a.status === "stopped") throw new DataError("conflict", "Ce compte Cloud est arrêté.", 409);
+    this.updateCloudAccount(a, { settings: { levels } });
+    this.audit("cloud.account.settings_updated", "cloud_account", id, { levels });
+    this.persist();
+    return a;
+  }
+  private cloudJournalRows(filters: CloudJournalFilters): CloudAction[] {
+    return this.cloud().actions
+      .filter((a) => (!filters.kind || a.kind === filters.kind) && (!filters.status || a.status === filters.status) && (!filters.accountId || a.accountId === filters.accountId))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  async cloudJournal(filters: CloudJournalFilters): Promise<Page<CloudAction>> {
+    const q = cloudJournalQuery.safeParse(filters ?? {});
+    if (!q.success) throw new DataError("validation", "Filtres invalides", 400, q.error.flatten());
+    return paginate(this.cloudJournalRows(q.data), q.data.page, q.data.pageSize);
+  }
+  /** Même export que le serveur : aucune donnée de session, aucun texte de message. */
+  async exportCloudJournalCsv(filters: CloudJournalFilters): Promise<string> {
+    const labels = new Map((await this.cloudAccounts()).map((a) => [a.id, a.connectionLabel]));
+    const rows = this.cloudJournalRows({ kind: filters.kind, status: filters.status, accountId: filters.accountId });
+    const header = ["Date", "Compte", "Action", "Niveau", "Statut", "Résultat", "Durée (s)", "Conversation", "Longueur du message"];
+    const body = rows.map((r) => [
+      r.createdAt,
+      labels.get(r.accountId) ?? r.accountId,
+      CLOUD_ACTION_KIND_LABELS[r.kind],
+      CLOUD_ACTION_LEVEL_LABELS[r.level],
+      CLOUD_ACTION_STATUS_LABELS[r.status],
+      r.detail.code ? CLOUD_RUN_CODE_LABELS[r.detail.code] : r.detail.reason ? CLOUD_SKIP_REASON_LABELS[r.detail.reason as CloudSkipReason] ?? r.detail.reason : "",
+      typeof r.detail.durationMs === "number" ? (r.detail.durationMs / 1000).toFixed(1).replace(".", ",") : "",
+      r.detail.conversationRef ?? "",
+      r.detail.messageLength ?? "",
+    ]);
+    this.audit("cloud.journal.exported", "cloud_action", null, { rows: rows.length });
+    this.usage("export.csv", { kind: "cloud_journal" });
+    this.persist();
+    return toCsv([header, ...body]);
+  }
+  /** Fenêtre de connexion simulée : aucun navigateur, aucun ticket réel, rien ne touche Vinted. */
+  async startCloudLogin(accountId: string): Promise<CloudLoginStart> {
+    this.requireCan("cloud.manage", "Seuls un administrateur ou le propriétaire peuvent connecter un compte Cloud.");
+    const a = this.cloudAccountById(accountId);
+    if (a.status === "stopped") throw new DataError("conflict", "Ce compte Cloud est arrêté : réactivez-le d'abord.", 409);
+    await this.requireCloudConsent();
+    this.requireCloudAvailable();
+    const cloud = this.cloud();
+    for (const l of cloud.logins) if (l.accountId === accountId && l.status === "open") l.status = "cancelled";
+    const now = this.clock();
+    const login = { id: newId(), accountId, status: "open" as const, createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + CLOUD_LOGIN_TTL_MINUTES * 60_000).toISOString() };
+    cloud.logins.unshift(login);
+    if (cloud.logins.length > 20) cloud.logins.length = 20;
+    this.audit("cloud.login.started", "cloud_account", accountId, { loginSessionId: login.id, expiresAt: login.expiresAt, simulated: true });
+    this.persist();
+    return { loginSessionId: login.id, ticket: `demo-simulation-${login.id}`, expiresAt: login.expiresAt, socketUrl: null, simulated: true };
+  }
+  async cancelCloudLogin(loginSessionId: string): Promise<void> {
+    const login = this.cloud().logins.find((l) => l.id === loginSessionId);
+    if (!login) throw new DataError("not_found", "Fenêtre de connexion introuvable.", 404);
+    if (login.status !== "open") return;
+    login.status = "cancelled";
+    this.audit("cloud.login.cancelled", "cloud_account", login.accountId, { loginSessionId });
+    this.persist();
+  }
+  async completeSimulatedCloudLogin(loginSessionId: string): Promise<CloudAccount> {
+    const login = this.cloud().logins.find((l) => l.id === loginSessionId);
+    if (!login) throw new DataError("not_found", "Fenêtre de connexion introuvable.", 404);
+    if (login.status !== "open") throw new DataError("conflict", "Cette fenêtre de connexion est déjà fermée.", 409);
+    if (new Date(login.expiresAt).getTime() <= this.clock().getTime()) {
+      login.status = "expired";
+      this.persist();
+      throw new DataError("login_expired", "La fenêtre de connexion a expiré : ouvrez-en une nouvelle.", 410);
+    }
+    const a = this.cloudAccountById(login.accountId);
+    if (a.status === "stopped") {
+      login.status = "cancelled";
+      this.persist();
+      throw new DataError("conflict", "Ce compte Cloud a été arrêté pendant la connexion : session non enregistrée.", 409);
+    }
+    login.status = "done";
+    this.updateCloudAccount(a, { hasSession: true, sessionSavedAt: this.now(), ...(a.status === "needs_login" ? { status: "active" as const } : {}) });
+    this.audit("cloud.login.completed", "cloud_account", a.id, { loginSessionId, simulated: true });
+    this.persist();
+    return a;
   }
 
   // ---------- démo ----------

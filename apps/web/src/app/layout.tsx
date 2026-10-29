@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Bot, Boxes, ChevronDown, CircleUser, ClipboardList, CreditCard, Gauge, Heart, ListChecks, LogOut, Menu as MenuIcon, MessageSquare, MessagesSquare, Moon, Package, Printer, Radar, RefreshCw, Settings, ShieldCheck, Shirt, ShoppingCart, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
+import { ArrowRight, Bot, Boxes, ChevronDown, CircleUser, ClipboardList, CreditCard, Gauge, Heart, ListChecks, LogOut, Menu as MenuIcon, MessageSquare, MessagesSquare, Moon, Package, Pause, Printer, Radar, RefreshCw, Settings, ShieldCheck, Shirt, ShoppingCart, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
 import { Avatar, Banner, Button, IconButton, LoadingState, Menu, Tag, cn, formatDate } from "@selio/ui";
 import type { Subscription } from "@selio/contracts";
 import { daysLeft } from "../lib/billing";
@@ -100,7 +100,7 @@ export function useNavCounts() {
 const SPACE_NOTES: Partial<Record<SpaceArea, { label: string; text: string }>> = {
   agents: { label: "Aperçu", text: "l'équipe et les accès sont réels ; les boutiques clientes sont des exemples fictifs." },
   track: { label: "En développement", text: "première version, sur un marché simulé en démonstration." },
-  cloud: { label: "En développement", text: "ce qui arrive, et ce qui marche déjà dans Selio." },
+  cloud: { label: "Aperçu", text: "actions légères seulement (répondre, relancer), avec votre accord ; en démonstration, rien ne touche Vinted." },
   generateur: { label: "En développement", text: "ce qui arrive, et ce qui marche déjà dans Selio." },
 };
 
@@ -136,6 +136,9 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
     if (ownedArea) writeLastSpace(ownedArea);
   }, [ownedArea]);
   const groups = area === "selio" ? GROUPS : SPACE_GROUPS[area];
+  // Selio Cloud : l'arrêt global des automatisations met aussi le Cloud en pause (bandeau et menu).
+  const automation = useQuery({ queryKey: ["automation-state"], queryFn: () => client.getAutomationState(), enabled: area === "cloud", staleTime: 15_000 });
+  const cloudPaused = area === "cloud" && automation.data?.globalPaused === true;
 
   const sidebar = (
     <div className="flex h-full flex-col">
@@ -172,6 +175,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
               {g.items.map((it) => {
                 const badge = it.badgeKey ? counts.data?.[it.badgeKey] : 0;
                 const autoBuy = it.to === "/app/auto-buy";
+                const cloudHome = it.to === "/cloud" && cloudPaused;
                 return (
                   <li key={it.to}>
                     <NavLink to={it.to} end={it.end} className={linkClass} title={it.hint}>
@@ -179,6 +183,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
                       <span className="flex-1 truncate">{it.label}</span>
                       {badge ? <span className="num min-w-5 rounded-full bg-surface-muted px-1.5 text-center text-[11px] leading-[18px] font-medium text-text-muted group-aria-[current=page]:bg-surface group-aria-[current=page]:text-accent">{badge}</span> : null}
                       {autoBuy ? <span className="inline-flex items-center gap-1.5 text-[11px] font-normal text-text-muted"><span className={cn("size-1.5 rounded-full", autoBuyOn ? "bg-success" : "bg-border-strong")} aria-hidden />{autoBuyOn ? "Activé" : "Arrêté"}</span> : null}
+                      {cloudHome ? <span className="inline-flex items-center gap-1.5 text-[11px] font-normal text-text-muted"><span className="size-1.5 rounded-full bg-warning" aria-hidden />En pause</span> : null}
                     </NavLink>
                   </li>
                 );
@@ -242,6 +247,15 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
           </Banner>
         ) : null}
         <BillingBanner s={subscription.data ?? null} pathname={location.pathname} />
+        {cloudPaused ? (
+          <Banner tone="neutral">
+            <span data-testid="cloud-paused-banner" className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+              <Pause className="size-3.5 shrink-0 text-warning" aria-hidden />
+              <span><span className="font-medium text-text">Selio Cloud en pause</span> — arrêt global des automatisations : aucune action n'est lancée.</span>
+              {location.pathname === "/cloud" ? null : <Link to="/cloud" className="font-medium text-accent underline-offset-2 hover:underline">Reprendre</Link>}
+            </span>
+          </Banner>
+        ) : null}
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-surface/90 px-4 backdrop-blur md:hidden">
           <IconButton label="Ouvrir le menu" onClick={() => setOpen(true)}><MenuIcon /></IconButton>
           <Link to={HUB_PATH} className="flex min-w-0 flex-1 items-center gap-2" aria-label="Selio, vos espaces"><Logo height={20} /><SpacePill area={area} /></Link>

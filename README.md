@@ -75,5 +75,6 @@ packages/core    services serveur partagés API/worker           packages/demo-d
 - [docs/CONNECTORS.md](docs/CONNECTORS.md) · [docs/SECURITY.md](docs/SECURITY.md) · [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 - [docs/CLES-ET-CONFIGURATION.md](docs/CLES-ET-CONFIGURATION.md) · [docs/OLLAMA-SETUP.md](docs/OLLAMA-SETUP.md) · [docs/EXTENSION-INSTALL.md](docs/EXTENSION-INSTALL.md)
 - [docs/TEST-REPORT.md](docs/TEST-REPORT.md) · [docs/PRODUCTION-CHECKLIST.md](docs/PRODUCTION-CHECKLIST.md)
+- [docs/CLOUD.md](docs/CLOUD.md) (Selio Cloud, désactivé par défaut) · [docs/SAUVEGARDE.md](docs/SAUVEGARDE.md) (sauvegarde chiffrée, test de restauration, bascule sur le portable)
 
 La charte (tokens, preset Tailwind, guidelines) est dans `brand/` et `packages/ui`.

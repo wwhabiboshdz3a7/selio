@@ -12,9 +12,15 @@ export const RULE_KINDS = [
 export const ruleKind = z.enum(RULE_KINDS);
 export type RuleKind = z.infer<typeof ruleKind>;
 
-/** Où s'exécute la règle : serveur (worker) ou navigateur (extension ouverte). */
-export const RUN_LOCATIONS = ["server", "browser"] as const;
+/**
+ * Où s'exécute la règle : serveur (worker), navigateur (extension ouverte) ou Cloud (navigateur
+ * isolé sur notre machine, pour un compte activé dans Selio Cloud). Une règle se déclare « server »
+ * ou « browser » ; « cloud » est décidé tâche par tâche quand le compte de la conversation est actif
+ * dans le Cloud (`decideRunsIn`, @selio/core).
+ */
+export const RUN_LOCATIONS = ["server", "browser", "cloud"] as const;
 export const runLocation = z.enum(RUN_LOCATIONS);
+export type RunLocation = z.infer<typeof runLocation>;
 
 export const schedule = z.object({
   /** 0 = dimanche … 6 = samedi */

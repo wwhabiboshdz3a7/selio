@@ -11,6 +11,12 @@ EnvironmentFile=/etc/selio/worker.env
 ExecStart=/usr/bin/node /opt/selio/apps/worker/dist/main.js
 Restart=on-failure
 RestartSec=5
+# Selio Cloud : à l'arrêt, seul le processus Node reçoit SIGTERM (KillMode=mixed) ; il n'ouvre plus
+# de navigateur et attend l'action en cours (CLOUD_ACTION_TIMEOUT_MS, 90 s, plus une marge) avant de
+# sortir. Les Chromium enfants ne sont tués qu'au-delà de TimeoutStopSec (un signal de Vinted lu
+# pendant l'action est ainsi toujours enregistré).
+KillMode=mixed
+TimeoutStopSec=150
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

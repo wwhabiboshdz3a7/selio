@@ -1,6 +1,6 @@
 import { repos, type Db } from "@selio/db";
 import { getConnector } from "@selio/connectors";
-import { admin, automation, billing, connections as connectionsService, radar, type OrgContext, type Services } from "@selio/core";
+import { admin, automation, billing, cloud, connections as connectionsService, radar, type OrgContext, type Services } from "@selio/core";
 
 /** Contexte « système » : actions du worker, journalisées avec l'acteur `system`. */
 export function systemContext(services: Services, orgId: string): OrgContext {
@@ -86,7 +86,16 @@ export async function radarTick(services: Services, log: TaskLogger): Promise<nu
   return n;
 }
 
-export const retentionTick = (services: Services) => admin.retentionCleanup(services);
+/**
+ * Rétention : messages, audit, requêtes IA et sessions expirées selon les réglages de chaque
+ * organisation ; journal du Cloud gardé 90 jours, fenêtres de connexion expirées fermées, comptes
+ * Cloud arrêtés (session effacée) quand l'offre ne comprend plus le Cloud.
+ */
+export async function retentionTick(services: Services) {
+  const base = await admin.retentionCleanup(services);
+  const cloudResult = await cloud.cloudMaintenance(services);
+  return { ...base, cloud: cloudResult };
+}
 
 export interface RenewalSummary {
   orgs: number;

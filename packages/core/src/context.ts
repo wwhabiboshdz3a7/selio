@@ -5,6 +5,7 @@ import type { EmailMessage, EmailProvider } from "@selio/email";
 import type { PaymentProvider } from "@selio/connectors";
 import { can, type Action } from "@selio/domain";
 import type { BillingOptions } from "./types";
+import type { CloudExecutor } from "./services/cloud";
 
 export class AppError extends Error {
   constructor(public readonly code: string, message: string, public readonly status = 400, public readonly details?: unknown) {
@@ -36,6 +37,29 @@ export interface Services {
   payments?: PaymentProvider | null;
   /** Options de facturation (franchise de TVA). Par défaut : TVA à 20 %. */
   billing?: BillingOptions;
+  /**
+   * Exécuteur de navigateur de Selio Cloud (worker uniquement : profil Chromium isolé par compte,
+   * ouvert pour une action puis refermé). Absent dans l'API : aucune action Cloud n'y est exécutée.
+   */
+  cloud?: CloudExecutor;
+  /** Réglages serveur lus dans l'environnement (`cloudConfigFromEnv`). Valeurs prudentes par défaut. */
+  config?: ServicesConfig;
+}
+
+/** Réglages serveur des fonctions risquées : tout ce qui ouvre davantage est désactivé par défaut. */
+export interface ServicesConfig {
+  /** CLOUD_HEAVY_ACTIONS : actions lourdes du Cloud (republier, modifier en masse). Faux par défaut, à décider par Ibrahim. */
+  cloudHeavyActions?: boolean;
+  /** CLOUD_MAX_ACCOUNTS_PER_ORG : comptes Cloud par organisation (10 par défaut, jamais au-delà des comptes de l'offre). */
+  cloudMaxAccountsPerOrg?: number;
+  /** CLOUD_MAX_BROWSERS : navigateurs ouverts en même temps (5 par défaut ; la cible de 50 est une hypothèse à mesurer). */
+  cloudMaxBrowsers?: number;
+  /** CLOUD_PRO_OPTION : Cloud activable en option avec Pro (prix à décider, rien n'est facturé). Faux par défaut. */
+  cloudProOption?: boolean;
+  /** CLOUD_ACTIVE_HOURS : heures actives du Cloud (fuseau de l'organisation). Absent : 8 h – 22 h (contrats). */
+  cloudActiveHours?: { startHour: number; endHour: number };
+  /** CLOUD_LOGIN_TIMEOUT_MS : durée de validité d'une fenêtre de connexion (ticket). Absent : 15 min (contrats). */
+  cloudLoginTimeoutMs?: number;
 }
 
 /** Contexte d'une requête authentifiée dans une organisation. */

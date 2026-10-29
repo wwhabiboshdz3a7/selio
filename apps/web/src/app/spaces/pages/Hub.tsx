@@ -100,6 +100,10 @@ export default function Hub() {
   const scores = useDressingScores();
   const whiteLabel = useQuery({ queryKey: ["white-label"], queryFn: () => client.getWhiteLabel() });
   const members = useQuery({ queryKey: ["members"], queryFn: () => client.listMembers() });
+  const cloudAccounts = useQuery({ queryKey: ["cloud-accounts"], queryFn: () => client.cloudAccounts() });
+  const cloudConsent = useQuery({ queryKey: ["cloud-consent"], queryFn: () => client.cloudConsent() });
+  const cloudAvailability = useQuery({ queryKey: ["cloud-availability"], queryFn: () => client.cloudAvailability() });
+  const cloudLive = (cloudAccounts.data ?? []).filter((a) => a.status !== "stopped");
   const studio = items.data ? summarizeGenerated(items.data.items, scores.data) : null;
   const first = session.user.displayName.split(" ")[0];
   const dash = "—";
@@ -118,6 +122,11 @@ export default function Hub() {
       { label: "Membres", value: members.data ? formatNumber(members.data.length) : dash },
       { label: "Votre rôle", value: ROLE_LABELS[session.role] },
       { label: "Boutiques clientes", value: formatNumber(AGENCY_EXAMPLE_CLIENTS.length), hint: "exemples fictifs" },
+    ],
+    cloud: [
+      { label: "Comptes Cloud", value: cloudAccounts.data ? formatNumber(cloudLive.length) : dash, hint: "10 au plus" },
+      { label: "En pause", value: cloudAccounts.data ? formatNumber(cloudLive.filter((a) => a.status === "paused").length) : dash },
+      { label: "Actions aujourd'hui", value: cloudAccounts.data ? formatNumber(cloudLive.reduce((n, a) => n + a.actionsToday, 0)) : dash },
     ],
   };
 
@@ -140,6 +149,12 @@ export default function Hub() {
         <p className="min-w-0 text-xs text-text-muted"><span className="block truncate text-text">Dernière : {recent[0]!.title}</span>{studio?.drafts ? `${studio.drafts} brouillon(s) à relire` : "Aucun brouillon en attente"}</p>
       </div>
     ) : <p className="text-xs text-text-muted">Aucune annonce générée pour l'instant : ajoutez les photos d'un article pour commencer.</p>,
+    cloud: (
+      <p className="text-xs text-text-muted">
+        <span className="block text-text">{cloudAvailability.data ? (cloudAvailability.data.included ? "Compris dans votre offre" : cloudAvailability.data.optional ? "En option avec Pro, prix à décider" : "Disponible à partir de Pro") : dash}</span>
+        {cloudConsent.data ? (cloudConsent.data.current ? "Accord enregistré" : "Accord à donner avant toute action") : null}
+      </p>
+    ),
     agents: (
       <div className="flex items-center gap-3">
         <BrandMark initials={brand?.initials ?? initialsOf(session.org.name)} accent={brand?.accent} size={36} />
@@ -167,8 +182,8 @@ export default function Hub() {
             space={space}
             figures={figures[space.id] ?? []}
             signal={signals[space.id]}
-            figuresNote={space.id === "selio" ? "Calculés depuis vos données, ce mois-ci." : space.id === "studio" ? "Note du dressing des annonces en ligne." : <><Tag className="mr-1.5">Aperçu</Tag>Boutiques clientes fictives, rien n'est facturé.</>}
-            secondary={space.id === "selio" ? { to: "/app/automatisation", label: "Automatisation" } : space.id === "studio" ? { to: "/studio/performances", label: "Ce qui performe" } : { to: "/app/settings/access", label: "Comptes et accès" }}
+            figuresNote={space.id === "selio" ? "Calculés depuis vos données, ce mois-ci." : space.id === "studio" ? "Note du dressing des annonces en ligne." : space.id === "cloud" ? <><Tag className="mr-1.5">Aperçu</Tag>Actions légères seulement (répondre, relancer).</> : <><Tag className="mr-1.5">Aperçu</Tag>Boutiques clientes fictives, rien n'est facturé.</>}
+            secondary={space.id === "selio" ? { to: "/app/automatisation", label: "Automatisation" } : space.id === "studio" ? { to: "/studio/performances", label: "Ce qui performe" } : space.id === "cloud" ? { to: "/cloud/journal", label: "Journal des actions" } : { to: "/app/settings/access", label: "Comptes et accès" }}
           />
         ))}
       </div>
@@ -197,7 +212,7 @@ export default function Hub() {
             </li>
           ))}
         </ol>
-        <p className="mt-5 border-t border-border pt-4 text-xs text-text-muted">Les filiales en aperçu ou en développement ne sont ni activées ni facturées. Vos données restent celles de votre organisation : elles alimentent vos propres analyses. Selio est un outil indépendant, ni affilié à Vinted ni approuvé par Vinted.</p>
+        <p className="mt-5 border-t border-border pt-4 text-xs text-text-muted">Les filiales en aperçu ou en développement ne sont pas facturées à part ; Selio Cloud ne s'active qu'avec votre accord, compte par compte. Vos données restent celles de votre organisation : elles alimentent vos propres analyses. Selio est un outil indépendant, ni affilié à Vinted ni approuvé par Vinted.</p>
       </section>
     </>
   );

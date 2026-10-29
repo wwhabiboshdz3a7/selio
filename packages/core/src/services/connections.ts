@@ -5,6 +5,7 @@ import { describeConnectors, getConnector } from "@selio/connectors";
 import { PLAN_QUOTAS } from "@selio/demo-data";
 import { AppError, nowIso, requireAction, withOrg, type OrgContext, type Services } from "../context";
 import { ingestInboundTx } from "./messaging";
+import { stopForConnectionTx } from "./cloud";
 
 export const describe = () => describeConnectors();
 export const listConnections = (ctx: OrgContext) => withOrg(ctx, (tx) => repos.connections.list(tx));
@@ -89,6 +90,8 @@ export function disconnectConnection(ctx: OrgContext, id: string): Promise<Marke
   requireAction(ctx, "connections.manage");
   return withOrg(ctx, async (tx) => {
     const c = await repos.connections.update(tx, id, { status: "disconnected", secretCiphertext: null });
+    // Selio Cloud : la session gardée pour ce compte est effacée dès la déconnexion.
+    await stopForConnectionTx(tx, id, { actorUserId: ctx.userId, ip: ctx.ip, reason: "connection_revoked" });
     await repos.audit.add(tx, { actorUserId: ctx.userId, action: "connection.revoked", targetType: "marketplace_connection", targetId: id, ip: ctx.ip });
     return c;
   });
@@ -97,6 +100,8 @@ export function disconnectConnection(ctx: OrgContext, id: string): Promise<Marke
 export function deleteConnection(ctx: OrgContext, id: string): Promise<void> {
   requireAction(ctx, "connections.manage");
   return withOrg(ctx, async (tx) => {
+    // Selio Cloud : arrêt et session effacée avant la suppression (qui emporte ensuite le compte Cloud).
+    await stopForConnectionTx(tx, id, { actorUserId: ctx.userId, ip: ctx.ip, reason: "connection_deleted" });
     await repos.connections.delete(tx, id);
     await repos.audit.add(tx, { actorUserId: ctx.userId, action: "connection.deleted", targetType: "marketplace_connection", targetId: id, ip: ctx.ip });
   });

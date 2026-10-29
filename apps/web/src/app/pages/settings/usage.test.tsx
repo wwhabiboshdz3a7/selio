@@ -49,7 +49,9 @@ describe("Paramètres › Utilisation", () => {
     const alerts = screen.getAllByRole(usage.warning ? "alert" : "status");
     expect(alerts.some((a) => /80 %/.test(a.textContent ?? ""))).toBe(true);
     // Les filiales en développement sont signalées, sans inventer d'usage.
-    expect(screen.getAllByText("En développement").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("En développement").length).toBeGreaterThanOrEqual(1);
+    // Selio Cloud a ses pages (aperçu) : inclus dans Agence, en option avec Pro à prix à décider.
+    expect(screen.getByText("Inclus dans Agence ; en option avec Pro, prix à décider.")).toBeTruthy();
     const photos = screen.getByRole("progressbar", { name: "Photos portées" }).parentElement!;
     expect(within(photos).getByText("En préparation")).toBeTruthy();
   });

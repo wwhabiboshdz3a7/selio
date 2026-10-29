@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { marginRules } from "@selio/contracts";
 import { evaluateOffer } from "@selio/domain";
-import { autoNegotiateBody } from "./automation";
+import { autoNegotiateBody, decideRunsIn } from "./automation";
 
 describe("négociation automatique : message sans IA (fonction pure)", () => {
   const rules = marginRules.parse({});
@@ -30,5 +30,29 @@ describe("négociation automatique : message sans IA (fonction pure)", () => {
     const decline = { ...counter, decision: "decline" as const, counterCents: null };
     expect(autoNegotiateBody(decline, 1000, "Léa")).toBe("Bonjour Léa, merci pour l'intérêt. Je ne peux pas descendre à ce prix, l'article reste disponible au prix affiché.");
     for (const ev of [accept, counter, decline]) expect(autoNegotiateBody(ev, 2500, "Léa")).not.toMatch(/meilleur prix/i);
+  });
+});
+
+describe("transport d'une tâche : serveur, extension ou Cloud (fonction pure)", () => {
+  const active = { status: "active" as const, hasSession: true };
+
+  it("réponse et relance passent par le Cloud quand le compte de la conversation y est actif", () => {
+    expect(decideRunsIn({ ruleKind: "reply_on_new_message", ruleRunsIn: "browser", cloudAccount: active })).toBe("cloud");
+    expect(decideRunsIn({ ruleKind: "follow_up_no_reply", ruleRunsIn: "server", cloudAccount: active })).toBe("cloud");
+  });
+
+  it("compte absent, en pause, à reconnecter, arrêté ou sans session : la règle garde son emplacement", () => {
+    for (const cloudAccount of [null, undefined, { status: "paused" as const, hasSession: true }, { status: "needs_login" as const, hasSession: false }, { status: "stopped" as const, hasSession: false }, { status: "active" as const, hasSession: false }]) {
+      expect(decideRunsIn({ ruleKind: "reply_on_new_message", ruleRunsIn: "browser", cloudAccount })).toBe("browser");
+      expect(decideRunsIn({ ruleKind: "follow_up_no_reply", ruleRunsIn: "server", cloudAccount })).toBe("server");
+    }
+  });
+
+  it("les autres règles ne passent jamais par le Cloud au lancement (actions légères seulement)", () => {
+    for (const ruleKind of ["auto_negotiate", "post_sale_message", "relist_stale", "price_drop_stale"] as const) {
+      expect(decideRunsIn({ ruleKind, ruleRunsIn: "browser", cloudAccount: active })).toBe("browser");
+    }
+    // Une règle enregistrée « cloud » sans compte actif part vers l'extension.
+    expect(decideRunsIn({ ruleKind: "relist_stale", ruleRunsIn: "cloud", cloudAccount: null })).toBe("browser");
   });
 });

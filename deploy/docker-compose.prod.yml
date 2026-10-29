@@ -45,6 +45,11 @@ services:
   worker:
     build: { context: .., dockerfile: deploy/Dockerfile.worker }
     restart: unless-stopped
+    # Selio Cloud : l'arrêt attend l'action en cours (90 s au plus, plus une marge) avant SIGKILL, et un
+    # init récupère les processus de Chromium. Le bac à sable de Chromium demande en plus un profil
+    # seccomp adapté (voir docs/CLOUD.md §7) : sans lui, le worker désactive le Cloud au démarrage.
+    stop_grace_period: 150s
+    init: true
     env_file: [.env]
     environment:
       DATABASE_URL: postgres://selio_app:${APP_DB_PASSWORD}@postgres:5432/selio
