@@ -45,6 +45,28 @@ export default async function authRoutes(app: FastifyInstance, opts: { cookieSec
     await auth.changePassword(app.services, ctx.userId, (req.body ?? {}) as { current?: string; next?: string });
     reply.status(204);
   });
+
+  // Mot de passe oublié : 204 dans tous les cas et dans le même temps (aucune énumération des comptes,
+  // ni par la réponse ni au chronomètre), 5 demandes par quart d'heure et par adresse IP. L'email part
+  // hors du chemin de la réponse : on n'attend pas l'aller-retour SMTP, on journalise seulement son issue.
+  app.post("/api/auth/password/forgot", { config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } }, async (req, reply) => {
+    const { delivery } = await auth.requestPasswordReset(app.services, req.body, { ip: req.ip });
+    if (delivery) void delivery.then((outcome) => { if (!outcome.sent) req.log.warn({ error: outcome.error }, "mot de passe oublié : email non envoyé"); });
+    reply.status(204);
+  });
+
+  // Nouveau mot de passe depuis le lien reçu : 400 token_invalid si inconnu, expiré ou déjà utilisé ; sessions fermées.
+  app.post("/api/auth/password/reset", { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } }, async (req, reply) => {
+    await auth.resetPassword(app.services, req.body, { ip: req.ip });
+    reply.status(204);
+  });
+
+  // Acceptation d'une invitation : définit le mot de passe et ouvre la session (même réponse que la connexion).
+  app.post("/api/auth/invite/accept", { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } }, async (req, reply) => {
+    const s = await auth.acceptInvite(app.services, req.body, { ip: req.ip, userAgent: req.headers["user-agent"]?.slice(0, 200) ?? null });
+    reply.setCookie(SESSION_COOKIE, s.sessionId, cookieOpts);
+    return bootstrapSession(app, req, s.orgId!, s);
+  });
 }
 
 /** Construit le contexte juste après connexion (le hook onRequest a tourné avant la pose du cookie). */

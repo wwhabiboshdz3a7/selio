@@ -1,8 +1,7 @@
-import { listingGenerationInput, type ListingDraft, type ListingGenerationOutput } from "@selio/contracts";
+import { listingGenerationInput, quotasForPlan, type ListingDraft, type ListingGenerationOutput } from "@selio/contracts";
 import { repos } from "@selio/db";
 import { AIError } from "@selio/ai";
 import { comparablesFromSales, priceListingDraft } from "@selio/domain";
-import { PLAN_QUOTAS } from "@selio/demo-data";
 import { AppError, nowIso, requireAction, withOrg, type OrgContext } from "../context";
 
 /**
@@ -20,7 +19,12 @@ export async function generateListing(ctx: OrgContext, raw: unknown, signal?: Ab
   const monthStart = new Date(Date.UTC(ctx.services.now().getUTCFullYear(), ctx.services.now().getUTCMonth(), 1)).toISOString();
   const { photos, hints } = parsed.data;
   const req = await withOrg(ctx, async (tx) => {
-    const quotas = (await repos.subscriptions.get(tx))?.quotas ?? PLAN_QUOTAS.free;
+    const quotas = (await repos.subscriptions.get(tx))?.quotas ?? quotasForPlan("free");
+    // Quota Studio du plan (annonces générées par mois, remis à zéro le 1er du mois UTC).
+    const studioQuota = quotas.studioListingsPerMonth;
+    if (studioQuota <= 0) throw new AppError("quota_exceeded", "Studio n'est pas inclus dans votre offre.", 402);
+    if ((await repos.usage.sumKindSince(tx, "studio.listing", monthStart)) >= studioQuota) throw new AppError("quota_exceeded", `Quota Studio du mois atteint (${studioQuota}).`, 402);
+    // Quota IA mensuel (plan et réglage de l'organisation), commun à toutes les requêtes IA.
     const quota = Math.min(quotas.aiRequestsPerMonth, org.settings.ai.monthlyRequestQuota || Infinity);
     if ((await repos.aiRequests.countSince(tx, monthStart)) >= quota) throw new AppError("quota_exceeded", `Quota IA mensuel atteint (${quota}).`, 402);
     return repos.aiRequests.create(tx, { kind: "listing_generation", provider: ctx.services.ai.provider.name, model: ctx.services.ai.provider.model, status: "running" });
@@ -40,6 +44,8 @@ export async function generateListing(ctx: OrgContext, raw: unknown, signal?: Ab
   return withOrg(ctx, async (tx) => {
     await repos.aiRequests.update(tx, req.id, { status: "succeeded", validated: true, promptTokens: result.usage.promptTokens, outputTokens: result.usage.outputTokens, latencyMs: Math.max(result.latencyMs, Date.now() - started), finishedAt: nowIso(ctx) });
     await repos.usage.record(tx, "ai.request", { requestId: req.id, kind: "listing_generation", source: result.source });
+    // Compteur Studio : une annonce rédigée avec succès.
+    await repos.usage.record(tx, "studio.listing", { requestId: req.id, source: result.source, photos: photos.length });
     const items = await repos.items.all(tx);
     // Comparables : ventes réelles de l'organisation (les estimations du radar ne sont pas des ventes).
     const comps = comparablesFromSales(await repos.orders.all(tx), new Map(items.map((i) => [i.id, i])));

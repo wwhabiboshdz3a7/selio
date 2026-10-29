@@ -9,14 +9,14 @@ import {
   ItemTransitionError, OrderTransitionError, breakdownBy, canChangeItemStatus, comparablesFromSales, daysInStock, diffItem, estimateResale, evaluateOffer, extractOfferCents, gateRule, itemStatusForOrder, jobDedupeKey, newId, orderDedupeKey, orderMargin, periodFromPreset, previousPeriod, purchaseOutcome, rankOpportunities, renderTemplate, runPurchaseChecks, salesKpis, salesSeries, sanitizeUntrustedText, scanForInjection, scoreOpportunity, stockKpis, transitionOrder, toCsv, EXPORT_HEADERS, inventoryToCsvRow, nextSku, seededRandom, hashString, localDayKey, type NegotiationResult, type PeriodPreset,
 } from "@selio/domain";
 import { getConnector, describeConnectors } from "@selio/connectors";
-import { AIService, MockAIProvider } from "@selio/ai";
+import { AIService, MockAIProvider, counterOfferWording } from "@selio/ai";
 import { buildDemoState } from "@selio/demo-data";
 import { DEAL_ENTRIES, LocalDemoStorage, buildMarketObservations, type DemoState, type DemoStorage } from "@selio/demo-data";
 import { PLAN_QUOTAS } from "@selio/demo-data";
-import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
+import { DataError, type AdminOrgUsage, type AdminOverview, type AdminUsageReport, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
 import type { AiHealthData } from "../data/types";
 import { effectiveAiQuota, summarizeAiRequests } from "@selio/domain";
-import { DEFAULT_TRIAL_DAYS, type TrialDays } from "@selio/contracts";
+import { PLANS, PLAN_LABELS, TRIAL_DAYS, buildUsageCounter, quotasForPlan, type PaidPlan, type PlanQuotas, type TrialDays, type UsageCounter } from "@selio/contracts";
 import { helpAskInput, type HelpAnswer } from "@selio/contracts";
 import { can } from "@selio/domain";
 import { whiteLabelInput as whiteLabelInputSchema, type WhiteLabel, type WhiteLabelInput } from "@selio/contracts";
@@ -30,6 +30,30 @@ function paginate<T>(items: T[], page = 1, pageSize = 25): Page<T> {
 
 function norm(s: string | null | undefined): string {
   return (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+type Subsidiaries = Pick<UsageSummary, "studio" | "track" | "cloud">;
+
+/** Compteurs par filiale (même règle que `subsidiaryUsageFrom` côté serveur) ; les filtres Track suivis n'ont pas encore de stockage. */
+function subsidiaryUsage(month: Record<string, number>, quotas: PlanQuotas, cloudToday: number): Subsidiaries {
+  const n = (k: string) => month[k] ?? 0;
+  return {
+    studio: { listings: buildUsageCounter(n("studio.listing"), quotas.studioListingsPerMonth), wornPhotos: buildUsageCounter(n("studio.worn_photo"), quotas.wornPhotosPerMonth) },
+    track: { scans: buildUsageCounter(n("track.scan"), quotas.trackScansPerMonth), photoSearches: buildUsageCounter(n("track.photo_search"), quotas.trackPhotoSearchesPerMonth), filtersFollowed: buildUsageCounter(0, quotas.trackFiltersFollowed) },
+    cloud: { actions: buildUsageCounter(cloudToday, quotas.automationActionsPerDay), included: quotas.cloudIncluded },
+  };
+}
+
+/** Compteurs surveillés pour l'alerte globale (les filtres Track, toujours à 0, n'y entrent pas). */
+function usageWatchList(counters: UsageSummary["counters"], s: Subsidiaries): UsageCounter[] {
+  return [...Object.values(counters), s.studio.listings, s.studio.wornPhotos, s.track.scans, s.track.photoSearches, s.cloud.actions];
+}
+
+/** Ligne de la vue administrateur à partir des compteurs (même règle que `orgUsageFrom` côté serveur). */
+function adminOrgUsage(base: Omit<AdminOrgUsage, "maxPercent" | "warning" | "exceeded">): AdminOrgUsage {
+  // Un quota nul (fonction non incluse) et rien d'utilisé n'est pas un dépassement.
+  const live = usageWatchList(base.counters, base).filter((c) => c.quota > 0 || c.used > 0);
+  return { ...base, maxPercent: live.reduce((m, c) => Math.max(m, c.percent), 0), warning: live.some((c) => c.warning), exceeded: live.some((c) => c.exceeded) };
 }
 
 /**
@@ -168,10 +192,11 @@ export class DemoClient implements DataClient {
     this.state.user = { ...this.state.user, email: input.email, displayName: input.displayName };
     this.state.users[0] = this.state.user;
     this.state.org = { ...this.state.org, name: input.orgName, settings: { ...this.state.org.settings, onboarding: { completedSteps: ["account"], dismissed: false } } };
-    // Essai Découverte choisi à l'inscription (même règle que le serveur).
-    const trialDays = input.trialDays ?? DEFAULT_TRIAL_DAYS;
-    this.state.subscription = { ...this.state.subscription, status: "trialing", currentPeriodEnd: new Date(this.clock().getTime() + trialDays * 86_400_000).toISOString() };
-    this.audit("auth.register", null, null, { mode: "demo", trialDays });
+    // Essai de 14 jours, seule durée (même règle que le serveur : une ancienne valeur est ramenée à 14).
+    // La carte sera enregistrée à l'inscription quand le paiement sera branché ; rien n'est débité avant la fin.
+    const trialDays: TrialDays = TRIAL_DAYS;
+    this.state.subscription = { ...this.state.subscription, plan: "pro", quotas: quotasForPlan("pro"), status: "trialing", cardOnFile: false, currentPeriodEnd: new Date(this.clock().getTime() + trialDays * 86_400_000).toISOString() };
+    this.audit("auth.register", null, null, { mode: "demo", trialDays, requested: input.trialDays ?? trialDays });
     this.persist();
     return this.session();
   }
@@ -183,6 +208,23 @@ export class DemoClient implements DataClient {
   }
   async switchOrg(): Promise<Session> {
     return this.session();
+  }
+  /** Démonstration : aucun email ne part ; la réponse est la même qu'en connecté (rien n'est révélé sur le compte). */
+  async requestPasswordReset(): Promise<void> {
+    await this.delay(200);
+    if (this.state) {
+      this.audit("auth.password_reset_requested", null, null, { simulated: true });
+      this.persist();
+    }
+  }
+  /** Les liens reçus par email viennent d'une installation connectée : la démonstration n'en émet aucun et ne peut pas les honorer. */
+  async resetPassword(): Promise<void> {
+    await this.delay(200);
+    throw new DataError("unavailable", "Indisponible en démonstration : ce lien vient d'une installation connectée. Passez en « Compte connecté » pour l'utiliser.", 409);
+  }
+  async acceptInvite(): Promise<Session> {
+    await this.delay(200);
+    throw new DataError("unavailable", "Indisponible en démonstration : ce lien vient d'une installation connectée. Passez en « Compte connecté » pour l'utiliser.", 409);
   }
 
   // ---------- organisation ----------
@@ -538,9 +580,7 @@ export class DemoClient implements DataClient {
     const st = this.s;
     const detail = await this.getConversation(conversationId);
     if (!st.org.settings.ai.enabled) throw new DataError("ai_unavailable", "L'assistant IA est désactivé dans les paramètres.", 409);
-    const monthKey = this.now().slice(0, 7);
-    const used = st.aiRequests.filter((r) => r.createdAt.startsWith(monthKey)).length;
-    const quota = Math.min(st.subscription.quotas.aiRequestsPerMonth, st.org.settings.ai.monthlyRequestQuota || Infinity);
+    const { used, quota } = this.aiMonth();
     if (used >= quota) throw new DataError("quota_exceeded", `Quota IA mensuel atteint (${quota}).`, 402);
     const item = detail.item;
     const evaluation = detail.lastOffer?.evaluation ?? null;
@@ -899,9 +939,8 @@ export class DemoClient implements DataClient {
           const ev = offer.evaluation;
           if (ev.decision === "hold" || ev.decision === "escalate") { skip(`Politique : ${ev.decision}`); continue; }
           const customer = this.customerById(conv.customerId);
-          const item = conv.itemId ? this.itemById(conv.itemId) : null;
           const fmt = (c: number) => (c / 100).toFixed(2).replace(".", ",") + " €";
-          const body = ev.decision === "accept" ? `Bonjour ${customer.displayName.split(" ")[0]}, c'est d'accord pour ${fmt(offer.offerCents)}. Faites l'offre sur l'annonce et je l'accepte.` : ev.decision === "counter" ? `Bonjour ${customer.displayName.split(" ")[0]}, merci pour votre proposition. Je peux descendre à ${fmt(ev.counterCents!)}, c'est mon meilleur prix pour ${item?.title ?? "cet article"}.` : `Bonjour ${customer.displayName.split(" ")[0]}, merci pour l'intérêt. Je ne peux pas descendre à ce prix, l'article reste disponible au prix affiché.`;
+          const body = ev.decision === "accept" ? `Bonjour ${customer.displayName.split(" ")[0]}, c'est d'accord pour ${fmt(offer.offerCents)}. Faites l'offre sur l'annonce et je l'accepte.` : ev.decision === "counter" ? `Bonjour ${customer.displayName.split(" ")[0]}, merci pour votre proposition. ${counterOfferWording(ev.counterCents!, ev.floorCents)}` : `Bonjour ${customer.displayName.split(" ")[0]}, merci pour l'intérêt. Je ne peux pas descendre à ce prix, l'article reste disponible au prix affiché.`;
           targets.push({ targetId: conv.id, kind: "automation.send_message", payload: { conversationId: conv.id, customerId: conv.customerId, body, offerCents: ev.decision === "counter" ? ev.counterCents : ev.decision === "accept" ? offer.offerCents : null, decision: ev.decision, reasons: ev.reasons, ruleName: rule.name } });
           continue;
         }
@@ -1167,8 +1206,13 @@ export class DemoClient implements DataClient {
     if (!parsed.success) throw new DataError("validation", parsed.error.issues[0]?.message ?? "Demande invalide", 400, parsed.error.flatten());
     if (!st.org.settings.ai.enabled) throw new DataError("ai_unavailable", "L'assistant IA est désactivé dans les paramètres.", 409);
     const monthKey = this.now().slice(0, 7);
-    const quota = Math.min(st.subscription.quotas.aiRequestsPerMonth, st.org.settings.ai.monthlyRequestQuota || Infinity);
-    if (st.aiRequests.filter((r) => r.createdAt.startsWith(monthKey)).length >= quota) throw new DataError("quota_exceeded", `Quota IA mensuel atteint (${quota}).`, 402);
+    // Quota Studio de l'offre (même règle et mêmes messages que le serveur) : 0 = Studio non inclus.
+    const studioQuota = st.subscription.quotas.studioListingsPerMonth;
+    if (studioQuota <= 0) throw new DataError("quota_exceeded", "Studio n'est pas inclus dans votre offre.", 402);
+    const studioUsed = st.usage.filter((u) => u.kind === "studio.listing" && u.createdAt.startsWith(monthKey)).reduce((s, u) => s + u.quantity, 0);
+    if (studioUsed >= studioQuota) throw new DataError("quota_exceeded", `Quota Studio du mois atteint (${studioQuota}).`, 402);
+    const ai = this.aiMonth();
+    if (ai.used >= ai.quota) throw new DataError("quota_exceeded", `Quota IA mensuel atteint (${ai.quota}).`, 402);
     const { photos, hints } = parsed.data;
     const images = photos.map((p) => p.url.slice(p.url.indexOf(",") + 1));
     const req: AiRequest = { id: newId(), orgId: st.org.id, kind: "listing_generation", provider: "mock", model: "selio-mock-v1", status: "running", conversationId: null, itemId: null, promptTokens: 0, outputTokens: 0, latencyMs: 0, validated: false, rejectionReason: null, error: null, createdAt: this.now(), finishedAt: null };
@@ -1182,6 +1226,8 @@ export class DemoClient implements DataClient {
     req.latencyMs = res.latencyMs;
     req.finishedAt = this.now();
     this.usage("ai.request", { requestId: req.id, kind: "listing_generation" });
+    // Chaque annonce rédigée compte aussi dans le quota mensuel de Studio (page « Mon utilisation »).
+    this.usage("studio.listing", { requestId: req.id });
     this.persist();
     return this.priceDraft(res.data, { source: res.source, provider: res.provider, model: res.model, latencyMs: res.latencyMs, warnings: res.warnings, purchasePriceCents: hints.purchasePriceCents ?? null, simulated: true });
   }
@@ -1367,18 +1413,60 @@ export class DemoClient implements DataClient {
   async getSubscription(): Promise<Subscription> {
     return this.s.subscription;
   }
+  /**
+   * Compteur IA du mois, même règle que le refus côté serveur (`repos.aiRequests.countSince` +
+   * `effectiveAiQuota`) : toutes les requêtes de l'historique (échecs compris, questions d'aide
+   * exclues) face au plus petit entre le quota du plan et le réglage de l'organisation
+   * (`settings.ai.monthlyRequestQuota`, 500 par défaut). Le refus à la limite et « Mon
+   * utilisation » lisent la même chose : jamais « 33 % » pendant que la 501e requête est refusée.
+   */
+  private aiMonth(): { used: number; quota: number } {
+    const st = this.s;
+    const monthKey = this.now().slice(0, 7);
+    const used = st.aiRequests.filter((r) => r.kind !== "help_answer" && r.createdAt.startsWith(monthKey)).length;
+    return { used, quota: effectiveAiQuota(st.subscription.quotas.aiRequestsPerMonth, st.org.settings.ai.monthlyRequestQuota) };
+  }
+  /**
+   * Même calcul que le serveur (packages/core/src/services/billing.ts getUsage) : compteurs du mois
+   * depuis le 1er (UTC), actions Cloud du jour, pourcentage plafonné et alerte à 80 %. Le compteur
+   * IA suit la règle du refus (`aiMonth`), pas seulement les succès face au quota du plan.
+   */
   async getUsage(): Promise<UsageSummary> {
     const now = this.clock();
     const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
     const inMonth = this.s.usage.filter((u) => new Date(u.createdAt) >= from);
     const count = (k: UsageEvent["kind"]) => inMonth.filter((u) => u.kind === k).reduce((s, u) => s + u.quantity, 0);
-    return { period: { from: from.toISOString(), to: now.toISOString() }, aiRequests: count("ai.request"), automationActions: count("automation.action"), connectorSyncs: count("connector.sync"), exports: count("export.csv"), extensionCaptures: count("extension.capture"), quotas: this.s.subscription.quotas, itemsCount: this.s.items.filter((i) => i.status !== "archived").length, connectionsCount: this.s.connections.filter(countsTowardQuota).length, membersCount: this.s.memberships.length };
+    const cloudToday = inMonth.filter((u) => u.kind === "cloud.action" && new Date(u.createdAt) >= dayStart).reduce((s, u) => s + u.quantity, 0);
+    const quotas = this.s.subscription.quotas;
+    const ai = this.aiMonth();
+    const aiRequests = ai.used;
+    const itemsCount = this.s.items.filter((i) => i.status !== "archived").length;
+    const connectionsCount = this.s.connections.filter(countsTowardQuota).length;
+    const membersCount = this.s.memberships.length;
+    const counters = { aiRequests: buildUsageCounter(aiRequests, ai.quota), items: buildUsageCounter(itemsCount, quotas.items), connections: buildUsageCounter(connectionsCount, quotas.connections), members: buildUsageCounter(membersCount, quotas.members) };
+    const subsidiaries = subsidiaryUsage({ "studio.listing": count("studio.listing"), "studio.worn_photo": count("studio.worn_photo"), "track.scan": count("track.scan"), "track.photo_search": count("track.photo_search") }, quotas, cloudToday);
+    return {
+      period: { from: from.toISOString(), to: now.toISOString() },
+      aiRequests,
+      automationActions: count("automation.action"),
+      connectorSyncs: count("connector.sync"),
+      exports: count("export.csv"),
+      extensionCaptures: count("extension.capture"),
+      quotas,
+      itemsCount,
+      connectionsCount,
+      membersCount,
+      counters,
+      ...subsidiaries,
+      warning: usageWatchList(counters, subsidiaries).some((c) => c.warning),
+    };
   }
-  async startCheckout(plan: Plan) {
+  async startCheckout(plan: PaidPlan) {
     await this.delay(300);
     this.audit("billing.checkout_simulated", "subscription", this.s.subscription.id, { plan });
     this.persist();
-    return { url: null, simulated: true, message: `Démonstration : aucun paiement n'est déclenché. En mode connecté, Stripe (mode test) ouvrirait une page de paiement pour le plan « ${plan} ».` };
+    return { url: null, simulated: true, message: `Démonstration : aucun paiement n'est déclenché. En mode connecté, le paiement (mode test) ouvrirait une page pour l'offre ${PLAN_LABELS[plan]}.` };
   }
   async listUsageEvents(limit = 50): Promise<UsageEvent[]> {
     return this.s.usage.slice(0, limit);
@@ -1447,8 +1535,36 @@ export class DemoClient implements DataClient {
       ai: { status: ai, requests24h: recentAi.length, failures24h: recentAi.filter((r) => r.status !== "succeeded").length, tokens24h: recentAi.reduce((s, r) => s + r.promptTokens + r.outputTokens, 0), byOrg: [{ orgId: st.org.id, orgName: st.org.name, requests: recentAi.length }] },
       errors: [...st.jobs.filter((j) => j.error).map((j) => ({ at: j.updatedAt, source: `job ${j.kind}`, message: j.error!, orgId: st.org.id })), ...st.aiRequests.filter((r) => r.rejectionReason).map((r) => ({ at: r.createdAt, source: "ai.validation", message: r.rejectionReason!, orgId: st.org.id }))].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 20),
       orgs: [{ id: st.org.id, name: st.org.name, plan: st.subscription.plan, members: st.memberships.length, items: st.items.length, createdAt: st.org.createdAt }],
-      plans: (["free", "starter", "pro"] as const).map((plan) => ({ plan, quotas: PLAN_QUOTAS[plan], orgCount: st.subscription.plan === plan ? 1 : 0 })),
+      plans: PLANS.map((plan) => ({ plan, quotas: PLAN_QUOTAS[plan], orgCount: st.subscription.plan === plan ? 1 : 0 })),
     };
+  }
+  /**
+   * Utilisation par client (vue administrateur). En démonstration : l'organisation de la démo,
+   * calculée comme « Mon utilisation », suivie de trois organisations fictives (signalées « exemple »)
+   * pour montrer une Starter proche de sa limite, une Pro bloquée et une Agence avec le Cloud inclus.
+   */
+  async getAdminUsage(): Promise<AdminUsageReport> {
+    const st = this.s;
+    if (!st.user.isOperator) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+    const mine = await this.getUsage();
+    const now = this.clock();
+    const sample = (id: string, name: string, plan: PaidPlan, status: string, createdDaysAgo: number, used: { ai: number; items: number; connections: number; members: number; month?: Record<string, number>; cloudToday?: number }): AdminOrgUsage => {
+      const q = quotasForPlan(plan);
+      return adminOrgUsage({
+        id, name, plan, status,
+        createdAt: new Date(now.getTime() - createdDaysAgo * 86_400_000).toISOString(),
+        counters: { aiRequests: buildUsageCounter(used.ai, q.aiRequestsPerMonth), items: buildUsageCounter(used.items, q.items), connections: buildUsageCounter(used.connections, q.connections), members: buildUsageCounter(used.members, q.members) },
+        ...subsidiaryUsage(used.month ?? {}, q, used.cloudToday ?? 0),
+        automationActions: used.month?.["automation.action"] ?? 0,
+      });
+    };
+    const orgs: AdminOrgUsage[] = [
+      adminOrgUsage({ id: st.org.id, name: st.org.name, plan: st.subscription.plan, status: st.subscription.status, createdAt: st.org.createdAt, counters: mine.counters, studio: mine.studio, track: mine.track, cloud: mine.cloud, automationActions: mine.automationActions }),
+      sample("org-exemple-starter", "Friperie du Cours (exemple)", "starter", "active", 64, { ai: 262, items: 410, connections: 1, members: 1, month: { "automation.action": 38 } }),
+      sample("org-exemple-pro", "Atelier Lune (exemple)", "pro", "past_due", 120, { ai: 1500, items: 980, connections: 3, members: 2, month: { "studio.listing": 20, "studio.worn_photo": 4, "track.scan": 6, "track.photo_search": 11, "automation.action": 210 } }),
+      sample("org-exemple-agence", "Dressing Nomade (exemple)", "agence", "active", 31, { ai: 2100, items: 6400, connections: 7, members: 4, month: { "studio.listing": 51, "studio.worn_photo": 12, "track.scan": 20, "track.photo_search": 40, "automation.action": 1290 }, cloudToday: 620 }),
+    ];
+    return { period: mine.period, orgs: orgs.sort((a, b) => b.maxPercent - a.maxPercent || a.name.localeCompare(b.name, "fr")) };
   }
   async adminSetPlan(orgId: string, plan: Plan): Promise<void> {
     if (!this.s.user.isOperator) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);

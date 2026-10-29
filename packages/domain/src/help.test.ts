@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PLAN_QUOTAS, autoBuySettings } from "@selio/contracts";
+import { PLAN_LABELS, PLAN_QUOTAS, TRIAL_DAYS, autoBuySettings } from "@selio/contracts";
 import { HELP_CATEGORIES, helpEntries, HELP_NOT_FOUND_ANSWER, answerFromHelp, helpEntryById, helpStem, helpTokens, normalizeHelpText, searchHelp, toHelpSource } from "./help";
 import { REVIEW_THRESHOLD } from "./buying";
 import { scanForInjection } from "./untrusted";
@@ -29,14 +29,35 @@ describe("aide : contenu de la FAQ", () => {
   });
 
   it("les chiffres cités viennent du code (quotas, seuils, réglages par défaut)", () => {
-    expect(helpEntryById("plusieurs-comptes")!.answer).toContain(`jusqu'à ${PLAN_QUOTAS.starter.connections} avec Essentiel, jusqu'à ${PLAN_QUOTAS.pro.connections} avec Pro`);
+    expect(helpEntryById("plusieurs-comptes")!.answer).toContain(`${PLAN_QUOTAS.starter.connections} compte avec Starter, jusqu'à ${PLAN_QUOTAS.pro.connections} avec Pro`);
+    expect(helpEntryById("plusieurs-comptes")!.answer).toContain(`jusqu'à ${PLAN_QUOTAS.agence.connections} avec Agence`);
     expect(helpEntryById("inviter-membre")!.answer).toContain(`jusqu'à ${PLAN_QUOTAS.pro.members} avec Pro`);
+    expect(helpEntryById("inviter-membre")!.answer).toContain(`jusqu'à ${PLAN_QUOTAS.agence.members} avec Agence`);
+    expect(helpEntryById("quotas-filiales")!.answer).toContain(`${PLAN_QUOTAS.pro.studioListingsPerMonth} annonces et ${PLAN_QUOTAS.pro.wornPhotosPerMonth} photos portées par mois avec Pro`);
+    expect(helpEntryById("quotas-filiales")!.answer).toContain(`${PLAN_QUOTAS.agence.trackPhotoSearchesPerMonth} recherches et ${PLAN_QUOTAS.agence.trackHistoryMonths} mois avec Agence`);
+    expect(helpEntryById("starter-pro-ou-agence")!.answer).toContain(`${PLAN_QUOTAS.agence.connections} comptes et ${PLAN_QUOTAS.agence.members} personnes`);
     expect(helpEntryById("seuils-affaires")!.answer).toContain(`À partir de ${REVIEW_THRESHOLD}/100`);
     const auto = autoBuySettings.parse({});
     expect(helpEntryById("achat-auto")!.answer).toContain(`par défaut ${auto.threshold}/100`);
     expect(helpEntryById("achat-auto")!.answer).toContain(`${auto.cancelWindowMinutes} minutes`);
     expect(helpEntryById("cout-reel-achat")!.answer).toContain("0,70 € + 5 %");
-    expect(helpEntryById("essai-decouverte")!.answer).toMatch(/1 semaine \(7 jours, par défaut\) ou 1 mois \(30 jours\)/);
+    expect(helpEntryById("essai-decouverte")!.answer).toContain(`essai gratuit de ${TRIAL_DAYS} jours, un seul choix de durée`);
+    expect(helpEntryById("essai-decouverte")!.answer).toMatch(/carte bancaire est enregistrée dès l'inscription et rien n'est débité avant la fin/);
+    expect(TRIAL_DAYS).toBe(14);
+  });
+
+  it("offres : Starter, Pro et Agence partout, plus d'« Essentiel », pas de compte à la carte, essai de 14 jours", () => {
+    for (const e of helpEntries()) {
+      expect(`${e.question} ${e.answer}`, e.id).not.toMatch(/Essentiel/);
+      if (e.categoryId === "tarifs") expect(`${e.question} ${e.answer}`, e.id).not.toMatch(/1 semaine|30 jours|7 jours|Découverte/);
+    }
+    expect(Object.values(PLAN_LABELS)).toEqual(["Accès de base", "Starter", "Pro", "Agence"]);
+    expect(helpEntryById("compte-supplementaire")!.answer).toMatch(/^Non\./);
+    expect(helpEntryById("compte-supplementaire")!.answer).toContain(`Au-delà de ${PLAN_QUOTAS.agence.connections} comptes`);
+    expect(helpEntryById("quotas-filiales")!.answer).toContain("Studio n'est pas inclus dans Starter");
+    expect(helpEntryById("quotas-filiales")!.answer).toContain("prévient à 80 %");
+    expect(helpEntryById("offre-fondateurs")!.answer).toContain("−30 % pendant 6 mois sur Pro et Agence");
+    expect(helpEntryById("engagement")!.answer).toContain("10 mois (2 mois offerts)");
   });
 
   it("les produits à venir sont marqués « en développement »", () => {
@@ -58,7 +79,11 @@ describe("aide : recherche instantanée", () => {
   it("retrouve la bonne question, avec ou sans accents, en majuscules", () => {
     expect(top("Selio est-il affilié à Vinted ?")).toBe("affiliation-vinted");
     expect(top("SELIO EST IL AFFILIE A VINTED")).toBe("affiliation-vinted");
-    expect(top("essai gratuit un mois")).toBe("essai-decouverte");
+    expect(top("essai gratuit 14 jours")).toBe("essai-decouverte");
+    expect(top("compte vinted supplémentaire à la carte")).toBe("compte-supplementaire");
+    expect(top("quota studio par mois")).toBe("quotas-filiales");
+    expect(top("différence entre starter pro et agence")).toBe("starter-pro-ou-agence");
+    expect(top("offre fondateurs")).toBe("offre-fondateurs");
     expect(top("plusieurs comptes vinted")).toBe("plusieurs-comptes");
     expect(top("mot de passe oublié")).toBe("securite-compte");
     expect(top("le radar trouve de vraies annonces ?")).toBe("source-radar");

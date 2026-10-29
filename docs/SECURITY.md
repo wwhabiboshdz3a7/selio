@@ -23,7 +23,7 @@
 - Sortie IA : schéma + politique (prix imposé, pas de lien/HTML, pas de fuite).
 - Export CSV : neutralisation des formules (`=`, `+`, `-`, `@`).
 - Interface : React échappe par défaut ; l'extension n'utilise que `textContent` dans un shadow DOM fermé.
-- Fichiers : photos limitées à JPEG/PNG/WebP, 1,5 Mo, 12 par article (démo : data URL locale ; connecté : stockage à brancher avec URLs signées — voir limites).
+- Fichiers : photos limitées à JPEG/PNG/WebP, 1,5 Mo, 12 par article côté application ; côté stockage, 5 Mo maximum, type et taille signés dans l'URL de téléversement (démo : data URL locale ; connecté : `/api/uploads`, voir docs/STOCKAGE.md et limites).
 
 ## En-têtes et réseau
 - Netlify : CSP stricte (`script-src 'self'`, `frame-ancestors 'none'`), HSTS, nosniff, Referrer-Policy, Permissions-Policy.
@@ -39,5 +39,5 @@ Actions sensibles (connexion, membres, règles, jetons, connexions, exports, sup
 - Test de restauration à planifier mensuellement sur une base jetable. La clé `SECRETS_ENCRYPTION_KEY` doit être sauvegardée séparément : sans elle, les secrets de connexion sont irrécupérables (par conception).
 
 ## Limites connues
-- Pas de 2FA ; pas de réinitialisation de mot de passe par email (service d'email non configuré) ; les invitations créent un compte avec mot de passe aléatoire à définir par l'administrateur.
-- Le stockage de fichiers privé avec URLs signées est prévu (interface) mais non branché : en mode connecté les photos sont des URL/data URL dans la base, à remplacer par un stockage objet avant mise en production.
+- Pas de 2FA. Réinitialisation du mot de passe et invitations par email : jetons de 32 octets à usage unique dont seule l'empreinte SHA-256 est stockée (1 h / 7 jours), réponse de « mot de passe oublié » identique et à temps constant qu'un compte existe ou non, pages web qui retirent le jeton de l'adresse avant le rendu. Tant que `EMAIL_PROVIDER=noop` (défaut, signalé au démarrage en production), aucun email ne part : le service d'email reste à choisir.
+- Stockage des photos : URLs signées (SigV4) vers un stockage S3 compatible sur notre machine, type et taille imposés par la signature, clés `org/<orgId>/…` vérifiées ; côté API prêt (`/api/uploads`), l'envoi depuis le navigateur reste à brancher et, sans `STORAGE_ENDPOINT`, les photos restent des URL/data URL dans la base.

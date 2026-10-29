@@ -1,5 +1,6 @@
 export * from "./common";
 export * from "./org";
+export * from "./usage";
 export * from "./inventory";
 export * from "./crm";
 export * from "./messaging";

@@ -5,7 +5,7 @@ import { AIMetrics } from "./metrics";
 import { AIQueue } from "./queue";
 import { buildHelpAnswerRequest, buildListingGenerationRequest, buildListingRequest, buildReplyRequest, type HelpAnswerContext, type ListingContext, type ListingGenerationContext, type ReplyContext } from "./prompts";
 import { fallbackReply, validateHelpAnswer, validateReplySuggestion } from "./policy/validate";
-import { AIError, toAIError, type AIProvider, type GenerateOptions, type HealthResult } from "./types";
+import { AIError, toAIError, type AIProvider, type EmbedResult, type GenerateOptions, type HealthResult } from "./types";
 
 export interface QuotaGuard {
   /** Lève AIError("quota_exceeded") si l'organisation a épuisé son quota. */
@@ -107,7 +107,7 @@ export class AIService {
     try {
       await this.opts.quota?.check(orgId, kind);
       const result = await this.queue.enqueue(() => this.breaker.run(() => fn({ signal, timeoutMs: this.opts.timeoutMs })), signal);
-      this.metrics.success(result.latencyMs, result.usage);
+      this.metrics.success(result.latencyMs, result.usage, kind);
       await this.opts.quota?.record(orgId, kind, result.usage);
       return result;
     } catch (err) {
@@ -191,6 +191,28 @@ export class AIService {
       throw new AIError("invalid_output", `Réponse d'aide écartée (${v.code}) : ${v.reason}`, false, res.raw);
     }
     return { data: v.output, provider: res.provider, model: res.model, latencyMs: res.latencyMs, usage: res.usage };
+  }
+
+  /** Le fournisseur sait-il produire des embeddings (modèle 2) ? */
+  get canEmbed(): boolean {
+    return typeof this.opts.provider.embed === "function";
+  }
+
+  /**
+   * Embeddings (modèle 2, « les prix ») : vecteurs pour retrouver les ventes
+   * comparables. Passe par la file et le disjoncteur comme les générations,
+   * et mesure sa latence sous le rôle « embed » (séparée des générations de
+   * texte, bien plus longues). Les textes vides sont refusés ici, avant la file et le
+   * disjoncteur : une erreur d'appelant n'est pas une panne du serveur.
+   */
+  async embed(orgId: string, texts: string[], opts: { signal?: AbortSignal } = {}): Promise<EmbedResult> {
+    const provider = this.opts.provider;
+    if (typeof provider.embed !== "function") {
+      throw new AIError("config", `Le fournisseur IA « ${provider.name} » ne produit pas d'embeddings (modèle 2 absent)`, false);
+    }
+    if (texts.length === 0) return { embeddings: [], dimensions: 0, usage: { promptTokens: 0, outputTokens: 0 }, latencyMs: 0, model: provider.model, provider: provider.name };
+    if (texts.some((t) => typeof t !== "string" || t.trim().length === 0)) throw new AIError("config", "Chaque texte à vectoriser doit être non vide", false);
+    return this.run(orgId, "embed", (o) => provider.embed!(texts, o), opts.signal);
   }
 
   async describeListing(orgId: string, ctx: ListingContext, signal?: AbortSignal) {

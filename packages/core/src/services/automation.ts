@@ -1,6 +1,7 @@
+import { counterOfferWording } from "@selio/ai";
 import { automationRuleCreate, jobQuery, type AutomationRule, type Job } from "@selio/contracts";
 import { repos, type Tx } from "@selio/db";
-import { PERSONAL_ACCOUNT_SKIP, daysInStock, evaluateOffer, gateRule, isAutomatable, jobDedupeKey, localDayKey, renderTemplate, retryDelayMs } from "@selio/domain";
+import { PERSONAL_ACCOUNT_SKIP, daysInStock, evaluateOffer, gateRule, isAutomatable, jobDedupeKey, localDayKey, renderTemplate, retryDelayMs, type NegotiationResult } from "@selio/domain";
 import { AppError, nowIso, requireAction, withOrg, type OrgContext } from "../context";
 import type { AutomationState } from "../types-data";
 import { sendMessageTx } from "./messaging";
@@ -119,6 +120,18 @@ export async function executeJobTx(ctx: OrgContext, tx: Tx, job: Job): Promise<J
   }
 }
 
+/**
+ * Message de négociation automatique (sans IA) selon la décision de la politique.
+ * Contre-offre : « dernier prix » seulement au prix plancher (counterCents === floorCents),
+ * formule neutre sinon ; jamais « c'est mon meilleur prix » quand le plancher est plus bas.
+ */
+export function autoNegotiateBody(ev: NegotiationResult, offerCents: number, firstName: string): string {
+  const fmt = (c: number) => (c / 100).toFixed(2).replace(".", ",") + " €";
+  if (ev.decision === "accept") return `Bonjour ${firstName}, c'est d'accord pour ${fmt(offerCents)}. Faites l'offre sur l'annonce et je l'accepte.`;
+  if (ev.decision === "counter" && ev.counterCents !== null) return `Bonjour ${firstName}, merci pour votre proposition. ${counterOfferWording(ev.counterCents, ev.floorCents)}`;
+  return `Bonjour ${firstName}, merci pour l'intérêt. Je ne peux pas descendre à ce prix, l'article reste disponible au prix affiché.`;
+}
+
 export interface RunResult { evaluated: number; created: number; skipped: { reason: string; count: number }[] }
 
 export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): Promise<RunResult> {
@@ -146,9 +159,7 @@ export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): 
         const ev = evaluateOffer({ item, offerCents: last.offerCents, rules: org.settings.margin, roundsSoFar: conv.negotiationRounds, now });
         if (ev.decision === "hold" || ev.decision === "escalate") { skip(`Politique : ${ev.decision}`); continue; }
         const customer = await repos.customers.byId(tx, conv.customerId);
-        const fmt = (c: number) => (c / 100).toFixed(2).replace(".", ",") + " €";
-        const first = customer.displayName.split(" ")[0];
-        const body = ev.decision === "accept" ? `Bonjour ${first}, c'est d'accord pour ${fmt(last.offerCents)}. Faites l'offre sur l'annonce et je l'accepte.` : ev.decision === "counter" ? `Bonjour ${first}, merci pour votre proposition. Je peux descendre à ${fmt(ev.counterCents!)}, c'est mon meilleur prix pour ${item.title}.` : `Bonjour ${first}, merci pour l'intérêt. Je ne peux pas descendre à ce prix, l'article reste disponible au prix affiché.`;
+        const body = autoNegotiateBody(ev, last.offerCents, customer.displayName.split(" ")[0] ?? "");
         targets.push({ targetId: conv.id, kind: "automation.send_message", payload: { conversationId: conv.id, customerId: conv.customerId, body, offerCents: ev.decision === "counter" ? ev.counterCents : ev.decision === "accept" ? last.offerCents : null, decision: ev.decision, reasons: ev.reasons, ruleName: rule.name } });
         continue;
       }

@@ -1,8 +1,105 @@
-import type { Plan } from "@selio/contracts";
+import { PLANS, aiSettings, buildUsageCounter, isPlan, quotasForPlan, resolveQuotas, type Plan, type PlanQuotas, type SubsidiaryUsage, type UsageCounter } from "@selio/contracts";
 import { repos } from "@selio/db";
-import { PLAN_QUOTAS } from "@selio/demo-data";
+import { effectiveAiQuota } from "@selio/domain";
 import { AppError, type OrgContext, type Services } from "../context";
 import type { AdminOverview, ServiceStatus } from "../types-data";
+import { subsidiaryUsageFrom, usageDayStart, usagePeriodStart } from "./billing";
+
+/** Ligne SQL de la vue administrateur de l'utilisation (repos.admin.orgUsage). */
+export type AdminOrgUsageRow = repos.AdminOrgUsageRow;
+
+/**
+ * Utilisation d'une organisation vue par l'opérateur (docs §5.2) : même forme de compteurs que
+ * `billing.getUsage` (utilisé / quota / pourcentage / alerte à 80 %), plus le compteur le plus
+ * avancé pour trier les clients proches de leur limite. Aucun secret, aucun détail d'article.
+ */
+export interface AdminOrgUsage {
+  id: string;
+  name: string;
+  plan: Plan;
+  status: string;
+  createdAt: string;
+  counters: { aiRequests: UsageCounter; items: UsageCounter; connections: UsageCounter; members: UsageCounter };
+  studio: SubsidiaryUsage["studio"];
+  track: SubsidiaryUsage["track"];
+  cloud: SubsidiaryUsage["cloud"];
+  /** Actions automatiques du mois (information, sans quota mensuel). */
+  automationActions: number;
+  /** Pourcentage du compteur le plus avancé (0–100). */
+  maxPercent: number;
+  /** Au moins un compteur à 80 % ou plus. */
+  warning: boolean;
+  /** Au moins un compteur atteint ou dépassé (fonction incluse dans l'offre). */
+  exceeded: boolean;
+}
+
+export interface AdminUsageReport {
+  /** Du 1er du mois (UTC) à maintenant : la date de remise à zéro de tous les compteurs mensuels. */
+  period: { from: string; to: string };
+  orgs: AdminOrgUsage[];
+}
+
+/**
+ * Quotas effectifs d'une ligne : le JSON de l'abonnement s'il est complet (devis sur mesure compris),
+ * sinon ceux du plan (ancien JSON d'avant les offres 1/3/10, organisation sans abonnement, JSON illisible).
+ */
+function quotasOfRow(row: Pick<AdminOrgUsageRow, "plan" | "quotas">, plan: Plan): PlanQuotas {
+  return resolveQuotas(plan, row.quotas);
+}
+
+/** Quota IA mensuel propre à l'organisation (`settings.ai.monthlyRequestQuota`, 0 = limite du plan), avec le défaut du schéma si absent. */
+function orgAiMonthlyQuota(raw: unknown): number {
+  const parsed = aiSettings.safeParse(raw ?? {});
+  return parsed.success ? parsed.data.monthlyRequestQuota : aiSettings.parse({}).monthlyRequestQuota;
+}
+
+/**
+ * Construit la ligne administrateur à partir de la ligne SQL (fonction pure, testée sans base).
+ * Le compteur IA suit la règle du refus (`messaging.suggestReply`, `studio.generateListing`) :
+ * requêtes du mois de la table ai_requests (échecs compris, aide exclue) face au plus petit entre
+ * le quota du plan et le réglage de l'organisation — jamais « 33 % » quand la 501e requête est refusée.
+ */
+export function orgUsageFrom(row: AdminOrgUsageRow): AdminOrgUsage {
+  const plan: Plan = isPlan(row.plan) ? row.plan : "free";
+  const quotas = quotasOfRow(row, plan);
+  const month = row.monthUsage ?? {};
+  const counters = {
+    aiRequests: buildUsageCounter(row.aiRequestsMonth ?? month["ai.request"] ?? 0, effectiveAiQuota(quotas.aiRequestsPerMonth, orgAiMonthlyQuota(row.aiSettings))),
+    items: buildUsageCounter(row.items, quotas.items),
+    connections: buildUsageCounter(row.connections, quotas.connections),
+    members: buildUsageCounter(row.members, quotas.members),
+  };
+  const { studio, track, cloud } = subsidiaryUsageFrom(month, quotas, row.cloudToday);
+  // Les filtres Track suivis n'ont pas encore de stockage (toujours 0) : ils ne pèsent pas dans l'alerte.
+  const watched = [...Object.values(counters), studio.listings, studio.wornPhotos, track.scans, track.photoSearches, cloud.actions];
+  // Un quota nul (fonction non incluse) et rien d'utilisé : ce n'est pas un dépassement.
+  const live = watched.filter((c) => c.quota > 0 || c.used > 0);
+  return {
+    id: row.id,
+    name: row.name,
+    plan,
+    status: row.status,
+    createdAt: row.createdAt,
+    counters,
+    studio,
+    track,
+    cloud,
+    automationActions: month["automation.action"] ?? 0,
+    maxPercent: live.reduce((m, c) => Math.max(m, c.percent), 0),
+    warning: live.some((c) => c.warning),
+    exceeded: live.some((c) => c.exceeded),
+  };
+}
+
+/** Vue « utilisation par client » : réservée aux opérateurs, triée du client le plus proche de sa limite au plus loin. */
+export async function adminUsage(ctx: OrgContext): Promise<AdminUsageReport> {
+  if (!ctx.isOperator) throw new AppError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+  const now = ctx.services.now();
+  const from = usagePeriodStart(now);
+  const rows = await ctx.services.db.withGlobal((tx) => repos.admin.orgUsage(tx, from, usageDayStart(now)));
+  const orgs = rows.map(orgUsageFrom).sort((a, b) => b.maxPercent - a.maxPercent || a.name.localeCompare(b.name, "fr"));
+  return { period: { from, to: now.toISOString() }, orgs };
+}
 
 export interface QueueStats { name: string; waiting: number; active: number; failed: number; completed: number; paused: boolean }
 export type QueueStatsProvider = () => Promise<QueueStats[]>;
@@ -58,17 +155,17 @@ export async function adminOverview(ctx: OrgContext, deps: { queues: QueueStatsP
     connectors: Object.entries(connectorsCount).map(([provider, v]) => ({ provider, ...v })),
     ai: { status: ai, requests24h, failures24h, tokens24h: tokens24h + metrics.promptTokens * 0, byOrg: byOrg.sort((a, b) => b.requests - a.requests).slice(0, 20) },
     errors: errors.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 20),
-    orgs: orgs.map((o) => ({ ...o, plan: o.plan as Plan })),
-    plans: (["free", "starter", "pro"] as const).map((plan) => ({ plan, quotas: PLAN_QUOTAS[plan], orgCount: orgs.filter((o) => o.plan === plan).length })),
+    orgs: orgs.map((o) => ({ ...o, plan: (isPlan(o.plan) ? o.plan : "free") as Plan })),
+    plans: PLANS.map((plan) => ({ plan, quotas: quotasForPlan(plan), orgCount: orgs.filter((o) => o.plan === plan).length })),
   };
 }
 
 export async function adminSetPlan(ctx: OrgContext, orgId: string, plan: Plan): Promise<void> {
   if (!ctx.isOperator) throw new AppError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
-  if (!(plan in PLAN_QUOTAS)) throw new AppError("validation", "Plan inconnu", 400);
+  if (!isPlan(plan)) throw new AppError("validation", "Plan inconnu", 400);
   await ctx.services.db.withGlobal((tx) => repos.orgs.byId(tx, orgId));
   await ctx.services.db.withOrg(orgId, async (tx) => {
-    await repos.subscriptions.upsert(tx, { plan, quotas: PLAN_QUOTAS[plan] });
+    await repos.subscriptions.upsert(tx, { plan, quotas: quotasForPlan(plan) });
     await repos.audit.add(tx, { actorUserId: ctx.userId, action: "admin.plan_changed", targetType: "organization", targetId: orgId, meta: { plan }, ip: ctx.ip });
   });
 }

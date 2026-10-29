@@ -54,6 +54,14 @@ export function validateReplySuggestion(s: ReplySuggestion, ctx: ValidationConte
   } else {
     if (s.proposedPriceCents !== null) return { ok: false, code: "unexpected_price", reason: "Aucun prix n'était attendu." };
   }
+  // Règle des gabarits appliquée aussi au vrai modèle : jamais « meilleur prix » (le plancher peut être
+  // plus bas) ; « dernier prix » seulement pour une contre-offre au plancher de la politique.
+  if (/meilleur prix/i.test(reply)) return { ok: false, code: "false_last_price", reason: "« Meilleur prix » est interdit : le plancher peut être plus bas." };
+  if (/dernier prix/i.test(reply)) {
+    const floor = ctx.decision?.floorCents ?? ctx.floorPriceCents;
+    const atFloor = decision === "counter" && imposed !== null && imposed <= floor;
+    if (!atFloor) return { ok: false, code: "false_last_price", reason: "« Dernier prix » annoncé alors que la proposition n'est pas au plancher." };
+  }
   // Ne jamais laisser fuiter le prix d'achat ou le plancher.
   const mentioned = extractAllPricesCents(reply);
   if (ctx.purchasePriceCents > 0 && mentioned.includes(ctx.purchasePriceCents) && ctx.purchasePriceCents !== imposed) {
@@ -74,6 +82,17 @@ export function extractAllPricesCents(text: string): number[] {
   return out;
 }
 
+/**
+ * Phrase de contre-offre des gabarits sans IA. « Dernier prix » seulement quand la
+ * contre-offre est au prix plancher ; sinon une formule neutre. Jamais « c'est mon
+ * meilleur prix » quand le plancher est plus bas : ce serait faux.
+ */
+export function counterOfferWording(counterCents: number, floorCents: number): string {
+  const fmt = (c: number) => (c / 100).toFixed(2).replace(".", ",") + " €";
+  const proposal = counterCents === floorCents ? `Je peux aller jusqu'à ${fmt(counterCents)}, c'est mon dernier prix pour cet article.` : `Je peux vous le faire à ${fmt(counterCents)}.`;
+  return `${proposal} Si cela vous convient, faites l'offre à ce montant.`;
+}
+
 /** Brouillon déterministe sans IA : utilisé quand l'IA est indisponible ou désactivée. */
 export function fallbackReply(ctx: { decision: NegotiationResult | null; offerCents: number | null; buyerName: string | null; signature: string }): ReplySuggestion {
   const name = ctx.buyerName ? ` ${ctx.buyerName}` : "";
@@ -83,7 +102,7 @@ export function fallbackReply(ctx: { decision: NegotiationResult | null; offerCe
   if (d === "accept" && ctx.offerCents !== null)
     return { reply: `Bonjour${name}, c'est d'accord pour ${fmt(ctx.offerCents)}. Faites l'offre sur l'annonce et je l'accepte dès réception.${sig}`, intent: "accept_offer", proposedPriceCents: ctx.offerCents, confidence: 1, notes: "Gabarit sans IA" };
   if (d === "counter" && ctx.decision?.counterCents != null)
-    return { reply: `Bonjour${name}, merci pour votre proposition. Je peux descendre à ${fmt(ctx.decision.counterCents)}, c'est mon meilleur prix. Si cela vous convient, faites l'offre à ce montant.${sig}`, intent: "counter_offer", proposedPriceCents: ctx.decision.counterCents, confidence: 1, notes: "Gabarit sans IA" };
+    return { reply: `Bonjour${name}, merci pour votre proposition. ${counterOfferWording(ctx.decision.counterCents, ctx.decision.floorCents)}${sig}`, intent: "counter_offer", proposedPriceCents: ctx.decision.counterCents, confidence: 1, notes: "Gabarit sans IA" };
   if (d === "decline")
     return { reply: `Bonjour${name}, merci pour l'intérêt porté à l'article. Je ne peux pas descendre à ce prix, il reste disponible au prix affiché.${sig}`, intent: "decline_offer", proposedPriceCents: null, confidence: 1, notes: "Gabarit sans IA" };
   if (d === "escalate" || d === "hold")

@@ -6,7 +6,7 @@ _Version du 16 octobre 2026 · branche `claude/gracious-wright-rf41nt`_
 
 - **Démo sur Netlify : aucune clé.** Glissez le dossier de l'archive `livraison/selio-demo-netlify.zip` sur https://app.netlify.com/drop.
 - **Mode connecté** (vrais comptes, base de données) : un serveur Linux (API + worker), PostgreSQL 16 et Redis, avec les clés des sections 2 et 3.
-- **Votre modèle IA** : un PC avec Ollama, un modèle de texte et un modèle de vision (section 4).
+- **Votre IA** : la machine avec Ollama et ses trois modèles — « mon IA perso » (texte), le modèle des photos et le modèle des prix (section 4).
 - Ce dont vous n'avez **pas** besoin : voir la section « Inutile ».
 
 ## 1. Site web sur Netlify (vitrine + application)
@@ -44,20 +44,21 @@ Même fichier .env que ci-dessus (API et worker).
 | `OPERATOR_EMAILS` | Recommandé | `vous@domaine.fr` | Comptes ayant accès à l'administration Selio. |
 | `PORT / HOST / LOG_LEVEL` | Facultatif | `8787 / 0.0.0.0 / info` | Valeurs par défaut adaptées. |
 
-## 4. IA : votre modèle personnel (générateur d'annonces, réponses)
+## 4. IA : mon IA perso et les deux modèles qui l'épaulent (annonces, réponses, prix)
 
-Le navigateur n'appelle jamais l'IA : seuls l'API et le worker parlent au serveur Ollama, idéalement par réseau privé (VPN). Sans ces variables, l'IA reste simulée (démo uniquement).
+Le navigateur n'appelle jamais l'IA : seuls l'API et le worker parlent au serveur Ollama, idéalement par réseau privé (VPN). Sans ces variables, l'IA reste simulée (démo uniquement). Trois modèles, tous sur la machine : le détail et les commandes d'installation sont dans docs/OLLAMA-SETUP.md.
 
 | Variable | Statut | Exemple / format | À quoi elle sert |
 |---|---|---|---|
 | `AI_PROVIDER` | Obligatoire | `ollama` | « mock » (simulateur) est interdit en production. |
 | `OLLAMA_BASE_URL` | Obligatoire | `http://10.0.0.5:11434` | Adresse (privée) du PC qui fait tourner Ollama. |
-| `OLLAMA_MODEL` | Obligatoire | `qwen2.5:7b-instruct` | Modèle de texte : réponses aux acheteurs, descriptions. Installer : ollama pull qwen2.5:7b-instruct |
-| `OLLAMA_VISION_MODEL` | Recommandé | `qwen2.5vl:7b (ou llama3.2-vision)` | NOUVEAU — modèle de vision : le générateur lit réellement les photos. Sans lui, l'annonce est rédigée à partir des indications seulement (signalé à l'écran). Installer : ollama pull qwen2.5vl:7b |
+| `OLLAMA_MODEL` | Obligatoire | `nom donné à part par Ibrahim` | « Mon IA perso », la voix : réponses aux acheteurs, annonces, aide. La valeur de démarrage (qwen2.5:7b-instruct) est à remplacer par le modèle choisi. Installer : ollama pull <nom> |
+| `OLLAMA_VISION_MODEL` | Recommandé | `qwen3-vl:8b` (défaut si absent) | Modèle 1, les photos : Studio lit réellement les photos, lecture des étiquettes, contrôle des photos. Laissé vide, l'annonce est rédigée à partir des indications seulement (signalé à l'écran). Installer : ollama pull qwen3-vl:8b |
+| `OLLAMA_EMBED_MODEL` | Recommandé | `qwen3-embedding:0.6b` (défaut si absent) | NOUVEAU — modèle 2, les prix : vecteurs pour retrouver les ventes comparables et estimer un prix. Laissé vide, les embeddings sont désactivés (erreur explicite). Installer : ollama pull qwen3-embedding:0.6b |
 | `OLLAMA_AUTH_HEADER` | Facultatif | `Bearer xxxxx` | NOUVEAU — en-tête d'autorisation si une passerelle protège Ollama. |
 | `AI_HEALTH_TOKEN` | Recommandé | `jeton long (≥ 16 caractères)` | Protège l'URL de supervision /api/ai/health. |
 | `ALLOW_AI_FALLBACK` | Obligatoire | `false` | En production, jamais de texte simulé présenté comme venant du modèle. |
-| `AI_TIMEOUT_MS, AI_MAX_CONCURRENCY, AI_CONTEXT_LIMIT, AI_MAX_OUTPUT_TOKENS, AI_QUEUE_MAX_PENDING, AI_CIRCUIT_FAILURES, AI_CIRCUIT_COOLDOWN_MS` | Facultatif | `45000, 2, 8192, 700, 100, 3, 60000` | Réglages de performance : valeurs par défaut prudentes, à ajuster après « pnpm ai:diagnose ». |
+| `AI_TIMEOUT_MS, AI_MAX_CONCURRENCY, AI_CONTEXT_LIMIT, AI_MAX_OUTPUT_TOKENS, AI_QUEUE_MAX_PENDING, AI_CIRCUIT_FAILURES, AI_CIRCUIT_COOLDOWN_MS` | Facultatif | `45000, 2, 8192, 700, 100, 3, 60000` | Réglages de performance : valeurs par défaut prudentes, à ajuster après « pnpm ai:bench » sur la machine (AI_MAX_CONCURRENCY aligné sur OLLAMA_NUM_PARALLEL). |
 
 ## 5. Paiement des abonnements (Stripe)
 
@@ -67,7 +68,7 @@ Uniquement si vous facturez des abonnements. Les clés se trouvent dans le table
 |---|---|---|---|
 | `STRIPE_SECRET_KEY` | Facultatif | `sk_test_…` | Clé secrète Stripe (mode test d'abord). |
 | `STRIPE_WEBHOOK_SECRET` | Facultatif | `whsec_…` | Signature des événements envoyés par Stripe à /api/billing/webhook. |
-| `STRIPE_PRICE_STARTER / STRIPE_PRICE_PRO` | Facultatif | `price_…` | Identifiants des tarifs créés dans Stripe. |
+| `STRIPE_PRICE_STARTER / STRIPE_PRICE_PRO / STRIPE_PRICE_AGENCE` | Facultatif | `price_…` | Identifiants des tarifs créés dans Stripe (Starter, Pro, Agence). |
 | `STRIPE_LIVE_ALLOWED` | Facultatif | `false` | Passer à true seulement après validation en mode test. |
 
 ## 6. Worker (tâches planifiées)
@@ -77,6 +78,29 @@ Mêmes variables base / Redis / chiffrement / IA que l'API. Les cadences ont des
 | Variable | Statut | Exemple / format | À quoi elle sert |
 |---|---|---|---|
 | `CRON_AUTOMATION_TICK, CRON_JOBS_PROCESS, CRON_CONNECTOR_SYNC, CRON_RADAR, CRON_RETENTION` | Facultatif | `*/5 * * * *, * * * * *, */15 * * * *, 0 * * * *, 0 3 * * *` | Expressions cron (UTC) : automatisations, file, synchronisation, radar, rétention. |
+
+## 7. Emails transactionnels (invitations, mot de passe oublié, échec de paiement, alertes)
+
+Même fichier .env que l'API. Sans rien, le fournisseur « noop » journalise chaque envoi (adresse masquée `i***@domaine`, jamais le contenu) et n'expédie rien : c'est le réglage de la démo et des tests. En production, « noop » est accepté mais signalé par un avertissement au démarrage : **le service d'email est à choisir avec Ibrahim** avant d'activer `smtp`. Les liens des emails pointent vers `PUBLIC_WEB_URL` (`/invitation?token=…`, `/mot-de-passe?token=…`) ; les jetons servent une fois (invitation : 7 jours, mot de passe : 1 heure) et seule leur empreinte est stockée.
+
+| Variable | Statut | Exemple / format | À quoi elle sert |
+|---|---|---|---|
+| `EMAIL_PROVIDER` | Facultatif | `noop` (défaut) ou `smtp` | `noop` : journalisation seule. `smtp` : envoi réel par le serveur de `SMTP_URL`. |
+| `SMTP_URL` | Obligatoire avec `smtp` | `smtp://utilisateur:motdepasse@smtp.exemple.fr:587` ou `smtps://…:465` | Serveur d'envoi (STARTTLS sur 587, TLS direct sur 465). Contient le mot de passe : jamais dans Git ni dans les journaux. |
+| `EMAIL_FROM` | Recommandé | `Selio <no-reply@votre-domaine.fr>` | Expéditeur affiché. Le domaine doit être autorisé par votre service d'email (SPF / DKIM), sinon les messages partent en indésirables. |
+
+## 8. Stockage des photos (S3 compatible, MinIO sur la machine)
+
+Les photos ne transitent jamais par l'API : le navigateur reçoit des URLs signées (envoi et lecture, courte durée) vers un stockage compatible S3 hébergé sur notre machine — les données restent en France. En local, `docker compose up -d minio` démarre MinIO avec le bucket `selio-photos`. Sans `STORAGE_ENDPOINT`, le stockage est désactivé (les routes `/api/uploads` répondent 503, signalé au démarrage). Détails et sécurité : docs/STOCKAGE.md.
+
+| Variable | Statut | Exemple / format | À quoi elle sert |
+|---|---|---|---|
+| `STORAGE_ENDPOINT` | Facultatif (vide = désactivé) | `http://127.0.0.1:9000` en local, `https://photos.votre-domaine.fr` en production | Adresse du service S3. Elle figure dans les URLs signées : le navigateur doit pouvoir la joindre (Caddy devant MinIO, CORS pour l'origine du site). |
+| `STORAGE_BUCKET` | Obligatoire si endpoint | `selio-photos` | Un seul bucket ; isolation par préfixe `org/<organisation>/`. |
+| `STORAGE_ACCESS_KEY / STORAGE_SECRET_KEY` | Obligatoires si endpoint | `identifiant / secret MinIO` | Compte dédié limité au bucket (pas le compte racine). Le secret ne sert qu'à signer côté API. |
+| `STORAGE_REGION` | Facultatif | `fr-mrs-1` | Région signée (MinIO accepte n'importe quelle valeur). |
+| `STORAGE_FORCE_PATH_STYLE` | Facultatif | `true` | `true` pour MinIO (`endpoint/bucket/clé`) ; `false` pour un S3 « virtual-hosted ». |
+| `STORAGE_PRESIGN_TTL_SECONDS` | Facultatif | `900` | Durée de vie des URLs signées (60 s à 7 jours ; viser court). |
 
 ## Réglages faits dans l'application (pas des clés)
 
@@ -110,19 +134,20 @@ Mêmes variables base / Redis / chiffrement / IA que l'API. Les cadences ont des
 ### Mode connecté (vrais comptes, base de données)
 
 1. Louer un serveur Linux (VPS) et y installer Docker.
-2. Cloner le dépôt, copier apps/api/.env.example vers deploy/.env et remplir les sections 2, 3 et 4.
+2. Cloner le dépôt, copier apps/api/.env.example vers deploy/.env et remplir les sections 2, 3 et 4 (puis 7 et 8 quand le service d'email et MinIO sont choisis).
 3. docker compose -f deploy/docker-compose.prod.yml up -d --build (migrations comprises, dont la 0003 de cette version).
 4. Mettre Caddy devant l'API (deploy/Caddyfile) pour le HTTPS, puis renseigner VITE_API_BASE_URL dans Netlify.
 
-### Brancher votre modèle IA
+### Brancher mon IA perso et ses deux modèles
 
-1. Sur le PC IA : installer Ollama, puis ollama pull qwen2.5:7b-instruct et ollama pull qwen2.5vl:7b.
-2. Renseigner AI_PROVIDER=ollama, OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_VISION_MODEL côté API et worker.
-3. Lancer pnpm ai:diagnose, puis vérifier Paramètres › Assistant IA (« Opérationnel »).
+1. Sur la machine : installer Ollama, puis ollama pull <modèle de texte donné par Ibrahim>, ollama pull qwen3-vl:8b et ollama pull qwen3-embedding:0.6b ; régler OLLAMA_MAX_LOADED_MODELS=3 et OLLAMA_KEEP_ALIVE=30m (docs/OLLAMA-SETUP.md).
+2. Renseigner AI_PROVIDER=ollama, OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_VISION_MODEL, OLLAMA_EMBED_MODEL côté API et worker.
+3. Lancer pnpm ai:diagnose (les trois modèles doivent être « présent »), puis pnpm ai:bench, puis vérifier Paramètres › Assistant IA (« Opérationnel »).
 
 ## Sécurité
 
 - Ne commitez jamais de fichier `.env` (déjà ignoré par Git).
 - Sauvegardez `SECRETS_ENCRYPTION_KEY` séparément de la base.
 - N'exposez pas le port 11434 d'Ollama sur Internet : VPN ou passerelle authentifiée.
-- En production, le serveur refuse de démarrer si `COOKIE_SECURE` n'est pas `true`, si `AI_PROVIDER=mock` ou si `ALLOW_AI_FALLBACK=true`.
+- En production, le serveur refuse de démarrer si `COOKIE_SECURE` n'est pas `true`, si `AI_PROVIDER=mock` ou si `ALLOW_AI_FALLBACK=true`. Il démarre mais avertit si `EMAIL_PROVIDER=noop` (aucun email envoyé) ou si `STORAGE_ENDPOINT` est vide (pas de photos).
+- `SMTP_URL` et `STORAGE_SECRET_KEY` sont des secrets au même titre que `SECRETS_ENCRYPTION_KEY` : fichier `.env` du serveur seulement.

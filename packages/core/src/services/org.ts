@@ -1,8 +1,10 @@
 import { ROLES, inviteInput, orgSettings as orgSettingsSchema, orgUpdate, type Membership, type Organization, type Role, type User } from "@selio/contracts";
-import { repos, hashPassword, newSecret } from "@selio/db";
+import { repos, hashPassword, hashSecret, newSecret } from "@selio/db";
 import { PLAN_QUOTAS } from "@selio/demo-data";
-import { AppError, requireAction, withOrg, type OrgContext } from "../context";
+import { invitationEmail } from "@selio/email";
+import { AppError, requireAction, sendEmail, webLink, withOrg, type OrgContext } from "../context";
 import type { Session } from "../types";
+import { INVITE_TTL_DAYS, TOKEN_BYTES } from "./auth";
 
 export async function getSession(ctx: OrgContext): Promise<Session> {
   return ctx.services.db.withGlobal(async (tx) => {
@@ -50,27 +52,62 @@ export async function listMembers(ctx: OrgContext): Promise<(Membership & { user
   return ctx.services.db.withGlobal((tx) => repos.memberships.listOrg(tx, ctx.orgId));
 }
 
+/**
+ * Invite une personne dans l'organisation : compte créé si besoin (mot de passe
+ * aléatoire inconnu de tous), jeton d'invitation à usage unique (7 jours) et email
+ * avec le lien `/invitation?token=…` où elle définit son mot de passe.
+ *
+ * L'email part APRÈS la transaction, jamais dedans : un aller-retour SMTP (jusqu'à
+ * plusieurs secondes, bien plus si le serveur ne répond pas) ne doit pas retenir une
+ * connexion du pool PostgreSQL (10 au total, partagées avec la résolution des sessions
+ * de toute l'API). Si l'envoi échoue, une seconde transaction défait ce qui a été créé
+ * (jeton invalidé, appartenance retirée, compte créé pour l'occasion supprimé) et
+ * l'appelant reçoit 503 : l'invitation peut être refaite.
+ */
 export async function inviteMember(ctx: OrgContext, raw: unknown): Promise<Membership & { user: User }> {
   requireAction(ctx, "members.manage");
   const parsed = inviteInput.safeParse(raw);
   if (!parsed.success) throw new AppError("validation", "Invitation invalide", 400, parsed.error.flatten());
   if (parsed.data.role === "owner") throw new AppError("validation", "Le rôle propriétaire ne s'attribue pas par invitation.", 400);
   const quotas = (await withOrg(ctx, (tx) => repos.subscriptions.get(tx)))?.quotas ?? PLAN_QUOTAS.free;
-  return ctx.services.db.withGlobal(async (tx) => {
+  const token = newSecret(TOKEN_BYTES);
+  // 1) Transaction courte : compte, appartenance, jeton, audit. Validée avant tout réseau.
+  const created = await ctx.services.db.withGlobal(async (tx) => {
     if ((await repos.memberships.countOrg(tx, ctx.orgId)) >= quotas.members) throw new AppError("quota_exceeded", `Quota de membres atteint (${quotas.members}).`, 402);
     let user = await repos.users.byEmail(tx, parsed.data.email);
+    const existingAccount = user !== null;
     if (!user) {
-      // Compte créé avec un mot de passe aléatoire : l'utilisateur le définira via la procédure de réinitialisation (à venir) ou un administrateur le communiquera.
       const { hash, salt } = await hashPassword(newSecret(24));
-      const created = await repos.users.create(tx, { email: parsed.data.email, displayName: parsed.data.email.split("@")[0]!, passwordHash: hash, passwordSalt: salt });
-      user = { ...created, passwordHash: hash, passwordSalt: salt };
+      const made = await repos.users.create(tx, { email: parsed.data.email, displayName: parsed.data.email.split("@")[0]!, passwordHash: hash, passwordSalt: salt });
+      user = { ...made, passwordHash: hash, passwordSalt: salt };
     }
     if (await repos.memberships.get(tx, ctx.orgId, user.id)) throw new AppError("conflict", "Cet utilisateur est déjà membre.", 409);
     const m = await repos.memberships.create(tx, { orgId: ctx.orgId, userId: user.id, role: parsed.data.role });
+    const now = ctx.services.now();
+    await repos.invites.invalidateForUser(tx, ctx.orgId, user.id, now.toISOString());
+    const invite = await repos.invites.create(tx, { orgId: ctx.orgId, userId: user.id, tokenHash: hashSecret(token), expiresAt: new Date(now.getTime() + INVITE_TTL_DAYS * 86_400_000).toISOString() });
+    const inviter = await repos.users.byId(tx, ctx.userId);
+    const org = await repos.orgs.byId(tx, ctx.orgId);
     await tx.query("select set_config('app.org_id', $1, true)", [ctx.orgId]);
-    await repos.audit.add(tx, { orgId: ctx.orgId, actorUserId: ctx.userId, action: "member.invited", targetType: "membership", targetId: m.id, meta: { role: m.role }, ip: ctx.ip });
-    return { ...m, user: await repos.users.byId(tx, user.id) };
+    await repos.audit.add(tx, { orgId: ctx.orgId, actorUserId: ctx.userId, action: "member.invited", targetType: "membership", targetId: m.id, meta: { role: m.role, inviteId: invite.id, existingAccount }, ip: ctx.ip });
+    return { m, user: await repos.users.byId(tx, user.id), inviteId: invite.id, existingAccount, orgName: org.name, inviterName: inviter.displayName };
   });
+  // 2) Hors transaction : l'aller-retour SMTP n'immobilise aucune connexion du pool.
+  const rendered = invitationEmail({ orgName: created.orgName, inviterName: created.inviterName, link: webLink(ctx.services, "/invitation", { token }), expiresInDays: INVITE_TTL_DAYS, existingAccount: created.existingAccount });
+  const outcome = await sendEmail(ctx.services, { to: created.user.email, ...rendered });
+  if (!outcome.sent && ctx.services.email) {
+    // 3) Compensation : sans email, le lien n'arrivera jamais ; on défait pour que l'invitation puisse être refaite.
+    await ctx.services.db.withGlobal(async (tx) => {
+      await repos.invites.invalidateForUser(tx, ctx.orgId, created.user.id, ctx.services.now().toISOString());
+      await repos.memberships.delete(tx, created.m.id);
+      // Compte créé pour cette invitation seulement : supprimé (cascade sur sessions, jetons) ; un compte existant est intact.
+      if (!created.existingAccount) await repos.users.delete(tx, created.user.id);
+      await tx.query("select set_config('app.org_id', $1, true)", [ctx.orgId]);
+      await repos.audit.add(tx, { orgId: ctx.orgId, actorUserId: ctx.userId, action: "member.invite_failed", targetType: "membership", targetId: created.m.id, meta: { role: created.m.role, inviteId: created.inviteId, reason: "email_unavailable" }, ip: ctx.ip });
+    });
+    throw new AppError("email_unavailable", "L'email d'invitation n'a pas pu être envoyé ; réessayez dans quelques minutes.", 503);
+  }
+  return { ...created.m, user: created.user };
 }
 
 export async function updateMemberRole(ctx: OrgContext, membershipId: string, role: Role): Promise<void> {

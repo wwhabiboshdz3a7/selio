@@ -1,14 +1,36 @@
 import { useQuery } from "@tanstack/react-query";
-import { PLAN_LABELS, type Plan } from "@selio/contracts";
-import { Alert, Card, KpiCard, PageHeader, Select, StatusBadge, Table, TableWrap, Td, Th, Tr, formatDate, formatDateTime, formatNumber } from "@selio/ui";
-import { useClient } from "../../lib/data/provider";
+import { PLAN_LABELS, type Plan, type UsageCounter } from "@selio/contracts";
+import { Alert, Card, KpiCard, PageHeader, Select, StatusBadge, Table, TableWrap, Td, Th, Tr, cn, formatDate, formatDateTime, formatNumber } from "@selio/ui";
+import { useClient, useData } from "../../lib/data/provider";
+import type { AdminOrgUsage } from "../../lib/data/types";
 import { QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { meterState } from "../components/usage";
 import { AdminTabs } from "./admin-tabs";
+
+/** Cellule « utilisé / quota » avec le pourcentage ; un tiret quand la fonction n'est pas incluse et rien n'est utilisé. */
+function UsageCell({ c }: { c: UsageCounter }) {
+  const state = meterState(c);
+  if (state === "none") return <Td numeric className="text-text-muted">—</Td>;
+  return (
+    <Td numeric>
+      <span className={cn(state === "exceeded" ? "text-danger" : state === "warning" ? "text-warning" : "text-text")}>{formatNumber(c.used)} / {c.quota > 0 ? formatNumber(c.quota) : "—"}</span>
+      <span className="block text-xs text-text-muted">{c.percent} %</span>
+    </Td>
+  );
+}
+
+function UsageStateBadge({ o }: { o: AdminOrgUsage }) {
+  if (o.exceeded) return <StatusBadge tone="danger">Limite atteinte</StatusBadge>;
+  if (o.warning) return <StatusBadge tone="warning">80 % atteints</StatusBadge>;
+  return <StatusBadge tone="success">Sous 80 %</StatusBadge>;
+}
 
 export default function Admin() {
   const client = useClient();
+  const { mode } = useData();
   const q = useQuery({ queryKey: ["admin-overview"], queryFn: () => client.getAdminOverview(), refetchInterval: 30_000 });
+  const usage = useQuery({ queryKey: ["admin-usage"], queryFn: () => client.getAdminUsage(), refetchInterval: 60_000 });
   const audit = useQuery({ queryKey: ["admin-audit"], queryFn: () => client.adminListAudit(50) });
   const setPlan = useAppMutation(({ orgId, plan }: { orgId: string; plan: Plan }) => client.adminSetPlan(orgId, plan), { invalidate: ["admin-overview", "subscription", "usage"], success: "Plan mis à jour (action journalisée)" });
   return (
@@ -49,8 +71,38 @@ export default function Admin() {
               <TableWrap className="mt-3 rounded-none border-0 border-t"><Table dense><thead><tr><Th>Organisation</Th><Th>Plan</Th><Th numeric>Membres</Th><Th numeric>Articles</Th><Th className="hide-mobile">Créée</Th></tr></thead><tbody>{d.orgs.map((o) => <Tr key={o.id}><Td className="font-medium">{o.name}</Td><Td><Select value={o.plan} onChange={(e) => setPlan.mutate({ orgId: o.id, plan: e.target.value as Plan })} aria-label={`Plan de ${o.name}`} className="max-w-40">{d.plans.map((p) => <option key={p.plan} value={p.plan}>{PLAN_LABELS[p.plan]}</option>)}</Select></Td><Td numeric>{o.members}</Td><Td numeric>{o.items}</Td><Td className="hide-mobile text-text-muted">{formatDate(o.createdAt)}</Td></Tr>)}</tbody></Table></TableWrap>
             </Card>
             <Card padding="none">
+              <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-4 md:px-5">
+                <h2 className="text-md font-semibold">Utilisation par client</h2>
+                {usage.data ? <p className="text-xs text-text-muted">Compteurs du mois depuis le {formatDate(usage.data.period.from)} · remise à zéro le 1er du mois · alerte à 80 %</p> : null}
+              </div>
+              {mode === "demo" ? <p className="px-4 pt-1 text-xs text-text-muted md:px-5">Démonstration : les organisations marquées « exemple » sont fictives ; la première est celle de la démo.</p> : null}
+              <QueryBoundary query={usage}>
+                {(r) => (
+                  <TableWrap className="mt-3 rounded-none border-0 border-t">
+                    <Table dense>
+                      <thead><tr><Th>Organisation</Th><Th>Plan</Th><Th numeric>Réponses IA</Th><Th numeric className="hide-mobile">Annonces Studio</Th><Th numeric className="hide-mobile">Scans Track</Th><Th numeric className="hide-mobile">Actions Cloud / jour</Th><Th numeric>Le plus avancé</Th><Th>État</Th></tr></thead>
+                      <tbody>
+                        {r.orgs.length === 0 ? <tr><td colSpan={8} className="h-16 text-center text-sm text-text-muted">Aucune organisation.</td></tr> : r.orgs.map((o) => (
+                          <Tr key={o.id}>
+                            <Td className="font-medium">{o.name}</Td>
+                            <Td><span className="block">{PLAN_LABELS[o.plan]}</span><span className="block text-xs text-text-muted">{o.status}</span></Td>
+                            <UsageCell c={o.counters.aiRequests} />
+                            <UsageCell c={o.studio.listings} />
+                            <UsageCell c={o.track.scans} />
+                            <UsageCell c={o.cloud.actions} />
+                            <Td numeric className={cn("font-medium", o.exceeded ? "text-danger" : o.warning ? "text-warning" : "text-text")}>{o.maxPercent} %</Td>
+                            <Td><UsageStateBadge o={o} /></Td>
+                          </Tr>
+                        ))}
+                      </tbody>
+                    </Table>
+                  </TableWrap>
+                )}
+              </QueryBoundary>
+            </Card>
+            <Card padding="none">
               <h2 className="px-4 pt-4 text-md font-semibold md:px-5">Quotas par plan</h2>
-              <TableWrap className="mt-3 rounded-none border-0 border-t"><Table dense><thead><tr><Th>Plan</Th><Th numeric>Articles</Th><Th numeric>IA / mois</Th><Th numeric>Actions / jour</Th><Th numeric>Connexions</Th><Th numeric>Membres</Th><Th numeric>Organisations</Th></tr></thead><tbody>{d.plans.map((p) => <Tr key={p.plan}><Td className="font-medium">{PLAN_LABELS[p.plan]}</Td><Td numeric>{formatNumber(p.quotas.items)}</Td><Td numeric>{formatNumber(p.quotas.aiRequestsPerMonth)}</Td><Td numeric>{formatNumber(p.quotas.automationActionsPerDay)}</Td><Td numeric>{p.quotas.connections}</Td><Td numeric>{p.quotas.members}</Td><Td numeric>{p.orgCount}</Td></Tr>)}</tbody></Table></TableWrap>
+              <TableWrap className="mt-3 rounded-none border-0 border-t"><Table dense><thead><tr><Th>Plan</Th><Th numeric>Articles</Th><Th numeric>IA / mois</Th><Th numeric>Actions / jour</Th><Th numeric>Connexions</Th><Th numeric>Membres</Th><Th numeric className="hide-mobile">Studio / mois</Th><Th numeric className="hide-mobile">Scans Track / mois</Th><Th className="hide-mobile">Cloud</Th><Th numeric>Organisations</Th></tr></thead><tbody>{d.plans.map((p) => <Tr key={p.plan}><Td className="font-medium">{PLAN_LABELS[p.plan]}</Td><Td numeric>{formatNumber(p.quotas.items)}</Td><Td numeric>{formatNumber(p.quotas.aiRequestsPerMonth)}</Td><Td numeric>{formatNumber(p.quotas.automationActionsPerDay)}</Td><Td numeric>{p.quotas.connections}</Td><Td numeric>{p.quotas.members}</Td><Td numeric className="hide-mobile">{p.quotas.studioListingsPerMonth}</Td><Td numeric className="hide-mobile">{p.quotas.trackScansPerMonth}</Td><Td className="hide-mobile text-text-muted">{p.quotas.cloudIncluded ? "Inclus" : "En option"}</Td><Td numeric>{p.orgCount}</Td></Tr>)}</tbody></Table></TableWrap>
             </Card>
             <Card>
               <h2 className="mb-3 text-md font-semibold">Dernières erreurs</h2>

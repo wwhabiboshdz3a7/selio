@@ -12,8 +12,9 @@
 ## Produit
 - [ ] Textes juridiques (mentions légales, confidentialité, conditions) complétés et validés par un conseil : ce sont des **brouillons**.
 - [ ] Tarifs définitifs décidés ; `VITE_SHOW_INDICATIVE_PRICING` ajusté ; CGV rédigées.
-- [ ] Service d'email choisi et branché (invitations, réinitialisation de mot de passe, notifications) — non implémenté.
-- [ ] Stockage objet pour les photos avec URLs signées — non branché (data URL en démo, URL en base en connecté).
+- [ ] Service d'email choisi avec Ibrahim et branché (`EMAIL_PROVIDER=smtp`, `SMTP_URL`, `EMAIL_FROM`, SPF/DKIM) : invitations et mot de passe oublié sont prêts ; par défaut `noop`, rien ne part (avertissement au démarrage).
+- [ ] Stockage objet pour les photos (MinIO sur la machine derrière Caddy, `STORAGE_*`) : routes `/api/uploads` prêtes, envoi depuis le navigateur à brancher (data URL en démo, URL en base en connecté tant que ce n'est pas fait).
+- [ ] `pnpm db:migrate` exécuté (0005 → 0008 : carte enregistrée, vue administrateur de l'usage, jetons, rattrapage des quotas des anciens abonnements).
 - [ ] Logo vectoriel officiel fourni (`logo-principal.svg`) pour favicons nets.
 
 ## Connecteurs et IA

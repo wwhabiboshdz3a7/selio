@@ -1,5 +1,5 @@
 import {
-  PLAN_QUOTAS, aiRequest, auditLog, automationRule, conversation as conversationSchema, customer as customerSchema, extensionToken, inventoryEvent, inventoryItem, job as jobSchema, marketplaceConnection, membership as membershipSchema, message as messageSchema, opportunity as opportunitySchema, order as orderSchema, organization as organizationSchema, purchaseRequest as purchaseSchema, radarSearch as radarSchema, shipment as shipmentSchema, subscription as subscriptionSchema, usageEvent, user as userSchema,
+  aiRequest, auditLog, automationRule, conversation as conversationSchema, customer as customerSchema, extensionToken, inventoryEvent, inventoryItem, job as jobSchema, marketplaceConnection, membership as membershipSchema, message as messageSchema, opportunity as opportunitySchema, order as orderSchema, organization as organizationSchema, purchaseRequest as purchaseSchema, radarSearch as radarSchema, shipment as shipmentSchema, subscription as subscriptionSchema, usageEvent, user as userSchema, quotasForPlan, isLegacyQuotas, resolveQuotas,
   type AiRequest, type AuditLog, type AutomationRule, type Conversation, type ConversationQuery, type Customer, type CustomerQuery, type ExtensionToken, type InventoryEvent, type InventoryItem, type InventoryQuery, type Job, type JobQuery, type MarketplaceConnection, type Membership, type Message, type Opportunity, type Order, type OrderQuery, type Organization, type Page, type PurchaseRequest, type RadarSearch, type Shipment, type Subscription, type UsageEvent, type User,
 } from "@selio/contracts";
 import type { ZodType, ZodTypeDef } from "zod";
@@ -37,8 +37,15 @@ export const users = {
   async setPassword(tx: Tx, id: string, passwordHash: string, passwordSalt: string): Promise<void> {
     await tx.update("users", id, { passwordHash, passwordSalt });
   },
+  async updateProfile(tx: Tx, id: string, patch: { displayName?: string }): Promise<User> {
+    return parse(userSchema, await tx.update("users", id, patch, "Utilisateur"));
+  },
   async countOperators(tx: Tx): Promise<number> {
     return tx.count("select count(*) from users where is_operator");
+  },
+  /** Suppression d'un compte (cascade : appartenances, sessions, jetons) ; réservé à la compensation d'une invitation non envoyée. */
+  async delete(tx: Tx, id: string): Promise<void> {
+    await tx.query("delete from users where id = $1", [id]);
   },
 };
 
@@ -110,6 +117,54 @@ export const sessions = {
   async purgeExpired(tx: Tx): Promise<number> {
     const rows = await tx.query("delete from sessions where expires_at < now() returning id");
     return rows.length;
+  },
+};
+
+/**
+ * Jetons de réinitialisation de mot de passe (table globale, hors contexte
+ * d'organisation). Seule l'empreinte SHA-256 du jeton est stockée ; `now` est
+ * l'horloge injectée des services (ISO) pour que les tests puissent la figer.
+ */
+export const passwordResets = {
+  async create(tx: Tx, input: { userId: string; tokenHash: string; expiresAt: string }): Promise<{ id: string }> {
+    const row = await tx.insert<{ id: string }>("password_resets", input);
+    return { id: row.id };
+  },
+  /** Jeton encore valable : ni utilisé, ni expiré à l'instant `now`. */
+  async findValid(tx: Tx, tokenHash: string, now: string) {
+    return tx.maybeOne<{ id: string; userId: string; expiresAt: string }>("select id, user_id, expires_at from password_resets where token_hash = $1 and used_at is null and expires_at > $2", [tokenHash, now]);
+  },
+  async markUsed(tx: Tx, id: string, now: string): Promise<void> {
+    await tx.query("update password_resets set used_at = $2 where id = $1 and used_at is null", [id, now]);
+  },
+  /** Invalide les demandes encore ouvertes d'un utilisateur (nouvelle demande, mot de passe changé). */
+  async invalidateForUser(tx: Tx, userId: string, now: string): Promise<number> {
+    return (await tx.query("update password_resets set used_at = $2 where user_id = $1 and used_at is null returning id", [userId, now])).length;
+  },
+  /** Ménage (tâche de rétention) : les jetons expirés depuis plus de 30 jours ne servent plus à rien, même à l'audit. */
+  async purgeExpired(tx: Tx): Promise<number> {
+    return (await tx.query("delete from password_resets where expires_at < now() - interval '30 days' returning id")).length;
+  },
+};
+
+/** Invitations à rejoindre une organisation (table globale : la personne n'est pas connectée quand elle accepte). */
+export const invites = {
+  async create(tx: Tx, input: { orgId: string; userId: string; tokenHash: string; expiresAt: string }): Promise<{ id: string }> {
+    const row = await tx.insert<{ id: string }>("invites", input);
+    return { id: row.id };
+  },
+  async findValid(tx: Tx, tokenHash: string, now: string) {
+    return tx.maybeOne<{ id: string; orgId: string; userId: string; expiresAt: string }>("select id, org_id, user_id, expires_at from invites where token_hash = $1 and accepted_at is null and expires_at > $2", [tokenHash, now]);
+  },
+  async markAccepted(tx: Tx, id: string, now: string): Promise<void> {
+    await tx.query("update invites set accepted_at = $2 where id = $1 and accepted_at is null", [id, now]);
+  },
+  /** Invalide les invitations encore ouvertes d'un membre dans une organisation (ré-invitation, acceptation, retrait). */
+  async invalidateForUser(tx: Tx, orgId: string, userId: string, now: string): Promise<number> {
+    return (await tx.query("update invites set accepted_at = $3 where org_id = $1 and user_id = $2 and accepted_at is null returning id", [orgId, userId, now])).length;
+  },
+  async purgeExpired(tx: Tx): Promise<number> {
+    return (await tx.query("delete from invites where expires_at < now() - interval '30 days' returning id")).length;
   },
 };
 
@@ -607,18 +662,33 @@ export const usage = {
     const rows = await tx.query<{ kind: string; total: number }>("select kind, sum(quantity) as total from usage_events where org_id = $1 and created_at >= $2 group by kind", [tx.orgId, since]);
     return Object.fromEntries(rows.map((r) => [r.kind, Number(r.total)]));
   },
+  /** Total d'un seul compteur depuis une date (contrôle d'un quota par filiale avant une action). */
+  async sumKindSince(tx: Tx, kind: UsageEvent["kind"], since: string): Promise<number> {
+    const row = await tx.maybeOne<{ total: number | string | null }>("select coalesce(sum(quantity), 0) as total from usage_events where org_id = $1 and kind = $2 and created_at >= $3", [tx.orgId, kind, since]);
+    return Number(row?.total ?? 0);
+  },
 };
+
+/**
+ * Ligne d'abonnement → objet : un JSON `quotas` d'avant les offres 1/3/10 (sans champs par filiale,
+ * anciennes valeurs 3 000 réponses / 5 comptes / 10 membres) est remplacé par les quotas du plan
+ * (`resolveQuotas`). La migration 0008 réécrit ces lignes ; ceci couvre celles insérées après coup.
+ */
+function toSubscription(row: Record<string, unknown>): Subscription {
+  const sub = parse(subscriptionSchema, row);
+  return isLegacyQuotas(row.quotas) ? { ...sub, quotas: resolveQuotas(sub.plan, row.quotas) } : sub;
+}
 
 export const subscriptions = {
   async get(tx: Tx): Promise<Subscription | null> {
-    const r = await tx.maybeOne("select * from subscriptions where org_id = $1", [tx.orgId]);
-    return r ? parse(subscriptionSchema, r) : null;
+    const r = await tx.maybeOne<Record<string, unknown>>("select * from subscriptions where org_id = $1", [tx.orgId]);
+    return r ? toSubscription(r) : null;
   },
   async upsert(tx: Tx, input: Partial<Subscription> & { stripeCustomerId?: string | null }): Promise<Subscription> {
     const existing = await subscriptions.get(tx);
-    if (existing) return parse(subscriptionSchema, await tx.update("subscriptions", existing.id, input, "Abonnement"));
+    if (existing) return toSubscription(await tx.update<Record<string, unknown>>("subscriptions", existing.id, input, "Abonnement"));
     const plan = input.plan ?? "free";
-    return parse(subscriptionSchema, await tx.insert("subscriptions", { plan, quotas: PLAN_QUOTAS[plan], ...input, orgId: tx.orgId }));
+    return toSubscription(await tx.insert<Record<string, unknown>>("subscriptions", { plan, quotas: quotasForPlan(plan), ...input, orgId: tx.orgId }));
   },
   async findByExternalRef(tx: Tx, ref: string) {
     return tx.maybeOne<{ id: string; orgId: string }>("select * from app_find_subscription_by_ref($1)", [ref]);
@@ -637,8 +707,48 @@ export const audit = {
   },
 };
 
+/** Ligne brute de la vue administrateur de l'utilisation (fonction SQL security definer, migration 0006). */
+export interface AdminOrgUsageRow {
+  id: string;
+  name: string;
+  plan: string;
+  status: string;
+  /** JSON `quotas` de l'abonnement tel qu'en base (anciens abonnements : champs par filiale absents). */
+  quotas: Record<string, unknown>;
+  createdAt: string;
+  members: number;
+  items: number;
+  connections: number;
+  /** Totaux du mois par type d'événement (`ai.request`, `studio.listing`…). */
+  monthUsage: Record<string, number>;
+  /** Actions Cloud du jour (UTC). */
+  cloudToday: number;
+  /**
+   * Requêtes IA du mois décomptées du quota (table `ai_requests`, échecs compris, questions d'aide
+   * exclues) : la même source que le refus à la 501e requête, pas seulement les succès.
+   */
+  aiRequestsMonth: number;
+  /** Réglage `settings.ai` de l'organisation tel qu'en base (quota mensuel propre, `monthlyRequestQuota`). */
+  aiSettings: Record<string, unknown>;
+}
+
 export const admin = {
   async orgSummary(tx: Tx) {
     return tx.query<{ id: string; name: string; plan: string; members: number; items: number; createdAt: string }>("select * from app_admin_org_summary()");
+  },
+  /** Utilisation par organisation depuis `monthStart` (compteurs mensuels) et `dayStart` (actions Cloud du jour). */
+  async orgUsage(tx: Tx, monthStart: string, dayStart: string): Promise<AdminOrgUsageRow[]> {
+    const rows = await tx.query<AdminOrgUsageRow>("select * from app_admin_org_usage($1, $2)", [monthStart, dayStart]);
+    return rows.map((r) => ({
+      ...r,
+      members: Number(r.members),
+      items: Number(r.items),
+      connections: Number(r.connections),
+      cloudToday: Number(r.cloudToday ?? 0),
+      aiRequestsMonth: Number(r.aiRequestsMonth ?? 0),
+      quotas: r.quotas && typeof r.quotas === "object" ? r.quotas : {},
+      aiSettings: r.aiSettings && typeof r.aiSettings === "object" ? r.aiSettings : {},
+      monthUsage: Object.fromEntries(Object.entries(r.monthUsage ?? {}).map(([k, v]) => [k, Number(v)])),
+    }));
   },
 };

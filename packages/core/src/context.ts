@@ -1,6 +1,7 @@
 import type { Role } from "@selio/contracts";
 import type { AIService } from "@selio/ai";
 import type { Db, SecretBox, Tx } from "@selio/db";
+import type { EmailMessage, EmailProvider } from "@selio/email";
 import { can, type Action } from "@selio/domain";
 
 export class AppError extends Error {
@@ -18,6 +19,14 @@ export interface Services {
   /** Mode d'exécution serveur : jamais de repli simulé en production. */
   allowAiFallback: boolean;
   version: string;
+  /**
+   * Emails transactionnels (invitations, mot de passe oublié, échec de paiement, alertes).
+   * L'API le fournit toujours (fournisseur « noop » au minimum) ; absent dans le worker
+   * tant qu'il n'envoie rien : `sendEmail` le signale alors sans lever.
+   */
+  email?: EmailProvider;
+  /** URL publique du site (PUBLIC_WEB_URL), base des liens envoyés par email. */
+  publicWebUrl?: string;
 }
 
 /** Contexte d'une requête authentifiée dans une organisation. */
@@ -40,4 +49,36 @@ export function withOrg<T>(ctx: OrgContext, fn: (tx: Tx) => Promise<T>): Promise
 
 export function nowIso(ctx: OrgContext): string {
   return ctx.services.now().toISOString();
+}
+
+/** Même valeur par défaut que PUBLIC_WEB_URL dans l'API (développement local). */
+export const DEFAULT_PUBLIC_WEB_URL = "http://127.0.0.1:5173";
+
+/** Lien absolu vers une page du site : `webLink(services, "/invitation", { token })`. */
+export function webLink(services: Services, path: string, query: Record<string, string> = {}): string {
+  const base = (services.publicWebUrl ?? DEFAULT_PUBLIC_WEB_URL).replace(/\/+$/, "");
+  const qs = new URLSearchParams(query).toString();
+  return `${base}${path.startsWith("/") ? path : `/${path}`}${qs ? `?${qs}` : ""}`;
+}
+
+export interface EmailOutcome {
+  sent: boolean;
+  id?: string;
+  /** Message d'erreur technique (sans donnée personnelle), à journaliser côté API. */
+  error?: string;
+}
+
+/**
+ * Envoi « au mieux » : ne lève jamais. L'appelant décide si l'échec fait échouer
+ * l'opération (invitation : rien n'est créé sans email) ou s'il est seulement
+ * journalisé (mot de passe oublié : la réponse ne doit rien révéler).
+ */
+export async function sendEmail(services: Services, message: EmailMessage): Promise<EmailOutcome> {
+  if (!services.email) return { sent: false, error: "aucun fournisseur d'email dans les services" };
+  try {
+    const { id } = await services.email.send(message);
+    return { sent: true, id };
+  } catch (err) {
+    return { sent: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }

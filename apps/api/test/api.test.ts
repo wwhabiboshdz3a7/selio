@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createPool, runMigrations, MIGRATIONS_DIR, SecretBox } from "@selio/db";
+import { createPool, runMigrations, MIGRATIONS_DIR, SecretBox, hashSecret } from "@selio/db";
 import { computeSignature } from "@selio/connectors/stripe";
+import { NoopEmailProvider, type EmailProvider } from "@selio/email";
 import { loadEnv } from "../src/config";
 import { buildServer, type BuiltServer } from "../src/server";
 
@@ -10,6 +11,19 @@ const APP_URL = process.env.TEST_DATABASE_URL_APP ?? "postgres://selio_app:selio
 let built: BuiltServer;
 let available = true;
 const cookies: Record<string, string> = {};
+/** Boîte aux lettres des tests : le fournisseur « noop » garde les derniers messages (lien d'invitation, de réinitialisation). */
+const mailbox = new NoopEmailProvider();
+/** Panne d'email simulée (serveur SMTP injoignable) : l'invitation doit alors être défaite et refaisable. */
+let emailDown = false;
+const flakyEmail: EmailProvider = { send: (m) => (emailDown ? Promise.reject(new Error("SMTP injoignable (simulé)")) : mailbox.send(m)) };
+
+/** Les emails partent hors du chemin de la réponse : on attend (court sondage) qu'un message s'ajoute aux `countBefore` déjà dans la boîte. */
+async function waitForMail(countBefore: number, timeoutMs = 2000): Promise<ReturnType<NoopEmailProvider["last"]>> {
+  const started = Date.now();
+  while (mailbox.all().length <= countBefore && Date.now() - started < timeoutMs) await new Promise((r) => setTimeout(r, 10));
+  return mailbox.last();
+}
+const baseEnv = { DATABASE_URL: APP_URL, SECRETS_ENCRYPTION_KEY: SecretBox.generateKey(), NODE_ENV: "test", LOG_LEVEL: "error", AI_PROVIDER: "mock", ALLOW_AI_FALLBACK: "false", OPERATOR_EMAILS: "ops@test.local", STRIPE_WEBHOOK_SECRET: "whsec_test", AI_HEALTH_TOKEN: "jeton-de-sante-de-test-0123", PUBLIC_WEB_URL: "https://app.selio.test" };
 
 function cookieOf(res: { headers: Record<string, unknown> }): string {
   const raw = res.headers["set-cookie"];
@@ -37,8 +51,8 @@ beforeAll(async () => {
   } finally {
     await owner.end();
   }
-  const env = loadEnv({ DATABASE_URL: APP_URL, SECRETS_ENCRYPTION_KEY: SecretBox.generateKey(), NODE_ENV: "test", LOG_LEVEL: "error", AI_PROVIDER: "mock", ALLOW_AI_FALLBACK: "false", OPERATOR_EMAILS: "ops@test.local", STRIPE_WEBHOOK_SECRET: "whsec_test", AI_HEALTH_TOKEN: "jeton-de-sante-de-test-0123" });
-  built = await buildServer(env);
+  const env = loadEnv(baseEnv);
+  built = await buildServer(env, { email: flakyEmail });
   await built.app.ready();
 });
 
@@ -60,12 +74,13 @@ describe("API Selio (mode connecté, base réelle)", () => {
     cookies.b = cookieOf(b.res);
     const dup = await call("POST", "/api/auth/register", { email: "bob@test.local", password: "motdepasse-B1", displayName: "Bob", orgName: "X" });
     expect(dup.status).toBe(409);
-    // Essai Découverte : fonctions du plan Pro, 1 semaine par défaut ou 1 mois, sans paiement.
+    // Essai gratuit de 14 jours (seul choix) : fonctions et limites du plan Pro, carte à enregistrer, rien débité.
+    // Un ancien client web qui envoie encore 30 jours est ramené à 14 ; une autre valeur est refusée.
     const days = (iso: string) => Math.round((new Date(iso).getTime() - Date.now()) / 86_400_000);
     const subA = await call("GET", "/api/billing/subscription");
-    expect(subA.json).toMatchObject({ plan: "pro", status: "trialing", provider: "none", quotas: { connections: 5, members: 10 } });
-    expect(days(subA.json.currentPeriodEnd)).toBe(7);
-    expect(days((await call("GET", "/api/billing/subscription", undefined, "b")).json.currentPeriodEnd)).toBe(30);
+    expect(subA.json).toMatchObject({ plan: "pro", status: "trialing", provider: "none", cardOnFile: false, cancelAtPeriodEnd: false, quotas: { connections: 3, members: 3, aiRequestsPerMonth: 1500, studioListingsPerMonth: 20, wornPhotosPerMonth: 10, trackFiltersFollowed: 5, cloudIncluded: false, followUp24h: "suggested" } });
+    expect(days(subA.json.currentPeriodEnd)).toBe(14);
+    expect(days((await call("GET", "/api/billing/subscription", undefined, "b")).json.currentPeriodEnd)).toBe(14);
     expect((await call("POST", "/api/auth/register", { email: "carl@test.local", password: "motdepasse-C1", displayName: "Carl", orgName: "C", trialDays: 12 }, "none")).status).toBe(400);
     const bad = await call("POST", "/api/auth/login", { email: "bob@test.local", password: "mauvais" }, "none");
     expect(bad.status).toBe(401);
@@ -178,11 +193,14 @@ describe("API Selio (mode connecté, base réelle)", () => {
 
   it("rôles : un lecteur ne peut pas écrire", async () => {
     if (!available) return;
-    // Sans abonnement (accès de base, hors essai) : une seule personne.
+    // Sans abonnement (accès de base, hors essai) et avec Starter : une seule personne. Pro : trois.
     expect((await call("POST", `/api/admin/orgs/${a_org()}/plan`, { plan: "free" })).status).toBe(204);
     const quota = await call("POST", "/api/org/members", { email: "lecteur@test.local", role: "viewer" });
     expect(quota.status).toBe(402);
-    const plan = await call("POST", `/api/admin/orgs/${a_org()}/plan`, { plan: "starter" });
+    expect((await call("POST", `/api/admin/orgs/${a_org()}/plan`, { plan: "starter" })).status).toBe(204);
+    expect((await call("POST", "/api/org/members", { email: "lecteur@test.local", role: "viewer" })).status).toBe(402);
+    expect((await call("POST", `/api/admin/orgs/${a_org()}/plan`, { plan: "essentiel" })).status).toBe(400);
+    const plan = await call("POST", `/api/admin/orgs/${a_org()}/plan`, { plan: "pro" });
     expect(plan.status).toBe(204);
     const inv = await call("POST", "/api/org/members", { email: "lecteur@test.local", role: "viewer" });
     expect(inv.status).toBe(201);
@@ -202,6 +220,17 @@ describe("API Selio (mode connecté, base réelle)", () => {
     const adminA = await call("GET", "/api/admin/overview");
     expect(adminA.status).toBe(200);
     expect(adminA.json.orgs.length).toBe(2);
+    // Utilisation par client (vue administrateur) : une ligne par organisation, compteurs du mois
+    // avec pourcentage et alerte à 80 %, période du 1er du mois ; interdite hors opérateur.
+    expect((await call("GET", "/api/admin/usage", undefined, "b")).status).toBe(403);
+    const usageA = await call("GET", "/api/admin/usage");
+    expect(usageA.status).toBe(200);
+    expect(usageA.json.period.from).toMatch(/-01T00:00:00\.000Z$/);
+    expect(usageA.json.orgs.length).toBe(2);
+    const mine = usageA.json.orgs.find((o: { id: string }) => o.id === a_org());
+    expect(mine).toMatchObject({ name: "Boutique A", plan: "pro", counters: { members: { used: 2, quota: 3, percent: 67, warning: false } }, studio: { listings: { quota: 20 } }, track: { scans: { quota: 10 } }, cloud: { included: false } });
+    expect(mine.counters.aiRequests.used).toBeGreaterThanOrEqual(1);
+    expect(mine.maxPercent).toBeGreaterThanOrEqual(mine.counters.members.percent);
   });
 
   it("comptes Vinted : catégories vente / achat / perso, modification, chiffres et droits", async () => {
@@ -215,9 +244,13 @@ describe("API Selio (mode connecté, base réelle)", () => {
     expect(other.status).toBe(201);
     expect(other.json.usage).toBe("sale");
     expect((await call("POST", "/api/connections", { provider: "vinted", label: "Mauvais", usage: "pro" })).status).toBe(400);
-    // Quota du plan Essentiel : 2 comptes ; le simulateur créé plus haut n'y compte pas.
+    // Quota du plan Pro : 3 comptes ; le simulateur créé plus haut n'y compte pas. Aucun compte à la carte.
     const third = await call("POST", "/api/connections", { provider: "vinted", label: "Troisième" });
-    expect(third.status).toBe(402);
+    expect(third.status).toBe(201);
+    const fourth = await call("POST", "/api/connections", { provider: "vinted", label: "Quatrième" });
+    expect(fourth.status).toBe(402);
+    expect(fourth.json.error.message).toMatch(/Quota de comptes connectés atteint \(3\)/);
+    expect((await call("DELETE", `/api/connections/${third.json.id}`)).status).toBe(204);
     expect((await call("POST", "/api/connections", { provider: "demo", label: "Second simulateur" })).status).toBe(409);
 
     // Changement de catégorie en un clic, renommage et pseudo.
@@ -251,6 +284,7 @@ describe("API Selio (mode connecté, base réelle)", () => {
     expect(stats.json.find((s: { connectionId: string }) => s.connectionId === sale.json.id)).toMatchObject({ listedItems: 1, salesThisMonth: 0, purchases: 0 });
     const usage = await call("GET", "/api/billing/usage");
     expect(usage.json.connectionsCount).toBe(2);
+    expect(usage.json.counters.connections).toEqual({ used: 2, quota: 3, percent: 67, warning: false, exceeded: false });
 
     // Achat auto : utilise le compte Achat, jamais un compte Perso.
     const run = await call("POST", "/api/purchases/auto-run");
@@ -298,6 +332,22 @@ describe("API Selio (mode connecté, base réelle)", () => {
     expect(after.status).toBe(401);
     const forged = await call("GET", "/api/ext/ping", undefined, "none", { authorization: "Bearer slx_abcd.nimportequoi" });
     expect(forged.status).toBe(401);
+  });
+
+  it("abonnement : paiement non configuré, plans payants Starter, Pro et Agence, accès de base refusé", async () => {
+    if (!available) return;
+    // Sans STRIPE_SECRET_KEY ni identifiants de prix : aucun abonnement créé, message explicite.
+    const agence = await call("POST", "/api/billing/checkout", { plan: "agence" });
+    expect(agence.status).toBe(200);
+    expect(agence.json).toMatchObject({ url: null, simulated: false });
+    expect(agence.json.message).toMatch(/n'est pas configuré/);
+    expect((await call("POST", "/api/billing/checkout", { plan: "free" })).status).toBe(400);
+    expect((await call("POST", "/api/billing/checkout", { plan: "essentiel" })).status).toBe(400);
+    expect((await call("POST", "/api/billing/checkout", { plan: "pro" }, "v")).status).toBe(403);
+    const { billing } = await import("@selio/core");
+    expect(billing.parsePriceIds({ STRIPE_PRICE_STARTER: "price_s", STRIPE_PRICE_PRO: "price_p", STRIPE_PRICE_AGENCE: "price_a" })).toEqual({ starter: "price_s", pro: "price_p", agence: "price_a" });
+    const audit = await call("GET", "/api/audit?limit=20");
+    expect(audit.json.some((a: { action: string; meta: { plan?: string } }) => a.action === "billing.checkout_unavailable" && a.meta.plan === "agence")).toBe(true);
   });
 
   it("webhook Stripe : signature, idempotence, et endpoint de santé IA protégé", async () => {
@@ -380,6 +430,52 @@ describe("API Selio (mode connecté, base réelle)", () => {
     expect(gen.json.suggestedPriceCents).toBeGreaterThan(0);
     const badGen = await call("POST", "/api/studio/generate", { photos: [] });
     expect(badGen.status).toBe(400);
+
+    // Compteurs du mois : une annonce Studio enregistrée, blocs par filiale, alerte à 80 %.
+    const usage = await call("GET", "/api/billing/usage");
+    expect(usage.status).toBe(200);
+    expect(usage.json.period.from).toBe(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString());
+    expect(usage.json.studio.listings).toEqual({ used: 1, quota: 20, percent: 5, warning: false, exceeded: false });
+    expect(usage.json.studio.wornPhotos).toMatchObject({ used: 0, quota: 10 });
+    expect(usage.json.track).toMatchObject({ scans: { used: 0, quota: 10 }, photoSearches: { used: 0, quota: 30 }, filtersFollowed: { used: 0, quota: 5 } });
+    expect(usage.json.cloud).toMatchObject({ included: false, actions: { used: 0, quota: 500 } });
+    // Compteur IA = règle du refus : limite effective (plan 1 500 ∧ réglage de l'organisation, 500 à l'inscription),
+    // décompte de la table ai_requests (échecs compris, aide exclue), identique à /api/ai/stats.
+    expect(usage.json.counters.aiRequests.quota).toBe(500);
+    expect(usage.json.quotas.aiRequestsPerMonth).toBe(1500);
+    expect(usage.json.counters.aiRequests.used).toBe((await call("GET", "/api/ai/stats")).json.quota.used);
+    expect(usage.json.counters.aiRequests.used).toBe(usage.json.aiRequests);
+    expect(usage.json.warning).toBe(false);
+    // À la limite effective, le compteur dit « atteint » (et la vue administrateur aussi) : plus jamais « 33 % » pendant un refus.
+    const orgA = await built.services.db.withGlobal((tx) => repos.orgs.byId(tx, a_org()));
+    expect((await call("PATCH", "/api/org", { settings: { ai: { ...orgA.settings.ai, monthlyRequestQuota: 1 } } })).status).toBe(200);
+    const capped = await call("GET", "/api/billing/usage");
+    expect(capped.json.counters.aiRequests).toMatchObject({ quota: 1, percent: 100, warning: true, exceeded: true });
+    expect(capped.json.warning).toBe(true);
+    const adminCapped = (await call("GET", "/api/admin/usage")).json.orgs.find((o: { id: string }) => o.id === a_org());
+    expect(adminCapped.counters.aiRequests).toMatchObject({ used: capped.json.counters.aiRequests.used, quota: 1, exceeded: true });
+    expect((await call("POST", "/api/studio/generate", { photos: [{ id: "p1", url: photo, alt: "pull.jpg" }] })).json.error).toMatchObject({ code: "quota_exceeded", message: "Quota IA mensuel atteint (1)." });
+    await call("PATCH", "/api/org", { settings: { ai: { ...orgA.settings.ai, monthlyRequestQuota: 0 } } });
+    expect((await call("GET", "/api/billing/usage")).json.counters.aiRequests.quota).toBe(1500);
+    await call("PATCH", "/api/org", { settings: { ai: orgA.settings.ai } });
+    const events = await call("GET", "/api/billing/usage-events?limit=5");
+    expect(events.json.some((e: { kind: string }) => e.kind === "studio.listing")).toBe(true);
+    // Quota Studio atteint : 19 annonces de plus ce mois-ci → la 21e est refusée, avec l'alerte à 80 %.
+    await built.services.db.withOrg(a_org(), async (tx) => { for (let i = 0; i < 19; i++) await repos.usage.record(tx, "studio.listing", { test: "quota" }); });
+    const full = await call("GET", "/api/billing/usage");
+    expect(full.json.studio.listings).toEqual({ used: 20, quota: 20, percent: 100, warning: true, exceeded: true });
+    expect(full.json.warning).toBe(true);
+    const over = await call("POST", "/api/studio/generate", { photos: [{ id: "p1", url: photo, alt: "pull.jpg" }] });
+    expect(over.status).toBe(402);
+    expect(over.json.error).toMatchObject({ code: "quota_exceeded", message: "Quota Studio du mois atteint (20)." });
+    await built.services.db.withOrg(a_org(), (tx) => tx.query("delete from usage_events where org_id = $1 and kind = 'studio.listing' and meta->>'test' = 'quota'", [a_org()]));
+    // Studio n'est pas inclus dans Starter (ni dans l'accès de base) : refus clair, sans requête IA.
+    expect((await call("POST", `/api/admin/orgs/${a_org()}/plan`, { plan: "starter" })).status).toBe(204);
+    const excluded = await call("POST", "/api/studio/generate", { photos: [{ id: "p1", url: photo, alt: "pull.jpg" }] });
+    expect(excluded.status).toBe(402);
+    expect(excluded.json.error).toMatchObject({ code: "quota_exceeded", message: "Studio n'est pas inclus dans votre offre." });
+    expect((await call("GET", "/api/billing/usage")).json.studio.listings).toMatchObject({ used: 1, quota: 0, percent: 100, warning: true });
+    expect((await call("POST", `/api/admin/orgs/${a_org()}/plan`, { plan: "pro" })).status).toBe(204);
 
     // Dressing : annonce en ligne depuis 10 jours → à republier, 10 variantes prêtes.
     const it0 = await call("POST", "/api/items", { title: "Pull torsadé Ralph Lauren", brand: "Ralph Lauren", size: "M", category: "men", purchasePriceCents: 1200, listedPriceCents: 4500, floorPriceCents: 3000, status: "listed", listingStats: { views: 50, favorites: 6, offers: 0 } });
@@ -498,6 +594,178 @@ describe("API Selio (mode connecté, base réelle)", () => {
     let limited = false;
     for (let i = 0; i < 6 && !limited; i++) limited = (await call("POST", "/api/help/ask", { question: "Comment inviter un membre ?" })).status === 429;
     expect(limited).toBe(true);
+  });
+
+  it("mot de passe oublié : 204 sans énumération, jeton haché et à usage unique, sessions fermées", async () => {
+    if (!available) return;
+    mailbox.clear();
+    const { auth } = await import("@selio/core");
+    // Compte inconnu : même réponse, aucun email, et pas plus vite que pour un compte connu (délai plancher).
+    const t0 = Date.now();
+    const unknown = await call("POST", "/api/auth/password/forgot", { email: "personne@test.local" }, "none");
+    const unknownMs = Date.now() - t0;
+    expect(unknown.status).toBe(204);
+    expect(unknownMs).toBeGreaterThanOrEqual(auth.FORGOT_MIN_RESPONSE_MS - 5);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mailbox.last()).toBeNull();
+    expect((await call("POST", "/api/auth/password/forgot", { email: "pas-une-adresse" }, "none")).status).toBe(400);
+    // Compte connu : la réponse ne contient pas l'aller-retour « email » (envoi hors du chemin de la réponse).
+    const t1 = Date.now();
+    const known = await call("POST", "/api/auth/password/forgot", { email: "Bob@test.local" }, "none");
+    const knownMs = Date.now() - t1;
+    expect(known.status).toBe(204);
+    expect(knownMs).toBeGreaterThanOrEqual(auth.FORGOT_MIN_RESPONSE_MS - 5);
+    expect(Math.abs(knownMs - unknownMs)).toBeLessThan(150);
+    const mail = await waitForMail(0);
+    expect(mail?.to).toBe("bob@test.local");
+    expect(mail?.subject).toMatch(/mot de passe/i);
+    const token = /https:\/\/app\.selio\.test\/mot-de-passe\?token=([A-Za-z0-9_-]+)/.exec(mail?.text ?? "")?.[1];
+    expect(token).toBeTruthy();
+    expect(token!.length).toBe(43); // 32 octets en base64url
+    expect(mail?.html).toContain(`href="https://app.selio.test/mot-de-passe?token=${token}"`);
+    // Le jeton brut n'est jamais stocké : seule son empreinte SHA-256 l'est.
+    const rows = await built.services.db.withGlobal((tx) => tx.query<{ tokenHash: string; usedAt: string | null }>("select token_hash, used_at from password_resets"));
+    expect(rows.some((r) => r.tokenHash === token)).toBe(false);
+    expect(rows.find((r) => r.tokenHash === hashSecret(token!))?.usedAt).toBeNull();
+    // Mot de passe trop court → validation ; jeton inconnu → token_invalid.
+    const short = await call("POST", "/api/auth/password/reset", { token, password: "court" }, "none");
+    expect(short.status).toBe(400);
+    expect(short.json.error.code).toBe("validation");
+    const bogus = await call("POST", "/api/auth/password/reset", { token: "x".repeat(43), password: "nouveau-mdp-B2" }, "none");
+    expect(bogus.status).toBe(400);
+    expect(bogus.json.error.code).toBe("token_invalid");
+    // La session ouverte de Bob existe avant la réinitialisation…
+    expect((await call("GET", "/api/auth/session", undefined, "b")).json).not.toBeNull();
+    const reset = await call("POST", "/api/auth/password/reset", { token, password: "nouveau-mdp-B2" }, "none");
+    expect(reset.status).toBe(204);
+    // … et plus après : l'ancien cookie ne vaut plus rien, l'ancien mot de passe non plus.
+    expect((await call("GET", "/api/auth/session", undefined, "b")).json).toBeNull();
+    expect((await call("POST", "/api/auth/login", { email: "bob@test.local", password: "motdepasse-B1" }, "none")).status).toBe(401);
+    const again = await call("POST", "/api/auth/password/reset", { token, password: "encore-un-autre-1" }, "none");
+    expect(again.status).toBe(400);
+    expect(again.json.error.code).toBe("token_invalid");
+    const login = await call("POST", "/api/auth/login", { email: "bob@test.local", password: "nouveau-mdp-B2" }, "none");
+    expect(login.status).toBe(200);
+    cookies.b = cookieOf(login.res);
+    // Une nouvelle demande invalide la précédente : un seul lien valable à la fois.
+    const before = mailbox.all().length;
+    await call("POST", "/api/auth/password/forgot", { email: "bob@test.local" }, "none");
+    const t2 = /token=([A-Za-z0-9_-]+)/.exec((await waitForMail(before))?.text ?? "")?.[1];
+    expect(t2).not.toBe(token);
+    const open = await built.services.db.withGlobal((tx) => tx.query<{ n: number }>("select count(*)::int as n from password_resets where used_at is null"));
+    expect(open[0]?.n).toBe(1);
+  });
+
+  it("invitation : email avec lien, acceptation ouvre une session, jeton à usage unique", async () => {
+    if (!available) return;
+    expect((await call("POST", `/api/admin/orgs/${a_org()}/plan`, { plan: "pro" })).status).toBe(204);
+    mailbox.clear();
+    const inv = await call("POST", "/api/org/members", { email: "Ines@test.local", role: "operator" });
+    expect(inv.status).toBe(201);
+    expect(inv.json.role).toBe("operator");
+    const mail = mailbox.last();
+    expect(mail?.to).toBe("ines@test.local");
+    expect(mail?.subject).toBe("Selio — Invitation à rejoindre Boutique A");
+    expect(mail?.text).toContain("Alice vous invite");
+    const token = /https:\/\/app\.selio\.test\/invitation\?token=([A-Za-z0-9_-]+)/.exec(mail?.text ?? "")?.[1];
+    expect(token).toBeTruthy();
+    expect(token!.length).toBe(43);
+    const invites = await built.services.db.withGlobal((tx) => tx.query<{ tokenHash: string; acceptedAt: string | null }>("select token_hash, accepted_at from invites where user_id = $1", [inv.json.user.id]));
+    expect(invites).toHaveLength(1);
+    expect(invites[0]?.tokenHash).toBe(hashSecret(token!));
+    expect(invites[0]?.acceptedAt).toBeNull();
+    // Sans jeton valable, rien ne s'ouvre ; le mot de passe aléatoire initial est inconnu de tous.
+    expect((await call("POST", "/api/auth/invite/accept", { token: "x".repeat(43), password: "ines-mdp-solide-1" }, "none")).json.error.code).toBe("token_invalid");
+    expect((await call("POST", "/api/auth/invite/accept", { token, password: "court" }, "none")).json.error.code).toBe("validation");
+    const acc = await call("POST", "/api/auth/invite/accept", { token, password: "ines-mdp-solide-1", displayName: "Inès" }, "none");
+    expect(acc.status).toBe(200);
+    expect(acc.json).toMatchObject({ mode: "connected", role: "operator", user: { email: "ines@test.local", displayName: "Inès" } });
+    expect(acc.json.org.id).toBe(a_org());
+    cookies.i = cookieOf(acc.res);
+    expect(cookies.i).toMatch(/^selio_session=/);
+    expect((await call("GET", "/api/auth/session", undefined, "i")).json.user.email).toBe("ines@test.local");
+    // Jeton consommé : une seconde acceptation échoue, la connexion par mot de passe fonctionne.
+    const reuse = await call("POST", "/api/auth/invite/accept", { token, password: "autre-mdp-solide-2" }, "none");
+    expect(reuse.status).toBe(400);
+    expect(reuse.json.error.code).toBe("token_invalid");
+    expect((await call("POST", "/api/auth/login", { email: "ines@test.local", password: "ines-mdp-solide-1" }, "none")).status).toBe(200);
+    const audit = await call("GET", "/api/audit?limit=30");
+    expect(audit.json.some((a: { action: string }) => a.action === "member.invited")).toBe(true);
+    expect(audit.json.some((a: { action: string }) => a.action === "member.invite_accepted")).toBe(true);
+
+    // Serveur d'email injoignable : l'invitation est validée en base AVANT l'envoi (aucun aller-retour SMTP dans la
+    // transaction), puis défaite : 503, aucun membre fantôme, compte créé pour l'occasion supprimé, et refaisable.
+    // Boutique A est à 3 membres sur 3 (Pro) : on passe en Agence pour isoler le cas « email en panne ».
+    expect((await call("POST", `/api/admin/orgs/${a_org()}/plan`, { plan: "agence" })).status).toBe(204);
+    emailDown = true;
+    const countBefore = mailbox.all().length;
+    const failed = await call("POST", "/api/org/members", { email: "jules@test.local", role: "viewer" });
+    emailDown = false;
+    expect(failed.status).toBe(503);
+    expect(failed.json.error.code).toBe("email_unavailable");
+    expect(mailbox.all().length).toBe(countBefore);
+    expect((await call("GET", "/api/org/members")).json.some((m: { user: { email: string } }) => m.user.email === "jules@test.local")).toBe(false);
+    expect(await built.services.db.withGlobal((tx) => tx.query("select id from users where email = 'jules@test.local'"))).toHaveLength(0);
+    expect((await call("GET", "/api/audit?limit=30")).json.some((a: { action: string }) => a.action === "member.invite_failed")).toBe(true);
+    const retried = await call("POST", "/api/org/members", { email: "jules@test.local", role: "viewer" });
+    expect(retried.status).toBe(201);
+    expect((await waitForMail(countBefore))?.to).toBe("jules@test.local");
+    // Compte déjà existant (Inès) : une invitation ailleurs (Boutique B) qui échoue ne supprime pas son compte.
+    emailDown = true;
+    expect((await call("POST", "/api/org/members", { email: "ines@test.local", role: "viewer" }, "b")).status).toBe(503);
+    emailDown = false;
+    expect((await call("POST", "/api/auth/login", { email: "ines@test.local", password: "ines-mdp-solide-1" }, "none")).status).toBe(200);
+    expect((await call("GET", "/api/org/members", undefined, "b")).json.some((m: { user: { email: string } }) => m.user.email === "ines@test.local")).toBe(false);
+    expect((await call("POST", `/api/admin/orgs/${a_org()}/plan`, { plan: "pro" })).status).toBe(204);
+  });
+
+  it("téléversement : 503 sans stockage, URLs signées avec un stockage configuré, type et taille contrôlés, clés par organisation", async () => {
+    if (!available) return;
+    const policy = await call("GET", "/api/uploads/policy");
+    expect(policy.status).toBe(200);
+    expect(policy.json).toMatchObject({ configured: false, maxBytes: 5 * 1024 * 1024 });
+    const body = { kind: "item-photo", contentType: "image/jpeg", size: 1024 };
+    const presign = await call("POST", "/api/uploads/presign", body);
+    expect(presign.status).toBe(503);
+    expect(presign.json.error.code).toBe("storage_unconfigured");
+    expect((await call("POST", "/api/uploads/presign", body, "none")).status).toBe(401);
+    expect((await call("GET", `/api/uploads/read?key=org/${a_org()}/item-photo/x.jpg`)).status).toBe(503);
+
+    // Même base, stockage factice : la signature se calcule sans aucun appel réseau.
+    const configured = await buildServer(loadEnv({ ...baseEnv, STORAGE_ENDPOINT: "http://127.0.0.1:9000", STORAGE_BUCKET: "selio-photos", STORAGE_ACCESS_KEY: "selio-minio", STORAGE_SECRET_KEY: "selio-minio-secret" }), { email: mailbox });
+    await configured.app.ready();
+    try {
+      const inject = async (method: "GET" | "POST", url: string, payload?: unknown, who = "a") => {
+        const res = await configured.app.inject({ method, url, payload: payload as object | undefined, headers: { cookie: cookies[who] ?? "" } });
+        return { status: res.statusCode, json: res.body ? JSON.parse(res.body) : null };
+      };
+      expect((await inject("GET", "/api/uploads/policy")).json.configured).toBe(true);
+      const ok = await inject("POST", "/api/uploads/presign", body);
+      expect(ok.status).toBe(201);
+      expect(ok.json.key).toMatch(new RegExp(`^org/${a_org()}/item-photo/[0-9a-f-]{36}\\.jpg$`));
+      expect(ok.json.method).toBe("PUT");
+      expect(ok.json.uploadUrl).toMatch(/^http:\/\/127\.0\.0\.1:9000\/selio-photos\/org\//);
+      expect(ok.json.uploadUrl).toMatch(/X-Amz-SignedHeaders=content-length(%3B|;)content-type(%3B|;)host/);
+      expect(ok.json.uploadUrl).not.toContain("selio-minio-secret");
+      expect(ok.json.headers).toMatchObject({ "Content-Type": "image/jpeg", "Content-Length": "1024" });
+      expect(ok.json.readUrl).toContain("X-Amz-Signature=");
+      const gif = await inject("POST", "/api/uploads/presign", { ...body, contentType: "image/gif" });
+      expect(gif.status).toBe(400);
+      expect(gif.json.error).toMatchObject({ code: "upload_rejected", details: { reason: "content_type" } });
+      const big = await inject("POST", "/api/uploads/presign", { ...body, size: 6 * 1024 * 1024 });
+      expect(big.json.error).toMatchObject({ code: "upload_rejected", details: { reason: "size" } });
+      // Lecture : seules les clés du préfixe de l'organisation de la session.
+      expect((await inject("GET", `/api/uploads/read?key=${encodeURIComponent(ok.json.key)}`)).status).toBe(200);
+      expect((await inject("GET", "/api/uploads/read?key=org/autre-organisation/item-photo/x.jpg")).status).toBe(403);
+      expect((await inject("GET", `/api/uploads/read?key=org/${a_org()}/../autre/x.jpg`)).status).toBe(403);
+      // Un lecteur ne téléverse pas de photo d'article ; l'avatar reste ouvert à tout membre.
+      expect((await inject("POST", "/api/uploads/presign", body, "v")).status).toBe(403);
+      expect((await inject("POST", "/api/uploads/presign", { ...body, kind: "avatar" }, "v")).status).toBe(201);
+      const audit = await inject("GET", "/api/audit?limit=10");
+      expect(audit.json.some((a: { action: string; meta: { key?: string } }) => a.action === "upload.presigned" && a.meta.key === ok.json.key)).toBe(true);
+    } finally {
+      await configured.app.close();
+    }
   });
 
   it("export, suppression avec confirmation et déconnexion", async () => {

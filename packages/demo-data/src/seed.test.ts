@@ -19,4 +19,19 @@ describe("jeu de données de démonstration", () => {
     for (const c of a.conversations) expect(a.customers.some((x) => x.id === c.customerId)).toBe(true);
     expect(new Set(a.orders.map((o) => o.dedupeKey)).size).toBe(a.orders.length);
   });
+  it("contre-offres de démo : formule neutre au-dessus du plancher, jamais « meilleur prix », tours de négociation comptés", () => {
+    const a = buildDemoState(now);
+    const outbound = a.messages.filter((m) => m.direction === "outbound");
+    expect(outbound.length).toBeGreaterThan(0);
+    for (const m of outbound) expect(m.body).not.toMatch(/meilleur prix/i);
+    const counter = outbound.find((m) => /Je peux vous le faire à/.test(m.body));
+    expect(counter).toBeDefined();
+    expect(counter!.body).toContain("Si cela vous convient, faites l'offre à ce montant.");
+    // Le prix proposé en démo reste au-dessus du plancher : la formule « dernier prix » n'y a pas sa place.
+    const conv = a.conversations.find((c) => c.id === counter!.conversationId)!;
+    const item = a.items.find((i) => i.id === conv.itemId)!;
+    const proposed = Math.round(Number.parseFloat(counter!.body.match(/à (\d+(?:,\d+)?) €/)![1]!.replace(",", ".")) * 100);
+    expect(proposed).toBeGreaterThan(item.floorPriceCents ?? 0);
+    expect(conv.negotiationRounds).toBe(1);
+  });
 });

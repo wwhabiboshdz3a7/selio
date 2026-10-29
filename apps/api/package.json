@@ -22,6 +22,8 @@
     "@selio/db": "workspace:*",
     "@selio/demo-data": "workspace:*",
     "@selio/domain": "workspace:*",
+    "@selio/email": "workspace:*",
+    "@selio/storage": "workspace:*",
     "bullmq": "^5.81.5",
     "fastify": "^5.12.5",
     "fastify-plugin": "^5.1.0",
