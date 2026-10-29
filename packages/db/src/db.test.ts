@@ -88,12 +88,22 @@ describe("base de données", () => {
       await repos.orders.create(tx, { itemId: item.id, customerId: cust.id, dedupeKey: "demo:tx-1", salePriceCents: 5000, statusHistory: [] });
       await expect(repos.orders.create(tx, { itemId: item.id, customerId: cust.id, dedupeKey: "demo:tx-1", salePriceCents: 5000, statusHistory: [] })).rejects.toMatchObject({ code: "conflict" });
     }).catch((e) => { if (!(e instanceof DbError)) throw e; });
-    const record = () => app.withGlobal((tx) => repos.paymentEvents.record(tx, { id: "evt_1", provider: "stripe", type: "x", payload: {} }));
+    const eventId = repos.paymentEvents.eventId("revolut", "ord_1", "ORDER_COMPLETED");
+    expect(eventId).toBe("revolut:ord_1:ORDER_COMPLETED");
+    const record = () => app.withGlobal((tx) => repos.paymentEvents.record(tx, { id: eventId, provider: "revolut", type: "ORDER_COMPLETED", orderId: "ord_1", payload: {} }));
     expect(await record()).toBe(true);
-    // Reçu mais pas encore traité (traitement en échec) : le renvoi de Stripe doit pouvoir être retraité.
+    // Réservé et en cours de traitement : une seconde livraison simultanée est un doublon (une seule facture).
+    expect(await record()).toBe(false);
+    // Traitement en échec, réservation relâchée : le renvoi du fournisseur doit pouvoir être retraité.
+    await app.withGlobal((tx) => repos.paymentEvents.release(tx, eventId));
     expect(await record()).toBe(true);
-    await app.withGlobal((tx) => repos.paymentEvents.markProcessed(tx, "evt_1"));
-    // Traité : un nouveau renvoi est un doublon.
+    // Réservation expirée (traitement interrompu il y a plus de deux minutes) : retraitable aussi.
+    await owner.withGlobal((tx) => tx.query("update payment_events set claimed_at = now() - interval '3 minutes' where id = $1", [eventId]));
+    expect(await record()).toBe(true);
+    await app.withGlobal((tx) => repos.paymentEvents.markProcessed(tx, eventId));
+    // Traité : un nouveau renvoi est un doublon, et le relâchement ne rouvre rien.
+    expect(await record()).toBe(false);
+    await app.withGlobal((tx) => repos.paymentEvents.release(tx, eventId));
     expect(await record()).toBe(false);
   });
 

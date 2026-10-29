@@ -8,6 +8,7 @@ const ITEMS = [
   { to: "access", label: "Comptes et accès" },
   { to: "ai", label: "Assistant IA" },
   { to: "billing", label: "Abonnement" },
+  { to: "invoices", label: "Factures" },
   { to: "usage", label: "Utilisation" },
   { to: "notifications", label: "Notifications" },
   { to: "security", label: "Sécurité" },

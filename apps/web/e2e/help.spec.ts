@@ -37,7 +37,13 @@ test.describe("aide de l'application", () => {
     await expect(page.getByRole("progressbar")).toHaveCount(3);
     await expect(page.getByRole("progressbar", { name: "Comptes Vinted" })).toBeVisible();
     for (const name of ["Starter", "Pro", "Agence"]) await expect(page.getByText(new RegExp(`^${name}`)).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Choisir (test)" })).toHaveCount(3);
+    // Démo : carte déjà enregistrée pendant l'essai, chaque offre peut être retenue pour la fin de l'essai.
+    await expect(page.getByRole("button", { name: "Choisir cette offre" })).toHaveCount(3);
+    // La périodicité a été fixée avec la carte : pas de sélecteur, un rappel en toutes lettres.
+    await expect(page.getByText(/Périodicité : mensuelle/)).toBeVisible();
+    await expect(page.getByText("Carte enregistrée")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Résilier" })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Voir mes factures/ })).toHaveAttribute("href", "/app/settings/invoices");
     await expect(page.getByText("Plus de 10 comptes Vinted")).toBeVisible();
     // Mon utilisation : une jauge par compteur, « utilisé / quota », date de remise à zéro, alerte à 80 %.
     await page.getByRole("link", { name: "Mon utilisation du mois" }).click();

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createPool, runMigrations, MIGRATIONS_DIR, SecretBox, hashSecret } from "@selio/db";
-import { computeSignature } from "@selio/connectors/stripe";
+import { RevolutClient, computeRevolutSignature } from "@selio/connectors";
+import { quotasForPlan } from "@selio/contracts";
 import { NoopEmailProvider, type EmailProvider } from "@selio/email";
 import { loadEnv } from "../src/config";
 import { buildServer, type BuiltServer } from "../src/server";
@@ -23,7 +24,84 @@ async function waitForMail(countBefore: number, timeoutMs = 2000): Promise<Retur
   while (mailbox.all().length <= countBefore && Date.now() - started < timeoutMs) await new Promise((r) => setTimeout(r, 10));
   return mailbox.last();
 }
-const baseEnv = { DATABASE_URL: APP_URL, SECRETS_ENCRYPTION_KEY: SecretBox.generateKey(), NODE_ENV: "test", LOG_LEVEL: "error", AI_PROVIDER: "mock", ALLOW_AI_FALLBACK: "false", OPERATOR_EMAILS: "ops@test.local", STRIPE_WEBHOOK_SECRET: "whsec_test", AI_HEALTH_TOKEN: "jeton-de-sante-de-test-0123", PUBLIC_WEB_URL: "https://app.selio.test" };
+const REVOLUT_KEY = "sk_test_placeholder_0123456789";
+const REVOLUT_WEBHOOK_SECRET = "wsk_test_secret_0123456789";
+
+/**
+ * Revolut simulé (HTTP) : l'environnement de test Revolut n'est pas joignable d'ici. Commandes en
+ * mémoire, débits à l'initiative du marchand scriptés (`chargeOutcomes`), chaque requête enregistrée
+ * pour vérifier corps et en-têtes. Aucun appel réseau.
+ */
+interface RevolutCall { method: string; url: string; body: Record<string, unknown> | undefined; headers: Record<string, string> }
+interface FakePayment { id: string; state: string; payment_method: { id: string; type: string } }
+interface FakeOrder { id: string; token: string; state: string; amount: number; currency: string; capture_mode: string; customer: { id: string }; merchant_order_ext_ref?: string; payments: FakePayment[] }
+interface FakeMethod { id: string; type: string; created_at: string; method_details: { brand: string; last4: string; expiry_month: number; expiry_year: number } }
+const fakeCard = (id: string, created_at: string, last4 = "4242"): FakeMethod => ({ id, type: "CARD", created_at, method_details: { brand: "visa", last4, expiry_month: 12, expiry_year: 2030 } });
+const revolut = (() => {
+  const orders = new Map<string, FakeOrder>();
+  const calls: RevolutCall[] = [];
+  const chargeOutcomes: ("completed" | "failed" | "declined" | "processing")[] = [];
+  const state = {
+    /** Moyens « pour le marchand » du client de test (la plus récente par `created_at`). */
+    paymentMethods: [fakeCard("pm_test_1", "2026-10-01T10:00:00Z")] as FakeMethod[],
+    /** Panne passagère simulée de la liste des moyens (une fois). */
+    failPaymentMethodsOnce: false,
+  };
+  let n = 0;
+  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  /** Ce que le formulaire Revolut aurait fait : une tentative de paiement sur la commande avec une carte donnée. */
+  const simulateFormPayment = (orderId: string, paymentMethodId: string, paymentState: "AUTHORISED" | "COMPLETED" | "DECLINED") => {
+    const o = orders.get(orderId)!;
+    o.payments.push({ id: `pay_${orderId}_${o.payments.length + 1}`, state: paymentState, payment_method: { id: paymentMethodId, type: "CARD" } });
+    o.state = paymentState === "DECLINED" ? "failed" : paymentState.toLowerCase();
+  };
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? "GET";
+    const body = typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : undefined;
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries((init?.headers ?? {}) as Record<string, string>)) headers[k.toLowerCase()] = v;
+    calls.push({ method, url: url.pathname + url.search, body, headers });
+    if (method === "POST" && url.pathname === "/api/1.0/customers") return json(201, { id: "cus_test_1", email: body?.email });
+    if (method === "POST" && url.pathname === "/api/orders") {
+      n++;
+      const customer = body?.customer as { id?: string } | undefined;
+      const o: FakeOrder = { id: `ord_${n}`, token: `tok_${n}`, state: "pending", amount: Number(body?.amount), currency: "EUR", capture_mode: String(body?.capture_mode), customer: { id: customer?.id ?? "cus_test_1" }, merchant_order_ext_ref: body?.merchant_order_ext_ref as string | undefined, payments: [] };
+      orders.set(o.id, o);
+      return json(201, o);
+    }
+    const m = url.pathname.match(/^\/api\/orders\/([^/]+)(?:\/(payments|cancel))?$/);
+    if (m) {
+      const o = orders.get(m[1]!);
+      if (!o) return json(404, { code: "not_found", message: "order" });
+      if (method === "POST" && m[2] === "payments") {
+        const outcome = chargeOutcomes.shift() ?? "completed";
+        const saved = body?.saved_payment_method as { id?: string } | undefined;
+        if (outcome === "declined") { simulateFormPayment(o.id, saved?.id ?? "pm_?", "DECLINED"); return json(422, { code: 3000, message: "Payment declined by the issuer" }); }
+        o.payments.push({ id: `pay_${o.id}_${o.payments.length + 1}`, state: outcome.toUpperCase(), payment_method: { id: saved?.id ?? "pm_?", type: "CARD" } });
+        o.state = outcome;
+        return json(201, { id: `pay_${o.id}`, order_id: o.id, state: o.state.toUpperCase() });
+      }
+      if (method === "POST" && m[2] === "cancel") { o.state = "cancelled"; return json(200, o); }
+      if (method === "GET" && !m[2]) return json(200, o);
+    }
+    if (method === "GET" && /^\/api\/1\.0\/customers\/[^/]+\/payment-methods$/.test(url.pathname) && url.searchParams.get("only_merchant") === "true") {
+      if (state.failPaymentMethodsOnce) { state.failPaymentMethodsOnce = false; return json(503, { code: "maintenance", message: "try again" }); }
+      return json(200, state.paymentMethods);
+    }
+    return json(404, { code: "not_found", message: url.pathname });
+  };
+  return { orders, calls, chargeOutcomes, fetchImpl, state, simulateFormPayment };
+})();
+
+/** Livraison de webhook signée comme Revolut le fait : Revolut-Request-Timestamp (ms) et Revolut-Signature v1=HMAC(v1.<ts>.<corps>). */
+function revolutWebhook(event: string, orderId: string, opts: { secret?: string; at?: number } = {}) {
+  const payload = JSON.stringify({ event, order_id: orderId, merchant_order_ext_ref: a_org() });
+  const ts = opts.at ?? Date.now();
+  return built.app.inject({ method: "POST", url: "/api/billing/webhook/revolut", payload, headers: { "content-type": "application/json", "revolut-request-timestamp": String(ts), "revolut-signature": `v1=${computeRevolutSignature(opts.secret ?? REVOLUT_WEBHOOK_SECRET, ts, payload)}` } });
+}
+
+const baseEnv = { DATABASE_URL: APP_URL, SECRETS_ENCRYPTION_KEY: SecretBox.generateKey(), NODE_ENV: "test", LOG_LEVEL: "error", AI_PROVIDER: "mock", ALLOW_AI_FALLBACK: "false", OPERATOR_EMAILS: "ops@test.local", REVOLUT_SECRET_KEY: REVOLUT_KEY, REVOLUT_WEBHOOK_SECRET: REVOLUT_WEBHOOK_SECRET, REVOLUT_MODE: "sandbox", AI_HEALTH_TOKEN: "jeton-de-sante-de-test-0123", PUBLIC_WEB_URL: "https://app.selio.test" };
 
 function cookieOf(res: { headers: Record<string, unknown> }): string {
   const raw = res.headers["set-cookie"];
@@ -44,7 +122,8 @@ beforeAll(async () => {
   const owner = createPool(OWNER_URL, { max: 1 });
   try {
     await runMigrations(owner, MIGRATIONS_DIR);
-    await owner.query("truncate users, organizations, payment_events, rate_limits cascade");
+    // La numérotation des factures (compteur par année) survit à la suppression des organisations : on repart de 000001.
+    await owner.query("truncate users, organizations, payment_events, rate_limits, invoice_counters cascade");
   } catch {
     available = false;
     return;
@@ -52,7 +131,8 @@ beforeAll(async () => {
     await owner.end();
   }
   const env = loadEnv(baseEnv);
-  built = await buildServer(env, { email: flakyEmail });
+  // Paiement : client Revolut réel (en-têtes, signatures) sur un HTTP simulé ; bac à sable, jamais live.
+  built = await buildServer(env, { email: flakyEmail, payments: new RevolutClient({ secretKey: REVOLUT_KEY, webhookSecret: REVOLUT_WEBHOOK_SECRET, mode: "sandbox", fetchImpl: revolut.fetchImpl }) });
   await built.app.ready();
 });
 
@@ -67,6 +147,7 @@ describe("API Selio (mode connecté, base réelle)", () => {
     expect(a.status).toBe(201);
     cookies.a = cookieOf(a.res);
     orgIdA = a.json.org.id;
+    userIdA = a.json.user.id;
     expect(a.json.org.name).toBe("Boutique A");
     expect(a.json.user.isOperator).toBe(true);
     const b = await call("POST", "/api/auth/register", { email: "bob@test.local", password: "motdepasse-B1", displayName: "Bob", orgName: "Boutique B", trialDays: 30 });
@@ -334,42 +415,257 @@ describe("API Selio (mode connecté, base réelle)", () => {
     expect(forged.status).toBe(401);
   });
 
-  it("abonnement : paiement non configuré, plans payants Starter, Pro et Agence, accès de base refusé", async () => {
+  it("abonnement : paiement non configuré (message honnête, rien de créé), plans payants seulement, accès de base refusé", async () => {
     if (!available) return;
-    // Sans STRIPE_SECRET_KEY ni identifiants de prix : aucun abonnement créé, message explicite.
-    const agence = await call("POST", "/api/billing/checkout", { plan: "agence" });
-    expect(agence.status).toBe(200);
-    expect(agence.json).toMatchObject({ url: null, simulated: false });
-    expect(agence.json.message).toMatch(/n'est pas configuré/);
+    // Sans REVOLUT_SECRET_KEY : aucune commande créée, aucun jeton, message explicite ; jamais « simulé ».
+    const { billing } = await import("@selio/core");
+    const ctx = { services: { ...built.services, payments: null }, orgId: a_org(), userId: userIdA, role: "owner" as const, isOperator: true, ip: null };
+    const off = await billing.startCheckout(ctx, "agence", { cycle: "monthly" });
+    expect(off).toMatchObject({ orderToken: null, orderId: null, mode: null, captureMode: null, simulated: false, amountCents: 4999 });
+    expect(off.message).toMatch(/n'est pas configuré/);
+    expect(revolut.calls).toHaveLength(0);
     expect((await call("POST", "/api/billing/checkout", { plan: "free" })).status).toBe(400);
     expect((await call("POST", "/api/billing/checkout", { plan: "essentiel" })).status).toBe(400);
     expect((await call("POST", "/api/billing/checkout", { plan: "pro" }, "v")).status).toBe(403);
-    const { billing } = await import("@selio/core");
-    expect(billing.parsePriceIds({ STRIPE_PRICE_STARTER: "price_s", STRIPE_PRICE_PRO: "price_p", STRIPE_PRICE_AGENCE: "price_a" })).toEqual({ starter: "price_s", pro: "price_p", agence: "price_a" });
+    expect((await call("POST", "/api/billing/cancel", undefined, "v")).status).toBe(403);
     const audit = await call("GET", "/api/audit?limit=20");
     expect(audit.json.some((a: { action: string; meta: { plan?: string } }) => a.action === "billing.checkout_unavailable" && a.meta.plan === "agence")).toBe(true);
   });
 
-  it("webhook Stripe : signature, idempotence, et endpoint de santé IA protégé", async () => {
+  it("paiement pendant l'essai : client Revolut créé, commande de vérification de 1 € en capture manuelle (jamais le prix de l'offre), jeton public seulement", async () => {
     if (!available) return;
-    const payload = JSON.stringify({ id: "evt_test_1", type: "checkout.session.completed", created: 1, livemode: false, data: { object: { metadata: { orgId: a_org() }, subscription: "sub_1", customer: "cus_1" } } });
-    const t = Math.floor(Date.now() / 1000);
-    const sig = `t=${t},v1=${computeSignature("whsec_test", t, payload)}`;
-    const ok = await built.app.inject({ method: "POST", url: "/api/billing/webhook", payload, headers: { "content-type": "application/json", "stripe-signature": sig } });
-    expect(ok.statusCode).toBe(200);
-    expect(JSON.parse(ok.body).duplicate).toBe(false);
-    const dupe = await built.app.inject({ method: "POST", url: "/api/billing/webhook", payload, headers: { "content-type": "application/json", "stripe-signature": sig } });
-    expect(JSON.parse(dupe.body).duplicate).toBe(true);
-    const bad = await built.app.inject({ method: "POST", url: "/api/billing/webhook", payload, headers: { "content-type": "application/json", "stripe-signature": `t=${t},v1=deadbeef` } });
-    expect(bad.statusCode).toBe(400);
+    const r = await call("POST", "/api/billing/checkout", { plan: "pro", cycle: "monthly" });
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ orderToken: "tok_1", orderId: "ord_1", mode: "sandbox", captureMode: "manual", amountCents: 100, simulated: false });
+    expect(r.json.message).toMatch(/rien n'est débité/i);
+    expect(r.json.message).toMatch(/1,00\s€/);
+    expect(r.text).not.toContain(REVOLUT_KEY);
+    const customer = revolut.calls.find((c) => c.url === "/api/1.0/customers");
+    expect(customer).toMatchObject({ method: "POST", body: { email: "ops@test.local", full_name: "Alice" } });
+    expect(customer?.headers).toMatchObject({ authorization: `Bearer ${REVOLUT_KEY}`, "revolut-api-version": "2026-08-17" });
+    const order = revolut.calls.find((c) => c.url === "/api/orders");
+    // Réservation de 1 € (et non 24,99 €) : le prix de l'offre n'est qu'une métadonnée.
+    expect(order?.body).toMatchObject({ amount: 100, currency: "EUR", capture_mode: "manual", customer: { id: "cus_test_1" }, merchant_order_ext_ref: a_org(), metadata: { orgId: a_org(), plan: "pro", kind: "trial_authorisation", cycle: "monthly", planAmountCents: "2499" } });
     const sub = await call("GET", "/api/billing/subscription");
-    expect(sub.json.provider).toBe("stripe");
-    expect(sub.json.testMode).toBe(true);
+    expect(sub.json).toMatchObject({ status: "trialing", plan: "pro", revolutCustomerId: "cus_test_1", pendingPlan: "pro", cycle: "monthly", cardOnFile: false, paymentMethodId: null });
+    // L'annuel (dix mois) n'autorise pas davantage pendant l'essai : toujours 1 €.
+    const yearly = await call("POST", "/api/billing/checkout", { plan: "agence", cycle: "yearly" });
+    expect(yearly.json).toMatchObject({ orderToken: "tok_2", amountCents: 100, captureMode: "manual" });
+    expect(revolut.calls.filter((c) => c.url === "/api/orders").at(-1)?.body).toMatchObject({ amount: 100, metadata: { planAmountCents: "49990", cycle: "yearly" } });
+    expect(revolut.calls.filter((c) => c.url === "/api/1.0/customers")).toHaveLength(1);
+  });
+
+  it("webhook Revolut : signé accepté une fois (carte enregistrée, autorisation annulée), doublon, mal signé 400, trop ancien 400 ; santé IA protégée", async () => {
+    if (!available) return;
+    const ok = await revolutWebhook("ORDER_AUTHORISED", "ord_1");
+    expect(ok.statusCode).toBe(200);
+    expect(JSON.parse(ok.body)).toMatchObject({ handled: true, duplicate: false, event: "ORDER_AUTHORISED", orderId: "ord_1" });
+    const dupe = await revolutWebhook("ORDER_AUTHORISED", "ord_1");
+    expect(dupe.statusCode).toBe(200);
+    expect(JSON.parse(dupe.body)).toMatchObject({ handled: false, duplicate: true });
+    const bad = await revolutWebhook("ORDER_COMPLETED", "ord_1", { secret: "wsk_mauvais_secret_000000" });
+    expect(bad.statusCode).toBe(400);
+    expect(JSON.parse(bad.body).error.message).toMatch(/Signature invalide/);
+    const old = await revolutWebhook("ORDER_COMPLETED", "ord_1", { at: Date.now() - 10 * 60_000 });
+    expect(old.statusCode).toBe(400);
+    expect(JSON.parse(old.body).error.message).toMatch(/tolérance/);
+    const unsigned = await built.app.inject({ method: "POST", url: "/api/billing/webhook/revolut", payload: "{}", headers: { "content-type": "application/json" } });
+    expect(unsigned.statusCode).toBe(400);
+    const unknown = await revolutWebhook("ORDER_COMPLETED", "ord_inconnue");
+    expect(JSON.parse(unknown.body)).toMatchObject({ handled: false, duplicate: false, ignored: true });
+    // Carte enregistrée « pour le marchand », autorisation annulée : rien n'est débité pendant l'essai.
+    expect(revolut.orders.get("ord_1")?.state).toBe("cancelled");
+    expect(revolut.calls.some((c) => c.url === "/api/1.0/customers/cus_test_1/payment-methods?only_merchant=true")).toBe(true);
+    const sub = await call("GET", "/api/billing/subscription");
+    expect(sub.json).toMatchObject({ status: "trialing", plan: "pro", provider: "revolut", cardOnFile: true, paymentMethodId: "pm_test_1", pendingPlan: "pro", cycle: "monthly", testMode: true, chargeAttempts: 0 });
+    expect(JSON.stringify(sub.json)).not.toMatch(/4242/);
+    const audit = await call("GET", "/api/audit?limit=20");
+    expect(audit.json.some((a: { action: string; meta: { method?: { last4?: string } } }) => a.action === "billing.card_saved" && a.meta.method?.last4 === "4242")).toBe(true);
     const health = await built.app.inject({ method: "GET", url: "/api/ai/health" });
     expect(health.statusCode).toBe(401);
     const health2 = await built.app.inject({ method: "GET", url: "/api/ai/health", headers: { "x-health-token": "jeton-de-sante-de-test-0123" } });
     expect(health2.statusCode).toBe(200);
     expect(JSON.parse(health2.body).status).toBe("mock");
+  });
+
+  it("fin d'essai : sans carte → accès de base sans tentative ; avec carte → débit à l'initiative du marchand, période +1 mois, facture numérotée ; résiliation et changement d'offre", async () => {
+    if (!available) return;
+    const { billing } = await import("@selio/core");
+    const { repos } = await import("@selio/db");
+    const past = new Date(Date.now() - 3_600_000).toISOString();
+    // Une troisième organisation en essai, sans carte : l'échéance la ramène à l'accès de base, sans appel au fournisseur.
+    const c = await call("POST", "/api/auth/register", { email: "carl@test.local", password: "motdepasse-C1", displayName: "Carl", orgName: "Boutique C" }, "none");
+    expect(c.status).toBe(201);
+    cookies.c = cookieOf(c.res);
+    const orgIdC = c.json.org.id as string;
+    expect(await billing.processSubscriptionRenewal(built.services, orgIdC)).toMatchObject({ action: "skipped", reason: "trial_running" });
+    await built.services.db.withOrg(orgIdC, (tx) => repos.subscriptions.upsert(tx, { currentPeriodEnd: past }));
+    const callsBefore = revolut.calls.length;
+    expect(await billing.processSubscriptionRenewal(built.services, orgIdC)).toEqual({ action: "trial_ended" });
+    expect(revolut.calls.length).toBe(callsBefore);
+    const subC = await call("GET", "/api/billing/subscription", undefined, "c");
+    expect(subC.json).toMatchObject({ plan: "free", status: "canceled", cardOnFile: false, pendingPlan: null, dataRetentionUntil: null, quotas: { connections: 1, aiRequestsPerMonth: 50 } });
+    expect(await billing.processSubscriptionRenewal(built.services, orgIdC)).toMatchObject({ action: "skipped" });
+    expect((await call("POST", "/api/billing/cancel", undefined, "c")).status).toBe(409);
+    expect((await call("POST", "/api/billing/plan", { plan: "agence" }, "c")).status).toBe(409);
+
+    // A : essai terminé, carte enregistrée → commande automatique + débit du moyen enregistré (initiateur : marchand).
+    await built.services.db.withOrg(a_org(), (tx) => repos.subscriptions.upsert(tx, { currentPeriodEnd: past }));
+    revolut.chargeOutcomes.push("completed");
+    const renewed = await billing.processSubscriptionRenewal(built.services, a_org());
+    expect(renewed).toMatchObject({ action: "renewed", invoiceNumber: expect.stringMatching(/^SEL-\d{4}-000001$/) });
+    const orderCall = revolut.calls.filter((c2) => c2.url === "/api/orders").at(-1);
+    expect(orderCall?.body).toMatchObject({ amount: 2499, currency: "EUR", capture_mode: "automatic", customer: { id: "cus_test_1" }, metadata: { kind: "renewal", cycle: "monthly", attempt: "1" } });
+    const charge = revolut.calls.filter((c2) => /\/payments$/.test(c2.url)).at(-1);
+    expect(charge?.body).toEqual({ saved_payment_method: { type: "card", id: "pm_test_1", initiator: "merchant" } });
+    const subA = (await call("GET", "/api/billing/subscription")).json;
+    expect(subA).toMatchObject({ plan: "pro", status: "active", provider: "revolut", cardOnFile: true, pendingPlan: null, chargeAttempts: 0, nextChargeAt: null, lastChargeError: null, dataRetentionUntil: null, quotas: { connections: 3 } });
+    // La période part de l'échéance (pas de maintenant) et dure un mois.
+    expect(new Date(subA.currentPeriodEnd).getTime()).toBe(billing.addCycle(new Date(past), "monthly").getTime());
+
+    const invoices = await call("GET", "/api/billing/invoices");
+    expect(invoices.status).toBe(200);
+    expect(invoices.json).toHaveLength(1);
+    const renewalOrderId = charge?.url.split("/")[3];
+    expect(invoices.json[0]).toMatchObject({ number: renewed.invoiceNumber, plan: "pro", cycle: "monthly", amountCents: 2499, vatRate: 20, vatNotice: null, orderId: renewalOrderId, periodStart: past });
+    const view = await call("GET", `/api/billing/invoices/${invoices.json[0].id}`);
+    expect(view.status).toBe(200);
+    expect(view.json).toMatchObject({ issuer: { name: "Selio", vatNotice: null }, customer: { orgName: "Boutique A", email: "ops@test.local" }, totals: { exclVatCents: 2083, vatCents: 416, inclVatCents: 2499, vatRate: 20 }, paymentProvider: "revolut" });
+    expect(view.json.lines[0].label).toMatch(/Pro — mensuel/);
+    expect((await call("GET", "/api/billing/invoices", undefined, "v")).status).toBe(403);
+    expect((await call("GET", `/api/billing/invoices/${invoices.json[0].id}`, undefined, "c")).status).toBe(404);
+    // Le webhook ORDER_COMPLETED qui suit le débit direct ne refait rien (commande déjà close) : une seule facture.
+    const late = await revolutWebhook("ORDER_COMPLETED", renewalOrderId!);
+    expect(JSON.parse(late.body)).toMatchObject({ handled: true, duplicate: false });
+    expect((await call("GET", "/api/billing/invoices")).json).toHaveLength(1);
+    expect(await billing.processSubscriptionRenewal(built.services, a_org())).toMatchObject({ action: "skipped", reason: "not_due" });
+
+    // Résiliation en fin de période, réactivation, changement d'offre au prochain renouvellement.
+    expect((await call("POST", "/api/billing/cancel")).json).toMatchObject({ cancelAtPeriodEnd: true, status: "active", plan: "pro" });
+    expect((await call("POST", "/api/billing/reactivate")).json.cancelAtPeriodEnd).toBe(false);
+    expect((await call("POST", "/api/billing/plan", { plan: "agence" })).json.pendingPlan).toBe("agence");
+    expect((await call("POST", "/api/billing/plan", { plan: "free" })).status).toBe(400);
+    // Carte enregistrée et abonnement actif : un nouveau « paiement » est un changement d'offre, sans formulaire ni commande.
+    const ordersBefore = revolut.orders.size;
+    const again = await call("POST", "/api/billing/checkout", { plan: "agence", cycle: "yearly" });
+    expect(again.json).toMatchObject({ orderToken: null, orderId: null, amountCents: 49990, simulated: false });
+    expect(again.json.message).toMatch(/prochain renouvellement/);
+    expect(revolut.orders.size).toBe(ordersBefore);
+    expect((await call("POST", "/api/billing/plan", { plan: "pro" })).json.pendingPlan).toBeNull();
+  });
+
+  it("essai : première carte refusée puis une autre autorisée sur la même commande → carte enregistrée, autorisation annulée (B)", async () => {
+    if (!available) return;
+    const r = await call("POST", "/api/billing/checkout", { plan: "pro", cycle: "monthly" }, "b");
+    expect(r.status).toBe(200);
+    const orderId = r.json.orderId as string;
+    // Carte refusée dans le formulaire : commande « failed » côté Selio, rien d'autre.
+    revolut.simulateFormPayment(orderId, "pm_refusee", "DECLINED");
+    expect(JSON.parse((await revolutWebhook("ORDER_PAYMENT_DECLINED", orderId)).body)).toMatchObject({ handled: true });
+    expect((await call("GET", "/api/billing/subscription", undefined, "b")).json).toMatchObject({ status: "trialing", cardOnFile: false, paymentMethodId: null });
+    // Deuxième carte autorisée sur la même commande (Revolut autorise plusieurs tentatives) : elle est retenue.
+    revolut.simulateFormPayment(orderId, "pm_test_1", "AUTHORISED");
+    expect(JSON.parse((await revolutWebhook("ORDER_AUTHORISED", orderId)).body)).toMatchObject({ handled: true, duplicate: false });
+    expect((await call("GET", "/api/billing/subscription", undefined, "b")).json).toMatchObject({ status: "trialing", cardOnFile: true, paymentMethodId: "pm_test_1", pendingPlan: "pro", provider: "revolut" });
+    expect(revolut.orders.get(orderId)?.state).toBe("cancelled");
+  });
+
+  it("webhook ORDER_AUTHORISED pendant une panne de la liste des moyens : 503 (Revolut relivre), carte intacte ; au rejeu, carte enregistrée (D)", async () => {
+    if (!available) return;
+    const d = await call("POST", "/api/auth/register", { email: "dana@test.local", password: "motdepasse-D1", displayName: "Dana", orgName: "Boutique D" }, "none");
+    expect(d.status).toBe(201);
+    cookies.d = cookieOf(d.res);
+    const r = await call("POST", "/api/billing/checkout", { plan: "agence", cycle: "yearly" }, "d");
+    const orderId = r.json.orderId as string;
+    revolut.simulateFormPayment(orderId, "pm_test_1", "AUTHORISED");
+    revolut.state.failPaymentMethodsOnce = true;
+    const down = await revolutWebhook("ORDER_AUTHORISED", orderId);
+    expect(down.statusCode).toBe(503);
+    expect(JSON.parse(down.body).error.code).toBe("payment_provider_unavailable");
+    // Rien n'a été conclu à tort : ni « aucune carte », ni annulation, et l'événement n'est pas marqué traité.
+    expect((await call("GET", "/api/billing/subscription", undefined, "d")).json).toMatchObject({ status: "trialing", cardOnFile: false, paymentMethodId: null });
+    expect(revolut.orders.get(orderId)?.state).toBe("authorised");
+    const replay = await revolutWebhook("ORDER_AUTHORISED", orderId);
+    expect(replay.statusCode).toBe(200);
+    expect(JSON.parse(replay.body)).toMatchObject({ handled: true, duplicate: false });
+    expect((await call("GET", "/api/billing/subscription", undefined, "d")).json).toMatchObject({ status: "trialing", cardOnFile: true, paymentMethodId: "pm_test_1", pendingPlan: "agence", cycle: "yearly" });
+    expect(revolut.orders.get(orderId)?.state).toBe("cancelled");
+    expect(JSON.parse((await revolutWebhook("ORDER_AUTHORISED", orderId)).body)).toMatchObject({ duplicate: true });
+  });
+
+  it("période déjà payée jamais écrasée (409) ; après un retour à l'accès de base pour impayé, le nouveau paiement retient la nouvelle carte (A)", async () => {
+    if (!available) return;
+    const { repos } = await import("@selio/db");
+    // Actif et payé jusqu'au mois prochain, sans moyen de paiement connu : un nouveau paiement à capture automatique est refusé.
+    await built.services.db.withOrg(a_org(), (tx) => repos.subscriptions.upsert(tx, { paymentMethodId: null, cardOnFile: true }));
+    const refused = await call("POST", "/api/billing/checkout", { plan: "agence", cycle: "monthly" });
+    expect(refused.status).toBe(409);
+    expect(refused.json.error.message).toMatch(/déjà payée jusqu'au/);
+    // Relances épuisées (état laissé par le worker) : accès de base, carte qui échouait oubliée.
+    const past = new Date(Date.now() - 2 * 86_400_000).toISOString();
+    await built.services.db.withOrg(a_org(), (tx) => repos.subscriptions.upsert(tx, { plan: "free", status: "canceled", quotas: { ...quotasForPlan("free") }, currentPeriodEnd: past, cardOnFile: false, paymentMethodId: null, pendingPlan: null, chargeAttempts: 4, nextChargeAt: null, lastChargeError: "Carte expirée", dataRetentionUntil: new Date(Date.now() + 28 * 86_400_000).toISOString() }));
+    revolut.state.paymentMethods = [fakeCard("pm_test_1", "2026-10-01T10:00:00Z"), fakeCard("pm_test_2", "2026-10-29T09:00:00Z", "1881")];
+    const pay = await call("POST", "/api/billing/checkout", { plan: "pro", cycle: "monthly" });
+    expect(pay.status).toBe(200);
+    expect(pay.json).toMatchObject({ captureMode: "automatic", amountCents: 2499 });
+    const orderId = pay.json.orderId as string;
+    revolut.simulateFormPayment(orderId, "pm_test_2", "COMPLETED");
+    expect(JSON.parse((await revolutWebhook("ORDER_COMPLETED", orderId)).body)).toMatchObject({ handled: true });
+    const sub = (await call("GET", "/api/billing/subscription")).json;
+    expect(sub).toMatchObject({ plan: "pro", status: "active", cardOnFile: true, paymentMethodId: "pm_test_2", chargeAttempts: 0, lastChargeError: null, dataRetentionUntil: null, quotas: { connections: 3 } });
+    expect(new Date(sub.currentPeriodEnd).getTime()).toBeGreaterThan(Date.now() + 27 * 86_400_000);
+    const invoices = (await call("GET", "/api/billing/invoices")).json;
+    expect(invoices).toHaveLength(2);
+    expect(invoices[0]).toMatchObject({ number: expect.stringMatching(/-000002$/), plan: "pro", amountCents: 2499, orderId });
+    // Le webhook rejoué ne refait rien.
+    expect(JSON.parse((await revolutWebhook("ORDER_COMPLETED", orderId)).body)).toMatchObject({ duplicate: true });
+    expect((await call("GET", "/api/billing/invoices")).json).toHaveLength(2);
+  });
+
+  it("changement de carte en retard de paiement (POST /api/billing/card) : commande de vérification de 1 €, nouvelle carte retenue, débit retenté dans l'heure (A)", async () => {
+    if (!available) return;
+    const { billing } = await import("@selio/core");
+    const { repos } = await import("@selio/db");
+    expect((await call("POST", "/api/billing/card", undefined, "v")).status).toBe(403);
+    expect((await call("POST", "/api/billing/card", undefined, "c")).status).toBe(409);
+    const past = new Date(Date.now() - 3_600_000).toISOString();
+    await built.services.db.withOrg(a_org(), (tx) => repos.subscriptions.upsert(tx, { status: "past_due", currentPeriodEnd: past, chargeAttempts: 1, nextChargeAt: new Date(Date.now() + 3 * 86_400_000).toISOString(), lastChargeError: "Paiement refusé par la banque" }));
+    const r = await call("POST", "/api/billing/card");
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ captureMode: "manual", amountCents: 100, mode: "sandbox", simulated: false });
+    expect(r.json.message).toMatch(/retenté dans l'heure/);
+    const orderId = r.json.orderId as string;
+    expect(revolut.calls.filter((c) => c.url === "/api/orders").at(-1)?.body).toMatchObject({ amount: 100, capture_mode: "manual", metadata: { kind: "card_update" } });
+    revolut.state.paymentMethods = [fakeCard("pm_test_1", "2026-10-01T10:00:00Z"), fakeCard("pm_test_2", "2026-10-29T09:00:00Z", "1881"), fakeCard("pm_test_3", "2026-10-29T12:00:00Z", "0005")];
+    revolut.simulateFormPayment(orderId, "pm_test_3", "AUTHORISED");
+    expect(JSON.parse((await revolutWebhook("ORDER_AUTHORISED", orderId)).body)).toMatchObject({ handled: true });
+    const sub = (await call("GET", "/api/billing/subscription")).json;
+    expect(sub).toMatchObject({ status: "past_due", plan: "pro", cardOnFile: true, paymentMethodId: "pm_test_3", chargeAttempts: 1 });
+    expect(new Date(sub.nextChargeAt).getTime()).toBeLessThanOrEqual(Date.now());
+    expect(revolut.orders.get(orderId)?.state).toBe("cancelled");
+    expect(JSON.stringify(sub)).not.toMatch(/0005/);
+    const audit = (await call("GET", "/api/audit?limit=10")).json as { action: string; meta: { kind?: string; retryWithinHour?: boolean; method?: { last4?: string } } }[];
+    expect(audit.some((a) => a.action === "billing.card_saved" && a.meta.kind === "card_update" && a.meta.retryWithinHour === true && a.meta.method?.last4 === "0005")).toBe(true);
+    // Passage du worker : le débit en retard est retenté tout de suite avec la nouvelle carte.
+    revolut.chargeOutcomes.push("completed");
+    expect(await billing.processSubscriptionRenewal(built.services, a_org())).toMatchObject({ action: "renewed" });
+    expect(revolut.calls.filter((c) => /\/payments$/.test(c.url)).at(-1)?.body).toEqual({ saved_payment_method: { type: "card", id: "pm_test_3", initiator: "merchant" } });
+    expect((await call("GET", "/api/billing/subscription")).json).toMatchObject({ status: "active", chargeAttempts: 0, nextChargeAt: null, paymentMethodId: "pm_test_3" });
+    expect((await call("GET", "/api/billing/invoices")).json).toHaveLength(3);
+  });
+
+  it("capture inattendue d'une commande de vérification (ORDER_COMPLETED) : aucune facture ni activation, carte retenue, capture journalisée à rembourser (D)", async () => {
+    if (!available) return;
+    const r = await call("POST", "/api/billing/card", undefined, "d");
+    expect(r.status).toBe(200);
+    const orderId = r.json.orderId as string;
+    revolut.simulateFormPayment(orderId, "pm_test_1", "COMPLETED");
+    expect(JSON.parse((await revolutWebhook("ORDER_COMPLETED", orderId)).body)).toMatchObject({ handled: true });
+    expect((await call("GET", "/api/billing/subscription", undefined, "d")).json).toMatchObject({ status: "trialing", plan: "pro", pendingPlan: "agence", cardOnFile: true, paymentMethodId: "pm_test_1" });
+    expect((await call("GET", "/api/billing/invoices", undefined, "d")).json).toEqual([]);
+    const audit = (await call("GET", "/api/audit?limit=10", undefined, "d")).json as { action: string; meta: { orderId?: string; amountCents?: number; toRefund?: boolean } }[];
+    expect(audit.some((a) => a.action === "billing.unexpected_capture" && a.meta.orderId === orderId && a.meta.amountCents === 100 && a.meta.toRefund === true)).toBe(true);
+    expect(audit.some((a) => a.action === "billing.payment_completed" && a.meta.orderId === orderId)).toBe(false);
   });
 
   it("état de l'IA et négociation : taux, quota du mois, limites, droits", async () => {
@@ -768,6 +1064,68 @@ describe("API Selio (mode connecté, base réelle)", () => {
     }
   });
 
+  it("relances : l'échéance puis J+1, J+3, J+7 échouent → accès de base, données conservées 30 jours, un email à chaque échec", async () => {
+    if (!available) return;
+    const { billing } = await import("@selio/core");
+    const { repos } = await import("@selio/db");
+    const day = 86_400_000;
+    const due = new Date(Date.now() - 60_000);
+    await built.services.db.withOrg(a_org(), (tx) => repos.subscriptions.upsert(tx, { currentPeriodEnd: due.toISOString(), status: "active", plan: "pro", pendingPlan: null, cancelAtPeriodEnd: false }));
+    let clock = new Date(due.getTime() + 60_000);
+    const svc = { ...built.services, now: () => clock };
+    const mailsBefore = mailbox.all().length;
+    const invoicesBefore = (await call("GET", "/api/billing/invoices")).json.length;
+
+    revolut.chargeOutcomes.push("failed");
+    expect(await billing.processSubscriptionRenewal(svc, a_org())).toMatchObject({ action: "failed", nextChargeAt: new Date(due.getTime() + day).toISOString() });
+    let sub = (await call("GET", "/api/billing/subscription")).json;
+    expect(sub).toMatchObject({ status: "past_due", plan: "pro", chargeAttempts: 1, nextChargeAt: new Date(due.getTime() + day).toISOString(), quotas: { connections: 3 } });
+    expect(sub.lastChargeError).toBeTruthy();
+    expect(mailbox.all().length).toBe(mailsBefore + 1);
+    expect(mailbox.last()).toMatchObject({ to: "ops@test.local", subject: expect.stringMatching(/paiement/i) });
+    expect(mailbox.last()?.text).toMatch(/Pro/);
+    expect(mailbox.last()?.text).toMatch(/réessaierons automatiquement le/);
+    expect(mailbox.last()?.text).toContain("https://app.selio.test/app/settings/billing");
+
+    // Avant J+1 : rien ne se passe (ni commande ni email).
+    clock = new Date(due.getTime() + day / 2);
+    const callsBefore = revolut.calls.length;
+    expect(await billing.processSubscriptionRenewal(svc, a_org())).toMatchObject({ action: "skipped", reason: "not_due" });
+    expect(revolut.calls.length).toBe(callsBefore);
+
+    // J+1 : refus de la banque (422) → J+3 ; J+3 : échec → J+7.
+    clock = new Date(due.getTime() + day + 1000);
+    revolut.chargeOutcomes.push("declined");
+    expect(await billing.processSubscriptionRenewal(svc, a_org())).toMatchObject({ action: "failed", nextChargeAt: new Date(due.getTime() + 3 * day).toISOString() });
+    expect((await call("GET", "/api/billing/subscription")).json).toMatchObject({ status: "past_due", chargeAttempts: 2, lastChargeError: expect.stringMatching(/3000/) });
+    clock = new Date(due.getTime() + 3 * day + 1000);
+    revolut.chargeOutcomes.push("failed");
+    expect(await billing.processSubscriptionRenewal(svc, a_org())).toMatchObject({ action: "failed", nextChargeAt: new Date(due.getTime() + 7 * day).toISOString() });
+    expect(mailbox.all().length).toBe(mailsBefore + 3);
+
+    // J+7 : dernier échec → accès de base, données conservées 30 jours, email de fin.
+    clock = new Date(due.getTime() + 7 * day + 1000);
+    revolut.chargeOutcomes.push("failed");
+    expect(await billing.processSubscriptionRenewal(svc, a_org())).toMatchObject({ action: "ended" });
+    sub = (await call("GET", "/api/billing/subscription")).json;
+    // La carte qui échouait est oubliée : le prochain paiement enregistrera celle que le client saisira (jamais quatre nouveaux refus sur l'ancienne).
+    expect(sub).toMatchObject({ plan: "free", status: "canceled", provider: "revolut", chargeAttempts: 4, nextChargeAt: null, pendingPlan: null, cardOnFile: false, paymentMethodId: null, revolutCustomerId: "cus_test_1", quotas: { connections: 1, aiRequestsPerMonth: 50 } });
+    expect(new Date(sub.dataRetentionUntil).getTime()).toBe(clock.getTime() + 30 * day);
+    expect(mailbox.all().length).toBe(mailsBefore + 4);
+    expect(mailbox.last()?.subject).toMatch(/accès de base/);
+    expect(mailbox.last()?.text).toMatch(/30 jours/);
+    expect(JSON.stringify(mailbox.all().slice(-4))).not.toMatch(/4242|pm_test|sk_test/);
+    // Aucune facture pour un débit échoué ; plus aucune tentative ensuite.
+    expect((await call("GET", "/api/billing/invoices")).json.length).toBe(invoicesBefore);
+    const callsAfter = revolut.calls.length;
+    clock = new Date(due.getTime() + 30 * day);
+    expect(await billing.processSubscriptionRenewal(svc, a_org())).toMatchObject({ action: "skipped" });
+    expect(revolut.calls.length).toBe(callsAfter);
+    const audit = await call("GET", "/api/audit?limit=50");
+    expect(audit.json.filter((a: { action: string }) => a.action === "billing.charge_failed")).toHaveLength(3);
+    expect(audit.json.some((a: { action: string; meta: { reason?: string } }) => a.action === "billing.subscription_ended" && a.meta.reason === "payment_failed")).toBe(true);
+  });
+
   it("export, suppression avec confirmation et déconnexion", async () => {
     if (!available) return;
     const exp = await call("GET", "/api/data/export", undefined, "b");
@@ -785,6 +1143,7 @@ describe("API Selio (mode connecté, base réelle)", () => {
 });
 
 let orgIdA = "";
+let userIdA = "";
 function a_org(): string {
   return orgIdA;
 }

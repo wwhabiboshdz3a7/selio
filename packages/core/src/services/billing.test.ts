@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { quotasForPlan } from "@selio/contracts";
-import { parsePriceIds, subsidiaryUsageFrom, usageDayStart, usagePeriodStart } from "./billing";
+import { PRICING } from "@selio/demo-data";
+import { addCycle, addMonthsUtc, cycleLabel, formatDateFr, formatEuros, nextChargeDate, planPriceCents, subsidiaryUsageFrom, usageDayStart, usagePeriodStart } from "./billing";
 
 describe("facturation : compteurs par filiale (fonctions pures)", () => {
   it("la période repart du 1er du mois (UTC) et les plafonds journaliers du jour (UTC)", () => {
@@ -30,9 +31,32 @@ describe("facturation : compteurs par filiale (fonctions pures)", () => {
     expect(subsidiaryUsageFrom({}, quotasForPlan("free")).studio.listings.quota).toBe(0);
   });
 
-  it("identifiants de prix : Starter, Pro et Agence lus depuis l'environnement", () => {
-    expect(parsePriceIds({})).toEqual({});
-    expect(parsePriceIds({ STRIPE_PRICE_STARTER: "price_s", STRIPE_PRICE_PRO: "price_p", STRIPE_PRICE_AGENCE: "price_a" })).toEqual({ starter: "price_s", pro: "price_p", agence: "price_a" });
-    expect(parsePriceIds({ STRIPE_PRICE_AGENCE: "" })).toEqual({});
+});
+
+describe("facturation Revolut : tarifs, périodes, relances (fonctions pures)", () => {
+  it("montants depuis PRICING : mensuel, annuel = 10 mois", () => {
+    expect(planPriceCents("starter", "monthly")).toBe(PRICING.monthlyCents.starter);
+    expect(planPriceCents("pro", "monthly")).toBe(2499);
+    expect(planPriceCents("agence", "yearly")).toBe(4999 * 10);
+    expect(formatEuros(2499).replace(/\s/g, " ")).toBe("24,99 €");
+    expect(cycleLabel("monthly")).toBe("mensuel");
+    expect(cycleLabel("yearly")).toBe("annuel");
+  });
+
+  it("période suivante : +1 mois (jour conservé ou borné), +1 an", () => {
+    expect(addCycle(new Date("2026-11-01T10:00:00.000Z"), "monthly").toISOString()).toBe("2026-12-01T10:00:00.000Z");
+    expect(addMonthsUtc(new Date("2026-01-31T00:00:00.000Z"), 1).toISOString()).toBe("2026-02-28T00:00:00.000Z");
+    expect(addMonthsUtc(new Date("2028-01-31T00:00:00.000Z"), 1).toISOString()).toBe("2028-02-29T00:00:00.000Z");
+    expect(addMonthsUtc(new Date("2026-12-15T08:30:00.000Z"), 1).toISOString()).toBe("2027-01-15T08:30:00.000Z");
+    expect(addCycle(new Date("2028-02-29T00:00:00.000Z"), "yearly").toISOString()).toBe("2029-02-28T00:00:00.000Z");
+  });
+
+  it("relances : J+1, J+3, J+7 après l'échéance, puis plus aucune", () => {
+    const due = new Date("2026-11-01T00:00:00.000Z");
+    expect(nextChargeDate(due, 1)?.toISOString()).toBe("2026-11-02T00:00:00.000Z");
+    expect(nextChargeDate(due, 2)?.toISOString()).toBe("2026-11-04T00:00:00.000Z");
+    expect(nextChargeDate(due, 3)?.toISOString()).toBe("2026-11-08T00:00:00.000Z");
+    expect(nextChargeDate(due, 4)).toBeNull();
+    expect(formatDateFr(new Date("2026-11-02T00:00:00.000Z"))).toBe("2 novembre 2026");
   });
 });

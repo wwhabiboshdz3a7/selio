@@ -13,10 +13,12 @@ import { AIService, MockAIProvider, counterOfferWording } from "@selio/ai";
 import { buildDemoState } from "@selio/demo-data";
 import { DEAL_ENTRIES, LocalDemoStorage, buildMarketObservations, type DemoState, type DemoStorage } from "@selio/demo-data";
 import { PLAN_QUOTAS } from "@selio/demo-data";
-import { DataError, type AdminOrgUsage, type AdminOverview, type AdminUsageReport, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
+import { DataError, type AdminOrgUsage, type AdminOverview, type AdminUsageReport, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type CheckoutOutcome, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
 import type { AiHealthData } from "../data/types";
 import { effectiveAiQuota, summarizeAiRequests } from "@selio/domain";
 import { PLANS, PLAN_LABELS, TRIAL_DAYS, buildUsageCounter, quotasForPlan, type PaidPlan, type PlanQuotas, type TrialDays, type UsageCounter } from "@selio/contracts";
+import { CARD_VERIFICATION_AMOUNT_CENTS, DATA_RETENTION_DAYS_AFTER_END, DEFAULT_VAT_RATE, PAID_PLANS, invoiceAmounts, type BillingCycle, type Invoice, type InvoiceView } from "@selio/contracts";
+import { CYCLE_LABELS, addCycle, inTrial as trialRunning, isRunning, periodLabel as invoicePeriodLabel, planPriceCents } from "../billing";
 import { helpAskInput, type HelpAnswer } from "@selio/contracts";
 import { can } from "@selio/domain";
 import { whiteLabelInput as whiteLabelInputSchema, type WhiteLabel, type WhiteLabelInput } from "@selio/contracts";
@@ -33,6 +35,19 @@ function norm(s: string | null | undefined): string {
 }
 
 type Subsidiaries = Pick<UsageSummary, "studio" | "track" | "cloud">;
+
+/**
+ * Factures de la démonstration : rangées à côté de l'état partagé (`DemoState` ne les connaît pas),
+ * persistées avec lui (le stockage enregistre l'objet entier) et absentes tant qu'aucun paiement
+ * simulé n'a eu lieu.
+ */
+type DemoBillingState = DemoState & { invoices?: Invoice[] };
+
+const isPaid = (plan: Plan | null | undefined): plan is PaidPlan => (PAID_PLANS as readonly string[]).includes(plan ?? "");
+/** Identifiants fictifs du client et de la carte « enregistrée pour le marchand » (jamais une donnée de carte). */
+const DEMO_CUSTOMER_ID = "cust_demo";
+const DEMO_PAYMENT_METHOD_ID = "pm_demo_carte_enregistree";
+const formatEurosFr = (cents: number): string => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(cents / 100);
 
 /** Compteurs par filiale (même règle que `subsidiaryUsageFrom` côté serveur) ; les filtres Track suivis n'ont pas encore de stockage. */
 function subsidiaryUsage(month: Record<string, number>, quotas: PlanQuotas, cloudToday: number): Subsidiaries {
@@ -1411,7 +1426,81 @@ export class DemoClient implements DataClient {
 
   // ---------- abonnement ----------
   async getSubscription(): Promise<Subscription> {
+    this.settleSubscription();
     return this.s.subscription;
+  }
+  private requireBillingManage(): void {
+    if (!can(this.session().role, "billing.manage")) throw new DataError("forbidden", "Seul le propriétaire peut gérer l'abonnement.", 403);
+  }
+  private invoices(): Invoice[] {
+    const st = this.s as DemoBillingState;
+    st.invoices ??= [];
+    return st.invoices;
+  }
+  /** Numéro séquentiel par année, comme la séquence SQL côté serveur : SEL-AAAA-000001. */
+  private nextInvoiceNumber(issuedAt: Date): string {
+    const year = issuedAt.getUTCFullYear();
+    const prefix = `SEL-${year}-`;
+    const last = this.invoices().filter((i) => i.number.startsWith(prefix)).reduce((m, i) => Math.max(m, Number(i.number.slice(prefix.length)) || 0), 0);
+    return `${prefix}${String(last + 1).padStart(6, "0")}`;
+  }
+  /**
+   * Ce que ferait le worker à l'échéance (`processSubscriptionRenewal`), appliqué à la lecture pour
+   * que la démonstration vive avec l'horloge : fin d'essai sans carte → accès de base ; avec carte →
+   * premier débit ; renouvellement simulé (facture) ; résiliation à l'échéance (données gardées 30 j).
+   */
+  private settleSubscription(): void {
+    const now = this.clock();
+    let changed = false;
+    // Le jeu de données dit « carte enregistrée » sans fournisseur : c'est la carte fictive de la
+    // démonstration, enregistrée « pour le marchand » chez Revolut (bac à sable), comme après un
+    // vrai enregistrement. Un abonnement issu d'une inscription (cardOnFile=false) n'est pas touché.
+    const seeded = this.s.subscription;
+    if (seeded.cardOnFile && (seeded.provider !== "revolut" || !seeded.paymentMethodId)) {
+      this.s.subscription = { ...seeded, provider: "revolut", testMode: true, revolutCustomerId: seeded.revolutCustomerId ?? DEMO_CUSTOMER_ID, paymentMethodId: seeded.paymentMethodId ?? DEMO_PAYMENT_METHOD_ID };
+      changed = true;
+    }
+    for (let guard = 0; guard < 24; guard += 1) {
+      const sub = this.s.subscription;
+      if (!sub.currentPeriodEnd || new Date(sub.currentPeriodEnd) > now || !isRunning(sub)) break;
+      if (sub.status === "trialing") {
+        if (!sub.cardOnFile || !sub.paymentMethodId || sub.cancelAtPeriodEnd) {
+          this.endDemoSubscription(sub.cancelAtPeriodEnd ? "cancelled" : "trial_ended", false);
+        } else {
+          this.completeDemoPayment(isPaid(sub.pendingPlan) ? sub.pendingPlan : "pro", sub.cycle, "renewal");
+        }
+      } else if (sub.provider !== "revolut") {
+        break;
+      } else if (sub.cancelAtPeriodEnd) {
+        this.endDemoSubscription("cancelled", true);
+      } else {
+        const plan = isPaid(sub.pendingPlan) ? sub.pendingPlan : isPaid(sub.plan) ? sub.plan : null;
+        if (!plan) break;
+        this.completeDemoPayment(plan, sub.cycle, "renewal");
+      }
+      changed = true;
+    }
+    if (changed) this.persist();
+  }
+  private endDemoSubscription(reason: "trial_ended" | "cancelled", retainData: boolean): void {
+    const now = this.clock();
+    const sub = this.s.subscription;
+    this.s.subscription = { ...sub, plan: "free", quotas: quotasForPlan("free"), status: "canceled", pendingPlan: null, chargeAttempts: 0, nextChargeAt: null, cancelAtPeriodEnd: false, dataRetentionUntil: retainData ? new Date(now.getTime() + DATA_RETENTION_DAYS_AFTER_END * 86_400_000).toISOString() : null, updatedAt: now.toISOString() };
+    this.audit(reason === "trial_ended" ? "billing.trial_ended" : "billing.subscription_ended", "subscription", sub.id, { reason, previousPlan: sub.plan, cardOnFile: sub.cardOnFile, simulated: true });
+  }
+  /** Paiement simulé réussi : période ouverte (depuis l'échéance pour un renouvellement), facture émise, abonnement actif. */
+  private completeDemoPayment(plan: PaidPlan, cycle: BillingCycle, kind: "checkout" | "renewal", orderId = `demo-order-${newId()}`): Invoice {
+    const now = this.clock();
+    const sub = this.s.subscription;
+    const previousEnd = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null;
+    const start = kind === "renewal" && previousEnd && previousEnd <= now ? previousEnd : now;
+    const end = addCycle(start, cycle);
+    const amountCents = planPriceCents(plan, cycle);
+    const invoice: Invoice = { id: newId(), orgId: this.s.org.id, number: this.nextInvoiceNumber(now), plan, cycle, amountCents, vatRate: DEFAULT_VAT_RATE, vatNotice: null, periodStart: start.toISOString(), periodEnd: end.toISOString(), orderId, issuedAt: now.toISOString(), createdAt: now.toISOString() };
+    this.invoices().unshift(invoice);
+    this.s.subscription = { ...sub, plan, quotas: quotasForPlan(plan), status: "active", provider: "revolut", externalRef: null, currentPeriodEnd: end.toISOString(), cycle, pendingPlan: null, cardOnFile: true, revolutCustomerId: sub.revolutCustomerId ?? DEMO_CUSTOMER_ID, paymentMethodId: sub.paymentMethodId ?? DEMO_PAYMENT_METHOD_ID, chargeAttempts: 0, nextChargeAt: null, lastChargeError: null, dataRetentionUntil: null, cancelAtPeriodEnd: false, testMode: true, updatedAt: now.toISOString() };
+    this.audit("billing.payment_completed", "invoice", invoice.id, { plan, cycle, amountCents, orderId, kind, invoiceNumber: invoice.number, periodEnd: end.toISOString(), simulated: true });
+    return invoice;
   }
   /**
    * Compteur IA du mois, même règle que le refus côté serveur (`repos.aiRequests.countSince` +
@@ -1462,11 +1551,112 @@ export class DemoClient implements DataClient {
       warning: usageWatchList(counters, subsidiaries).some((c) => c.warning),
     };
   }
-  async startCheckout(plan: PaidPlan) {
+  /**
+   * Démonstration du paiement : aucun formulaire, succès immédiat. Pendant l'essai, la carte est
+   * « enregistrée » (rien débité, l'offre retenue sera débitée à la fin) ; hors essai, le paiement
+   * est simulé sur-le-champ (période ouverte, facture). Carte déjà enregistrée : changement d'offre.
+   */
+  async startCheckout(plan: PaidPlan, opts: { cycle?: BillingCycle } = {}): Promise<CheckoutOutcome> {
     await this.delay(300);
-    this.audit("billing.checkout_simulated", "subscription", this.s.subscription.id, { plan });
+    this.requireBillingManage();
+    if (!isPaid(plan)) throw new DataError("validation", "Plan invalide : choisissez Starter, Pro ou Agence.", 400);
+    this.settleSubscription();
+    const cycle: BillingCycle = opts.cycle === "yearly" ? "yearly" : "monthly";
+    const now = this.clock();
+    const sub = this.s.subscription;
+    const amountCents = planPriceCents(plan, cycle);
+    const trial = trialRunning(sub, now);
+    if (sub.cardOnFile && sub.paymentMethodId && sub.provider === "revolut" && (sub.status === "active" || sub.status === "past_due" || trial)) {
+      this.s.subscription = { ...sub, pendingPlan: sub.status === "active" && plan === sub.plan ? null : plan, cycle, updatedAt: this.now() };
+      this.audit("billing.plan_change_requested", "subscription", sub.id, { from: sub.plan, to: plan, cycle, simulated: true });
+      this.persist();
+      return { orderToken: null, orderId: null, mode: "sandbox", amountCents, captureMode: null, simulated: true, message: trial ? `Offre ${PLAN_LABELS[plan]} retenue : elle sera débitée à la fin de l'essai avec la carte enregistrée.` : `Changement d'offre enregistré : ${PLAN_LABELS[plan]} s'appliquera au prochain renouvellement.` };
+    }
+    const orderId = `demo-order-${newId()}`;
+    if (trial) {
+      // Comme le serveur : autorisation d'un montant de vérification (jamais le prix de l'offre), annulée aussitôt.
+      this.s.subscription = { ...sub, provider: "revolut", testMode: true, cardOnFile: true, revolutCustomerId: sub.revolutCustomerId ?? DEMO_CUSTOMER_ID, paymentMethodId: DEMO_PAYMENT_METHOD_ID, pendingPlan: plan, cycle, updatedAt: this.now() };
+      this.audit("billing.checkout_simulated", "subscription", sub.id, { plan, cycle, captureMode: "manual", kind: "trial_authorisation", amountCents: CARD_VERIFICATION_AMOUNT_CENTS, planAmountCents: amountCents, orderId });
+      this.persist();
+      return { orderToken: null, orderId, mode: "sandbox", amountCents: CARD_VERIFICATION_AMOUNT_CENTS, captureMode: "manual", simulated: true, message: `Démonstration : carte enregistrée pour l'offre ${PLAN_LABELS[plan]} (autorisation de ${formatEurosFr(CARD_VERIFICATION_AMOUNT_CENTS)} annulée aussitôt), rien n'est débité avant la fin de l'essai. En mode connecté, le formulaire Revolut s'ouvrirait ici.` };
+    }
+    const invoice = this.completeDemoPayment(plan, cycle, "checkout", orderId);
+    this.audit("billing.checkout_simulated", "subscription", sub.id, { plan, cycle, captureMode: "automatic", kind: "checkout", amountCents, orderId });
     this.persist();
-    return { url: null, simulated: true, message: `Démonstration : aucun paiement n'est déclenché. En mode connecté, le paiement (mode test) ouvrirait une page pour l'offre ${PLAN_LABELS[plan]}.` };
+    return { orderToken: null, orderId, mode: "sandbox", amountCents, captureMode: "automatic", simulated: true, message: `Démonstration : paiement de ${formatEurosFr(amountCents)} (${PLAN_LABELS[plan]}, ${CYCLE_LABELS[cycle]}) simulé, facture ${invoice.number} émise. En mode connecté, le formulaire Revolut s'ouvrirait ici.` };
+  }
+  /**
+   * Démonstration du changement de carte : aucun formulaire ; une nouvelle carte fictive remplace
+   * l'ancienne (autorisation de vérification annulée aussitôt, rien n'est débité). En retard de
+   * paiement, le débit serait retenté dans l'heure côté serveur : la démo le note.
+   */
+  async startCardUpdate(): Promise<CheckoutOutcome> {
+    await this.delay(300);
+    this.requireBillingManage();
+    this.settleSubscription();
+    const sub = this.s.subscription;
+    if (!isRunning(sub)) throw new DataError("conflict", "Aucun abonnement en cours : choisissez une offre, le paiement enregistre la carte.", 409);
+    const orderId = `demo-order-${newId()}`;
+    const paymentMethodId = `pm_demo_${newId().slice(0, 8)}`;
+    this.s.subscription = { ...sub, provider: "revolut", testMode: true, cardOnFile: true, revolutCustomerId: sub.revolutCustomerId ?? DEMO_CUSTOMER_ID, paymentMethodId, nextChargeAt: sub.status === "past_due" ? this.now() : sub.nextChargeAt, updatedAt: this.now() };
+    this.audit("billing.card_saved", "subscription", sub.id, { kind: "card_update", orderId, amountCents: CARD_VERIFICATION_AMOUNT_CENTS, simulated: true });
+    this.persist();
+    return { orderToken: null, orderId, mode: "sandbox", amountCents: CARD_VERIFICATION_AMOUNT_CENTS, captureMode: "manual", simulated: true, message: `Démonstration : nouvelle carte enregistrée (autorisation de ${formatEurosFr(CARD_VERIFICATION_AMOUNT_CENTS)} annulée aussitôt, rien n'est débité).${sub.status === "past_due" ? " Le paiement en retard serait retenté dans l'heure." : ""} En mode connecté, le formulaire Revolut s'ouvrirait ici.` };
+  }
+  async cancelSubscription(): Promise<Subscription> {
+    await this.delay(200);
+    this.requireBillingManage();
+    this.settleSubscription();
+    const sub = this.s.subscription;
+    if (!isRunning(sub)) throw new DataError("conflict", "Aucun abonnement en cours à résilier.", 409);
+    if (sub.cancelAtPeriodEnd) return sub;
+    this.s.subscription = { ...sub, cancelAtPeriodEnd: true, updatedAt: this.now() };
+    this.audit("billing.cancel_requested", "subscription", sub.id, { plan: sub.plan, periodEnd: sub.currentPeriodEnd });
+    this.persist();
+    return this.s.subscription;
+  }
+  async reactivateSubscription(): Promise<Subscription> {
+    await this.delay(200);
+    this.requireBillingManage();
+    this.settleSubscription();
+    const sub = this.s.subscription;
+    if (!sub.cancelAtPeriodEnd) return sub;
+    this.s.subscription = { ...sub, cancelAtPeriodEnd: false, updatedAt: this.now() };
+    this.audit("billing.reactivated", "subscription", sub.id, { plan: sub.plan });
+    this.persist();
+    return this.s.subscription;
+  }
+  async changePlan(plan: PaidPlan): Promise<Subscription> {
+    await this.delay(200);
+    this.requireBillingManage();
+    if (!isPaid(plan)) throw new DataError("validation", "Plan invalide : choisissez Starter, Pro ou Agence.", 400);
+    this.settleSubscription();
+    const sub = this.s.subscription;
+    if (!isRunning(sub) || !sub.cardOnFile) throw new DataError("conflict", "Choisissez d'abord une offre et enregistrez une carte (paiement) avant de changer d'offre.", 409);
+    const pendingPlan = sub.status === "active" && plan === sub.plan ? null : plan;
+    this.s.subscription = { ...sub, pendingPlan, updatedAt: this.now() };
+    this.audit("billing.plan_change_requested", "subscription", sub.id, { from: sub.plan, to: plan, pendingPlan });
+    this.persist();
+    return this.s.subscription;
+  }
+  async listInvoices(): Promise<Invoice[]> {
+    this.requireBillingManage();
+    this.settleSubscription();
+    return [...this.invoices()].sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
+  }
+  async getInvoice(id: string): Promise<InvoiceView> {
+    this.requireBillingManage();
+    this.settleSubscription();
+    const invoice = this.invoices().find((i) => i.id === id);
+    if (!invoice) throw new DataError("not_found", "Facture introuvable.", 404);
+    return {
+      invoice,
+      issuer: { name: "Selio", vatNotice: invoice.vatNotice },
+      customer: { orgName: this.s.org.name, email: this.s.user.email },
+      lines: [{ label: `Abonnement Selio ${PLAN_LABELS[invoice.plan]} — ${CYCLE_LABELS[invoice.cycle]}`, periodLabel: invoicePeriodLabel(invoice.periodStart, invoice.periodEnd), amountCents: invoice.amountCents }],
+      totals: { ...invoiceAmounts(invoice.amountCents, invoice.vatRate), vatRate: invoice.vatRate },
+      paymentProvider: invoice.orderId ? "revolut" : null,
+    };
   }
   async listUsageEvents(limit = 50): Promise<UsageEvent[]> {
     return this.s.usage.slice(0, limit);

@@ -2,10 +2,12 @@ import { Queue, Worker, type Job } from "bullmq";
 import IORedis from "ioredis";
 import pino from "pino";
 import { createAIService } from "@selio/ai";
+import { createPaymentProvider, loadPaymentConfig, paymentStartupNotices } from "@selio/connectors";
 import { Db, SecretBox, createPool } from "@selio/db";
 import type { Services } from "@selio/core";
+import { createEmailProvider, emailStartupWarnings, loadEmailConfig } from "@selio/email";
 import { loadEnv } from "./config";
-import { automationTick, connectorSyncTick, processJobs, radarTick, retentionTick } from "./tasks";
+import { automationTick, connectorSyncTick, processJobs, radarTick, renewSubscriptions, retentionTick } from "./tasks";
 
 /**
  * Worker Selio : tâches planifiées et traitements asynchrones (BullMQ/Redis).
@@ -16,6 +18,11 @@ import { automationTick, connectorSyncTick, processJobs, radarTick, retentionTic
 async function main() {
   const env = loadEnv();
   const log = pino({ level: env.LOG_LEVEL, ...(env.NODE_ENV === "development" ? { transport: { target: "pino-pretty", options: { translateTime: "HH:MM:ss", ignore: "pid,hostname" } } } : {}) });
+  // Paiement (Revolut) et emails : mêmes variables que l'API ; sans clé, les échéances sont lues mais aucun débit n'est tenté.
+  const paymentConfig = loadPaymentConfig(env);
+  const emailConfig = loadEmailConfig(env);
+  for (const n of paymentStartupNotices(paymentConfig, env.NODE_ENV)) log[n.level](n.message);
+  for (const m of emailStartupWarnings(emailConfig, env.NODE_ENV)) log.warn(m);
   const services: Services = {
     db: new Db(createPool(env.DATABASE_URL, { max: 5 })),
     ai: createAIService({ config: env, allowFallback: env.ALLOW_AI_FALLBACK }),
@@ -23,6 +30,10 @@ async function main() {
     now: () => new Date(),
     allowAiFallback: env.ALLOW_AI_FALLBACK,
     version: "0.1.0",
+    email: createEmailProvider(emailConfig, { logger: log }),
+    publicWebUrl: env.PUBLIC_WEB_URL,
+    payments: createPaymentProvider(paymentConfig, { logger: log }),
+    billing: { franchiseTva: env.FRANCHISE_TVA },
   };
   const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
   connection.on("error", (e) => log.warn({ err: e }, "redis"));
@@ -34,6 +45,7 @@ async function main() {
     { name: "connector.sync", pattern: env.CRON_CONNECTOR_SYNC },
     { name: "radar.tick", pattern: env.CRON_RADAR },
     { name: "retention.cleanup", pattern: env.CRON_RETENTION },
+    { name: "billing.renew", pattern: env.CRON_BILLING_RENEW },
   ];
   for (const s of schedules) {
     // Un seul planning par nom : upsert idempotent (BullMQ Job Scheduler).
@@ -51,6 +63,7 @@ async function main() {
         case "connector.sync": result = await connectorSyncTick(services, log); break;
         case "radar.tick": result = await radarTick(services, log); break;
         case "retention.cleanup": result = await retentionTick(services); break;
+        case "billing.renew": result = await renewSubscriptions(services, log); break;
         default: log.warn({ name: job.name }, "tâche inconnue"); return null;
       }
       log.info({ name: job.name, result, ms: Date.now() - started }, "tâche terminée");

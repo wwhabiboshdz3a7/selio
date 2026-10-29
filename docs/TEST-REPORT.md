@@ -111,3 +111,25 @@ Défauts trouvés et corrigés :
 - **Libellés** : le nom technique du serveur de modèle réapparaissait dans la vitrine, la FAQ, le Studio et les réglages IA.
 
 Non exécuté : construction des images Docker ; capacité du modèle IA réel (non raccordé) ; navigateurs autres que Chromium.
+
+## Vérifications du 29 octobre 2026 (paiement Revolut et correction des findings de relecture)
+
+| Vérification | Résultat |
+|---|---|
+| `pnpm lint` et `pnpm typecheck` (tout le dépôt) | ✔ 0 erreur |
+| `pnpm test` (PostgreSQL 16 et Redis 7 locaux, Revolut simulé en HTTP) | ✔ 411/411 (56 fichiers) |
+| `pnpm build:api`, `pnpm build:worker`, `pnpm build:web` | ✔ |
+| Migration 0010 sur une base jetable (0001 → 0009 puis deux numéros tirés par la séquence, puis 0010) | ✔ compteur amorcé à 2, numéro suivant `SEL-2026-000003`, numéro rendu après `rollback`, deux transactions concurrentes → numéros consécutifs |
+| Playwright (`pnpm test:e2e`) | **non exécuté** (aucun navigateur dans le conteneur) |
+
+Défauts de relecture corrigés (tests de non-régression dans `apps/worker/src/tasks.test.ts`, `apps/api/test/api.test.ts`, `packages/db/src/db.test.ts`, `packages/connectors/src/payments/revolut.test.ts`) :
+
+- **Double facture** quand le worker et le webhook `ORDER_COMPLETED` clôturaient la même commande en même temps : clôture conditionnelle et atomique (`update … where state <> 'completed' returning`), index unique sur `invoices.order_id`, réservation atomique des webhooks (`claimed_at`) relâchée en cas d'échec.
+- **Carte qui échoue reprise après un retour à l'accès de base** : la carte est oubliée après la troisième relance ; après un paiement depuis le formulaire, la carte retenue est celle de la tentative aboutie de la commande (sinon la plus récente « pour le marchand ») ; parcours « Changer de carte » (`POST /api/billing/card`), débit retenté dans l'heure en retard de paiement.
+- **Relances décalées d'un jour** par le passage quotidien à 05:00 : tâche horaire ; test avec échéance à 14:00 et un passage par heure (tentatives le 1er, 2, 4 et 8 novembre, dates identiques dans les emails).
+- **Réservation du prix de l'offre pendant l'essai** (jusqu'à 499,90 €) : autorisation de 1 € seulement, annulée aussitôt ; autorisations restées posées réannulées par le worker ; capture inattendue journalisée sans activation ni facture.
+- **Carte refusée puis acceptée dans le même formulaire** ignorée : l'état « failed » n'est plus terminal pour une commande de vérification.
+- **Carte perdue si la liste des moyens tombe en panne pendant le webhook** : erreur transitoire → 503 et rejeu par Revolut ; relecture des moyens « pour le marchand » avant de fermer un essai.
+- **Commande jamais présentée à la banque comptée comme un refus** : annulée et remplacée sans échec compté ; **commande restée en traitement** annulée chez Revolut avant d'être comptée échouée (marge 20 h) ; un `ORDER_COMPLETED` tardif prolonge la période déjà payée au lieu de la raccourcir.
+- **Période payée écrasée** par un nouveau paiement à capture automatique : 409 tant que la période court.
+- **Trous de numérotation** des factures en cas de transaction annulée : compteur transactionnel `invoice_counters` à la place des séquences.

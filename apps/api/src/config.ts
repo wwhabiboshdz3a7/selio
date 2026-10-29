@@ -2,6 +2,7 @@ import { z } from "zod";
 import { aiConfigSchema } from "@selio/ai";
 import { loadStorageConfig, storageConfigSchema } from "@selio/storage";
 import { emailConfigSchema, emailStartupWarnings, loadEmailConfig } from "@selio/email";
+import { loadPaymentConfig, paymentConfigSchema, paymentStartupNotices } from "@selio/connectors";
 
 const bool = z.string().optional().transform((v) => v === "true" || v === "1");
 
@@ -19,18 +20,15 @@ export const apiEnvSchema = z
     SECRETS_ENCRYPTION_KEY: z.string().min(40, "SECRETS_ENCRYPTION_KEY : clé base64 de 32 octets requise"),
     OPERATOR_EMAILS: z.string().default(""),
     ALLOW_AI_FALLBACK: bool,
-    STRIPE_SECRET_KEY: z.string().optional(),
-    STRIPE_WEBHOOK_SECRET: z.string().optional(),
-    STRIPE_PRICE_STARTER: z.string().optional(),
-    STRIPE_PRICE_PRO: z.string().optional(),
-    STRIPE_PRICE_AGENCE: z.string().optional(),
-    STRIPE_LIVE_ALLOWED: bool,
+    /** Franchise en base de TVA (art. 293 B du CGI) : factures à 0 % avec la mention légale. */
+    FRANCHISE_TVA: bool,
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   })
   .merge(aiConfigSchema)
-  // Stockage des photos (S3 / MinIO) et emails transactionnels : blocs facultatifs, validés ci-dessous.
+  // Stockage des photos (S3 / MinIO), emails transactionnels et paiement Revolut : blocs facultatifs, validés ci-dessous.
   .merge(storageConfigSchema)
-  .merge(emailConfigSchema);
+  .merge(emailConfigSchema)
+  .merge(paymentConfigSchema);
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
 
@@ -47,10 +45,12 @@ export function loadEnv(env: Record<string, string | undefined> = process.env): 
     if (cfg.AI_PROVIDER === "mock") throw new Error("AI_PROVIDER=mock est interdit en production (simulateur).");
     if (!cfg.COOKIE_SECURE) throw new Error("COOKIE_SECURE doit être true en production (HTTPS).");
   }
-  // Une configuration de stockage ou d'email à moitié remplie arrête le démarrage ici (même format de message).
+  // Une configuration de stockage, d'email ou de paiement à moitié remplie (ou un mode live non
+  // autorisé) arrête le démarrage ici (même format de message).
   try {
     loadStorageConfig(cfg);
     loadEmailConfig(cfg);
+    loadPaymentConfig(cfg);
   } catch (err) {
     throw new Error(`Configuration invalide :\n  - ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -75,5 +75,7 @@ export function startupNotices(cfg: ApiEnv): StartupNotice[] {
   if (!loadStorageConfig(cfg)) {
     out.push({ level: prod ? "warn" : "info", message: "Stockage des photos non configuré (STORAGE_ENDPOINT absent) : /api/uploads répond 503. Voir docs/STOCKAGE.md (MinIO)." });
   }
+  out.push(...paymentStartupNotices(loadPaymentConfig(cfg), cfg.NODE_ENV));
+  if (cfg.FRANCHISE_TVA) out.push({ level: "info", message: "FRANCHISE_TVA=true : factures sans TVA (« TVA non applicable, art. 293 B du CGI »)." });
   return out;
 }

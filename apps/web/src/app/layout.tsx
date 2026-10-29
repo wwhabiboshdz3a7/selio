@@ -1,8 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Bot, Boxes, ChevronDown, CircleUser, ClipboardList, Gauge, Heart, ListChecks, LogOut, Menu as MenuIcon, MessageSquare, MessagesSquare, Moon, Package, Printer, Radar, RefreshCw, Settings, ShieldCheck, Shirt, ShoppingCart, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
-import { Avatar, Banner, Button, IconButton, LoadingState, Menu, Tag, cn } from "@selio/ui";
+import { ArrowRight, Bot, Boxes, ChevronDown, CircleUser, ClipboardList, CreditCard, Gauge, Heart, ListChecks, LogOut, Menu as MenuIcon, MessageSquare, MessagesSquare, Moon, Package, Printer, Radar, RefreshCw, Settings, ShieldCheck, Shirt, ShoppingCart, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
+import { Avatar, Banner, Button, IconButton, LoadingState, Menu, Tag, cn, formatDate } from "@selio/ui";
+import type { Subscription } from "@selio/contracts";
+import { daysLeft } from "../lib/billing";
 import { REVIEW_THRESHOLD } from "@selio/domain";
 import { useClient, useData, useRequiredSession, useSession } from "../lib/data/provider";
 import { useTheme } from "../lib/theme";
@@ -113,6 +115,8 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
   const [open, setOpen] = useState(false);
   const { resolved, setPreference } = useTheme();
   const counts = useNavCounts();
+  // Carte à enregistrer pendant l'essai, ou paiement échoué : rappel discret au-dessus des pages.
+  const subscription = useQuery({ queryKey: ["subscription"], queryFn: () => client.getSubscription(), staleTime: 30_000 });
   useEffect(() => {
     setOpen(false);
   }, [location.pathname]);
@@ -237,6 +241,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
             <Link to="/app/settings/data" className="font-medium text-accent underline-offset-2 hover:underline">Réinitialiser</Link>
           </Banner>
         ) : null}
+        <BillingBanner s={subscription.data ?? null} pathname={location.pathname} />
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-surface/90 px-4 backdrop-blur md:hidden">
           <IconButton label="Ouvrir le menu" onClick={() => setOpen(true)}><MenuIcon /></IconButton>
           <Link to={HUB_PATH} className="flex min-w-0 flex-1 items-center gap-2" aria-label="Selio, vos espaces"><Logo height={20} /><SpacePill area={area} /></Link>
@@ -250,6 +255,39 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
       </div>
     </div>
   );
+}
+
+/**
+ * Bandeau d'abonnement : pendant l'essai sans carte, « Enregistrez votre carte pour garder l'accès
+ * après l'essai » avec les jours restants (la carte est demandée à la première ouverture de
+ * l'application, pas à l'inscription) ; après un débit échoué, la prochaine tentative.
+ */
+export function BillingBanner({ s, pathname }: { s: Subscription | null; pathname: string }) {
+  if (!s) return null;
+  const onBilling = pathname.startsWith("/app/settings/billing");
+  if (s.status === "trialing" && !s.cardOnFile) {
+    const left = s.currentPeriodEnd ? daysLeft(s.currentPeriodEnd) : null;
+    return (
+      <Banner tone="neutral">
+        <span data-testid="trial-card-banner" className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+          <CreditCard className="size-3.5 shrink-0 text-text-muted" aria-hidden />
+          <span><span className="font-medium text-text">Enregistrez votre carte pour garder l'accès après l'essai</span>{left !== null ? <> — <span className="num">{left}</span> jour{left > 1 ? "s" : ""} restant{left > 1 ? "s" : ""}, rien n'est débité avant la fin.</> : "."}</span>
+          {onBilling ? null : <Link to="/app/settings/billing" className="font-medium text-accent underline-offset-2 hover:underline">Enregistrer ma carte</Link>}
+        </span>
+      </Banner>
+    );
+  }
+  if (s.status === "past_due") {
+    return (
+      <Banner tone="danger">
+        <span data-testid="past-due-banner" className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+          <span>Le dernier paiement a échoué{s.nextChargeAt ? <> — prochaine tentative le <span className="num">{formatDate(s.nextChargeAt)}</span></> : null}.</span>
+          {onBilling ? null : <Link to="/app/settings/billing" className="font-medium underline-offset-2 hover:underline">Vérifier ma carte</Link>}
+        </span>
+      </Banner>
+    );
+  }
+  return null;
 }
 
 /** Statut IA discret au-dessus du menu utilisateur de la sidebar. */

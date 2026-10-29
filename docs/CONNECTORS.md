@@ -44,9 +44,15 @@ Statut calculé depuis la dernière activité de l'extension (`extensionLastSeen
 
 Procédure : installer l'extension, ouvrir une page article, lancer « Diagnostic » dans le popup ; les champs manquants sont listés. Mettre à jour l'adaptateur en créant `v2.ts` (jamais modifier `v1` en place) et ajouter une fixture.
 
-## Paiement (Stripe)
+## Paiement (Revolut Merchant API)
 
-`packages/connectors/src/payments/stripe.ts` : vérification de signature (`t`, `v1`, tolérance 5 min), client REST (Checkout, portail). Idempotence par `payment_events.id`. Mode test tant que `STRIPE_LIVE_ALLOWED` n'est pas `true`.
+`packages/connectors/src/payments/` : une interface neutre `PaymentProvider` (`types.ts` : `createCustomer`, `createCheckoutOrder`, `createOrder`, `chargeSavedMethod`, `cancelOrder`, `getOrder`, `listMerchantPaymentMethods`, `verifyWebhook`, erreurs typées) pour pouvoir brancher un fournisseur de secours (Mollie) sans toucher au cœur, et son implémentation `revolut.ts` (`RevolutClient`, sans SDK, `fetch` injectable pour les tests) :
+- hôte selon le mode (`https://sandbox-merchant.revolut.com` ou `https://merchant.revolut.com`), en-têtes `Authorization: Bearer sk_…` et `Revolut-Api-Version` ; le mode live est refusé sans `REVOLUT_LIVE_ALLOWED=true` ;
+- commandes (`POST /api/orders`, capture `manual` pendant l'essai, `automatic` ensuite), annulation, lecture, paiement avec un moyen enregistré « pour le marchand » (`saved_payment_method`, `initiator: merchant`), clients et moyens de paiement (`/api/1.0/customers`) ;
+- webhooks : HMAC-SHA256 de `v1.<horodatage>.<corps brut>`, plusieurs signatures acceptées, tolérance de 5 minutes ; idempotence par `payment_events.id` = `revolut:<order_id>:<event>` ;
+- journaux sans clé, sans corps, sans donnée de carte. `config.ts` lit les variables `REVOLUT_*` (API et worker) et construit le fournisseur ; sans clé, le paiement est désactivé et l'interface le dit.
+
+Côté navigateur, `apps/web/src/lib/payments/revolut.ts` charge à la demande le widget `@revolut/checkout` (fenêtre « popup », `savePaymentMethodFor: "merchant"`) avec le jeton public de la commande ; la confirmation finale vient toujours du webhook. Les webhooks sont à enregistrer à la main chez Revolut (voir CLES-ET-CONFIGURATION.md §5).
 
 ## Ajouter un connecteur
 

@@ -1,6 +1,6 @@
 import { repos, type Db } from "@selio/db";
 import { getConnector } from "@selio/connectors";
-import { admin, automation, connections as connectionsService, radar, type OrgContext, type Services } from "@selio/core";
+import { admin, automation, billing, connections as connectionsService, radar, type OrgContext, type Services } from "@selio/core";
 
 /** Contexte « système » : actions du worker, journalisées avec l'acteur `system`. */
 export function systemContext(services: Services, orgId: string): OrgContext {
@@ -87,3 +87,42 @@ export async function radarTick(services: Services, log: TaskLogger): Promise<nu
 }
 
 export const retentionTick = (services: Services) => admin.retentionCleanup(services);
+
+export interface RenewalSummary {
+  orgs: number;
+  /** Débits réussis (période prolongée, facture émise). */
+  renewed: number;
+  /** Débits échoués : relance programmée (J+1, J+3, J+7 après l'échéance) et email envoyé. */
+  failed: number;
+  /** Retours à l'accès de base : essai terminé sans carte, résiliation échue, relances épuisées. */
+  ended: number;
+  /** Rien à faire (pas d'échéance, pas de fournisseur, commande en attente de webhook, fournisseur injoignable). */
+  skipped: number;
+  errors: number;
+}
+
+/**
+ * Échéances d'abonnement (tâche horaire) : renouvellements à l'initiative du marchand avec le
+ * moyen enregistré, fins d'essai, relances après échec (J+1, J+3, J+7 à l'heure de l'échéance),
+ * résiliations arrivées à terme, autorisations de vérification à annuler. Chaque organisation est
+ * traitée séparément : une erreur n'empêche pas les autres. Sans fournisseur de paiement configuré,
+ * seules les fins d'essai sans carte sont appliquées.
+ */
+export async function renewSubscriptions(services: Services, log: TaskLogger): Promise<RenewalSummary> {
+  const summary: RenewalSummary = { orgs: 0, renewed: 0, failed: 0, ended: 0, skipped: 0, errors: 0 };
+  for (const orgId of await allOrgIds(services.db)) {
+    summary.orgs++;
+    try {
+      const r = await billing.processSubscriptionRenewal(services, orgId);
+      if (r.action === "renewed") summary.renewed++;
+      else if (r.action === "failed") summary.failed++;
+      else if (r.action === "ended" || r.action === "trial_ended") summary.ended++;
+      else summary.skipped++;
+      if (r.action !== "skipped") log.info({ orgId, action: r.action, reason: r.reason, invoiceNumber: r.invoiceNumber, nextChargeAt: r.nextChargeAt }, "échéance d'abonnement");
+    } catch (err) {
+      summary.errors++;
+      log.error({ err, orgId }, "échéance d'abonnement : échec pour une organisation");
+    }
+  }
+  return summary;
+}
