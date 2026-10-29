@@ -4,13 +4,19 @@ import type {
 import type { WhiteLabel, WhiteLabelInput } from "@selio/contracts";
 import type { ConnectorDescriptor } from "@selio/connectors";
 import type { ReplySuggestion } from "@selio/contracts";
-import type { PaidPlan, SubsidiaryUsage, TrialDays, UsageCounter } from "@selio/contracts";
+import type { BillingCycle, CheckoutResult, Invoice, InvoiceView, PaidPlan, SubsidiaryUsage, TrialDays, UsageCounter } from "@selio/contracts";
 import type { HelpAnswer } from "@selio/contracts";
 import type { AccountStats, AiHealthSummary, BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
 
 export type VariantLeaderboardRow = ReturnType<typeof variantLeaderboard>[number];
 
 export type Mode = "demo" | "connected";
+
+/**
+ * Résultat du démarrage de paiement côté application : identique à `CheckoutResult` de l'API, sauf
+ * que la démonstration peut le marquer `simulated` (aucun formulaire ouvert, succès immédiat).
+ */
+export type CheckoutOutcome = Omit<CheckoutResult, "simulated"> & { simulated: boolean };
 
 export interface Session {
   mode: Mode;
@@ -327,8 +333,24 @@ export interface DataClient {
   // Abonnement et consommation
   getSubscription(): Promise<Subscription>;
   getUsage(): Promise<UsageSummary>;
-  /** Ouvre le paiement d'une offre payante (Starter, Pro ou Agence) ; « free » n'est pas une offre. */
-  startCheckout(plan: PaidPlan): Promise<{ url: string | null; simulated: boolean; message: string }>;
+  /**
+   * Démarre le paiement d'une offre payante (Starter, Pro ou Agence ; « free » n'est pas une offre) :
+   * crée la commande Revolut et renvoie son jeton public pour le formulaire. Pendant l'essai, la
+   * carte est seulement enregistrée (rien débité avant la fin) ; carte déjà enregistrée = changement
+   * d'offre sans formulaire (`orderToken` null). En démonstration, le succès est immédiat.
+   */
+  startCheckout(plan: PaidPlan, opts?: { cycle?: BillingCycle }): Promise<CheckoutOutcome>;
+  /** Changement de carte sans paiement (abonnement en cours) : autorisation de vérification annulée aussitôt. */
+  startCardUpdate(): Promise<CheckoutOutcome>;
+  /** Résiliation : l'accès continue jusqu'à la fin de la période payée (ou de l'essai). */
+  cancelSubscription(): Promise<Subscription>;
+  /** Annule une résiliation demandée tant que la période court. */
+  reactivateSubscription(): Promise<Subscription>;
+  /** Changement d'offre, appliqué au prochain renouvellement (carte enregistrée requise). */
+  changePlan(plan: PaidPlan): Promise<Subscription>;
+  listInvoices(): Promise<Invoice[]>;
+  /** Facture prête pour un rendu imprimable (mentions, lignes, HT / TVA / TTC ou franchise). */
+  getInvoice(id: string): Promise<InvoiceView>;
   // Sécurité et données
   listAuditLogs(limit?: number): Promise<AuditLog[]>;
   changePassword(input: { current: string; next: string }): Promise<void>;

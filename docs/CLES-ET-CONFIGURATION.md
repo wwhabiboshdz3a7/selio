@@ -1,6 +1,6 @@
 # Selio — clés et configuration
 
-_Version du 16 octobre 2026 · branche `claude/gracious-wright-rf41nt`_
+_Version du 29 octobre 2026 · branche `claude/gracious-wright-rf41nt`_
 
 ## En bref
 
@@ -17,6 +17,11 @@ _Version du 16 octobre 2026 · branche `claude/gracious-wright-rf41nt`_
 |---|---|---|---|
 | `VITE_API_BASE_URL` | Facultatif (démo) / Obligatoire (mode connecté) | `URL publique de votre API Selio, ex. https://api.votre-domaine.fr` | Vide = l'application ne propose que la démonstration (aucun serveur nécessaire). |
 | `VITE_SHOW_INDICATIVE_PRICING` | Facultatif | `true ou false` | Affiche les tarifs indicatifs sur la vitrine. |
+| `VITE_INVOICE_ISSUER_NAME` | Recommandé | `Selio SAS` | Raison sociale imprimée sur les factures (Paramètres › Factures). Vide = « Selio ». |
+| `VITE_INVOICE_ISSUER_ADDRESS` | Recommandé | `12 rue … \| 13001 Marseille \| France` | Adresse de l'émetteur, lignes séparées par « \| ». Vide = « Adresse à compléter » sur la facture, avec un avertissement avant impression. |
+| `VITE_INVOICE_ISSUER_SIREN` | Recommandé | `123 456 789` | SIREN de l'émetteur. Vide = « à compléter ». |
+| `VITE_INVOICE_ISSUER_VAT` | Recommandé | `FR12345678901` | Numéro de TVA intracommunautaire. Vide = « à compléter ». |
+| `VITE_INVOICE_ISSUER_EMAIL` | Recommandé | `facturation@votre-domaine.fr` | Contact imprimé sur les factures. Vide = « à compléter ». |
 
 ## 2. Base de données et cache (serveur métier)
 
@@ -60,16 +65,37 @@ Le navigateur n'appelle jamais l'IA : seuls l'API et le worker parlent au serveu
 | `ALLOW_AI_FALLBACK` | Obligatoire | `false` | En production, jamais de texte simulé présenté comme venant du modèle. |
 | `AI_TIMEOUT_MS, AI_MAX_CONCURRENCY, AI_CONTEXT_LIMIT, AI_MAX_OUTPUT_TOKENS, AI_QUEUE_MAX_PENDING, AI_CIRCUIT_FAILURES, AI_CIRCUIT_COOLDOWN_MS` | Facultatif | `45000, 2, 8192, 700, 100, 3, 60000` | Réglages de performance : valeurs par défaut prudentes, à ajuster après « pnpm ai:bench » sur la machine (AI_MAX_CONCURRENCY aligné sur OLLAMA_NUM_PARALLEL). |
 
-## 5. Paiement des abonnements (Stripe)
+## 5. Paiement des abonnements (Revolut Merchant API)
 
-Uniquement si vous facturez des abonnements. Les clés se trouvent dans le tableau de bord Stripe › Développeurs. Commencez en mode test.
+Uniquement si vous facturez des abonnements. Le paiement passe par **Revolut Business** (compte marchand) : formulaire Revolut Checkout dans l'application (carte, Apple Pay, Google Pay, Revolut Pay), carte enregistrée « pour le marchand », débits de renouvellement par l'API depuis le worker, webhooks signés. **Aucun numéro de carte ne transite par Selio.** Sans `REVOLUT_SECRET_KEY`, le paiement est désactivé : l'application le dit, les essais ne sont pas débités et finissent en accès de base. Commencez toujours par le **bac à sable** (`REVOLUT_MODE=sandbox`, hôte `https://sandbox-merchant.revolut.com`).
 
 | Variable | Statut | Exemple / format | À quoi elle sert |
 |---|---|---|---|
-| `STRIPE_SECRET_KEY` | Facultatif | `sk_test_…` | Clé secrète Stripe (mode test d'abord). |
-| `STRIPE_WEBHOOK_SECRET` | Facultatif | `whsec_…` | Signature des événements envoyés par Stripe à /api/billing/webhook. |
-| `STRIPE_PRICE_STARTER / STRIPE_PRICE_PRO / STRIPE_PRICE_AGENCE` | Facultatif | `price_…` | Identifiants des tarifs créés dans Stripe (Starter, Pro, Agence). |
-| `STRIPE_LIVE_ALLOWED` | Facultatif | `false` | Passer à true seulement après validation en mode test. |
+| `REVOLUT_SECRET_KEY` | Facultatif (vide = paiement désactivé) | `sk_…` | Clé **secrète** de l'API marchand (Revolut Business › Merchant › API). Jamais la clé publique, jamais dans Netlify. Mêmes valeurs côté API et worker. |
+| `REVOLUT_WEBHOOK_SECRET` | Obligatoire avec la clé | `wsk_…` | Secret de signature renvoyé par Revolut à la création du webhook (voir la procédure ci-dessous). Sans lui, les webhooks sont refusés et aucun paiement n'est confirmé. API seulement. |
+| `REVOLUT_MODE` | Facultatif | `sandbox` (défaut) ou `live` | Bac à sable ou production (`https://merchant.revolut.com`). |
+| `REVOLUT_LIVE_ALLOWED` | Facultatif | `false` | Garde-fou : `REVOLUT_MODE=live` est **refusé au démarrage** tant que cette variable n'est pas explicitement `true`. À passer à `true` seulement après validation complète du parcours en bac à sable. |
+| `REVOLUT_API_VERSION` | Facultatif | `2026-08-17` | Valeur de l'en-tête `Revolut-Api-Version` envoyé à chaque appel. |
+| `FRANCHISE_TVA` | Facultatif | `false` | `true` si Selio est en franchise en base de TVA (art. 293 B du CGI) : factures à 0 % avec la mention légale ; `false` = TVA 20 %. Même valeur côté API et worker. |
+
+### Ouvrir le compte et brancher les webhooks, pas à pas
+
+1. **Compte Revolut Business**, puis activer **Merchant** (compte marchand) dans l'application Revolut Business : c'est lui qui fournit les clés d'API, le bac à sable et le tableau de bord des paiements. Frais indicatifs : 1 % + 0,20 € par carte européenne, argent réglé sous 24 h sur le compte marchand ; ces frais restent à la charge de Selio et ne sont jamais refacturés au client.
+2. **Bac à sable d'abord** : dans Merchant › API, créer les clés du bac à sable. Renseigner `REVOLUT_SECRET_KEY` (clé `sk_…` du bac à sable), `REVOLUT_MODE=sandbox`, `REVOLUT_LIVE_ALLOWED=false` dans le `.env` de l'API et du worker, puis redémarrer : le journal affiche « Paiement Revolut en mode bac à sable ».
+3. **Créer le webhook par l'API** (une fois par environnement), depuis une machine qui a la clé, jamais depuis le navigateur. L'URL est celle de votre API publique (HTTPS) suivie de `/api/billing/webhook/revolut` :
+
+   ```bash
+   curl -X POST https://sandbox-merchant.revolut.com/api/1.0/webhooks \
+     -H "Authorization: Bearer $REVOLUT_SECRET_KEY" \
+     -H "Revolut-Api-Version: 2026-08-17" \
+     -H "Content-Type: application/json" \
+     -d '{"url":"https://api.votre-domaine.fr/api/billing/webhook/revolut","events":["ORDER_COMPLETED","ORDER_AUTHORISED","ORDER_PAYMENT_DECLINED","ORDER_PAYMENT_FAILED","ORDER_CANCELLED"]}'
+   ```
+
+   La réponse contient `signing_secret` (`wsk_…`) : il n'est montré qu'une fois. Le copier dans `REVOLUT_WEBHOOK_SECRET` (API) et redémarrer. Chaque livraison est vérifiée (HMAC-SHA256 de `v1.<horodatage>.<corps>`, tolérance de 5 minutes, plusieurs signatures acceptées pendant une rotation) et traitée une seule fois (idempotence par commande et événement).
+4. **Tester le parcours complet en bac à sable** avec les cartes de test Revolut : enregistrement de la carte pendant l'essai (autorisation de **1 €** seulement, jamais le prix de l'offre, annulée aussitôt ; la banque peut afficher la réservation quelques heures), paiement hors essai, facture `SEL-AAAA-000001` dans Paramètres › Factures, refus de carte (relances J+1, J+3, J+7 après l'échéance avec email), « Changer de carte » (même autorisation de 1 €, puis débit en retard retenté dans l'heure), résiliation et reprise. Une autorisation de vérification encaissée par erreur (clic « Capture » dans Revolut Business) n'active rien et n'émet aucune facture : elle est journalisée (`billing.unexpected_capture`) pour remboursement manuel depuis Revolut Business.
+5. **Production** : créer les clés live et un second webhook (même commande, hôte `https://merchant.revolut.com`, URL de production), renseigner `REVOLUT_SECRET_KEY` (live) et le nouveau `REVOLUT_WEBHOOK_SECRET`, puis `REVOLUT_MODE=live` **et** `REVOLUT_LIVE_ALLOWED=true`. Sans les deux, l'API refuse de démarrer.
+6. **Site (Netlify)** : rien de secret à saisir. La politique de sécurité du site (`netlify.toml`, `deploy/netlify/_headers`) autorise déjà le script et les iframes du formulaire Revolut (`https://merchant.revolut.com` et `https://sandbox-merchant.revolut.com`). Renseigner les mentions des factures `VITE_INVOICE_ISSUER_*` (section 1) avant la première facture réelle.
 
 ## 6. Worker (tâches planifiées)
 
@@ -78,6 +104,7 @@ Mêmes variables base / Redis / chiffrement / IA que l'API. Les cadences ont des
 | Variable | Statut | Exemple / format | À quoi elle sert |
 |---|---|---|---|
 | `CRON_AUTOMATION_TICK, CRON_JOBS_PROCESS, CRON_CONNECTOR_SYNC, CRON_RADAR, CRON_RETENTION` | Facultatif | `*/5 * * * *, * * * * *, */15 * * * *, 0 * * * *, 0 3 * * *` | Expressions cron (UTC) : automatisations, file, synchronisation, radar, rétention. |
+| `CRON_BILLING_RENEW` | Facultatif | `0 * * * *` | Échéances d'abonnement, **toutes les heures** : fins d'essai (débit de l'offre retenue, ou accès de base sans carte, après relecture des cartes enregistrées chez Revolut), renouvellements à l'initiative du marchand, relances J+1 / J+3 / J+7 après un échec (calculées à l'heure de l'échéance : un passage horaire les tient le jour annoncé par email ; un passage quotidien les décalerait d'un jour), annulation des autorisations de vérification restées posées. Idempotent : rien n'est tenté hors échéance. Le worker a besoin de `REVOLUT_SECRET_KEY`, `REVOLUT_MODE`, `FRANCHISE_TVA`, `PUBLIC_WEB_URL` et des variables d'email (section 7) ; pas du secret de webhook. |
 
 ## 7. Emails transactionnels (invitations, mot de passe oublié, échec de paiement, alertes)
 
@@ -114,7 +141,8 @@ Les photos ne transitent jamais par l'API : le navigateur reçoit des URLs sign�
 
 - Aucune clé Vinted : Vinted ne propose pas d'API publique pour les vendeurs. La lecture et l'aide à la publication passent par l'extension Selio, dans votre navigateur, avec votre session.
 - Aucune clé OpenAI ou autre IA payante : Selio est prévu pour votre modèle personnel (Ollama).
-- Aucun secret dans Netlify : seules les deux variables VITE_ ci-dessus, qui sont publiques.
+- Aucun secret dans Netlify : seules les variables VITE_ ci-dessus, qui sont publiques (adresse de l'API, tarifs indicatifs, mentions des factures).
+- Aucune autre clé de paiement : tout passe par Revolut (section 5), et seul le serveur détient la clé secrète. Le navigateur ne reçoit que le jeton public d'une commande, consommé par le formulaire Revolut.
 - Aucune clé Supabase (anon / service) : la base est un PostgreSQL 16 standard (Docker sur le serveur). Vous pouvez l'héberger chez Supabase ou un autre Postgres managé : seule DATABASE_URL change.
 
 ## Mise en ligne pas à pas
@@ -134,8 +162,8 @@ Les photos ne transitent jamais par l'API : le navigateur reçoit des URLs sign�
 ### Mode connecté (vrais comptes, base de données)
 
 1. Louer un serveur Linux (VPS) et y installer Docker.
-2. Cloner le dépôt, copier apps/api/.env.example vers deploy/.env et remplir les sections 2, 3 et 4 (puis 7 et 8 quand le service d'email et MinIO sont choisis).
-3. docker compose -f deploy/docker-compose.prod.yml up -d --build (migrations comprises, dont la 0003 de cette version).
+2. Cloner le dépôt, copier apps/api/.env.example vers deploy/.env et remplir les sections 2, 3 et 4 (puis 5 pour le paiement Revolut, 7 et 8 quand le service d'email et MinIO sont choisis).
+3. docker compose -f deploy/docker-compose.prod.yml up -d --build (migrations comprises, jusqu'à la 0009 : tables de paiement et de factures).
 4. Mettre Caddy devant l'API (deploy/Caddyfile) pour le HTTPS, puis renseigner VITE_API_BASE_URL dans Netlify.
 
 ### Brancher mon IA perso et ses deux modèles
@@ -150,4 +178,5 @@ Les photos ne transitent jamais par l'API : le navigateur reçoit des URLs sign�
 - Sauvegardez `SECRETS_ENCRYPTION_KEY` séparément de la base.
 - N'exposez pas le port 11434 d'Ollama sur Internet : VPN ou passerelle authentifiée.
 - En production, le serveur refuse de démarrer si `COOKIE_SECURE` n'est pas `true`, si `AI_PROVIDER=mock` ou si `ALLOW_AI_FALLBACK=true`. Il démarre mais avertit si `EMAIL_PROVIDER=noop` (aucun email envoyé) ou si `STORAGE_ENDPOINT` est vide (pas de photos).
-- `SMTP_URL` et `STORAGE_SECRET_KEY` sont des secrets au même titre que `SECRETS_ENCRYPTION_KEY` : fichier `.env` du serveur seulement.
+- `SMTP_URL`, `STORAGE_SECRET_KEY`, `REVOLUT_SECRET_KEY` et `REVOLUT_WEBHOOK_SECRET` sont des secrets au même titre que `SECRETS_ENCRYPTION_KEY` : fichier `.env` du serveur seulement, jamais dans Netlify ni dans le navigateur.
+- `REVOLUT_MODE=live` sans `REVOLUT_LIVE_ALLOWED=true` arrête le démarrage : impossible d'encaisser de l'argent réel par inadvertance.

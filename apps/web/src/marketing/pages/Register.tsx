@@ -59,7 +59,7 @@ export default function Register() {
           <div className="rounded-md bg-surface-muted px-3 py-2.5" data-testid="trial-terms">
             <p className="text-sm font-medium text-text">{TRIAL_DAYS} jours d'essai, carte enregistrée, rien n'est débité avant la fin.</p>
             <p className="mt-0.5 text-xs text-text-muted">Toutes les fonctions du plan {PLAN_LABELS[TRIAL_OFFER.plan]} pendant l'essai ; ensuite Starter, Pro ou Agence au choix, ou vous arrêtez sans frais. <Link to="/tarifs" className="underline underline-offset-2">Voir les tarifs</Link></p>
-            <p className="mt-1.5 text-xs text-text-muted">L'enregistrement de la carte arrive avec le paiement, en préparation : aucune carte n'est demandée aujourd'hui.</p>
+            <p className="mt-1.5 text-xs text-text-muted">Aucune carte à saisir maintenant : elle vous sera demandée à la première ouverture de l'application, dans le formulaire sécurisé Revolut (le numéro ne transite jamais par Selio).</p>
           </div>
           {error ? <Alert tone="danger">{error}</Alert> : null}
           <Button type="submit" variant="accent" loading={loading} disabled={mode === "connected" && !connectedModeAvailable} fullWidth>Créer le compte</Button>

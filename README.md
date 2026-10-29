@@ -19,7 +19,7 @@ La démonstration utilise de **vraies annonces Vinted** (photos, titres, marques
 | Mode | Ce qu'il prouve | Ce qu'il ne prouve pas |
 |---|---|---|
 | **Démonstration** (sans credentials, données fictives persistantes dans le navigateur, bandeau permanent) | Le parcours métier complet et les règles de marge/négociation, avec simulateurs déterministes pour marketplace, paiement et IA | Toute intégration externe réelle |
-| **Connecté** (authentification réelle, PostgreSQL avec isolation par organisation) | Persistance serveur, rôles, jetons d'extension, file de tâches, raccordement Ollama | Les connecteurs Vinted (expérimentaux, à valider dans un navigateur réel) |
+| **Connecté** (authentification réelle, PostgreSQL avec isolation par organisation) | Persistance serveur, rôles, jetons d'extension, file de tâches, raccordement Ollama, paiement Revolut (bac à sable puis live : formulaire Revolut, carte enregistrée, webhooks, factures) | Les connecteurs Vinted (expérimentaux, à valider dans un navigateur réel) |
 
 ## Démarrage rapide
 
@@ -45,7 +45,7 @@ Extension : `pnpm build:extension` puis chargement non empaqueté de `apps/exten
 ## Mise en ligne
 
 - **Démo sur Netlify, sans aucune clé** : `deploy/netlify/pack.sh` produit `livraison/selio-demo-netlify.zip` ; décompresser puis glisser le dossier sur https://app.netlify.com/drop.
-- **Clés et variables à fournir** (base de données, chiffrement, IA, Stripe…) : [docs/CLES-ET-CONFIGURATION.md](docs/CLES-ET-CONFIGURATION.md), aussi en PDF dans `livraison/Selio-cles-et-configuration.pdf`.
+- **Clés et variables à fournir** (base de données, chiffrement, IA, paiement Revolut, emails, stockage…) : [docs/CLES-ET-CONFIGURATION.md](docs/CLES-ET-CONFIGURATION.md), aussi en PDF dans `livraison/Selio-cles-et-configuration.pdf`.
 - Détails : [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Vérifications
@@ -64,7 +64,7 @@ pnpm ai:diagnose          # diagnostic du provider IA configuré
 apps/web         vitrine + application (React, Vite, PWA)       apps/api        API Fastify (sessions, RLS, jetons extension, webhooks)
 apps/worker      planificateur BullMQ                           apps/extension  extension Chrome MV3
 packages/ui      composants conformes aux guidelines            packages/domain règles métier pures (argent, marge, négociation…)
-packages/contracts schémas Zod partagés                         packages/connectors simulateur, connecteur Vinted expérimental, Stripe
+packages/contracts schémas Zod partagés                         packages/connectors simulateur, connecteur Vinted expérimental, paiement Revolut
 packages/ai      AIProvider, Mock, Ollama, disjoncteur, file    packages/db     migrations, RLS, dépôts
 packages/core    services serveur partagés API/worker           packages/demo-data jeu de données de démonstration
 ```

@@ -62,7 +62,7 @@ test.describe("vitrine", () => {
     // L'inscription n'offre plus de choix de durée : 14 jours, carte enregistrée, rien débité.
     await page.goto("/inscription");
     await expect(page.getByTestId("trial-terms")).toContainText("14 jours d'essai, carte enregistrée, rien n'est débité avant la fin");
-    await expect(page.getByTestId("trial-terms")).toContainText("L'enregistrement de la carte arrive avec le paiement");
+    await expect(page.getByTestId("trial-terms")).toContainText("elle vous sera demandée à la première ouverture de l'application");
     await expect(page.getByRole("radiogroup", { name: /Durée de l'essai/ })).toHaveCount(0);
   });
 

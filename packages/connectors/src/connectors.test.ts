@@ -5,7 +5,6 @@ import { DemoConnector } from "./demo/simulator";
 import { VintedExtensionConnector } from "./vinted/connector";
 import { detectPage, parseConversationPage, parseItemPage, parsePriceCents } from "./vinted/adapters/v1";
 import { describeConnectors, getConnector } from "./registry";
-import { computeSignature, verifyWebhook } from "./payments/stripe";
 
 const fixture = (name: string) => readFileSync(new URL(`./vinted/fixtures/${name}`, import.meta.url), "utf8");
 function load(html: string) {
@@ -93,20 +92,5 @@ describe("registre", () => {
   it("expose les connecteurs et leurs capacités", () => {
     expect(describeConnectors().map((d) => d.provider).sort()).toEqual(["demo", "vinted"]);
     expect(getConnector("demo")).toBe(getConnector("demo"));
-  });
-});
-
-describe("Stripe webhooks", () => {
-  const secret = "whsec_test_secret";
-  const payload = JSON.stringify({ id: "evt_1", type: "checkout.session.completed", created: 1, data: { object: {} }, livemode: false });
-  it("accepte une signature valide et rejette rejeu, falsification, absence", () => {
-    const t = 1_700_000_000;
-    const header = `t=${t},v1=${computeSignature(secret, t, payload)}`;
-    const now = () => t * 1000 + 1000;
-    expect(verifyWebhook(payload, header, secret, { now }).ok).toBe(true);
-    expect(verifyWebhook(payload, header, secret, { now: () => (t + 1000) * 1000 }).ok).toBe(false);
-    expect(verifyWebhook(payload + " ", header, secret, { now }).ok).toBe(false);
-    expect(verifyWebhook(payload, null, secret, { now }).ok).toBe(false);
-    expect(verifyWebhook(payload, `t=${t},v1=deadbeef`, secret, { now }).ok).toBe(false);
   });
 });

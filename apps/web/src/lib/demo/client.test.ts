@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { MemoryDemoStorage } from "@selio/demo-data";
+import { MemoryDemoStorage, PRICING } from "@selio/demo-data";
+import { CARD_VERIFICATION_AMOUNT_CENTS } from "@selio/contracts";
 import { effectiveAiQuota, isGenerated, listingInsights } from "@selio/domain";
+import { addMonthsUtc } from "../billing";
 import { DemoClient } from "./client";
 
 let client: DemoClient;
@@ -200,11 +202,137 @@ describe("aide et essai de 14 jours (démonstration)", () => {
     expect((await client.listAuditLogs()).find((a) => a.action === "auth.register")?.meta).toMatchObject({ trialDays: 14 });
   });
 
-  it("paiement : Starter, Pro et Agence sont des offres, aucun paiement déclenché en démonstration", async () => {
+  it("paiement : Starter, Pro et Agence sont des offres, aucun formulaire ni débit en démonstration", async () => {
     const r = await client.startCheckout("agence");
-    expect(r).toMatchObject({ url: null, simulated: true });
+    expect(r).toMatchObject({ orderToken: null, simulated: true, mode: "sandbox" });
     expect(r.message).toMatch(/Agence/);
-    expect((await client.listAuditLogs()).some((a) => a.action === "billing.checkout_simulated" && a.meta.plan === "agence")).toBe(true);
+    // La démo a déjà une carte enregistrée : l'offre est retenue pour la fin de l'essai (journalisé comme changement d'offre).
+    expect((await client.listAuditLogs()).some((a) => a.action === "billing.plan_change_requested" && a.meta.to === "agence" && a.meta.simulated === true)).toBe(true);
+    await expect(client.startCheckout("free" as never)).rejects.toThrow(/Starter, Pro ou Agence/);
+  });
+});
+
+describe("abonnement, résiliation et factures (démonstration, horloge injectée)", () => {
+  let now: Date;
+  let c: DemoClient;
+  const START = new Date("2026-10-08T12:00:00Z");
+  beforeEach(async () => {
+    now = START;
+    c = new DemoClient(new MemoryDemoStorage(), () => now);
+    await c.login({ email: "marie@demo.selio.local", password: "demo" });
+  });
+
+  it("la démo a une carte enregistrée « pour le marchand » (bac à sable) ; choisir une offre la retient pour la fin de l'essai", async () => {
+    const s = await c.getSubscription();
+    expect(s).toMatchObject({ status: "trialing", plan: "pro", cardOnFile: true, provider: "revolut", testMode: true, pendingPlan: null, cycle: "monthly" });
+    expect(s.paymentMethodId).toBeTruthy();
+    expect(s.revolutCustomerId).toBeTruthy();
+    const r = await c.startCheckout("agence", { cycle: "yearly" });
+    expect(r).toMatchObject({ orderToken: null, orderId: null, simulated: true, captureMode: null, amountCents: PRICING.monthlyCents.agence * PRICING.annualMonthsCharged });
+    expect(r.message).toMatch(/Agence retenue/);
+    expect(await c.getSubscription()).toMatchObject({ status: "trialing", plan: "pro", pendingPlan: "agence", cycle: "yearly" });
+    expect(await c.listInvoices()).toEqual([]);
+  });
+
+  it("fin d'essai avec carte : premier débit simulé, période ouverte depuis l'échéance, facture SEL-AAAA-000001 avec HT / TVA / TTC", async () => {
+    const end = new Date((await c.getSubscription()).currentPeriodEnd!);
+    now = new Date(end.getTime() + 3 * 3_600_000);
+    const s = await c.getSubscription();
+    expect(s).toMatchObject({ status: "active", plan: "pro", provider: "revolut", cardOnFile: true, pendingPlan: null, chargeAttempts: 0, cancelAtPeriodEnd: false });
+    expect(s.currentPeriodEnd).toBe(addMonthsUtc(end, 1).toISOString());
+    const invoices = await c.listInvoices();
+    expect(invoices).toHaveLength(1);
+    expect(invoices[0]).toMatchObject({ number: `SEL-${end.getUTCFullYear()}-000001`, plan: "pro", cycle: "monthly", amountCents: PRICING.monthlyCents.pro, vatRate: 20, vatNotice: null, periodStart: end.toISOString(), periodEnd: s.currentPeriodEnd });
+    expect(invoices[0]!.orderId).toMatch(/^demo-order-/);
+    const view = await c.getInvoice(invoices[0]!.id);
+    expect(view.totals).toEqual({ exclVatCents: 2083, vatCents: 416, inclVatCents: 2499, vatRate: 20 });
+    expect(view.lines).toEqual([{ label: "Abonnement Selio Pro — mensuel", periodLabel: expect.stringMatching(/^du .* au .*$/), amountCents: 2499 }]);
+    expect(view.customer.orgName).toBeTruthy();
+    expect(view.paymentProvider).toBe("revolut");
+    expect(view.issuer.name).toBe("Selio");
+    await expect(c.getInvoice("introuvable")).rejects.toThrow(/introuvable/);
+    expect((await c.listAuditLogs()).some((a) => a.action === "billing.payment_completed" && a.meta.kind === "renewal" && a.meta.simulated === true)).toBe(true);
+  });
+
+  it("renouvellements successifs : une facture par période, numéros qui se suivent, offre retenue appliquée au renouvellement", async () => {
+    const end = new Date((await c.getSubscription()).currentPeriodEnd!);
+    now = new Date(end.getTime() + 60_000);
+    await c.getSubscription();
+    await c.changePlan("agence");
+    expect(await c.getSubscription()).toMatchObject({ status: "active", plan: "pro", pendingPlan: "agence" });
+    now = new Date(addMonthsUtc(end, 2).getTime() + 60_000);
+    const s = await c.getSubscription();
+    expect(s).toMatchObject({ status: "active", plan: "agence", pendingPlan: null, quotas: { connections: 10 } });
+    const numbers = (await c.listInvoices()).map((i) => i.number).sort();
+    expect(numbers).toEqual([`SEL-${end.getUTCFullYear()}-000001`, `SEL-${end.getUTCFullYear()}-000002`, `SEL-${end.getUTCFullYear()}-000003`]);
+    const amounts = (await c.listInvoices()).map((i) => i.amountCents).sort((a, b) => a - b);
+    expect(amounts).toEqual([PRICING.monthlyCents.pro, PRICING.monthlyCents.agence, PRICING.monthlyCents.agence]);
+    // Même offre que l'offre actuelle : rien en attente.
+    await c.changePlan("agence");
+    expect((await c.getSubscription()).pendingPlan).toBeNull();
+  });
+
+  it("résiliation : accès jusqu'à la fin de la période, reprise possible tant qu'elle court, puis accès de base avec données gardées 30 jours", async () => {
+    const trialEnd = new Date((await c.getSubscription()).currentPeriodEnd!);
+    now = new Date(trialEnd.getTime() + 60_000);
+    let s = await c.getSubscription();
+    expect(s.status).toBe("active");
+    const periodEnd = s.currentPeriodEnd!;
+    s = await c.cancelSubscription();
+    expect(s).toMatchObject({ status: "active", plan: "pro", cancelAtPeriodEnd: true, currentPeriodEnd: periodEnd });
+    expect(await c.cancelSubscription()).toMatchObject({ cancelAtPeriodEnd: true });
+    s = await c.reactivateSubscription();
+    expect(s.cancelAtPeriodEnd).toBe(false);
+    await c.cancelSubscription();
+    now = new Date(new Date(periodEnd).getTime() + 60_000);
+    s = await c.getSubscription();
+    expect(s).toMatchObject({ status: "canceled", plan: "free", cancelAtPeriodEnd: false, pendingPlan: null, quotas: { connections: 1 } });
+    expect(s.dataRetentionUntil).toBe(new Date(now.getTime() + 30 * 86_400_000).toISOString());
+    expect(await c.listInvoices()).toHaveLength(1);
+    await expect(c.cancelSubscription()).rejects.toThrow(/Aucun abonnement/);
+    await expect(c.changePlan("pro")).rejects.toThrow(/enregistrez une carte/);
+    // Reprendre : hors essai, le paiement simulé réussit sur-le-champ, période ouverte depuis aujourd'hui, facture émise.
+    const r = await c.startCheckout("starter");
+    expect(r).toMatchObject({ orderToken: null, simulated: true, captureMode: "automatic", amountCents: PRICING.monthlyCents.starter });
+    expect(r.orderId).toMatch(/^demo-order-/);
+    expect(r.message).toMatch(/SEL-\d{4}-\d{6}/);
+    s = await c.getSubscription();
+    expect(s).toMatchObject({ status: "active", plan: "starter", dataRetentionUntil: null, cancelAtPeriodEnd: false });
+    expect(s.currentPeriodEnd).toBe(addMonthsUtc(now, 1).toISOString());
+    expect(await c.listInvoices()).toHaveLength(2);
+    expect((await c.listInvoices())[0]).toMatchObject({ plan: "starter", amountCents: PRICING.monthlyCents.starter });
+  });
+
+  it("inscription (sans carte) : enregistrer la carte pendant l'essai retient l'offre sans rien débiter ; sans carte, la fin d'essai ramène à l'accès de base", async () => {
+    await c.register({ email: "lea@exemple.fr", password: "motdepasse-long", displayName: "Léa", orgName: "Boutique Léa" });
+    let s = await c.getSubscription();
+    expect(s).toMatchObject({ status: "trialing", cardOnFile: false, provider: "none", paymentMethodId: null });
+    const r = await c.startCheckout("pro");
+    // Pendant l'essai : montant de vérification (1 €) autorisé puis annulé, jamais le prix de l'offre.
+    expect(r).toMatchObject({ orderToken: null, simulated: true, captureMode: "manual", amountCents: CARD_VERIFICATION_AMOUNT_CENTS });
+    expect(r.message).toMatch(/rien n'est débité avant la fin de l'essai/);
+    s = await c.getSubscription();
+    expect(s).toMatchObject({ status: "trialing", cardOnFile: true, provider: "revolut", pendingPlan: "pro" });
+    expect(s.paymentMethodId).toBeTruthy();
+    expect(await c.listInvoices()).toEqual([]);
+    // Changement de carte : nouvelle carte fictive, rien débité, aucune facture.
+    const previousMethod = s.paymentMethodId;
+    const card = await c.startCardUpdate();
+    expect(card).toMatchObject({ orderToken: null, simulated: true, captureMode: "manual", amountCents: CARD_VERIFICATION_AMOUNT_CENTS });
+    expect(card.message).toMatch(/rien n'est débité/);
+    s = await c.getSubscription();
+    expect(s.cardOnFile).toBe(true);
+    expect(s.paymentMethodId).not.toBe(previousMethod);
+    expect(await c.listInvoices()).toEqual([]);
+    expect((await c.listAuditLogs()).some((a) => a.action === "billing.card_saved" && a.meta.kind === "card_update")).toBe(true);
+    // Nouvelle inscription, jamais de carte : fin d'essai → accès de base, aucune facture, aucune rétention à compter.
+    await c.register({ email: "noe@exemple.fr", password: "motdepasse-long", displayName: "Noé", orgName: "Boutique Noé" });
+    const end = new Date((await c.getSubscription()).currentPeriodEnd!);
+    now = new Date(end.getTime() + 60_000);
+    s = await c.getSubscription();
+    expect(s).toMatchObject({ status: "canceled", plan: "free", cardOnFile: false, dataRetentionUntil: null, quotas: { connections: 1 } });
+    expect(await c.listInvoices()).toEqual([]);
+    expect((await c.listAuditLogs()).some((a) => a.action === "billing.trial_ended" && a.meta.reason === "trial_ended")).toBe(true);
   });
 });
 

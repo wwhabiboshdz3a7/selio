@@ -322,10 +322,19 @@ export function resolveQuotas(plan: Plan | string, raw: unknown): PlanQuotas {
 export const SUBSCRIPTION_STATUSES = ["none", "trialing", "active", "past_due", "canceled", "incomplete"] as const;
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 
-/** Fournisseurs de paiement : Stripe (adaptateur de test actuel), Revolut (semaine 2). */
-export const SUBSCRIPTION_PROVIDERS = ["none", "stripe", "revolut"] as const;
+/**
+ * Fournisseurs de paiement : « none » (aucun paiement réel, essai ou accès de base) et Revolut
+ * (Merchant API). L'ancien adaptateur de test a été retiré ; la migration 0009 ramène les
+ * lignes d'un fournisseur disparu à « none ».
+ */
+export const SUBSCRIPTION_PROVIDERS = ["none", "revolut"] as const;
 export const subscriptionProvider = z.enum(SUBSCRIPTION_PROVIDERS);
 export type SubscriptionProvider = z.infer<typeof subscriptionProvider>;
+
+/** Périodicité de l'abonnement : au mois, ou à l'année (10 mois payés sur 12). */
+export const BILLING_CYCLES = ["monthly", "yearly"] as const;
+export const billingCycle = z.enum(BILLING_CYCLES);
+export type BillingCycle = z.infer<typeof billingCycle>;
 
 /**
  * Essai gratuit : un seul choix, 14 jours, avec toutes les fonctions et limites du plan Pro.
@@ -358,8 +367,23 @@ export const subscription = z.object({
   cardOnFile: z.boolean().default(false),
   /** Résiliation demandée : l'abonnement s'arrête à la fin de la période en cours. */
   cancelAtPeriodEnd: z.boolean().default(false),
-  /** Mode test du fournisseur uniquement tant que l'activation n'est pas volontaire. */
+  /** Mode test du fournisseur (bac à sable Revolut) tant que l'activation du mode live n'est pas volontaire. */
   testMode: z.boolean().default(true),
+  /** Identifiant du client chez Revolut (créé au premier paiement). Jamais une donnée de carte. */
+  revolutCustomerId: z.string().max(120).nullable().default(null),
+  /** Identifiant du moyen de paiement enregistré « pour le marchand » chez Revolut ; jamais le numéro de carte. */
+  paymentMethodId: z.string().max(120).nullable().default(null),
+  cycle: billingCycle.default("monthly"),
+  /** Offre choisie pour le prochain renouvellement (changement d'offre, ou offre retenue pendant l'essai). */
+  pendingPlan: plan.nullable().default(null),
+  /** Débits échoués sur l'échéance en cours (0 quand le dernier débit a réussi). */
+  chargeAttempts: z.number().int().min(0).default(0),
+  /** Prochaine tentative de débit après un échec (J+1, J+3, J+7 après l'échéance). */
+  nextChargeAt: isoDate.nullable().default(null),
+  /** Motif du dernier échec de débit, sans donnée de carte. */
+  lastChargeError: z.string().max(500).nullable().default(null),
+  /** Après le retour à l'accès de base : les données sont conservées jusqu'à cette date. */
+  dataRetentionUntil: isoDate.nullable().default(null),
   createdAt: isoDate,
   updatedAt: isoDate,
 });

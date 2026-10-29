@@ -96,6 +96,9 @@ export const router = createBrowserRouter([
         { path: "connections", element: <Navigate to="/app/accounts" replace /> },
         { path: "ai", lazy: lazy(() => import("./app/pages/settings/Ai")) },
         { path: "billing", lazy: lazy(() => import("./app/pages/settings/Billing")) },
+        // Factures : liste, puis vue imprimable (window.print) d'une facture.
+        { path: "invoices", lazy: lazy(() => import("./app/pages/settings/Invoices")) },
+        { path: "invoices/:id", lazy: lazy(() => import("./app/pages/settings/InvoiceDetail")) },
         // « Mon utilisation » : une jauge par compteur du mois, alerte à 80 %, date de remise à zéro.
         { path: "usage", lazy: lazy(() => import("./app/pages/settings/Usage")) },
         { path: "notifications", lazy: lazy(() => import("./app/pages/settings/Notifications")) },

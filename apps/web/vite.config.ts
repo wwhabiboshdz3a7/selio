@@ -69,7 +69,14 @@ export default defineConfig({
       },
     }),
   ],
-  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // L'index de @selio/connectors réexporte le client Revolut (serveur, node:crypto) ; le
+      // navigateur n'en exécute jamais rien (élagué), mais Rollup exige que le module existe.
+      "node:crypto": fileURLToPath(new URL("./src/lib/shims/node-crypto.ts", import.meta.url)),
+    },
+  },
   build: {
     outDir: "dist",
     sourcemap: false,

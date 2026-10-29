@@ -5,7 +5,8 @@ import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import { createAIService } from "@selio/ai";
 import { Db, SecretBox, createPool } from "@selio/db";
-import { billing, type Services } from "@selio/core";
+import type { Services } from "@selio/core";
+import { createPaymentProvider, loadPaymentConfig } from "@selio/connectors";
 import { createEmailProvider, loadEmailConfig, type EmailLogger } from "@selio/email";
 import { createStorageClient, loadStorageConfig } from "@selio/storage";
 import { startupNotices, type ApiEnv } from "./config";
@@ -43,7 +44,20 @@ export function buildServices(env: ApiEnv, overrides: Partial<Services> = {}, lo
   const ai = overrides.ai ?? createAIService({ config: env, allowFallback: env.ALLOW_AI_FALLBACK });
   // Emails : « noop » (journalisé, adresse masquée) tant qu'aucun SMTP n'est configuré ; les tests injectent le leur.
   const email = overrides.email ?? createEmailProvider(loadEmailConfig(env), { logger });
-  return { db, ai, secrets: overrides.secrets ?? new SecretBox(env.SECRETS_ENCRYPTION_KEY), now: overrides.now ?? (() => new Date()), allowAiFallback: env.ALLOW_AI_FALLBACK, version: API_VERSION, email, publicWebUrl: overrides.publicWebUrl ?? env.PUBLIC_WEB_URL };
+  // Paiement Revolut : null sans REVOLUT_SECRET_KEY (aucune commande créée) ; les tests injectent un client à HTTP simulé.
+  const payments = overrides.payments !== undefined ? overrides.payments : createPaymentProvider(loadPaymentConfig(env), { logger });
+  return {
+    db,
+    ai,
+    secrets: overrides.secrets ?? new SecretBox(env.SECRETS_ENCRYPTION_KEY),
+    now: overrides.now ?? (() => new Date()),
+    allowAiFallback: env.ALLOW_AI_FALLBACK,
+    version: API_VERSION,
+    email,
+    publicWebUrl: overrides.publicWebUrl ?? env.PUBLIC_WEB_URL,
+    payments,
+    billing: overrides.billing ?? { franchiseTva: env.FRANCHISE_TVA },
+  };
 }
 
 export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}): Promise<BuiltServer> {
@@ -74,7 +88,6 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   app.setNotFoundHandler((req, reply) => reply.status(404).send({ error: { code: "not_found", message: `Route inconnue : ${req.method} ${req.url}` } }));
 
   const operatorEmails = env.OPERATOR_EMAILS.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-  const billingConfig: billing.BillingConfig = { stripeSecretKey: env.STRIPE_SECRET_KEY || undefined, stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET || undefined, stripePriceIds: billing.parsePriceIds({ STRIPE_PRICE_STARTER: env.STRIPE_PRICE_STARTER, STRIPE_PRICE_PRO: env.STRIPE_PRICE_PRO, STRIPE_PRICE_AGENCE: env.STRIPE_PRICE_AGENCE }), liveAllowed: env.STRIPE_LIVE_ALLOWED, publicWebUrl: env.PUBLIC_WEB_URL };
 
   await app.register(authRoutes, { cookieSecure: env.COOKIE_SECURE, operatorEmails });
   await app.register(orgRoutes);
@@ -87,7 +100,7 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(radarRoutes);
   await app.register(connectionRoutes);
   await app.register(aiRoutes, { healthToken: env.AI_HEALTH_TOKEN });
-  await app.register(billingRoutes, { config: billingConfig });
+  await app.register(billingRoutes);
   await app.register(miscRoutes, { queues: queues.stats, redisPing: queues.ping, version: API_VERSION });
   await app.register(extRoutes);
   await app.register(studioRoutes);

@@ -6,7 +6,8 @@ import type { HelpAnswer } from "@selio/contracts";
 import type { AccountStats, NegotiationResult, PeriodPreset } from "@selio/domain";
 import { DataError, type AdminOverview, type AdminUsageReport, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
 import type { AiHealthData } from "../data/types";
-import type { PaidPlan, WhiteLabel, WhiteLabelInput } from "@selio/contracts";
+import type { BillingCycle, Invoice, InvoiceView, PaidPlan, WhiteLabel, WhiteLabelInput } from "@selio/contracts";
+import type { CheckoutOutcome } from "../data/types";
 
 type Query = Record<string, string | number | boolean | undefined | null>;
 
@@ -171,7 +172,13 @@ export class ApiClient implements DataClient {
 
   getSubscription() { return this.get<Subscription>("/api/billing/subscription"); }
   getUsage() { return this.get<UsageSummary>("/api/billing/usage"); }
-  startCheckout(plan: PaidPlan) { return this.post<{ url: string | null; simulated: boolean; message: string }>("/api/billing/checkout", { plan }); }
+  startCheckout(plan: PaidPlan, opts: { cycle?: BillingCycle } = {}) { return this.post<CheckoutOutcome>("/api/billing/checkout", { plan, cycle: opts.cycle ?? "monthly" }); }
+  startCardUpdate() { return this.post<CheckoutOutcome>("/api/billing/card"); }
+  cancelSubscription() { return this.post<Subscription>("/api/billing/cancel"); }
+  reactivateSubscription() { return this.post<Subscription>("/api/billing/reactivate"); }
+  changePlan(plan: PaidPlan) { return this.post<Subscription>("/api/billing/plan", { plan }); }
+  listInvoices() { return this.get<Invoice[]>("/api/billing/invoices"); }
+  getInvoice(id: string) { return this.get<InvoiceView>(`/api/billing/invoices/${encodeURIComponent(id)}`); }
   listUsageEvents(limit = 50) { return this.get<UsageEvent[]>("/api/billing/usage-events", { limit }); }
 
   listAuditLogs(limit = 100) { return this.get<AuditLog[]>("/api/audit", { limit }); }

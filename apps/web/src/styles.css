@@ -166,3 +166,42 @@ tr[tabindex]:focus-visible {
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .mk-scope { --warning: var(--gold-300); }
 }
+
+/*
+ * Impression d'une facture (Paramètres › Factures › facture) : seule la feuille s'imprime, en noir
+ * sur blanc quel que soit le thème. Les couleurs sont imposées ici, pas dans le composant : c'est
+ * la seule exception à « jamais de couleur en dur », voulue pour le papier et le PDF.
+ */
+@media print {
+  @page {
+    margin: 16mm;
+  }
+  .print-hidden {
+    display: none !important;
+  }
+  body:has(.invoice-sheet) {
+    background: #fff !important;
+    color: #000 !important;
+    color-scheme: light;
+  }
+  body:has(.invoice-sheet) * {
+    visibility: hidden;
+  }
+  body:has(.invoice-sheet) .invoice-sheet,
+  body:has(.invoice-sheet) .invoice-sheet * {
+    visibility: visible;
+    color: #000 !important;
+    border-color: #000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  body:has(.invoice-sheet) .invoice-sheet {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+  }
+}

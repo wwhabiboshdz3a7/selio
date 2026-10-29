@@ -17,6 +17,7 @@
     "@selio/core": "workspace:*",
     "@selio/db": "workspace:*",
     "@selio/domain": "workspace:*",
+    "@selio/email": "workspace:*",
     "bullmq": "^5.81.5",
     "ioredis": "^5.11.1",
     "pino": "^9.14.0",

@@ -1,6 +1,6 @@
 import {
-  aiRequest, auditLog, automationRule, conversation as conversationSchema, customer as customerSchema, extensionToken, inventoryEvent, inventoryItem, job as jobSchema, marketplaceConnection, membership as membershipSchema, message as messageSchema, opportunity as opportunitySchema, order as orderSchema, organization as organizationSchema, purchaseRequest as purchaseSchema, radarSearch as radarSchema, shipment as shipmentSchema, subscription as subscriptionSchema, usageEvent, user as userSchema, quotasForPlan, isLegacyQuotas, resolveQuotas,
-  type AiRequest, type AuditLog, type AutomationRule, type Conversation, type ConversationQuery, type Customer, type CustomerQuery, type ExtensionToken, type InventoryEvent, type InventoryItem, type InventoryQuery, type Job, type JobQuery, type MarketplaceConnection, type Membership, type Message, type Opportunity, type Order, type OrderQuery, type Organization, type Page, type PurchaseRequest, type RadarSearch, type Shipment, type Subscription, type UsageEvent, type User,
+  aiRequest, auditLog, automationRule, conversation as conversationSchema, customer as customerSchema, extensionToken, inventoryEvent, inventoryItem, invoice as invoiceSchema, job as jobSchema, marketplaceConnection, membership as membershipSchema, message as messageSchema, opportunity as opportunitySchema, order as orderSchema, organization as organizationSchema, paymentOrder as paymentOrderSchema, purchaseRequest as purchaseSchema, radarSearch as radarSchema, shipment as shipmentSchema, subscription as subscriptionSchema, usageEvent, user as userSchema, quotasForPlan, isLegacyQuotas, resolveQuotas,
+  type AiRequest, type AuditLog, type AutomationRule, type Conversation, type ConversationQuery, type Customer, type CustomerQuery, type ExtensionToken, type InventoryEvent, type InventoryItem, type InventoryQuery, type Invoice, type Job, type JobQuery, type MarketplaceConnection, type Membership, type Message, type Opportunity, type Order, type OrderQuery, type Organization, type Page, type PaymentOrder, type PurchaseRequest, type RadarSearch, type Shipment, type Subscription, type UsageEvent, type User,
 } from "@selio/contracts";
 import type { ZodType, ZodTypeDef } from "zod";
 import type { AccountStats } from "@selio/domain";
@@ -169,17 +169,37 @@ export const invites = {
 };
 
 export const paymentEvents = {
+  /** Identifiant d'idempotence d'une livraison de webhook : (fournisseur, commande, événement). */
+  eventId(provider: string, orderId: string, event: string): string {
+    return `${provider}:${orderId}:${event}`;
+  },
   /**
-   * Retourne false si l'événement a déjà été reçu ET traité (idempotence).
-   * Un événement reçu dont le traitement a échoué (processed_at nul) peut être retraité :
-   * sinon le renvoi de Stripe serait pris pour un doublon et l'abonnement resterait faux.
+   * Réserve l'événement pour traitement et retourne false s'il est déjà traité (idempotence) ou
+   * en cours de traitement (réservation de moins de deux minutes : deux livraisons simultanées
+   * du même événement n'en traitent qu'une). Un événement reçu dont le traitement a échoué
+   * (processed_at nul, réservation relâchée ou expirée) peut être retraité : sinon le renvoi du
+   * fournisseur serait pris pour un doublon et l'abonnement resterait faux.
    */
-  async record(tx: Tx, input: { id: string; provider: string; type: string; payload: unknown }): Promise<boolean> {
-    const rows = await tx.query("insert into payment_events (id, provider, type, payload) values ($1, $2, $3, $4) on conflict (id) do update set payload = excluded.payload where payment_events.processed_at is null returning id", [input.id, input.provider, input.type, JSON.stringify(input.payload)]);
+  async record(tx: Tx, input: { id: string; provider: string; type: string; orderId?: string | null; payload: unknown }): Promise<boolean> {
+    const rows = await tx.query(
+      `insert into payment_events (id, provider, type, order_id, payload, claimed_at) values ($1, $2, $3, $4, $5, now())
+       on conflict (id) do update set payload = excluded.payload, claimed_at = now()
+       where payment_events.processed_at is null and (payment_events.claimed_at is null or payment_events.claimed_at < now() - interval '2 minutes')
+       returning id`,
+      [input.id, input.provider, input.type, input.orderId ?? null, JSON.stringify(input.payload)],
+    );
     return rows.length > 0;
   },
   async markProcessed(tx: Tx, id: string): Promise<void> {
     await tx.query("update payment_events set processed_at = now() where id = $1", [id]);
+  },
+  /** Traitement échoué : la réservation est relâchée pour que le renvoi du fournisseur soit retraité sans attendre. */
+  async release(tx: Tx, id: string): Promise<void> {
+    await tx.query("update payment_events set claimed_at = null where id = $1 and processed_at is null", [id]);
+  },
+  /** Événements reçus pour une commande (diagnostic), du plus récent au plus ancien. */
+  async listForOrder(tx: Tx, orderId: string): Promise<{ id: string; type: string; receivedAt: string; processedAt: string | null }[]> {
+    return tx.query("select id, type, received_at, processed_at from payment_events where order_id = $1 order by received_at desc", [orderId]);
   },
 };
 
@@ -684,7 +704,7 @@ export const subscriptions = {
     const r = await tx.maybeOne<Record<string, unknown>>("select * from subscriptions where org_id = $1", [tx.orgId]);
     return r ? toSubscription(r) : null;
   },
-  async upsert(tx: Tx, input: Partial<Subscription> & { stripeCustomerId?: string | null }): Promise<Subscription> {
+  async upsert(tx: Tx, input: Partial<Subscription>): Promise<Subscription> {
     const existing = await subscriptions.get(tx);
     if (existing) return toSubscription(await tx.update<Record<string, unknown>>("subscriptions", existing.id, input, "Abonnement"));
     const plan = input.plan ?? "free";
@@ -692,6 +712,90 @@ export const subscriptions = {
   },
   async findByExternalRef(tx: Tx, ref: string) {
     return tx.maybeOne<{ id: string; orgId: string }>("select * from app_find_subscription_by_ref($1)", [ref]);
+  },
+};
+
+/**
+ * Commandes créées chez le fournisseur de paiement (une ligne par tentative). Table d'organisation
+ * (RLS) ; le webhook, qui ne connaît que l'identifiant de commande, passe par `findGlobal`.
+ */
+export const paymentOrders = {
+  /** `createdAt` : horloge des services quand elle est fournie (âge d'une commande ouverte), sinon celle de la base. */
+  async create(tx: Tx, input: Omit<PaymentOrder, "id" | "orgId" | "createdAt" | "updatedAt" | "state" | "attempt" | "error"> & Partial<Pick<PaymentOrder, "state" | "attempt" | "error" | "createdAt">>): Promise<PaymentOrder> {
+    return parse(paymentOrderSchema, await tx.insert("payment_orders", { state: "pending", attempt: 0, error: null, ...input, orgId: tx.orgId }));
+  },
+  async byOrderId(tx: Tx, orderId: string): Promise<PaymentOrder | null> {
+    const r = await tx.maybeOne("select * from payment_orders where org_id = $1 and order_id = $2", [tx.orgId, orderId]);
+    return r ? parse(paymentOrderSchema, r) : null;
+  },
+  async update(tx: Tx, id: string, patch: Partial<Pick<PaymentOrder, "state" | "error" | "attempt">>): Promise<PaymentOrder> {
+    return parse(paymentOrderSchema, await tx.update("payment_orders", id, patch, "Commande de paiement"));
+  },
+  /**
+   * Transitions d'état conditionnelles et atomiques (un seul UPDATE … WHERE … RETURNING) : la
+   * ligne est verrouillée jusqu'au commit, une transaction concurrente relit l'état après et
+   * obtient null. C'est ce qui rend idempotents worker et webhook (jamais deux factures, jamais
+   * deux échecs comptés pour une même commande).
+   */
+  /** Clôt une commande payée ; null si elle l'était déjà. */
+  async complete(tx: Tx, id: string): Promise<PaymentOrder | null> {
+    const r = await tx.maybeOne("update payment_orders set state = 'completed', error = null, updated_at = now() where id = $1 and org_id = $2 and state <> 'completed' returning *", [id, tx.orgId]);
+    return r ? parse(paymentOrderSchema, r) : null;
+  },
+  /** Marque échouée une commande encore ouverte (pending ou authorised) ; null sinon (déjà close). */
+  async fail(tx: Tx, id: string, error: string): Promise<PaymentOrder | null> {
+    const r = await tx.maybeOne("update payment_orders set state = 'failed', error = $3, updated_at = now() where id = $1 and org_id = $2 and state in ('pending', 'authorised') returning *", [id, tx.orgId, error.slice(0, 500)]);
+    return r ? parse(paymentOrderSchema, r) : null;
+  },
+  /** Marque annulée une commande ouverte (pending ou authorised) ; null sinon. */
+  async cancel(tx: Tx, id: string, error: string | null = null): Promise<PaymentOrder | null> {
+    const r = await tx.maybeOne("update payment_orders set state = 'cancelled', error = coalesce($3, error), updated_at = now() where id = $1 and org_id = $2 and state in ('pending', 'authorised') returning *", [id, tx.orgId, error ? error.slice(0, 500) : null]);
+    return r ? parse(paymentOrderSchema, r) : null;
+  },
+  /** Dernière commande d'une sorte donnée (par exemple le renouvellement en cours), ou null. */
+  async latest(tx: Tx, kind: PaymentOrder["kind"]): Promise<PaymentOrder | null> {
+    const r = await tx.maybeOne("select * from payment_orders where org_id = $1 and kind = $2 order by created_at desc limit 1", [tx.orgId, kind]);
+    return r ? parse(paymentOrderSchema, r) : null;
+  },
+  /** Commandes d'une organisation dans un état donné pour certaines sortes (autorisations restées ouvertes à annuler). */
+  async listByState(tx: Tx, kinds: PaymentOrder["kind"][], state: PaymentOrder["state"], limit = 20): Promise<PaymentOrder[]> {
+    return (await tx.query("select * from payment_orders where org_id = $1 and kind = any($2::text[]) and state = $3 order by created_at asc limit $4", [tx.orgId, kinds, state, limit])).map((r) => parse(paymentOrderSchema, r));
+  },
+  async list(tx: Tx, limit = 50): Promise<PaymentOrder[]> {
+    return (await tx.query("select * from payment_orders where org_id = $1 order by created_at desc limit $2", [tx.orgId, limit])).map((r) => parse(paymentOrderSchema, r));
+  },
+  /** Recherche globale par identifiant de commande (fonction SECURITY DEFINER, sans ouvrir la table). */
+  async findGlobal(tx: Tx, orderId: string) {
+    return tx.maybeOne<{ id: string; orgId: string; kind: string; state: string }>("select * from app_find_payment_order($1)", [orderId]);
+  },
+};
+
+function toInvoice(row: Record<string, unknown>): Invoice {
+  // numeric(5,2) arrive en texte depuis pg : le taux de TVA redevient un nombre.
+  return parse(invoiceSchema, { ...row, vatRate: Number(row.vatRate) });
+}
+
+/**
+ * Factures (immuables : aucune mise à jour). Le numéro vient du compteur transactionnel de l'année
+ * d'émission (`invoice_counters`, migration 0010) : si la transaction est annulée ensuite, le numéro
+ * est rendu, la numérotation reste continue. `order_id` est unique : jamais deux factures pour une
+ * même commande, même si deux clôtures se croisaient.
+ */
+export const invoices = {
+  async create(tx: Tx, input: Omit<Invoice, "id" | "orgId" | "number" | "createdAt">): Promise<Invoice> {
+    const year = new Date(input.issuedAt).getUTCFullYear();
+    const { number } = await tx.one<{ number: string }>("select app_next_invoice_number($1) as number", [year]);
+    return toInvoice(await tx.insert("invoices", { ...input, number, orgId: tx.orgId }));
+  },
+  async list(tx: Tx, limit = 100): Promise<Invoice[]> {
+    return (await tx.query("select * from invoices where org_id = $1 order by issued_at desc, number desc limit $2", [tx.orgId, limit])).map(toInvoice);
+  },
+  async byId(tx: Tx, id: string): Promise<Invoice | null> {
+    const r = await tx.maybeOne("select * from invoices where org_id = $1 and id = $2", [tx.orgId, id]);
+    return r ? toInvoice(r) : null;
+  },
+  async count(tx: Tx): Promise<number> {
+    return tx.count("select count(*) from invoices where org_id = $1", [tx.orgId]);
   },
 };
 

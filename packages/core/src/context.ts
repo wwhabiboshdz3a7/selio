@@ -2,7 +2,9 @@ import type { Role } from "@selio/contracts";
 import type { AIService } from "@selio/ai";
 import type { Db, SecretBox, Tx } from "@selio/db";
 import type { EmailMessage, EmailProvider } from "@selio/email";
+import type { PaymentProvider } from "@selio/connectors";
 import { can, type Action } from "@selio/domain";
+import type { BillingOptions } from "./types";
 
 export class AppError extends Error {
   constructor(public readonly code: string, message: string, public readonly status = 400, public readonly details?: unknown) {
@@ -27,6 +29,13 @@ export interface Services {
   email?: EmailProvider;
   /** URL publique du site (PUBLIC_WEB_URL), base des liens envoyés par email. */
   publicWebUrl?: string;
+  /**
+   * Fournisseur de paiement (Revolut Merchant API). Absent ou null tant que REVOLUT_SECRET_KEY
+   * n'est pas renseignée : aucune commande n'est créée, l'interface le dit honnêtement.
+   */
+  payments?: PaymentProvider | null;
+  /** Options de facturation (franchise de TVA). Par défaut : TVA à 20 %. */
+  billing?: BillingOptions;
 }
 
 /** Contexte d'une requête authentifiée dans une organisation. */

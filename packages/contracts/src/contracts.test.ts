@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_TRIAL_DAYS, PAID_PLANS, PLANS, PLAN_LABELS, PLAN_QUOTAS, TRIAL_DAYS, TRIAL_DAYS_OPTIONS, TRIAL_PLAN, USAGE_EVENT_KINDS, USAGE_WARNING_RATE,
-  buildUsageCounter, completeQuotas, inventoryItemCreate, isLegacyQuotas, negotiationAutomation, orderCreate, planQuotas, quotasForPlan, registerInput, replySuggestion, resolveQuotas, subscription, trialDays, usageEvent, usagePercent,
+  CHARGE_RETRY_DELAYS_DAYS, DATA_RETENTION_DAYS_AFTER_END, DEFAULT_TRIAL_DAYS, DEFAULT_VAT_RATE, INVOICE_NUMBER_RE, PAID_PLANS, PLANS, PLAN_LABELS, PLAN_QUOTAS, SUBSCRIPTION_PROVIDERS, TRIAL_DAYS, TRIAL_DAYS_OPTIONS, TRIAL_PLAN, USAGE_EVENT_KINDS, USAGE_WARNING_RATE, VAT_FRANCHISE_NOTICE,
+  buildUsageCounter, checkoutInput, completeQuotas, inventoryItemCreate, invoice, invoiceAmounts, isLegacyQuotas, negotiationAutomation, nextChargeDelayDays, orderCreate, paymentOrder, planQuotas, quotasForPlan, registerInput, replySuggestion, resolveQuotas, subscription, trialDays, usageEvent, usagePercent,
 } from "./index";
 
 describe("contracts", () => {
@@ -146,5 +146,55 @@ describe("gabarits de négociation par défaut", () => {
   it("aucun gabarit ne contient « meilleur prix » et chaque gabarit de prix garde la variable {prix}", () => {
     for (const text of Object.values(messages)) expect(text).not.toMatch(/meilleur prix/i);
     for (const key of ["counter", "final", "afterFinal", "accepted"] as const) expect(messages[key]).toContain("{prix}");
+  });
+});
+
+describe("facturation : abonnement Revolut, factures, relances", () => {
+  const base = { id: "sub-1", orgId: "org-1", quotas: PLAN_QUOTAS.pro, createdAt: "2026-10-01T00:00:00.000Z", updatedAt: "2026-10-01T00:00:00.000Z" };
+
+  it("l'abonnement porte les identifiants Revolut (jamais de carte), la périodicité et les relances ; seuls « none » et « revolut » sont des fournisseurs", () => {
+    expect(SUBSCRIPTION_PROVIDERS).toEqual(["none", "revolut"]);
+    expect(subscription.safeParse({ ...base, provider: "autre" }).success).toBe(false);
+    const sub = subscription.parse(base);
+    expect(sub).toMatchObject({ revolutCustomerId: null, paymentMethodId: null, cycle: "monthly", pendingPlan: null, chargeAttempts: 0, nextChargeAt: null, lastChargeError: null, dataRetentionUntil: null });
+    const full = subscription.parse({ ...base, provider: "revolut", revolutCustomerId: "cus_1", paymentMethodId: "pm_1", cycle: "yearly", pendingPlan: "agence", chargeAttempts: 2, nextChargeAt: "2026-11-04T00:00:00.000Z", lastChargeError: "Refusé", dataRetentionUntil: null });
+    expect(full).toMatchObject({ provider: "revolut", cycle: "yearly", pendingPlan: "agence", chargeAttempts: 2 });
+    expect(subscription.safeParse({ ...base, cycle: "weekly" }).success).toBe(false);
+    expect(subscription.safeParse({ ...base, chargeAttempts: -1 }).success).toBe(false);
+    expect(subscription.safeParse({ ...base, pendingPlan: "essentiel" }).success).toBe(false);
+  });
+
+  it("relances : J+1, J+3, J+7 après l'échéance, puis plus aucune (retour à l'accès de base, données gardées 30 jours)", () => {
+    expect(CHARGE_RETRY_DELAYS_DAYS).toEqual([1, 3, 7]);
+    expect(nextChargeDelayDays(0)).toBe(1);
+    expect(nextChargeDelayDays(1)).toBe(1);
+    expect(nextChargeDelayDays(2)).toBe(3);
+    expect(nextChargeDelayDays(3)).toBe(7);
+    expect(nextChargeDelayDays(4)).toBeNull();
+    expect(nextChargeDelayDays(12)).toBeNull();
+    expect(DATA_RETENTION_DAYS_AFTER_END).toBe(30);
+  });
+
+  it("factures : numéro SEL-AAAA-000001, TVA 20 % par défaut, franchise à 0 % avec la mention légale, décomposition exacte", () => {
+    expect(INVOICE_NUMBER_RE.test("SEL-2026-000001")).toBe(true);
+    expect(INVOICE_NUMBER_RE.test("SEL-26-1")).toBe(false);
+    expect(DEFAULT_VAT_RATE).toBe(20);
+    expect(VAT_FRANCHISE_NOTICE).toBe("TVA non applicable, art. 293 B du CGI");
+    const inv = invoice.parse({ id: "inv-1", orgId: "org-1", number: "SEL-2026-000001", plan: "pro", cycle: "monthly", amountCents: 2499, vatRate: 20, periodStart: "2026-11-01T00:00:00.000Z", periodEnd: "2026-12-01T00:00:00.000Z", orderId: "ord_1", issuedAt: "2026-11-01T00:00:00.000Z", createdAt: "2026-11-01T00:00:00.000Z" });
+    expect(inv.vatNotice).toBeNull();
+    expect(invoice.safeParse({ ...inv, number: "FAC-1" }).success).toBe(false);
+    expect(invoiceAmounts(2499, 20)).toEqual({ exclVatCents: 2083, vatCents: 416, inclVatCents: 2499 });
+    expect(invoiceAmounts(2499, 0)).toEqual({ exclVatCents: 2499, vatCents: 0, inclVatCents: 2499 });
+    expect(invoiceAmounts(49990, 20)).toEqual({ exclVatCents: 41658, vatCents: 8332, inclVatCents: 49990 });
+  });
+
+  it("commandes de paiement et entrée de paiement : sortes, états, offre payante seulement", () => {
+    const po = paymentOrder.parse({ id: "po-1", orgId: "org-1", orderId: "ord_1", kind: "renewal", plan: "pro", cycle: "monthly", amountCents: 2499, captureMode: "automatic", createdAt: "2026-11-01T00:00:00.000Z", updatedAt: "2026-11-01T00:00:00.000Z" });
+    expect(po).toMatchObject({ state: "pending", attempt: 0, error: null });
+    expect(paymentOrder.safeParse({ ...po, kind: "refund" }).success).toBe(false);
+    expect(paymentOrder.safeParse({ ...po, captureMode: "later" }).success).toBe(false);
+    expect(checkoutInput.parse({ plan: "pro" })).toEqual({ plan: "pro", cycle: "monthly" });
+    expect(checkoutInput.parse({ plan: "agence", cycle: "yearly" }).cycle).toBe("yearly");
+    expect(checkoutInput.safeParse({ plan: "free" }).success).toBe(false);
   });
 });

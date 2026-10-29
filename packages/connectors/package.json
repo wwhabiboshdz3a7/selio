@@ -5,7 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./stripe": "./src/payments/stripe.ts",
+    "./revolut": "./src/payments/revolut.ts",
     "./vinted-adapter": "./src/vinted/adapters/index.ts"
   },
   "scripts": {
