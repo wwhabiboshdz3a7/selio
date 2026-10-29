@@ -10,7 +10,8 @@ export default async function orgRoutes(app: FastifyInstance) {
     reply.status(204);
   });
   app.get("/api/org/members", async (req) => orgService.listMembers(app.requireCtx(req)));
-  app.post("/api/org/members", async (req, reply) => { reply.status(201); return orgService.inviteMember(app.requireCtx(req), req.body); });
+  // Invitation : chaque appel envoie un email (aller-retour SMTP hors transaction) → 20 par quart d'heure et par adresse IP.
+  app.post("/api/org/members", { config: { rateLimit: { max: 20, timeWindow: "15 minutes" } } }, async (req, reply) => { reply.status(201); return orgService.inviteMember(app.requireCtx(req), req.body); });
   app.patch<{ Params: { id: string } }>("/api/org/members/:id", async (req, reply) => {
     await orgService.updateMemberRole(app.requireCtx(req), req.params.id, (req.body as { role: Role }).role);
     reply.status(204);

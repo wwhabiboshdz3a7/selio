@@ -71,6 +71,12 @@ importers:
       '@selio/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@selio/email':
+        specifier: workspace:*
+        version: link:../../packages/email
+      '@selio/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
       bullmq:
         specifier: ^5.81.5
         version: 5.81.5
@@ -390,6 +396,9 @@ importers:
       '@selio/domain':
         specifier: workspace:*
         version: link:../domain
+      '@selio/email':
+        specifier: workspace:*
+        version: link:../email
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -469,6 +478,41 @@ importers:
       fast-check:
         specifier: ^4.10.2
         version: 4.10.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@22.20.5)(happy-dom@18.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.51.2)(tsx@4.23.15)
+
+  packages/email:
+    dependencies:
+      nodemailer:
+        specifier: ^10.2.1
+        version: 10.2.1
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.5
+        version: 22.20.5
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@22.20.5)(happy-dom@18.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.51.2)(tsx@4.23.15)
+
+  packages/storage:
+    dependencies:
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.5
+        version: 22.20.5
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -2807,6 +2851,10 @@ packages:
   node-releases@2.0.58:
     resolution: {integrity: sha512-BdiKAgbfRlvfMq/XzO/AF9NPmaA8a+YpLAyAFTVFBj3gARrAIfWvNq7Q7NE4se3KgFu0KkrvQMxTS0XVnsGzHg==}
     engines: {node: '>=18'}
+
+  nodemailer@10.2.1:
+    resolution: {integrity: sha512-ZrDNsPFoDMwefNs7sJwrYiEJ/CG4ClJWDZv05iNJsEBWa8GRDry1QJHTJxsuTAY9eDDKjX4k+q3SxslXJOao7w==}
+    engines: {node: '>=20.0.0'}
 
   object-inspect@1.13.4:
     resolution: {integrity: sha512-W67iLl4J2EXEGTbfeHCffrjDfitvLANg0UlX3wFUUSTx92KXRFegMHUVgSqE+wvhAbi4WqjGg9czysTV2Epbew==}
@@ -6029,6 +6077,8 @@ snapshots:
     optional: true
 
   node-releases@2.0.58: {}
+
+  nodemailer@10.2.1: {}
 
   object-inspect@1.13.4: {}
 

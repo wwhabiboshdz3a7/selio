@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { MemoryDemoStorage } from "@selio/demo-data";
-import { isGenerated, listingInsights } from "@selio/domain";
+import { effectiveAiQuota, isGenerated, listingInsights } from "@selio/domain";
 import { DemoClient } from "./client";
 
 let client: DemoClient;
@@ -153,7 +153,9 @@ describe("comptes Vinted catégorisés (démonstration)", () => {
     expect(statOf(buyer.id).purchases).toBeGreaterThan(0);
     const usage = await client.getUsage();
     expect(usage.connectionsCount).toBe(vinted.length);
-    expect(usage.connectionsCount).toBeLessThanOrEqual(usage.quotas.connections);
+    // Le compteur suit la même règle que le serveur : utilisé / quota du plan, pourcentage plafonné à 100.
+    expect(usage.counters.connections).toMatchObject({ used: vinted.length, quota: usage.quotas.connections, exceeded: vinted.length >= usage.quotas.connections });
+    expect(usage.counters.connections.percent).toBeLessThanOrEqual(100);
     expect((await client.runAutoBuy()).account?.id).toBe(buyer.id);
 
     const moved = await client.updateConnection(buyer.id, { usage: "personal", label: "Ancien compte achats", displayHandle: "@marie.ancien" });
@@ -174,7 +176,7 @@ describe("comptes Vinted catégorisés (démonstration)", () => {
   });
 });
 
-describe("aide et essai Découverte (démonstration)", () => {
+describe("aide et essai de 14 jours (démonstration)", () => {
   it("répond depuis la FAQ, signale la simulation et cite des sources", async () => {
     const a = await client.askHelp("Selio est-il affilié à Vinted ?");
     expect(a).toMatchObject({ found: true, source: "faq", simulated: true, provider: null });
@@ -186,15 +188,91 @@ describe("aide et essai Découverte (démonstration)", () => {
     await expect(client.askHelp("?")).rejects.toThrow(/trois caractères/);
   });
 
-  it("inscription : essai d'une semaine par défaut, ou d'un mois, toutes les fonctions du plan Pro", async () => {
+  it("inscription : essai de 14 jours, seule durée, toutes les fonctions du plan Pro, carte pas encore demandée", async () => {
     const days = (iso: string | null) => Math.round((new Date(iso!).getTime() - new Date("2026-10-08T12:00:00Z").getTime()) / 86_400_000);
     await client.register({ email: "lea@exemple.fr", password: "motdepasse-long", displayName: "Léa", orgName: "Boutique Léa" });
     let sub = await client.getSubscription();
-    expect(sub).toMatchObject({ plan: "pro", status: "trialing" });
-    expect(days(sub.currentPeriodEnd)).toBe(7);
-    await client.register({ email: "lea@exemple.fr", password: "motdepasse-long", displayName: "Léa", orgName: "Boutique Léa", trialDays: 30 });
+    expect(sub).toMatchObject({ plan: "pro", status: "trialing", cardOnFile: false, cancelAtPeriodEnd: false, quotas: { connections: 3, studioListingsPerMonth: 20 } });
+    expect(days(sub.currentPeriodEnd)).toBe(14);
+    await client.register({ email: "lea@exemple.fr", password: "motdepasse-long", displayName: "Léa", orgName: "Boutique Léa", trialDays: 14 });
     sub = await client.getSubscription();
-    expect(days(sub.currentPeriodEnd)).toBe(30);
+    expect(days(sub.currentPeriodEnd)).toBe(14);
+    expect((await client.listAuditLogs()).find((a) => a.action === "auth.register")?.meta).toMatchObject({ trialDays: 14 });
+  });
+
+  it("paiement : Starter, Pro et Agence sont des offres, aucun paiement déclenché en démonstration", async () => {
+    const r = await client.startCheckout("agence");
+    expect(r).toMatchObject({ url: null, simulated: true });
+    expect(r.message).toMatch(/Agence/);
+    expect((await client.listAuditLogs()).some((a) => a.action === "billing.checkout_simulated" && a.meta.plan === "agence")).toBe(true);
+  });
+});
+
+describe("utilisation du mois et vue administrateur (démonstration)", () => {
+  it("« Mon utilisation » : même forme que l'API, période du 1er du mois, un compteur par filiale, alerte à 80 %", async () => {
+    const u = await client.getUsage();
+    expect(u.period.from).toBe("2026-10-01T00:00:00.000Z");
+    expect(u.quotas.studioListingsPerMonth).toBe(20);
+    // Compteurs généraux et par filiale : utilisé / quota / pourcentage plafonné / alerte / dépassement.
+    // Compteur IA : la limite réellement appliquée (plus petit entre le plan et le réglage de l'organisation), pas le plan seul.
+    const session = await client.getSession();
+    expect(u.counters.aiRequests).toMatchObject({ used: u.aiRequests, quota: effectiveAiQuota(u.quotas.aiRequestsPerMonth, session!.org.settings.ai.monthlyRequestQuota) });
+    expect(u.counters.aiRequests.quota).toBeLessThanOrEqual(u.quotas.aiRequestsPerMonth);
+    expect(u.counters.items).toMatchObject({ used: u.itemsCount, quota: u.quotas.items });
+    expect(u.counters.members).toMatchObject({ used: u.membersCount, quota: u.quotas.members });
+    const studioEvents = (await client.listUsageEvents(500)).filter((e) => e.kind === "studio.listing" && e.createdAt >= u.period.from).length;
+    expect(u.studio.listings).toMatchObject({ used: studioEvents, quota: 20 });
+    expect(studioEvents).toBeGreaterThan(0);
+    expect(u.studio.wornPhotos).toEqual({ used: 0, quota: 10, percent: 0, warning: false, exceeded: false });
+    expect(u.track.scans.quota).toBe(10);
+    expect(u.track.filtersFollowed).toMatchObject({ used: 0, quota: 5 });
+    expect(u.cloud).toMatchObject({ actions: { used: 0, quota: 500, percent: 0 }, included: false });
+    for (const c of [u.counters.aiRequests, u.counters.items, u.counters.connections, u.counters.members, u.studio.listings, u.track.scans, u.track.photoSearches, u.cloud.actions]) {
+      expect(c.percent).toBeGreaterThanOrEqual(0);
+      expect(c.percent).toBeLessThanOrEqual(100);
+      expect(c.warning).toBe(c.used >= c.quota * 0.8);
+    }
+    // Une annonce Studio de plus compte aussitôt dans le compteur de la filiale.
+    const photo = { id: "p1", url: "data:image/jpeg;base64," + btoa("photo"), alt: "levis-501-w32.jpg" };
+    await client.generateListing({ photos: [photo], hints: {} });
+    expect((await client.getUsage()).studio.listings.used).toBe(studioEvents + 1);
+  });
+
+  it("le compteur IA et le refus lisent la même limite : à la limite effective, « dépassé » et 402 avec le même chiffre", async () => {
+    const before = await client.getUsage();
+    // Réglage de l'organisation plus bas que le plan : c'est lui qui compte (même règle que le serveur).
+    const session = await client.getSession();
+    await client.updateOrg({ settings: { ai: { ...session!.org.settings.ai, monthlyRequestQuota: Math.max(1, before.aiRequests) } } });
+    const capped = await client.getUsage();
+    expect(capped.counters.aiRequests).toMatchObject({ used: before.aiRequests, quota: Math.max(1, before.aiRequests), percent: 100, warning: true, exceeded: true });
+    await expect(client.suggestReply("conv-001")).rejects.toMatchObject({ code: "quota_exceeded", message: `Quota IA mensuel atteint (${capped.counters.aiRequests.quota}).` });
+    // 0 = limite du plan : le compteur revient au quota du plan.
+    await client.updateOrg({ settings: { ai: { ...session!.org.settings.ai, monthlyRequestQuota: 0 } } });
+    expect((await client.getUsage()).counters.aiRequests.quota).toBe(before.quotas.aiRequestsPerMonth);
+  });
+
+  it("utilisation par client : réservée à l'opérateur, l'organisation de la démo puis des exemples fictifs, triés du plus proche de sa limite", async () => {
+    const report = await client.getAdminUsage();
+    expect(report.period.from).toBe("2026-10-01T00:00:00.000Z");
+    const mine = await client.getUsage();
+    const session = (await client.getSession())!;
+    const demoOrg = report.orgs.find((o) => o.id === session.org.id)!;
+    expect(demoOrg).toMatchObject({ name: session.org.name, plan: "pro", status: "trialing", counters: mine.counters, studio: mine.studio });
+    const samples = report.orgs.filter((o) => o.id !== session.org.id);
+    expect(samples.length).toBe(3);
+    expect(samples.every((o) => /\(exemple\)$/.test(o.name))).toBe(true);
+    expect(samples.map((o) => o.plan).sort()).toEqual(["agence", "pro", "starter"]);
+    // Tri décroissant sur le compteur le plus avancé ; l'état se déduit des compteurs (jamais inventé).
+    for (let i = 1; i < report.orgs.length; i++) expect(report.orgs[i - 1]!.maxPercent).toBeGreaterThanOrEqual(report.orgs[i]!.maxPercent);
+    const blocked = samples.find((o) => o.plan === "pro")!;
+    expect(blocked).toMatchObject({ exceeded: true, warning: true, maxPercent: 100 });
+    expect(blocked.studio.listings).toMatchObject({ used: 20, quota: 20, exceeded: true });
+    const agence = samples.find((o) => o.plan === "agence")!;
+    expect(agence.cloud).toMatchObject({ included: true, actions: { used: 620, quota: 2000 } });
+    // Hors opérateur : refus.
+    await client.register({ email: "lea@exemple.fr", password: "motdepasse-long", displayName: "Léa", orgName: "Boutique Léa" });
+    const me = (await client.getSession())!;
+    if (!me.user.isOperator) await expect(client.getAdminUsage()).rejects.toMatchObject({ code: "forbidden" });
   });
 });
 

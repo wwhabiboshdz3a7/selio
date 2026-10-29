@@ -30,26 +30,40 @@ test.describe("vitrine", () => {
     expect(robots).toContain("noindex");
   });
 
-  test("tarifs : essai Découverte d'une semaine ou d'un mois, plans par profil, comparatif sans quotas mensuels", async ({ page }) => {
+  test("tarifs : essai de 14 jours, trois offres, annuel, fondateurs, filiales au curseur, comparatif à quatre colonnes", async ({ page }) => {
     await page.goto("/tarifs");
-    await expect(page.getByRole("heading", { level: 1 })).toContainText("Une semaine pour essayer");
-    const trial = page.getByRole("article", { name: "Découverte" });
-    await expect(trial).toContainText("Gratuit pendant 7 jours");
-    const cta = trial.getByRole("link", { name: "Commencer l'essai d'une semaine" });
-    await expect(cta).toHaveAttribute("href", "/inscription?essai=7");
-    await trial.getByRole("radio", { name: "1 mois" }).click();
-    await expect(trial.getByRole("link", { name: "Commencer l'essai d'un mois" })).toHaveAttribute("href", "/inscription?essai=30");
-    await expect(trial.getByText("pendant 30 jours")).toBeVisible();
-    await expect(page.getByRole("article", { name: "Essentiel" }).getByText("Le revendeur régulier")).toBeVisible();
-    await expect(page.getByRole("article", { name: "Pro" }).getByText("L'équipe et les comptes multiples")).toBeVisible();
-    // Le comparatif décrit ce que chaque offre permet : aucune liste « X / mois » de quotas.
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("14 jours pour essayer");
+    const trial = page.getByRole("article", { name: "Essai 14 jours" });
+    await expect(trial).toContainText("Gratuit pendant 14 jours");
+    await expect(trial).toContainText("carte enregistrée, rien débité avant la fin");
+    await expect(trial.getByRole("link", { name: "Commencer l'essai de 14 jours" })).toHaveAttribute("href", "/inscription");
+    // Trois offres, à partir de la configuration (montants indicatifs).
+    await expect(page.getByRole("article", { name: "Starter" })).toContainText("6,99 €");
+    await expect(page.getByRole("article", { name: "Pro" }).getByText("Le revendeur régulier")).toBeVisible();
+    await expect(page.getByRole("article", { name: "Agence" })).toContainText("49,99 €");
+    await page.getByRole("radio", { name: /À l'année/ }).click();
+    await expect(page.getByRole("article", { name: "Pro" })).toContainText("2 mois offerts");
+    await expect(page.getByText("Offre fondateurs", { exact: true })).toBeVisible();
+    await expect(page.getByText("Plus de 10 comptes : sur devis", { exact: true })).toBeVisible();
+    await expect(page.getByRole("alert").or(page.getByRole("status")).filter({ hasText: "Montants non définitifs" })).toBeVisible();
+    // Les autres filiales : Studio seul au curseur, Radar, Radar Auto, Cloud en option, Selio Comptes.
+    const studio = page.getByRole("article", { name: "Selio Studio seul" });
+    await expect(studio).toContainText("0,02 € la photo");
+    await expect(studio).toContainText("4,99 € minimum");
+    await studio.getByRole("button", { name: /1 200 photos/ }).click();
+    await expect(studio).toContainText("29,99 €");
+    await expect(page.getByText("Selio Radar Auto", { exact: true })).toBeVisible();
+    await expect(page.getByText("Selio Cloud en option", { exact: true })).toBeVisible();
+    // Comparatif : l'essai et les trois offres, « — » pour ce qui n'est pas inclus.
     const table = page.getByRole("table");
-    await expect(table.getByRole("rowheader", { name: /Durée/ })).toBeVisible();
+    await expect(table.getByRole("columnheader", { name: /Agence/ })).toBeVisible();
     await expect(table.getByRole("rowheader", { name: /Comptes Vinted connectés/ })).toBeVisible();
-    await expect(table).not.toContainText(/requêtes|actions \/ jour|par mois/);
-    // L'inscription reprend la durée choisie.
-    await page.goto("/inscription?essai=30");
-    await expect(page.getByRole("radiogroup", { name: "Durée de l'essai Découverte" }).getByRole("radio", { name: "1 mois" })).toHaveAttribute("aria-checked", "true");
+    await expect(table.getByRole("rowheader", { name: /Annonces rédigées/ })).toBeVisible();
+    // L'inscription n'offre plus de choix de durée : 14 jours, carte enregistrée, rien débité.
+    await page.goto("/inscription");
+    await expect(page.getByTestId("trial-terms")).toContainText("14 jours d'essai, carte enregistrée, rien n'est débité avant la fin");
+    await expect(page.getByTestId("trial-terms")).toContainText("L'enregistrement de la carte arrive avec le paiement");
+    await expect(page.getByRole("radiogroup", { name: /Durée de l'essai/ })).toHaveCount(0);
   });
 
   test("FAQ : recherche instantanée, ancre partageable et question à l'assistant (réponse tirée de la FAQ)", async ({ page }) => {
@@ -65,7 +79,7 @@ test.describe("vitrine", () => {
     await page.getByLabel("Votre question").fill("Combien de temps dure l'essai gratuit ?");
     await page.getByRole("button", { name: "Demander" }).click();
     await expect(page.getByTestId("help-origin")).toHaveText("Réponse tirée de la FAQ");
-    await page.getByRole("link", { name: /Comment fonctionne l'essai Découverte\s\?/ }).click();
+    await page.getByRole("link", { name: /Comment fonctionne l.essai gratuit de\s14\sjours\s\?/ }).click();
     await expect(page).toHaveURL(/\/faq#essai-decouverte$/);
     await expect(page.locator("details#essai-decouverte")).toHaveAttribute("open", "");
   });

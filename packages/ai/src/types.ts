@@ -73,14 +73,54 @@ export interface StructuredResult<T> extends GenerateResult {
   raw: string;
 }
 
+/**
+ * Les trois rôles de modèle, tous servis par Ollama sur la machine :
+ * - `text` : « mon IA perso », la voix (réponses, annonces, aide) ;
+ * - `vision` : modèle 1, les photos (Studio, lecture et contrôle des photos) ;
+ * - `embed` : modèle 2, les prix (vecteurs pour retrouver les ventes comparables).
+ */
+export type AIModelRole = "text" | "vision" | "embed";
+
+/** Un modèle attendu par la configuration, et s'il est installé sur le serveur. */
+export interface ExpectedModel {
+  role: AIModelRole;
+  name: string;
+  present: boolean;
+}
+
+export interface HealthDetails {
+  /** Modèles attendus par rôle (texte, vision, embed), avec leur présence. */
+  models?: ExpectedModel[];
+  /** Noms des modèles attendus mais absents du serveur (`ollama pull <nom>`). */
+  missing?: string[];
+  /** Modèles réellement installés (réponse de /api/tags). */
+  installed?: string[];
+  [key: string]: unknown;
+}
+
 export interface HealthResult {
   ok: boolean;
+  /**
+   * `unavailable` : serveur injoignable ou modèle de texte absent ;
+   * `degraded` : modèle de texte présent mais un modèle secondaire (vision, embed) manque.
+   */
   status: "healthy" | "degraded" | "unavailable" | "unconfigured" | "mock";
   message: string;
   latencyMs: number | null;
   model: string;
   provider: string;
-  details?: Record<string, unknown>;
+  details?: HealthDetails;
+}
+
+export interface EmbedResult {
+  /** Un vecteur par texte d'entrée, dans le même ordre. */
+  embeddings: number[][];
+  /** Taille des vecteurs (0 si aucun texte). */
+  dimensions: number;
+  usage: Usage;
+  latencyMs: number;
+  model: string;
+  provider: string;
 }
 
 export interface AIProvider {
@@ -91,6 +131,11 @@ export interface AIProvider {
   generateStructured<T>(req: StructuredRequest<T>, opts?: GenerateOptions): Promise<StructuredResult<T>>;
   /** Streaming optionnel (tokens au fil de l'eau). */
   stream?(req: GenerateRequest, opts?: GenerateOptions): AsyncIterable<string>;
+  /**
+   * Vecteurs d'embedding (modèle 2, « les prix ») : optionnel, un fournisseur
+   * sans modèle d'embedding ne l'implémente pas.
+   */
+  embed?(texts: string[], opts?: GenerateOptions): Promise<EmbedResult>;
 }
 
 /** Crée un signal qui expire après `timeoutMs` et suit un signal parent optionnel. */

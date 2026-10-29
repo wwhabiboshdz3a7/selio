@@ -1,5 +1,5 @@
 import { hashString, seededRandom } from "@selio/domain";
-import { AIError, extractJson, type AIProvider, type GenerateOptions, type GenerateRequest, type GenerateResult, type HealthResult, type StructuredRequest, type StructuredResult } from "../types";
+import { AIError, extractJson, type AIProvider, type EmbedResult, type GenerateOptions, type GenerateRequest, type GenerateResult, type HealthResult, type StructuredRequest, type StructuredResult } from "../types";
 
 export interface MockOptions {
   /** Latence simulée (ms), déterministe. */
@@ -18,10 +18,28 @@ export interface MockOptions {
 export class MockAIProvider implements AIProvider {
   readonly name = "mock";
   readonly model = "selio-mock-v1";
+  /** Modèle 2 simulé : vecteurs déterministes de dimension MOCK_EMBED_DIMENSIONS. */
+  readonly embedModel = "selio-mock-embed-v1";
   constructor(private readonly opts: MockOptions = {}) {}
 
   async health(): Promise<HealthResult> {
-    return { ok: true, status: "mock", message: "Simulateur IA déterministe (aucun modèle réel)", latencyMs: 0, model: this.model, provider: this.name };
+    return {
+      ok: true,
+      status: "mock",
+      message: "Simulateur IA déterministe (aucun modèle réel)",
+      latencyMs: 0,
+      model: this.model,
+      provider: this.name,
+      details: {
+        models: [
+          { role: "text", name: this.model, present: true },
+          { role: "vision", name: this.model, present: true },
+          { role: "embed", name: this.embedModel, present: true },
+        ],
+        missing: [],
+        installed: [this.model, this.embedModel],
+      },
+    };
   }
 
   private async simulate(opts?: GenerateOptions): Promise<void> {
@@ -69,6 +87,22 @@ export class MockAIProvider implements AIProvider {
     for (const word of text.split(/(\s+)/)) yield word;
   }
 
+  /** Embeddings déterministes : même texte → même vecteur (voir mockEmbedding). */
+  async embed(texts: string[], opts?: GenerateOptions): Promise<EmbedResult> {
+    const started = Date.now();
+    if (texts.some((t) => typeof t !== "string" || t.trim().length === 0)) throw new AIError("config", "Chaque texte à vectoriser doit être non vide", false);
+    await this.simulate(opts);
+    const embeddings = texts.map(mockEmbedding);
+    return {
+      embeddings,
+      dimensions: embeddings.length > 0 ? MOCK_EMBED_DIMENSIONS : 0,
+      usage: { promptTokens: estimateTokens(texts.join(" ")), outputTokens: 0 },
+      latencyMs: Date.now() - started,
+      model: this.embedModel,
+      provider: this.name,
+    };
+  }
+
   private render(req: GenerateRequest): string {
     const hints = readHints(req.prompt);
     const rnd = seededRandom(hashString(req.prompt));
@@ -97,7 +131,9 @@ export class MockAIProvider implements AIProvider {
     const sig = hints.signature ? `\n${hints.signature}` : "";
     const map: Record<string, { reply: string; intent: string }> = {
       accept: { reply: `Bonjour${name}, c'est d'accord pour ${price ?? "ce prix"}. Je vous laisse faire l'offre sur l'annonce et j'accepte dès réception.${sig}`, intent: "accept_offer" },
-      counter: { reply: `Bonjour${name}, merci pour votre proposition. Je peux descendre à ${price ?? "un prix intermédiaire"}, c'est mon meilleur prix compte tenu de l'état et du port. Si cela vous convient, faites l'offre à ce montant.${sig}`, intent: "counter_offer" },
+      // « Dernier prix » seulement si la contre-offre est au plancher (indice [[atFloor]] émis par buildReplyRequest,
+      // ou [[floorCents]] égal au prix imposé), formule neutre sinon.
+      counter: { reply: `Bonjour${name}, merci pour votre proposition. ${hints.priceCents != null && (hints.atFloor || hints.priceCents === hints.floorCents) ? `Je peux aller jusqu'à ${price}, c'est mon dernier prix pour cet article.` : `Je peux vous le faire à ${price ?? "un prix intermédiaire"}.`} Si cela vous convient, faites l'offre à ce montant.${sig}`, intent: "counter_offer" },
       decline: { reply: `Bonjour${name}, merci pour l'intérêt. Je ne peux malheureusement pas descendre à ce prix. L'article reste disponible au prix affiché.${sig}`, intent: "decline_offer" },
       escalate: { reply: `Bonjour${name}, merci pour votre message. Je reviens vers vous très vite avec une réponse précise.${sig}`, intent: "escalate" },
       hold: { reply: `Bonjour${name}, merci pour votre message. Je vous réponds dès que possible.${sig}`, intent: "answer" },
@@ -116,6 +152,10 @@ interface Hints {
   seed?: string;
   decision?: string;
   priceCents?: number;
+  /** Prix plancher (indice optionnel) : permet au simulateur de dire « dernier prix » à bon escient. */
+  floorCents?: number;
+  /** Contre-offre au plancher (indice émis par `buildReplyRequest`, sans révéler le plancher). */
+  atFloor?: boolean;
   buyerName?: string;
   title?: string;
   brand?: string;
@@ -132,6 +172,8 @@ function readHints(prompt: string): Hints {
     const key = m[1]!;
     const val = m[2]!.trim();
     if (key === "priceCents") out.priceCents = Number.parseInt(val, 10);
+    else if (key === "floorCents") out.floorCents = Number.parseInt(val, 10);
+    else if (key === "atFloor") out.atFloor = val === "1" || val === "true";
     else (out as Record<string, string>)[key] = val;
   }
   return out;
@@ -139,6 +181,37 @@ function readHints(prompt: string): Hints {
 
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+export const MOCK_EMBED_DIMENSIONS = 64;
+
+/**
+ * Vecteur déterministe de dimension 64 dérivé d'un hachage du texte, normalisé
+ * (norme 1). Chaque mot (sans accent ni casse) est haché vers une dimension et
+ * un signe, puis les contributions sont sommées : deux textes qui partagent des
+ * mots ont une similarité cosinus plus forte, ce qui suffit à la démo des
+ * ventes comparables. Un texte sans mot reçoit un vecteur pseudo-aléatoire
+ * dérivé du hachage du texte entier. Aucune sémantique réelle : simulateur.
+ */
+export function mockEmbedding(text: string): number[] {
+  const v = new Array<number>(MOCK_EMBED_DIMENSIONS).fill(0);
+  const words = simplify(text).split(/[^a-z0-9]+/).filter((w) => w.length > 0);
+  for (const word of words) {
+    const h = hashString(word);
+    const dim = h % MOCK_EMBED_DIMENSIONS;
+    const sign = (h >>> 8) & 1 ? 1 : -1;
+    v[dim]! += sign;
+    // Deuxième projection : limite les collisions entre mots différents.
+    const h2 = hashString(`${word}#2`);
+    v[h2 % MOCK_EMBED_DIMENSIONS]! += ((h2 >>> 8) & 1 ? 1 : -1) * 0.5;
+  }
+  let norm = Math.hypot(...v);
+  if (norm === 0) {
+    const rnd = seededRandom(hashString(text));
+    for (let i = 0; i < v.length; i++) v[i] = rnd() * 2 - 1;
+    norm = Math.hypot(...v);
+  }
+  return v.map((x) => x / norm);
 }
 
 /**

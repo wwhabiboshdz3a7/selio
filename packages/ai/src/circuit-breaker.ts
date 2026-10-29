@@ -1,6 +1,15 @@
-import { AIError } from "./types";
+import { AIError, type AIErrorCode } from "./types";
 
 export type CircuitState = "closed" | "open" | "half_open";
+
+/**
+ * Erreurs qui ne sont pas une panne du serveur IA et ne comptent donc pas dans le disjoncteur :
+ * sortie invalide, annulation ou quota (le serveur a répondu), et les erreurs de configuration —
+ * « model_missing » (un modèle secondaire pas encore installé, ex. `ollama pull qwen3-vl:8b` oublié)
+ * ou « config » (texte vide, modèle non configuré). Sans cette exclusion, trois annonces Studio
+ * avec un modèle de vision absent coupaient aussi les réponses aux acheteurs et l'aide.
+ */
+const NOT_AN_OUTAGE: ReadonlySet<AIErrorCode> = new Set<AIErrorCode>(["invalid_output", "cancelled", "quota_exceeded", "model_missing", "config"]);
 
 export interface CircuitOptions {
   failureThreshold: number;
@@ -57,8 +66,7 @@ export class CircuitBreaker {
   }
 
   private onFailure(err: unknown): void {
-    // Les sorties invalides ne sont pas une panne du service : elles ne font pas sauter le disjoncteur.
-    if (err instanceof AIError && (err.code === "invalid_output" || err.code === "cancelled" || err.code === "quota_exceeded")) return;
+    if (err instanceof AIError && NOT_AN_OUTAGE.has(err.code)) return;
     this.failures++;
     if (this.failures >= this.opts.failureThreshold || this.openedAt !== null) this.openedAt = this.now();
   }

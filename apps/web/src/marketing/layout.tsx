@@ -22,7 +22,7 @@ export function MarketingLayout() {
   const { resolved, setPreference } = useTheme();
   const location = useLocation();
   const session = useSession();
-  const authPage = ["/connexion", "/inscription", "/demo"].includes(location.pathname);
+  const authPage = ["/connexion", "/inscription", "/demo", "/mot-de-passe-oublie", "/mot-de-passe", "/invitation"].includes(location.pathname);
   const { pathname, hash } = location;
   const navigationType = useNavigationType();
   const overNight = useSyncExternalStore(subscribeOverNight, getOverNight, getOverNightServer) && !open;

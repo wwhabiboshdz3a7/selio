@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { aiConfigSchema } from "@selio/ai";
+import { loadStorageConfig, storageConfigSchema } from "@selio/storage";
+import { emailConfigSchema, emailStartupWarnings, loadEmailConfig } from "@selio/email";
 
 const bool = z.string().optional().transform((v) => v === "true" || v === "1");
 
@@ -21,10 +23,14 @@ export const apiEnvSchema = z
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
     STRIPE_PRICE_STARTER: z.string().optional(),
     STRIPE_PRICE_PRO: z.string().optional(),
+    STRIPE_PRICE_AGENCE: z.string().optional(),
     STRIPE_LIVE_ALLOWED: bool,
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   })
-  .merge(aiConfigSchema);
+  .merge(aiConfigSchema)
+  // Stockage des photos (S3 / MinIO) et emails transactionnels : blocs facultatifs, validés ci-dessous.
+  .merge(storageConfigSchema)
+  .merge(emailConfigSchema);
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
 
@@ -41,5 +47,33 @@ export function loadEnv(env: Record<string, string | undefined> = process.env): 
     if (cfg.AI_PROVIDER === "mock") throw new Error("AI_PROVIDER=mock est interdit en production (simulateur).");
     if (!cfg.COOKIE_SECURE) throw new Error("COOKIE_SECURE doit être true en production (HTTPS).");
   }
+  // Une configuration de stockage ou d'email à moitié remplie arrête le démarrage ici (même format de message).
+  try {
+    loadStorageConfig(cfg);
+    loadEmailConfig(cfg);
+  } catch (err) {
+    throw new Error(`Configuration invalide :\n  - ${err instanceof Error ? err.message : String(err)}`);
+  }
   return cfg;
+}
+
+export interface StartupNotice {
+  level: "warn" | "info";
+  message: string;
+}
+
+/**
+ * Messages de démarrage, jamais bloquants : en production, un fournisseur d'email
+ * « noop » ou un stockage absent sont signalés en avertissement ; ailleurs, pour information.
+ */
+export function startupNotices(cfg: ApiEnv): StartupNotice[] {
+  const prod = cfg.NODE_ENV === "production";
+  const out: StartupNotice[] = [];
+  const email = loadEmailConfig(cfg);
+  for (const message of emailStartupWarnings(email, cfg.NODE_ENV)) out.push({ level: "warn", message });
+  if (!prod) out.push({ level: "info", message: `Emails : fournisseur ${email.provider}${email.provider === "noop" ? " (aucun envoi, journalisation seule)" : ""}.` });
+  if (!loadStorageConfig(cfg)) {
+    out.push({ level: prod ? "warn" : "info", message: "Stockage des photos non configuré (STORAGE_ENDPOINT absent) : /api/uploads répond 503. Voir docs/STOCKAGE.md (MinIO)." });
+  }
+  return out;
 }

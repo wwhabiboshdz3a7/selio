@@ -38,6 +38,10 @@ export const router = createBrowserRouter([
       { path: "conditions", lazy: lazy(() => import("./marketing/pages/Legal")) },
       { path: "connexion", lazy: lazy(() => import("./marketing/pages/Login")) },
       { path: "inscription", lazy: lazy(() => import("./marketing/pages/Register")) },
+      // Liens reçus par email (jeton retiré de l'adresse avant le rendu) et demande de lien.
+      { path: "mot-de-passe-oublie", lazy: lazy(() => import("./marketing/pages/ForgotPassword")) },
+      { path: "mot-de-passe", lazy: lazy(() => import("./marketing/pages/ResetPassword")) },
+      { path: "invitation", lazy: lazy(() => import("./marketing/pages/AcceptInvite")) },
       { path: "demo", lazy: lazy(() => import("./marketing/pages/DemoEntry")) },
     ]),
   },
@@ -92,6 +96,8 @@ export const router = createBrowserRouter([
         { path: "connections", element: <Navigate to="/app/accounts" replace /> },
         { path: "ai", lazy: lazy(() => import("./app/pages/settings/Ai")) },
         { path: "billing", lazy: lazy(() => import("./app/pages/settings/Billing")) },
+        // « Mon utilisation » : une jauge par compteur du mois, alerte à 80 %, date de remise à zéro.
+        { path: "usage", lazy: lazy(() => import("./app/pages/settings/Usage")) },
         { path: "notifications", lazy: lazy(() => import("./app/pages/settings/Notifications")) },
         { path: "security", lazy: lazy(() => import("./app/pages/settings/Security")) },
         { path: "data", lazy: lazy(() => import("./app/pages/settings/Data")) },

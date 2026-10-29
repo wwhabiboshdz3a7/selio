@@ -28,14 +28,25 @@ test.describe("aide de l'application", () => {
     await expect(page.getByTestId("help-origin")).toHaveText("Aucune réponse dans la FAQ");
   });
 
-  test("abonnement : essai Découverte et consommation en pourcentage", async ({ page }) => {
+  test("abonnement : essai de 14 jours, trois offres, et « Mon utilisation » avec une jauge par compteur", async ({ page }) => {
     await openDemo(page);
     await gotoApp(page, "/app/settings/billing");
-    await expect(page.getByText("Essai Découverte")).toBeVisible();
+    await expect(page.getByText("Essai 14 jours")).toBeVisible();
     await expect(page.getByText(/jours? d'essai restants?/)).toBeVisible();
-    const meters = page.getByRole("progressbar");
-    await expect(meters).toHaveCount(4);
-    await expect(page.getByRole("progressbar", { name: "Comptes Vinted" })).toHaveAttribute("aria-valuenow", "80");
-    await expect(page.getByText("4 sur 5")).toBeVisible();
+    // Ce que l'offre donne : comptes, équipe, stock ; puis les trois offres et le « sur devis ».
+    await expect(page.getByRole("progressbar")).toHaveCount(3);
+    await expect(page.getByRole("progressbar", { name: "Comptes Vinted" })).toBeVisible();
+    for (const name of ["Starter", "Pro", "Agence"]) await expect(page.getByText(new RegExp(`^${name}`)).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Choisir (test)" })).toHaveCount(3);
+    await expect(page.getByText("Plus de 10 comptes Vinted")).toBeVisible();
+    // Mon utilisation : une jauge par compteur, « utilisé / quota », date de remise à zéro, alerte à 80 %.
+    await page.getByRole("link", { name: "Mon utilisation du mois" }).click();
+    await expect(page).toHaveURL(/\/app\/settings\/usage$/);
+    await expect(page.getByRole("heading", { name: "Mon utilisation" })).toBeVisible();
+    await expect(page.getByText(/remise à zéro le/)).toBeVisible();
+    for (const name of ["Réponses de mon IA perso", "Actions automatiques aujourd'hui", "Annonces Studio", "Photos portées", "Scans de niche", "Recherches par photo", "Actions Cloud aujourd'hui"]) {
+      await expect(page.getByRole("progressbar", { name })).toBeVisible();
+    }
+    await expect(page.getByRole("progressbar", { name: "Annonces Studio" })).toHaveAttribute("aria-valuetext", /sur 20\)$/);
   });
 });

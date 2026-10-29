@@ -52,7 +52,7 @@ describe("aide : composants", () => {
     fireEvent.change(screen.getByLabelText("Votre question"), { target: { value: "Combien de temps dure l'essai gratuit ?" } });
     fireEvent.click(screen.getByRole("button", { name: "Demander" }));
     await waitFor(() => expect(screen.getByTestId("help-origin").textContent).toBe("Réponse tirée de la FAQ"));
-    const source = screen.getByRole("link", { name: /Comment fonctionne l'essai Découverte/ });
+    const source = screen.getByRole("link", { name: /Comment fonctionne l.essai gratuit de\s14\sjours/ });
     expect(source.getAttribute("href")).toBe("/faq#essai-decouverte");
   });
 

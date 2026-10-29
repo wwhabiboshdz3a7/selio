@@ -4,9 +4,9 @@ import type {
 import type { ConnectorDescriptor } from "@selio/connectors";
 import type { HelpAnswer } from "@selio/contracts";
 import type { AccountStats, NegotiationResult, PeriodPreset } from "@selio/domain";
-import { DataError, type AdminOverview, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
+import { DataError, type AdminOverview, type AdminUsageReport, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
 import type { AiHealthData } from "../data/types";
-import type { WhiteLabel, WhiteLabelInput } from "@selio/contracts";
+import type { PaidPlan, WhiteLabel, WhiteLabelInput } from "@selio/contracts";
 
 type Query = Record<string, string | number | boolean | undefined | null>;
 
@@ -67,6 +67,9 @@ export class ApiClient implements DataClient {
   register(input: { email: string; password: string; displayName: string; orgName: string }) { return this.post<Session>("/api/auth/register", input); }
   logout() { return this.post<void>("/api/auth/logout"); }
   switchOrg(orgId: string) { return this.post<Session>("/api/auth/switch-org", { orgId }); }
+  requestPasswordReset(email: string) { return this.post<void>("/api/auth/password/forgot", { email }); }
+  resetPassword(input: { token: string; password: string }) { return this.post<void>("/api/auth/password/reset", input); }
+  acceptInvite(input: { token: string; password: string; displayName?: string }) { return this.post<Session>("/api/auth/invite/accept", input); }
 
   updateOrg(input: { name?: string; settings?: Partial<OrgSettings> }) { return this.patch<Organization>("/api/org", input); }
   listMembers() { return this.get<(Membership & { user: User })[]>("/api/org/members"); }
@@ -168,7 +171,7 @@ export class ApiClient implements DataClient {
 
   getSubscription() { return this.get<Subscription>("/api/billing/subscription"); }
   getUsage() { return this.get<UsageSummary>("/api/billing/usage"); }
-  startCheckout(plan: Plan) { return this.post<{ url: string | null; simulated: boolean; message: string }>("/api/billing/checkout", { plan }); }
+  startCheckout(plan: PaidPlan) { return this.post<{ url: string | null; simulated: boolean; message: string }>("/api/billing/checkout", { plan }); }
   listUsageEvents(limit = 50) { return this.get<UsageEvent[]>("/api/billing/usage-events", { limit }); }
 
   listAuditLogs(limit = 100) { return this.get<AuditLog[]>("/api/audit", { limit }); }
@@ -181,6 +184,7 @@ export class ApiClient implements DataClient {
   getServiceStatus() { return this.get<ServiceStatus[]>("/api/status"); }
 
   getAdminOverview() { return this.get<AdminOverview>("/api/admin/overview"); }
+  getAdminUsage() { return this.get<AdminUsageReport>("/api/admin/usage"); }
   adminSetPlan(orgId: string, plan: Plan) { return this.post<void>(`/api/admin/orgs/${orgId}/plan`, { plan }); }
   adminListAudit(limit = 100) { return this.get<AuditLog[]>("/api/admin/audit", { limit }); }
 

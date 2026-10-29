@@ -6,7 +6,9 @@ import rateLimit from "@fastify/rate-limit";
 import { createAIService } from "@selio/ai";
 import { Db, SecretBox, createPool } from "@selio/db";
 import { billing, type Services } from "@selio/core";
-import type { ApiEnv } from "./config";
+import { createEmailProvider, loadEmailConfig, type EmailLogger } from "@selio/email";
+import { createStorageClient, loadStorageConfig } from "@selio/storage";
+import { startupNotices, type ApiEnv } from "./config";
 import { errorHandler } from "./errors";
 import authPlugin from "./plugins/auth";
 import authRoutes from "./routes/auth";
@@ -25,6 +27,7 @@ import miscRoutes from "./routes/misc";
 import extRoutes from "./routes/ext";
 import studioRoutes from "./routes/studio";
 import helpRoutes from "./routes/help";
+import uploadsRoutes from "./routes/uploads";
 import { createQueues, type QueueHandle } from "./queue";
 
 export const API_VERSION = "0.1.0";
@@ -35,14 +38,15 @@ export interface BuiltServer {
   queues: QueueHandle;
 }
 
-export function buildServices(env: ApiEnv, overrides: Partial<Services> = {}): Services {
+export function buildServices(env: ApiEnv, overrides: Partial<Services> = {}, logger?: EmailLogger): Services {
   const db = overrides.db ?? new Db(createPool(env.DATABASE_URL));
   const ai = overrides.ai ?? createAIService({ config: env, allowFallback: env.ALLOW_AI_FALLBACK });
-  return { db, ai, secrets: overrides.secrets ?? new SecretBox(env.SECRETS_ENCRYPTION_KEY), now: overrides.now ?? (() => new Date()), allowAiFallback: env.ALLOW_AI_FALLBACK, version: API_VERSION };
+  // Emails : « noop » (journalisé, adresse masquée) tant qu'aucun SMTP n'est configuré ; les tests injectent le leur.
+  const email = overrides.email ?? createEmailProvider(loadEmailConfig(env), { logger });
+  return { db, ai, secrets: overrides.secrets ?? new SecretBox(env.SECRETS_ENCRYPTION_KEY), now: overrides.now ?? (() => new Date()), allowAiFallback: env.ALLOW_AI_FALLBACK, version: API_VERSION, email, publicWebUrl: overrides.publicWebUrl ?? env.PUBLIC_WEB_URL };
 }
 
 export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}): Promise<BuiltServer> {
-  const services = buildServices(env, overrides);
   const app = Fastify({
     logger: {
       level: env.LOG_LEVEL,
@@ -53,7 +57,12 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
     trustProxy: env.TRUST_PROXY,
     bodyLimit: 2 * 1024 * 1024,
   });
+  // Les services sont construits après l'application : le fournisseur d'email journalise via app.log.
+  const services = buildServices(env, overrides, app.log);
+  for (const n of startupNotices(env)) app.log[n.level](n.message);
   const queues = createQueues(env.REDIS_URL, { warn: (m) => app.log.warn(m) });
+  // Stockage des photos (S3 / MinIO) : null tant que STORAGE_ENDPOINT est absent, la route répond alors 503.
+  const storage = createStorageClient(loadStorageConfig(env), services.now);
   const origins = env.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean);
 
   await app.register(helmet, { contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "same-site" } });
@@ -65,7 +74,7 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   app.setNotFoundHandler((req, reply) => reply.status(404).send({ error: { code: "not_found", message: `Route inconnue : ${req.method} ${req.url}` } }));
 
   const operatorEmails = env.OPERATOR_EMAILS.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-  const billingConfig: billing.BillingConfig = { stripeSecretKey: env.STRIPE_SECRET_KEY || undefined, stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET || undefined, stripePriceIds: billing.parsePriceIds({ STRIPE_PRICE_STARTER: env.STRIPE_PRICE_STARTER, STRIPE_PRICE_PRO: env.STRIPE_PRICE_PRO }), liveAllowed: env.STRIPE_LIVE_ALLOWED, publicWebUrl: env.PUBLIC_WEB_URL };
+  const billingConfig: billing.BillingConfig = { stripeSecretKey: env.STRIPE_SECRET_KEY || undefined, stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET || undefined, stripePriceIds: billing.parsePriceIds({ STRIPE_PRICE_STARTER: env.STRIPE_PRICE_STARTER, STRIPE_PRICE_PRO: env.STRIPE_PRICE_PRO, STRIPE_PRICE_AGENCE: env.STRIPE_PRICE_AGENCE }), liveAllowed: env.STRIPE_LIVE_ALLOWED, publicWebUrl: env.PUBLIC_WEB_URL };
 
   await app.register(authRoutes, { cookieSecure: env.COOKIE_SECURE, operatorEmails });
   await app.register(orgRoutes);
@@ -83,6 +92,7 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(extRoutes);
   await app.register(studioRoutes);
   await app.register(helpRoutes);
+  await app.register(uploadsRoutes, { storage });
 
   app.addHook("onClose", async () => {
     await queues.close();

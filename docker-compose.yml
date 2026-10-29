@@ -30,6 +30,42 @@ services:
       timeout: 3s
       retries: 20
 
+  # --- Stockage des photos : MinIO, compatible S3 — POUR LE DÉVELOPPEMENT LOCAL UNIQUEMENT ---
+  # Identifiants de dev connus de tous ; en production MinIO tourne sur la machine de Marseille
+  # avec des identifiants longs, sans console exposée, derrière le tunnel (voir docs/STOCKAGE.md).
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: selio-minio
+      MINIO_ROOT_PASSWORD: selio-minio-secret
+    ports:
+      - "9000:9000" # API S3 (STORAGE_ENDPOINT=http://127.0.0.1:9000)
+      - "9001:9001" # console web (http://127.0.0.1:9001)
+    volumes:
+      - selio_minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Crée le bucket « selio-photos » au démarrage (idempotent), sans aucun accès anonyme, puis s'arrête.
+  minio-init:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 selio-minio selio-minio-secret &&
+      mc mb --ignore-existing local/selio-photos &&
+      mc anonymous set none local/selio-photos &&
+      echo 'bucket selio-photos prêt'
+      "
+
 volumes:
   selio_pg:
   selio_redis:
+  selio_minio:

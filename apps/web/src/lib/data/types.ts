@@ -4,7 +4,7 @@ import type {
 import type { WhiteLabel, WhiteLabelInput } from "@selio/contracts";
 import type { ConnectorDescriptor } from "@selio/connectors";
 import type { ReplySuggestion } from "@selio/contracts";
-import type { TrialDays } from "@selio/contracts";
+import type { PaidPlan, SubsidiaryUsage, TrialDays, UsageCounter } from "@selio/contracts";
 import type { HelpAnswer } from "@selio/contracts";
 import type { AccountStats, AiHealthSummary, BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
 
@@ -93,7 +93,12 @@ export interface AutomationState {
   actionsToday: number;
 }
 
-export interface UsageSummary {
+/**
+ * Utilisation du mois (miroir de `UsageReport` dans packages/core/src/services/billing.ts) :
+ * champs historiques, compteurs généraux avec alerte à 80 % (`counters`) et un bloc par filiale
+ * (`studio`, `track`, `cloud`). `period.from` est le 1er du mois (UTC) : la date de remise à zéro.
+ */
+export interface UsageSummary extends SubsidiaryUsage {
   period: { from: string; to: string };
   aiRequests: number;
   automationActions: number;
@@ -104,6 +109,33 @@ export interface UsageSummary {
   itemsCount: number;
   connectionsCount: number;
   membersCount: number;
+  counters: { aiRequests: UsageCounter; items: UsageCounter; connections: UsageCounter; members: UsageCounter };
+  /** Au moins un compteur à 80 % ou plus. */
+  warning: boolean;
+}
+
+/** Utilisation d'un client vue par l'opérateur (miroir de `AdminOrgUsage` dans packages/core/src/services/admin.ts). */
+export interface AdminOrgUsage {
+  id: string;
+  name: string;
+  plan: Plan;
+  status: string;
+  createdAt: string;
+  counters: UsageSummary["counters"];
+  studio: SubsidiaryUsage["studio"];
+  track: SubsidiaryUsage["track"];
+  cloud: SubsidiaryUsage["cloud"];
+  /** Actions automatiques du mois (information, sans quota mensuel). */
+  automationActions: number;
+  /** Pourcentage du compteur le plus avancé (0–100). */
+  maxPercent: number;
+  warning: boolean;
+  exceeded: boolean;
+}
+
+export interface AdminUsageReport {
+  period: { from: string; to: string };
+  orgs: AdminOrgUsage[];
 }
 
 export interface ServiceStatus {
@@ -174,10 +206,19 @@ export interface DataClient {
   // Session
   getSession(): Promise<Session | null>;
   login(input: { email: string; password: string }): Promise<Session>;
-  /** `trialDays` : durée de l'essai Découverte choisie (7 par défaut, ou 30). */
+  /** `trialDays` : durée de l'essai, 14 jours (seule valeur ; carte enregistrée, rien débité avant la fin). */
   register(input: { email: string; password: string; displayName: string; orgName: string; trialDays?: TrialDays }): Promise<Session>;
   logout(): Promise<void>;
   switchOrg(orgId: string): Promise<Session>;
+  /**
+   * Mot de passe oublié : se résout toujours sans dire si un compte existe (aucune énumération) ;
+   * si c'est le cas, un email avec un lien à usage unique (1 heure) part.
+   */
+  requestPasswordReset(email: string): Promise<void>;
+  /** Nouveau mot de passe depuis le lien reçu par email ; `token_invalid` si le lien est inconnu, expiré ou déjà utilisé. */
+  resetPassword(input: { token: string; password: string }): Promise<void>;
+  /** Acceptation d'une invitation : mot de passe (et nom) définis, session ouverte dans l'organisation. */
+  acceptInvite(input: { token: string; password: string; displayName?: string }): Promise<Session>;
   // Organisation
   updateOrg(input: { name?: string; settings?: Partial<OrgSettings> }): Promise<Organization>;
   listMembers(): Promise<(Membership & { user: User })[]>;
@@ -286,7 +327,8 @@ export interface DataClient {
   // Abonnement et consommation
   getSubscription(): Promise<Subscription>;
   getUsage(): Promise<UsageSummary>;
-  startCheckout(plan: Plan): Promise<{ url: string | null; simulated: boolean; message: string }>;
+  /** Ouvre le paiement d'une offre payante (Starter, Pro ou Agence) ; « free » n'est pas une offre. */
+  startCheckout(plan: PaidPlan): Promise<{ url: string | null; simulated: boolean; message: string }>;
   // Sécurité et données
   listAuditLogs(limit?: number): Promise<AuditLog[]>;
   changePassword(input: { current: string; next: string }): Promise<void>;
@@ -296,6 +338,8 @@ export interface DataClient {
   getServiceStatus(): Promise<ServiceStatus[]>;
   // Administration opérateur
   getAdminOverview(): Promise<AdminOverview>;
+  /** Utilisation par client : compteurs du mois, pourcentage et alerte à 80 % pour chaque organisation. */
+  getAdminUsage(): Promise<AdminUsageReport>;
   adminSetPlan(orgId: string, plan: Plan): Promise<void>;
   adminListAudit(limit?: number): Promise<AuditLog[]>;
   // Selio Agents (aperçu) : marque blanche

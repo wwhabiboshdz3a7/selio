@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { Plan } from "@selio/contracts";
 import { repos } from "@selio/db";
 import { admin, withOrg } from "@selio/core";
 import type { QueueStatsProvider } from "@selio/core";
@@ -11,6 +12,8 @@ export default async function miscRoutes(app: FastifyInstance, opts: { queues: Q
   });
   app.get("/api/audit", async (req) => withOrg(app.requireCtx(req), (tx) => repos.audit.list(tx, Math.min(500, Number((req.query as { limit?: string }).limit ?? 100)))));
   app.get("/api/admin/overview", async (req) => admin.adminOverview(app.requireCtx(req), { queues: opts.queues, redis: opts.redisPing }));
-  app.post<{ Params: { id: string } }>("/api/admin/orgs/:id/plan", async (req, reply) => { await admin.adminSetPlan(app.requireCtx(req), req.params.id, (req.body as { plan: "free" | "starter" | "pro" }).plan); reply.status(204); });
+  app.post<{ Params: { id: string } }>("/api/admin/orgs/:id/plan", async (req, reply) => { await admin.adminSetPlan(app.requireCtx(req), req.params.id, (req.body as { plan: Plan }).plan); reply.status(204); });
   app.get("/api/admin/audit", async (req) => admin.adminAudit(app.requireCtx(req), Number((req.query as { limit?: string }).limit ?? 100)));
+  // Utilisation par client (compteurs du mois, pourcentage, alerte à 80 %) : opérateurs seulement.
+  app.get("/api/admin/usage", async (req) => admin.adminUsage(app.requireCtx(req)));
 }

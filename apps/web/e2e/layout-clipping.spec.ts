@@ -14,7 +14,7 @@ const PAGES = [
   "/app/automatisation/apres-vente", "/app/automatisation/stock", "/app/automations", "/app/radar",
   "/app/purchase", "/app/auto-buy", "/app/market", "/app/accounts", "/app/help", "/app/selling-rules",
   "/app/settings/organisation", "/app/settings/access", "/app/settings/members", "/app/settings/connections",
-  "/app/settings/ai", "/app/settings/billing", "/app/settings/notifications", "/app/settings/security",
+  "/app/settings/ai", "/app/settings/billing", "/app/settings/usage", "/app/settings/notifications", "/app/settings/security",
   "/app/settings/data", "/app/settings/status", "/studio", "/studio/annonces", "/studio/performances",
   "/agents", "/agents/clients", "/agents/marque-blanche", "/agents/facturation", "/track", "/cloud", "/generateur", "/admin",
 ];

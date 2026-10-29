@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router";
 import { Alert, Button, Field, Input, Segmented } from "@selio/ui";
 import { usePageMeta } from "../../lib/seo";
 import { Container, Eyebrow } from "../components";
-import { useData } from "../../lib/data/provider";
+import { queryClient, sessionKey, useData } from "../../lib/data/provider";
 import { connectedModeAvailable } from "../../lib/env";
 import { errorMessage } from "../../lib/errors";
 import type { Mode } from "../../lib/data/types";
@@ -23,7 +23,9 @@ export default function Login() {
     setError(null);
     setLoading(true);
     try {
-      await client.login({ email, password });
+      const session = await client.login({ email, password });
+      // La session ouverte remplace celle en cache (« aucune session », lue par la vitrine).
+      queryClient.setQueryData([...sessionKey, mode], session);
       navigate(location.state?.from && APP_PATH_PATTERN.test(location.state.from) ? location.state.from : HUB_PATH, { replace: true });
     } catch (err) {
       setError(errorMessage(err));
@@ -47,6 +49,7 @@ export default function Login() {
         <form onSubmit={submit} className="card mt-4 flex flex-col gap-4 p-5" noValidate>
           <Field label="Email" required>{(p) => <Input id={p.id} type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required />}</Field>
           <Field label="Mot de passe" required>{(p) => <Input id={p.id} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />}</Field>
+          <p className="-mt-2 text-right text-sm"><Link to="/mot-de-passe-oublie" className="text-text-muted underline underline-offset-2 hover:text-text">Mot de passe oublié ?</Link></p>
           {error ? <Alert tone="danger">{error}</Alert> : null}
           <Button type="submit" variant="accent" loading={loading} disabled={mode === "connected" && !connectedModeAvailable} fullWidth>{mode === "demo" ? "Entrer dans la démonstration" : "Se connecter"}</Button>
           <p className="text-center text-sm text-text-muted">Pas de compte ? <Link to="/inscription" className="font-medium text-text underline underline-offset-2">Créer un compte</Link></p>

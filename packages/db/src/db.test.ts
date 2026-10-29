@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Db, createPool, DbError } from "./pool";
 import { MIGRATIONS_DIR, runMigrations } from "./migrate";
@@ -100,5 +102,47 @@ describe("base de données", () => {
     const a = await app.withGlobal((tx) => repos.rateLimits.hit(tx, "test:ip", 60_000));
     const b = await app.withGlobal((tx) => repos.rateLimits.hit(tx, "test:ip", 60_000));
     expect(b).toBe(a + 1);
+  });
+
+  it("0008 : un ancien abonnement Pro retrouve les quotas du nouveau Pro, un devis complet est gardé, la vue administrateur compte les requêtes IA", async () => {
+    if (!available) return;
+    const { PLAN_QUOTAS } = await import("@selio/contracts");
+    // Les JSON écrits par la migration sont une copie de PLAN_QUOTAS : on vérifie qu'ils n'ont pas divergé.
+    const sql = readFileSync(join(MIGRATIONS_DIR, "0008_quotas_backfill_admin_ai.sql"), "utf8");
+    for (const plan of ["free", "starter", "pro", "agence"] as const) {
+      const m = new RegExp(`set quotas = '(\\{[^']+\\})'::jsonb\\s+where plan = '${plan}'`).exec(sql);
+      expect(m, `JSON du plan ${plan} dans la migration`).not.toBeNull();
+      expect(JSON.parse(m![1]!)).toEqual(PLAN_QUOTAS[plan]);
+    }
+    const legacy = { items: 5000, aiRequestsPerMonth: 3000, automationActionsPerDay: 500, connections: 5, members: 10 };
+    const custom = { ...PLAN_QUOTAS.agence, connections: 25, aiRequestsPerMonth: 12_000 };
+    const { oldPro, quoted } = await owner.withGlobal(async (tx) => {
+      const oldPro = await repos.orgs.create(tx, { name: "Org D", slug: "org-d", settings: { ai: { monthlyRequestQuota: 7 } } });
+      const quoted = await repos.orgs.create(tx, { name: "Org E", slug: "org-e", settings: {} });
+      await tx.insert("subscriptions", { orgId: oldPro.id, plan: "pro", status: "trialing", quotas: legacy });
+      await tx.insert("subscriptions", { orgId: quoted.id, plan: "agence", status: "active", quotas: custom });
+      return { oldPro, quoted };
+    });
+    // À la lecture, avant même la migration : l'ancien JSON est remplacé par les quotas du plan (Studio retrouvé).
+    const read = await app.withOrg(oldPro.id, (tx) => repos.subscriptions.get(tx));
+    expect(read?.quotas).toEqual(PLAN_QUOTAS.pro);
+    expect(read?.quotas.studioListingsPerMonth).toBe(20);
+    expect((await app.withOrg(quoted.id, (tx) => repos.subscriptions.get(tx)))?.quotas).toEqual(custom);
+    // La migration (idempotente, rejouée ici) réécrit la ligne en base ; le JSON complet (devis) reste intact.
+    await owner.pool.query(sql);
+    const rows = await owner.withGlobal((tx) => tx.query<{ orgId: string; quotas: Record<string, unknown> }>("select org_id, quotas from subscriptions where org_id = any($1)", [[oldPro.id, quoted.id]]));
+    expect(rows.find((r) => r.orgId === oldPro.id)?.quotas).toEqual(PLAN_QUOTAS.pro);
+    expect(rows.find((r) => r.orgId === quoted.id)?.quotas).toEqual(custom);
+    // Vue administrateur : décompte des requêtes IA du mois comme le refus (échecs compris, aide exclue) et réglage de l'organisation.
+    await app.withOrg(oldPro.id, async (tx) => {
+      await repos.aiRequests.create(tx, { kind: "reply_suggestion", provider: "mock", model: "m", status: "failed" });
+      await repos.aiRequests.create(tx, { kind: "listing_generation", provider: "mock", model: "m", status: "succeeded" });
+      await repos.aiRequests.create(tx, { kind: "help_answer", provider: "mock", model: "m", status: "succeeded" });
+    });
+    const usage = await app.withGlobal((tx) => repos.admin.orgUsage(tx, "2000-01-01T00:00:00.000Z", "2000-01-01T00:00:00.000Z"));
+    const mine = usage.find((r) => r.id === oldPro.id);
+    expect(mine).toMatchObject({ plan: "pro", aiRequestsMonth: 2, quotas: PLAN_QUOTAS.pro });
+    expect(mine?.aiSettings).toMatchObject({ monthlyRequestQuota: 7 });
+    expect(usage.find((r) => r.id === quoted.id)).toMatchObject({ aiRequestsMonth: 0, aiSettings: {} });
   });
 });

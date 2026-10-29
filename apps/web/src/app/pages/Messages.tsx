@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Archive, Bot, Check, ChevronLeft, MessagesSquare, Package, Search, Send, ShieldCheck, Sparkles, Trash2, X, Zap } from "lucide-react";
 import type { Message } from "@selio/contracts";
 import type { NegotiationResult } from "@selio/domain";
+import { counterOfferWording } from "@selio/ai";
 import { Alert, Avatar, Button, Dialog, IconButton, Input, Money, PageHeader, Segmented, Tag, Textarea, cn, formatDate, formatPercent, formatRelative, formatTime } from "@selio/ui";
 import { useClient, useData, useRequiredSession } from "../../lib/data/provider";
 import { ConnectorStatusBadge, ItemThumb, MessageStatusBadge, QueryBoundary } from "../components/common";
@@ -152,7 +153,7 @@ function ConversationView({ id }: { id: string }) {
                     </div>
                   );
                 })}
-                {lastOffer && item ? <OfferPanel buyer={firstName} listedCents={item.listedPriceCents} offerCents={lastOffer.offerCents} evaluation={lastOffer.evaluation} onCreateOrder={canSend ? (price) => setOrderDialog({ priceCents: price }) : undefined} onCounter={canSend && lastOffer.evaluation.counterCents !== null ? () => setDraftText(`Bonjour ${firstName}, merci pour votre offre. Je peux vous proposer ${fmt(lastOffer.evaluation.counterCents!)}, c'est mon meilleur prix. Si cela vous convient, faites l'offre à ce montant et je l'accepte.`) : undefined} onDecline={canSend ? () => setDraftText(`Bonjour ${firstName}, merci pour votre intérêt. Je ne peux malheureusement pas descendre à ${fmt(lastOffer.offerCents)} : l'article reste disponible au prix affiché.`) : undefined} /> : null}
+                {lastOffer && item ? <OfferPanel buyer={firstName} listedCents={item.listedPriceCents} offerCents={lastOffer.offerCents} evaluation={lastOffer.evaluation} onCreateOrder={canSend ? (price) => setOrderDialog({ priceCents: price }) : undefined} onCounter={canSend && lastOffer.evaluation.counterCents !== null ? () => setDraftText(`Bonjour ${firstName}, merci pour votre offre. ${counterOfferWording(lastOffer.evaluation.counterCents!, lastOffer.evaluation.floorCents)}`) : undefined} onDecline={canSend ? () => setDraftText(`Bonjour ${firstName}, merci pour votre intérêt. Je ne peux malheureusement pas descendre à ${fmt(lastOffer.offerCents)} : l'article reste disponible au prix affiché.`) : undefined} /> : null}
                 <div ref={endRef} />
               </div>
               {canSend ? (

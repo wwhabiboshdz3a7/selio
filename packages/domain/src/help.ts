@@ -1,4 +1,4 @@
-import { CONNECTION_USAGE_LABELS, DEFAULT_TRIAL_DAYS, PLAN_QUOTAS, RULE_KIND_LABELS, autoBuySettings, buyerFees, orgSettings, ruleLimits, schedule } from "@selio/contracts";
+import { CONNECTION_USAGE_LABELS, PLAN_LABELS, PLAN_QUOTAS, RULE_KIND_LABELS, TRIAL_DAYS, autoBuySettings, buyerFees, orgSettings, ruleLimits, schedule } from "@selio/contracts";
 import { REVIEW_THRESHOLD, SCORE_BANDS } from "./buying";
 import { helpTokens, normalizeHelpText } from "./help-text";
 import { DEFAULT_REPUBLISH_AFTER_DAYS } from "./online";
@@ -82,7 +82,7 @@ export const HELP_CATEGORIES: readonly HelpCategory[] = [
   { id: "automatisation", title: "Automatisation", summary: "Messages aux favoris, réponse et négociation automatiques, après-vente, bordereaux et stock automatique." },
   { id: "gestion", title: "Stock, commandes et analyses", summary: "Articles, import CSV, commandes, expédition, clients et indicateurs." },
   { id: "equipe", title: "Équipe, comptes et accès", summary: "Propriétaire, administrateur, opérateur, lecture seule ; inviter et retirer." },
-  { id: "tarifs", title: "Tarifs et abonnement", summary: "L'essai Découverte, les plans Essentiel et Pro, les limites et le paiement." },
+  { id: "tarifs", title: "Tarifs et abonnement", summary: "L'essai de 14 jours, les offres Starter, Pro et Agence, les quotas par filiale et le paiement." },
   { id: "donnees", title: "Données, sécurité et confidentialité", summary: "Où sont vos données, export, suppression, protection du compte, IA." },
   { id: "filiales", title: "Les filiales Selio", summary: "Selio Studio, Selio Agents, Selio Track, Selio Cloud et le générateur de compte Vinted." },
 ];
@@ -100,6 +100,7 @@ export function helpEntries(): readonly HelpEntry[] {
 
 function buildHelpEntries(): HelpEntry[] {
   const Q = PLAN_QUOTAS;
+  const P = PLAN_LABELS;
   const AUTO_BUY = autoBuySettings.parse({});
   const BUYER_FEES = buyerFees.parse({});
   const RETENTION = orgSettings.parse({}).retentionDays;
@@ -175,7 +176,7 @@ function buildHelpEntries(): HelpEntry[] {
     id: "plusieurs-comptes",
     categoryId: "comptes",
     question: "Puis-je connecter plusieurs comptes Vinted ?",
-    answer: `Oui. Dans le menu Comptes › Comptes Vinted, chaque compte reçoit une catégorie : ${CONNECTION_USAGE_LABELS.sale}, ${CONNECTION_USAGE_LABELS.purchase} ou ${CONNECTION_USAGE_LABELS.personal}, modifiable en un clic. Le nombre de comptes dépend du plan : jusqu'à ${Q.starter.connections} avec Essentiel, jusqu'à ${Q.pro.connections} avec Pro et pendant l'essai Découverte. Le simulateur de démonstration n'est pas compté.`,
+    answer: `Oui. Dans le menu Comptes › Comptes Vinted, chaque compte reçoit une catégorie : ${CONNECTION_USAGE_LABELS.sale}, ${CONNECTION_USAGE_LABELS.purchase} ou ${CONNECTION_USAGE_LABELS.personal}, modifiable en un clic. Le nombre de comptes dépend de l'offre : ${Q.starter.connections} compte avec ${P.starter}, jusqu'à ${Q.pro.connections} avec ${P.pro} (et pendant l'essai de ${TRIAL_DAYS} jours), jusqu'à ${Q.agence.connections} avec ${P.agence}. Aucun compte supplémentaire à la carte ; au-delà de ${Q.agence.connections} comptes, sur devis. Le simulateur de démonstration n'est pas compté.`,
     keywords: ["multicompte", "multi-comptes", "plusieurs boutiques", "deuxième compte", "ajouter un compte", "connecter"],
     link: { label: "Comptes Vinted", href: "/app/accounts" },
   },
@@ -522,7 +523,7 @@ function buildHelpEntries(): HelpEntry[] {
     id: "inviter-membre",
     categoryId: "equipe",
     question: "Comment inviter quelqu'un dans mon équipe ?",
-    answer: `Dans Paramètres › Comptes et accès, saisissez son email et choisissez son rôle ; le propriétaire et les administrateurs peuvent inviter. Le nombre de personnes dépend du plan : jusqu'à ${Q.starter.members} avec Essentiel, jusqu'à ${Q.pro.members} avec Pro et pendant l'essai.\n\nL'email d'invitation et la définition du mot de passe par email sont en préparation : aucun service d'email n'est encore branché. Aujourd'hui, une personne qui a déjà un compte Selio retrouve l'organisation en se connectant ; pour une nouvelle adresse, le compte est créé mais la personne ne peut pas encore choisir son mot de passe elle-même.`,
+    answer: `Dans Paramètres › Comptes et accès, saisissez son email et choisissez son rôle ; le propriétaire et les administrateurs peuvent inviter. Le nombre de personnes dépend de l'offre : ${Q.starter.members} personne avec ${P.starter}, jusqu'à ${Q.pro.members} avec ${P.pro} (et pendant l'essai), jusqu'à ${Q.agence.members} avec ${P.agence}, qui ajoute les rôles d'équipe.\n\nLa personne reçoit un email avec un lien valable 7 jours, à usage unique, pour choisir son nom et son mot de passe ; elle est connectée directement dans l'organisation. Quelqu'un qui a déjà un compte Selio garde son mot de passe et retrouve l'organisation en se connectant. Si l'email ne peut pas partir, l'invitation est annulée et peut être refaite.`,
     keywords: ["inviter", "ajouter un membre", "collaborateur", "équipe", "employé", "invitation"],
     link: { label: "Comptes et accès", href: "/app/settings/access" },
   },
@@ -551,26 +552,43 @@ function buildHelpEntries(): HelpEntry[] {
 
   // ---- Tarifs et abonnement ----------------------------------------------
   {
+    // Identifiant conservé (ancre /faq#essai-decouverte partagée) : l'essai de 14 jours remplace l'offre Découverte.
     id: "essai-decouverte",
     categoryId: "tarifs",
-    question: "Comment fonctionne l'essai Découverte ?",
-    answer: `C'est un essai gratuit, sans carte bancaire, de toutes les fonctions du plan Pro. Vous choisissez sa durée à l'inscription : 1 semaine (${DEFAULT_TRIAL_DAYS} jours, par défaut) ou 1 mois (30 jours). À la fin, vous choisissez Essentiel ou Pro. Les abonnements payants ne sont pas encore ouverts : en attendant, l'essai n'est pas interrompu automatiquement.`,
-    keywords: ["essai", "gratuit", "découverte", "une semaine", "un mois", "tester", "sans carte"],
+    question: `Comment fonctionne l'essai gratuit de ${TRIAL_DAYS} jours ?`,
+    answer: `C'est un essai gratuit de ${TRIAL_DAYS} jours, un seul choix de durée, avec toutes les fonctions et les limites de l'offre ${P.pro}. La carte bancaire est enregistrée dès l'inscription et rien n'est débité avant la fin de l'essai. À la fin, vous choisissez ${P.starter}, ${P.pro} ou ${P.agence}, ou vous arrêtez sans frais. Tant que le paiement n'est pas branché (en préparation), l'enregistrement de la carte et la fin d'essai ne sont pas appliqués.`,
+    keywords: ["essai", "gratuit", "14 jours", "deux semaines", "tester", "carte bancaire", "période d'essai", "découverte"],
     link: { label: "Voir les tarifs", href: "/tarifs" },
   },
   {
-    id: "essentiel-ou-pro",
+    id: "starter-pro-ou-agence",
     categoryId: "tarifs",
-    question: "Quelle différence entre Essentiel et Pro ?",
-    answer: `Tous les modules sont inclus dans les deux plans. Essentiel convient au revendeur régulier, seul ou à deux : jusqu'à ${Q.starter.connections} comptes Vinted et ${Q.starter.members} personnes. Pro est fait pour les équipes et les comptes multiples : jusqu'à ${Q.pro.connections} comptes Vinted, ${Q.pro.members} personnes et une capacité plus large (jusqu'à ${num(Q.pro.items)} articles actifs au lieu de ${num(Q.starter.items)}, et davantage d'IA et d'automatisations).`,
-    keywords: ["différence", "essentiel", "pro", "choisir un plan", "comparer", "formule"],
-    link: { label: "Comparer les plans", href: "/tarifs" },
+    question: `Quelle différence entre ${P.starter}, ${P.pro} et ${P.agence} ?`,
+    answer: `${P.starter} : ${Q.starter.connections} compte Vinted, ${num(Q.starter.aiRequestsPerMonth)} réponses de mon IA perso par mois, tous les modules de gestion (stock, dressing, messagerie, commandes, marges). ${P.pro} : jusqu'à ${Q.pro.connections} comptes et ${Q.pro.members} personnes, Track essentiel, relance après 24 h proposée, ${Q.pro.studioListingsPerMonth} annonces Studio et ${Q.pro.wornPhotosPerMonth} photos portées par mois, ${num(Q.pro.aiRequestsPerMonth)} réponses. ${P.agence} : jusqu'à ${Q.agence.connections} comptes et ${Q.agence.members} personnes, Track complet, relance automatique, Cloud inclus, rôles d'équipe, ${Q.agence.studioListingsPerMonth} annonces Studio et ${Q.agence.wornPhotosPerMonth} photos portées par mois, ${num(Q.agence.aiRequestsPerMonth)} réponses, migration assistée et support prioritaire. Plus de ${Q.agence.connections} comptes : sur devis.`,
+    keywords: ["différence", "starter", "pro", "agence", "choisir une offre", "comparer", "formule", "plan"],
+    link: { label: "Comparer les offres", href: "/tarifs" },
+  },
+  {
+    id: "quotas-filiales",
+    categoryId: "tarifs",
+    question: "Quels sont les quotas de Studio, Track et Cloud selon l'offre ?",
+    answer: `Chaque filiale a son compteur, remis à zéro le 1er du mois. Studio : ${Q.pro.studioListingsPerMonth} annonces et ${Q.pro.wornPhotosPerMonth} photos portées par mois avec ${P.pro}, ${Q.agence.studioListingsPerMonth} annonces et ${Q.agence.wornPhotosPerMonth} photos portées avec ${P.agence} ; Studio n'est pas inclus dans ${P.starter}. Track : ${Q.pro.trackFiltersFollowed} filtres suivis, ${Q.pro.trackScansPerMonth} scans de niche et ${Q.pro.trackPhotoSearchesPerMonth} recherches par photo par mois, ${Q.pro.trackHistoryMonths} mois d'historique avec ${P.pro} ; ${Q.agence.trackFiltersFollowed} filtres, ${Q.agence.trackScansPerMonth} scans, ${Q.agence.trackPhotoSearchesPerMonth} recherches et ${Q.agence.trackHistoryMonths} mois avec ${P.agence}. Cloud : inclus dans ${P.agence}, en option pour ${P.starter} et ${P.pro}. La page Mon utilisation affiche une barre par filiale et prévient à 80 %.`,
+    keywords: ["quota", "quotas", "studio", "track", "cloud", "annonces par mois", "photos portées", "scans", "recherches par photo", "compteur", "80 %"],
+    link: { label: "Mon utilisation", href: "/app/settings/billing" },
+  },
+  {
+    id: "compte-supplementaire",
+    categoryId: "tarifs",
+    question: "Puis-je acheter un compte Vinted supplémentaire à la carte ?",
+    answer: `Non. Le nombre de comptes Vinted est fixé par l'offre : ${Q.starter.connections} avec ${P.starter}, ${Q.pro.connections} avec ${P.pro}, ${Q.agence.connections} avec ${P.agence}. Pour en ajouter, on change d'offre. Au-delà de ${Q.agence.connections} comptes, Selio établit un devis.`,
+    keywords: ["compte supplémentaire", "à la carte", "ajouter un compte", "plus de comptes", "devis", "onzième compte"],
+    link: { label: "Voir les tarifs", href: "/tarifs" },
   },
   {
     id: "prix-indicatifs",
     categoryId: "tarifs",
     question: "Les prix affichés sont-ils définitifs ?",
-    answer: "Non. Les montants de la page Tarifs sont indicatifs et peuvent évoluer avant l'ouverture des abonnements. Aucun paiement n'est encaissé à ce stade.",
+    answer: "Non. Les montants de la page Tarifs sont indicatifs et peuvent évoluer avant l'ouverture des abonnements ; ils vivent dans une configuration, pas dans les écrans. Aucun paiement n'est encaissé à ce stade.",
     keywords: ["prix", "tarif", "combien ça coûte", "coût", "définitif", "indicatif", "mensuel", "par mois", "montant"],
     link: { label: "Voir les tarifs", href: "/tarifs" },
   },
@@ -578,23 +596,31 @@ function buildHelpEntries(): HelpEntry[] {
     id: "engagement",
     categoryId: "tarifs",
     question: "Y a-t-il un engagement ?",
-    answer: "La structure prévue est mensuelle, sans engagement. Les conditions définitives seront publiées à l'ouverture des abonnements.",
-    keywords: ["engagement", "résilier", "durée", "sans engagement", "contrat", "mensuel"],
+    answer: "Les offres sont mensuelles, sans engagement, résiliables à tout moment : l'abonnement s'arrête à la fin de la période en cours. L'annuel coûte 10 mois (2 mois offerts). Les conditions définitives seront publiées à l'ouverture des abonnements.",
+    keywords: ["engagement", "résilier", "résiliation", "durée", "sans engagement", "contrat", "mensuel", "annuel", "deux mois offerts"],
+  },
+  {
+    id: "offre-fondateurs",
+    categoryId: "tarifs",
+    question: "Qu'est-ce que l'offre fondateurs ?",
+    answer: `Pour les 50 premiers clients : −30 % pendant 6 mois sur ${P.pro} et ${P.agence}, et un mois offert sur ${P.starter}. Les montants restent indicatifs tant que les abonnements ne sont pas ouverts.`,
+    keywords: ["fondateurs", "premiers clients", "réduction", "remise", "promotion", "lancement", "-30 %"],
+    link: { label: "Voir les tarifs", href: "/tarifs" },
   },
   {
     id: "limite-plan",
     categoryId: "tarifs",
-    question: "Que se passe-t-il si j'atteins une limite de mon plan ?",
-    answer: "Paramètres › Abonnement et consommation affiche votre consommation en pourcentage. À la limite, l'action concernée (ajouter un compte Vinted, inviter une personne, créer un article, demander une suggestion IA) est bloquée proprement, avec un message qui explique la limite. Aucune facturation surprise.",
-    keywords: ["limite", "quota", "dépassement", "bloqué", "plafond", "consommation"],
-    link: { label: "Abonnement et consommation", href: "/app/settings/billing" },
+    question: "Que se passe-t-il si j'atteins une limite de mon offre ?",
+    answer: "La page Mon utilisation (Paramètres › Abonnement et consommation) affiche chaque compteur en pourcentage, avec une alerte à 80 %. À la limite, l'action concernée (ajouter un compte Vinted, inviter une personne, créer un article, demander une réponse à mon IA perso, générer une annonce Studio) est bloquée proprement, avec un message qui explique la limite. Aucune facturation surprise.",
+    keywords: ["limite", "quota", "dépassement", "bloqué", "plafond", "consommation", "alerte", "80 %"],
+    link: { label: "Mon utilisation", href: "/app/settings/billing" },
   },
   {
     id: "paiement",
     categoryId: "tarifs",
     question: "Comment se passe le paiement ?",
-    answer: "Par Stripe, uniquement en mode test pour l'instant : aucun abonnement réel n'est créé sans configuration et validation volontaires. En démonstration, aucun paiement n'est déclenché. Seul le propriétaire gère l'abonnement.",
-    keywords: ["paiement", "payer", "carte bancaire", "stripe", "facture", "abonnement"],
+    answer: "Le paiement par carte (avec Apple Pay et Google Pay) est en préparation : la carte sera enregistrée dès l'essai et débitée chaque mois seulement à partir de la fin de l'essai. En attendant, seul un adaptateur de test est présent : aucun abonnement réel n'est créé sans configuration et validation volontaires, et en démonstration aucun paiement n'est déclenché. Seul le propriétaire gère l'abonnement.",
+    keywords: ["paiement", "payer", "carte bancaire", "apple pay", "google pay", "facture", "abonnement", "prélèvement"],
   },
 
   // ---- Données, sécurité et confidentialité ------------------------------
@@ -625,7 +651,7 @@ function buildHelpEntries(): HelpEntry[] {
     id: "securite-compte",
     categoryId: "donnees",
     question: "Comment mon compte est-il protégé ?",
-    answer: "Mot de passe haché (scrypt, 10 caractères minimum), session par cookie HttpOnly avec expiration glissante de 30 jours, limitation des tentatives de connexion et isolation des organisations en base. L'authentification à deux facteurs et la réinitialisation du mot de passe par email ne sont pas encore disponibles ; le mot de passe se change dans Paramètres › Sécurité.",
+    answer: "Mot de passe haché (scrypt, 10 caractères minimum), session par cookie HttpOnly avec expiration glissante de 30 jours, limitation des tentatives de connexion et isolation des organisations en base. Mot de passe oublié : depuis la page de connexion, un lien valable une heure, à usage unique, permet d'en choisir un nouveau et ferme vos autres sessions ; connecté, le mot de passe se change dans Paramètres › Sécurité. L'authentification à deux facteurs n'est pas encore disponible.",
     keywords: ["sécurité", "mot de passe", "piratage", "deux facteurs", "2fa", "protéger", "mot de passe oublié"],
     link: { label: "Paramètres › Sécurité", href: "/app/settings/security" },
   },
@@ -665,7 +691,7 @@ function buildHelpEntries(): HelpEntry[] {
     id: "selio-track",
     categoryId: "filiales",
     question: "Qu'est-ce que Selio Track ?",
-    answer: "Selio Track remplace l'analyse des revendeurs : suivre le sourcing de comptes Vinted (ce qu'ils vendent, à quel prix, à quel rythme) pour savoir quoi acheter. Il est en développement ; une première version est déjà dans la démonstration (top revendeurs, niches, marques, tranches de prix), très simple à prendre en main.",
+    answer: `Selio Track, c'est l'analyse du marché : filtres suivis, scans de niche (score par marque et catégorie), recherches par photo et tendances, pour savoir quoi acheter. Statistiques seulement : aucune annonce republiée, aucun pseudo gardé. Réservé aux offres ${P.pro} (${Q.pro.trackFiltersFollowed} filtres, ${Q.pro.trackScansPerMonth} scans et ${Q.pro.trackPhotoSearchesPerMonth} recherches par photo par mois, ${Q.pro.trackHistoryMonths} mois d'historique) et ${P.agence} (${Q.agence.trackFiltersFollowed} filtres, ${Q.agence.trackScansPerMonth} scans, ${Q.agence.trackPhotoSearchesPerMonth} recherches, ${Q.agence.trackHistoryMonths} mois). Il est en développement ; une première version est déjà dans la démonstration.`,
     keywords: ["track", "resell track", "sourcing", "suivre", "revendeurs", "concurrents", "comptes suivis"],
     status: "planned",
   },
@@ -673,7 +699,7 @@ function buildHelpEntries(): HelpEntry[] {
     id: "selio-cloud",
     categoryId: "filiales",
     question: "Qu'est-ce que Selio Cloud ?",
-    answer: "Selio Cloud est en développement : vos automatisations (messages, négociation, après-vente, stock automatique) tourneront sur nos serveurs, sans laisser votre ordinateur allumé avec l'extension. Aujourd'hui, les actions sur Vinted passent encore par l'extension, navigateur ouvert.",
+    answer: `Selio Cloud est en développement : vos automatisations (messages, négociation, après-vente, stock automatique, relance après 24 h) tourneront sur notre machine, sans laisser votre ordinateur allumé avec l'extension. Il est inclus dans l'offre ${P.agence} et proposé en option avec ${P.starter} et ${P.pro}. Aujourd'hui, les actions sur Vinted passent encore par l'extension, navigateur ouvert.`,
     keywords: ["cloud", "serveur", "ordinateur éteint", "24h/24", "en continu", "sans extension"],
     status: "planned",
   },
@@ -689,7 +715,7 @@ function buildHelpEntries(): HelpEntry[] {
     id: "agence-marque-blanche",
     categoryId: "filiales",
     question: "Je travaille en équipe ou en agence : où gérer les accès ?",
-    answer: `Dans Selio Agents : l'administrateur, les équipes et les accès (propriétaire, administrateur, opérateur, lecture seule), avec le journal d'audit ; le plan Pro accepte jusqu'à ${Q.pro.members} personnes. Les boutiques clientes et la marque blanche y sont en aperçu, en développement pour les agences et dépôts-vente. Les mêmes accès restent dans Paramètres › Comptes et accès.`,
+    answer: `Dans Selio Agents : l'administrateur, les équipes et les accès (propriétaire, administrateur, opérateur, lecture seule), avec le journal d'audit ; l'offre ${P.agence} accepte jusqu'à ${Q.agence.members} personnes et ${Q.agence.connections} comptes Vinted, avec les rôles d'équipe (${P.pro} : ${Q.pro.members} personnes). Les boutiques clientes et la marque blanche y sont en aperçu, en développement pour les agences et dépôts-vente. Les mêmes accès restent dans Paramètres › Comptes et accès.`,
     keywords: ["agence", "agents", "équipe", "accès", "administrateur", "dépôt-vente", "marque blanche", "professionnel", "clients"],
     status: "planned",
   },
@@ -710,8 +736,9 @@ function buildHelpEntries(): HelpEntry[] {
 
 /** Groupes de mots équivalents (une question peut employer l'un pour l'autre). */
 const SYNONYM_GROUPS: string[][] = [
-  ["prix", "tarif", "tarifs", "cout", "coute", "payant", "abonnement", "formule", "plan", "facture", "facturation", "mensuel"],
+  ["prix", "tarif", "tarifs", "cout", "coute", "payant", "abonnement", "formule", "plan", "offre", "offres", "facture", "facturation", "mensuel"],
   ["gratuit", "essai", "decouverte", "tester", "essayer"],
+  ["fondateurs", "fondateur", "lancement", "promotion", "remise", "reduction"],
   ["ia", "intelligence", "artificielle", "assistant", "ollama", "modele", "robot", "chatgpt", "gpt"],
   ["annonce", "annonces", "listing", "publication", "publier", "poster"],
   ["republier", "republication", "remonter", "relancer", "booster"],

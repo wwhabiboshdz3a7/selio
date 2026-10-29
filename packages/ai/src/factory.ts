@@ -11,6 +11,7 @@ export function createProvider(config: AIConfig, deps: { fetchImpl?: typeof fetc
         baseUrl: config.OLLAMA_BASE_URL,
         model: config.OLLAMA_MODEL,
         visionModel: config.OLLAMA_VISION_MODEL,
+        embedModel: config.OLLAMA_EMBED_MODEL,
         timeoutMs: config.AI_TIMEOUT_MS,
         contextLimit: config.AI_CONTEXT_LIMIT,
         maxOutputTokens: config.AI_MAX_OUTPUT_TOKENS,

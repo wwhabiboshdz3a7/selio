@@ -69,6 +69,10 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ### Opérateurs
 `OPERATOR_EMAILS=admin@exemple.fr` : les comptes créés avec ces emails obtiennent l'accès `/admin`. Pour un compte existant : `update users set is_operator = true where email = '…'`.
 
+### Photos (MinIO) et emails (SMTP)
+- **Photos** : stockage objet compatible S3 sur la machine. En local, `docker compose up -d minio` (racine du dépôt) démarre MinIO (API `:9000`, console `:9001`) et crée le bucket `selio-photos` sans accès anonyme. Côté API : `STORAGE_ENDPOINT`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` (compte dédié au bucket, pas le compte racine). En production, publier MinIO derrière Caddy sur un sous-domaine (ex. `photos.votre-domaine.fr`) avec CORS `PUT`/`GET` pour l'origine du site : les URLs signées sont appelées directement par le navigateur. Le volume `selio_minio` entre dans la sauvegarde chiffrée nocturne. Sans `STORAGE_ENDPOINT`, l'API démarre, avertit, et `/api/uploads` répond 503. Détails : STOCKAGE.md.
+- **Emails** (invitations, mot de passe oublié, échec de paiement, alertes) : `EMAIL_PROVIDER=smtp` + `SMTP_URL=smtp://utilisateur:motdepasse@hôte:587` (ou `smtps://…:465`) + `EMAIL_FROM`. Par défaut `noop` : rien n'est envoyé, chaque envoi est journalisé avec l'adresse masquée ; accepté en production mais signalé au démarrage tant que le service d'email n'est pas choisi avec Ibrahim. Prévoir SPF/DKIM sur le domaine de `EMAIL_FROM`.
+
 ### Supervision
 - `GET /api/health` : vivacité (public).
 - `GET /api/ai/health` avec `x-health-token: $AI_HEALTH_TOKEN` : santé IA + métriques.
@@ -85,4 +89,4 @@ Voir SECURITY.md (pg_dump quotidien, test de restauration mensuel, clé de chiff
 git pull && pnpm install --frozen-lockfile && pnpm build:api && pnpm build:worker
 pnpm db:migrate && sudo systemctl restart selio-api selio-worker
 ```
-Les migrations sont idempotentes et additives ; pas de suppression de colonne sans migration dédiée et sauvegarde préalable.
+Les migrations sont idempotentes et additives ; pas de suppression de colonne sans migration dédiée et sauvegarde préalable. La 0007 (jetons d'invitation et de mot de passe oublié, tables globales hors RLS comme `users` et `sessions`) et la 0008 (rattrapage des quotas des abonnements créés avant les offres 1/3/10, vue administrateur alignée sur le quota IA réel ; ne touche pas aux JSON complets, c'est-à-dire aux devis sur mesure) s'appliquent ainsi.
