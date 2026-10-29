@@ -22,7 +22,14 @@ describe("Selio et ses filiales", () => {
     expect(SPACES.map((s) => s.id)).toEqual(["selio", "studio", "agents", "track", "cloud", "generateur"]);
     expect(SPACES.some((s) => /Global/.test(s.name))).toBe(false);
     expect(SPACES.find((s) => s.id === "agents")!.state).toBe("preview");
-    for (const id of ["track", "cloud", "generateur"]) expect(SPACES.find((s) => s.id === id)!.state).toBe("development");
+    // Selio Cloud a ses vraies pages (aperçu : actions légères seulement) ; Track et le générateur restent en développement.
+    expect(SPACES.find((s) => s.id === "cloud")!.state).toBe("preview");
+    for (const id of ["track", "generateur"]) expect(SPACES.find((s) => s.id === id)!.state).toBe("development");
+    expect(SPACE_GROUPS.cloud[0]!.items.map((i) => i.to)).toEqual(["/cloud", "/cloud/comptes", "/cloud/journal", "/cloud/accord", "/cloud/reglages"]);
+    for (const path of ["/cloud/accord", "/cloud/comptes", "/cloud/journal", "/cloud/reglages"]) {
+      expect(spaceForPath(path)).toBe("cloud");
+      expect(APP_PATH_PATTERN.test(path)).toBe(true);
+    }
     for (const area of ["hub", "studio", "agents", "track", "cloud", "generateur"] as const) {
       const links = SPACE_GROUPS[area].flatMap((g) => g.items.map((i) => i.to));
       expect(links).toContain("/app/settings");

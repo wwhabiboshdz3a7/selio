@@ -129,6 +129,51 @@ Les photos ne transitent jamais par l'API : le navigateur reçoit des URLs sign�
 | `STORAGE_FORCE_PATH_STYLE` | Facultatif | `true` | `true` pour MinIO (`endpoint/bucket/clé`) ; `false` pour un S3 « virtual-hosted ». |
 | `STORAGE_PRESIGN_TTL_SECONDS` | Facultatif | `900` | Durée de vie des URLs signées (60 s à 7 jours ; viser court). |
 
+## 9. Selio Cloud (navigateur sur la machine, quand l'ordinateur du client est éteint)
+
+**Désactivé par défaut**, et à laisser ainsi tant que l'avocat n'a pas donné son avis (docs/PRODUCTION-CHECKLIST.md). Aucune de ces variables n'est un secret. Le Cloud ne demande **aucun mot de passe Vinted** : le client se connecte lui-même dans une fenêtre sécurisée, et seule la session du compte est gardée, chiffrée avec `SECRETS_ENCRYPTION_KEY` (section 2). Fonctionnement, règles et capacité : docs/CLOUD.md.
+
+| Variable | Où | Statut | Exemple / format | À quoi elle sert |
+|---|---|---|---|---|
+| `CLOUD_ENABLED` | API et worker | Facultatif | `false` (défaut) | `true` ouvre la fenêtre de connexion (API, exige `REDIS_URL`) et les actions (worker, exige aussi `CLOUD_CHROMIUM_PATH`). `false` : réglages et journal consultables, rien ne s'exécute. |
+| `CLOUD_CHROMIUM_PATH` | Worker | Obligatoire si activé | `/opt/selio/pw-browsers/chromium-<révision>/…/chrome` | Exécutable Chromium installé sur la machine. Le Cloud ne télécharge jamais de navigateur. Vide = Cloud indisponible. |
+| `CLOUD_HEADLESS` | Worker | Facultatif | `true` | Navigateur sans fenêtre. |
+| `CLOUD_CHROMIUM_SANDBOX` | Worker | Facultatif | `true` | Bac à sable de Chromium. **`false` est refusé en production** (le worker ne démarre pas). Au démarrage, le worker vérifie que Chromium se lance avec son bac à sable ; sinon le Cloud reste désactivé (docs/CLOUD.md §7). `false` seulement sur un poste de développement où le worker tourne en root. |
+| `CLOUD_MAX_BROWSERS` | API et worker | Facultatif | `5` | Navigateurs ouverts en même temps (actions et fenêtres de connexion confondues ; les fenêtres de connexion n'en prennent jamais plus que `CLOUD_MAX_BROWSERS - 1`, et 2 au plus par organisation). Valeur prudente : la cible de 50 est une **hypothèse à mesurer** avec `pnpm cloud:bench`. |
+| `CLOUD_MAX_ACCOUNTS_PER_ORG` | API et worker | Facultatif | `10` | Comptes Cloud au plus par organisation, jamais au-delà des comptes Vinted de l'offre. |
+| `CLOUD_HEAVY_ACTIONS` | API et worker | Facultatif | `false` | Actions lourdes (republier, modifier en masse) sur l'adresse IP partagée. **À décider par Ibrahim** : `false` tant qu'il n'a pas tranché. |
+| `CLOUD_PRO_OPTION` | API et worker | Facultatif | `false` | Cloud activable en option avec l'offre Pro (**prix à décider, rien n'est facturé**). `false` : compris dans Agence seulement. |
+| `CLOUD_ACTIVE_HOURS` | API et worker | Facultatif | `8-23` | Heures actives « début-fin », dans le fuseau de chaque organisation. Aucune action la nuit. |
+| `CLOUD_LOGIN_TIMEOUT_MS` | API et worker | Facultatif | `300000` | Validité de la fenêtre de connexion et de son ticket (5 minutes). |
+| `CLOUD_ACTION_TIMEOUT_MS` | Worker | Facultatif | `90000` | Durée maximale d'une action, navigateur compris. |
+| `CLOUD_PROFILE_DIR` | Worker | Recommandé | `/var/lib/selio-cloud` (tmpfs) | Dossiers de travail temporaires de Chromium (HOME, TMPDIR), un par action ou fenêtre, supprimés à la fin ; les cookies restent en mémoire. **Réservé à un seul worker** : tout `selio-cloud-*` restant est supprimé au démarrage, puis les dossiers abandonnés à chaque passage. Vide = `<dossier temporaire>/selio-cloud`. En mémoire vive conseillé (docs/DEPLOYMENT.md). |
+| `CRON_CLOUD` | Worker | Facultatif | `* * * * *` | Passage du planificateur du Cloud (UTC) : une action au plus par compte et par passage. |
+| `CLOUD_BENCH_CONTEXTS`, `CLOUD_BENCH_PARALLEL`, `CLOUD_BENCH_HOLD_MS` | `pnpm cloud:bench` | Facultatif | `5`, `1`, `3000` | Banc de capacité : navigateurs à ouvrir, ouvertures simultanées, attente avant la mesure. Pages locales seulement. |
+
+L'état des routes de l'API, des tâches du worker et de l'espace `/cloud` est dans docs/BUILD_STATUS.md.
+
+## 10. Sauvegarde (scripts/sauvegarde)
+
+Fichier à part, **`/etc/selio/backup.env`** (`chmod 600`, propriétaire root), à partir de `scripts/sauvegarde/backup.env.example`. Ce ne sont pas des variables de l'API ni du worker. Procédure complète, bascule sur le portable comprise : docs/SAUVEGARDE.md.
+
+| Variable | Statut | Exemple / format | À quoi elle sert |
+|---|---|---|---|
+| `BACKUP_PG_DOCKER_CONTAINER` | Une des deux | `deploy-postgres-1` | PostgreSQL dans Docker Compose (port non publié) : nom du conteneur, ses outils sont utilisés. Avec `BACKUP_PG_USER` (`selio`) et `BACKUP_PG_DB` (`selio`). |
+| `DATABASE_URL` | Une des deux | `postgres://selio@127.0.0.1:5432/selio` | PostgreSQL installé sur la machine. **Rôle propriétaire** (superutilisateur ou BYPASSRLS), jamais `selio_app`. Mot de passe dans `/root/.pgpass` plutôt que dans l'adresse. |
+| `BACKUP_DIR` | Facultatif | `/var/backups/selio` | Dossier local des sauvegardes (0700). |
+| `BACKUP_KEEP_DAYS` / `BACKUP_KEEP_MIN` | Facultatif | `30` / `3` | Rotation (locale et hors machine), et nombre minimal de sauvegardes locales gardées. |
+| `BACKUP_AGE_RECIPIENT` | Obligatoire (ou la suivante) | `age1…,age1…` (sans espace) | **Clés publiques** age. La clé privée n'est jamais sur la machine (portable de secours, papier). |
+| `BACKUP_PASSPHRASE_FILE` | À défaut d'age | `/etc/selio/backup.pass` (0600) | Chiffrement gpg symétrique (AES-256). Plus faible : la phrase est sur la machine. |
+| `BACKUP_MINIO_SOURCE` | Recommandé | `selio-minio:selio-photos` | Source rclone des photos (clé MinIO en lecture seule). Vide = photos non sauvegardées, signalé. |
+| `BACKUP_RCLONE_REMOTE` | Obligatoire | `selio-hors-machine:selio-sauvegardes` | Copie hors machine, destination à choisir avec Ibrahim. Vide = code de sortie 3. |
+| `BACKUP_RCLONE_CONFIG` | Facultatif | `/etc/selio/rclone.conf` (0600) | Configuration rclone (identifiants de MinIO et de la destination : **secrets**). |
+| `BACKUP_LOG_FILE` | Facultatif | vide | Journal ; par défaut `backup.log` et `restore-test.log` dans `BACKUP_DIR`. |
+| `BACKUP_PG_TIMEOUT_S` | Facultatif | `3600` | Attente maximale d'une réponse de PostgreSQL pendant le comptage des lignes. |
+| `RESTORE_DATABASE_URL` | Test de restauration | `postgres://selio@127.0.0.1:55432/postgres` | Connexion d'administration au serveur **de test** (superutilisateur). |
+| `RESTORE_DB_NAME` | Facultatif | `selio_restore_test` | Base temporaire ; doit commencer par `selio_restore_test` (garde-fou). |
+| `BACKUP_AGE_IDENTITY` | Test de restauration (age) | `~/.config/selio/selio-sauvegarde.key` | Clé **privée** age : sur le portable de secours seulement, jamais sur la machine. |
+| `RESTORE_CHECK_PHOTOS` | Facultatif | `true` | Vérifie aussi l'archive des photos. |
+
 ## Réglages faits dans l'application (pas des clés)
 
 - **Extension navigateur** : Pas de variable : dans Selio › Comptes Vinted › « Avancé — relier l'extension Selio », créez un jeton d'extension, puis collez l'adresse de l'API et le jeton dans les options de l'extension.
@@ -139,7 +184,7 @@ Les photos ne transitent jamais par l'API : le navigateur reçoit des URLs sign�
 
 ## Inutile
 
-- Aucune clé Vinted : Vinted ne propose pas d'API publique pour les vendeurs. La lecture et l'aide à la publication passent par l'extension Selio, dans votre navigateur, avec votre session.
+- Aucune clé Vinted : Vinted ne propose pas d'API publique pour les vendeurs. La lecture et l'aide à la publication passent par l'extension Selio, dans votre navigateur, avec votre session. Selio Cloud ne demande pas non plus de mot de passe Vinted : le client se connecte lui-même dans la fenêtre sécurisée.
 - Aucune clé OpenAI ou autre IA payante : Selio est prévu pour votre modèle personnel (Ollama).
 - Aucun secret dans Netlify : seules les variables VITE_ ci-dessus, qui sont publiques (adresse de l'API, tarifs indicatifs, mentions des factures).
 - Aucune autre clé de paiement : tout passe par Revolut (section 5), et seul le serveur détient la clé secrète. Le navigateur ne reçoit que le jeton public d'une commande, consommé par le formulaire Revolut.
@@ -165,6 +210,7 @@ Les photos ne transitent jamais par l'API : le navigateur reçoit des URLs sign�
 2. Cloner le dépôt, copier apps/api/.env.example vers deploy/.env et remplir les sections 2, 3 et 4 (puis 5 pour le paiement Revolut, 7 et 8 quand le service d'email et MinIO sont choisis).
 3. docker compose -f deploy/docker-compose.prod.yml up -d --build (migrations comprises, jusqu'à la 0009 : tables de paiement et de factures).
 4. Mettre Caddy devant l'API (deploy/Caddyfile) pour le HTTPS, puis renseigner VITE_API_BASE_URL dans Netlify.
+5. Mettre en place la sauvegarde chiffrée de la nuit et le test de restauration mensuel (section 10, docs/SAUVEGARDE.md) avant d'accueillir de vrais clients.
 
 ### Brancher mon IA perso et ses deux modèles
 
@@ -179,4 +225,6 @@ Les photos ne transitent jamais par l'API : le navigateur reçoit des URLs sign�
 - N'exposez pas le port 11434 d'Ollama sur Internet : VPN ou passerelle authentifiée.
 - En production, le serveur refuse de démarrer si `COOKIE_SECURE` n'est pas `true`, si `AI_PROVIDER=mock` ou si `ALLOW_AI_FALLBACK=true`. Il démarre mais avertit si `EMAIL_PROVIDER=noop` (aucun email envoyé) ou si `STORAGE_ENDPOINT` est vide (pas de photos).
 - `SMTP_URL`, `STORAGE_SECRET_KEY`, `REVOLUT_SECRET_KEY` et `REVOLUT_WEBHOOK_SECRET` sont des secrets au même titre que `SECRETS_ENCRYPTION_KEY` : fichier `.env` du serveur seulement, jamais dans Netlify ni dans le navigateur.
+- Sauvegarde : `/etc/selio/backup.env`, `rclone.conf` et le fichier de phrase de passe gpg sont des secrets (`chmod 600`). La clé **privée** age n'est jamais sur la machine. Les `.env` ne sont pas dans la sauvegarde automatique : copie chiffrée à part (docs/SAUVEGARDE.md §1.1).
+- Selio Cloud : `CLOUD_ENABLED=false` tant que l'avocat n'a pas donné son avis ; `CLOUD_HEAVY_ACTIONS=false` tant qu'Ibrahim n'a pas décidé.
 - `REVOLUT_MODE=live` sans `REVOLUT_LIVE_ALLOWED=true` arrête le démarrage : impossible d'encaisser de l'argent réel par inadvertance.

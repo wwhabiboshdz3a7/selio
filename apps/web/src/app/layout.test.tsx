@@ -154,7 +154,7 @@ describe("espaces Selio dans la mise en page", () => {
     expect(within(menu()).getByRole("link", { name: /Articles et stock/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Changer d'espace/ }));
     const picker = screen.getByRole("navigation", { name: "Changer d'espace" });
-    expect(within(picker).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual(["/app", "/studio", "/agents", "/track", "/cloud", "/generateur", "/app/espaces"]);
+    expect(within(picker).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual(["/app", "/studio", "/agents", "/cloud", "/track", "/generateur", "/app/espaces"]);
     // Échap referme la liste et rend le focus au sélecteur.
     within(picker).getAllByRole("link")[1]!.focus();
     fireEvent.keyDown(document, { key: "Escape" });

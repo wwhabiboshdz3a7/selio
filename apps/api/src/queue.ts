@@ -2,7 +2,8 @@ import { Queue, type QueueOptions } from "bullmq";
 import IORedis from "ioredis";
 import type { QueueStats } from "@selio/core";
 
-export const QUEUE_NAMES = ["selio-automation", "selio-sync", "selio-maintenance"] as const;
+/** « selio-cloud-login » : fenêtres de connexion du Cloud, ouvertes par le worker (job ajouté au POST login). */
+export const QUEUE_NAMES = ["selio-automation", "selio-sync", "selio-maintenance", "selio-cloud-login"] as const;
 
 export interface QueueHandle {
   connection: IORedis | null;

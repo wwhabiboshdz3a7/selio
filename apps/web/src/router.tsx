@@ -109,7 +109,7 @@ export const router = createBrowserRouter([
       { path: "*", element: <Navigate to="/app" replace /> },
     ]),
   },
-  // Filiales : Selio Studio, Selio Agents (aperçu), Selio Track, Selio Cloud et le générateur de compte (en développement).
+  // Filiales : Selio Studio, Selio Agents (aperçu), Selio Track, Selio Cloud (aperçu) et le générateur de compte (en développement).
   {
     path: "/studio",
     element: (
@@ -163,7 +163,12 @@ export const router = createBrowserRouter([
     ),
     errorElement: <RouteError />,
     children: guarded([
-      { index: true, lazy: lazy(() => import("./app/spaces/pages/SpaceDevelopment")) },
+      // Selio Cloud : tableau de bord, accord, comptes, journal, réglages.
+      { index: true, lazy: lazy(() => import("./app/spaces/pages/CloudDashboard")) },
+      { path: "accord", lazy: lazy(() => import("./app/spaces/pages/CloudConsent")) },
+      { path: "comptes", lazy: lazy(() => import("./app/spaces/pages/CloudAccounts")) },
+      { path: "journal", lazy: lazy(() => import("./app/spaces/pages/CloudJournal")) },
+      { path: "reglages", lazy: lazy(() => import("./app/spaces/pages/CloudSettings")) },
       { path: "*", element: <Navigate to="/cloud" replace /> },
     ]),
   },

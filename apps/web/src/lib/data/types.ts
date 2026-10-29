@@ -6,6 +6,7 @@ import type { ConnectorDescriptor } from "@selio/connectors";
 import type { ReplySuggestion } from "@selio/contracts";
 import type { BillingCycle, CheckoutResult, Invoice, InvoiceView, PaidPlan, SubsidiaryUsage, TrialDays, UsageCounter } from "@selio/contracts";
 import type { HelpAnswer } from "@selio/contracts";
+import type { CloudAccount, CloudAction, CloudActionKind, CloudActionLevel, CloudActionStatus, CloudAvailability, CloudConsentView, CloudLoginTicket } from "@selio/contracts";
 import type { AccountStats, AiHealthSummary, BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
 
 export type VariantLeaderboardRow = ReturnType<typeof variantLeaderboard>[number];
@@ -207,6 +208,40 @@ export interface AutoBuyRunResult {
   account?: { id: string; label: string } | null;
 }
 
+/** Compte Cloud vu par l'application (miroir de `CloudAccountView`, packages/core/src/services/cloud.ts). */
+export interface CloudAccountView extends CloudAccount {
+  connectionLabel: string;
+  displayHandle: string | null;
+  /** Actions du jour (UTC) ayant ouvert le navigateur pour ce compte. */
+  actionsToday: number;
+}
+
+/** Disponibilité du Cloud, plus ce que le serveur ajoute en mode connecté (apps/api/src/routes/cloud.ts). */
+export interface CloudAvailabilityView extends CloudAvailability {
+  /** Cloud activé sur ce serveur (CLOUD_ENABLED et Redis) ; absent en démonstration. */
+  serverEnabled?: boolean;
+  /** Heures actives appliquées par le serveur (CLOUD_ACTIVE_HOURS) ; sinon celles des contrats. */
+  activeHours?: { startHour: number; endHour: number };
+}
+
+/** Filtres et page du journal Cloud (gardé 90 jours). */
+export interface CloudJournalFilters {
+  kind?: CloudActionKind;
+  status?: CloudActionStatus;
+  accountId?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+/**
+ * Ouverture d'une fenêtre de connexion : ticket à usage unique (jamais réaffiché), adresse du
+ * WebSocket en mode connecté ; en démonstration, `simulated` et aucune adresse (rien ne touche Vinted).
+ */
+export interface CloudLoginStart extends CloudLoginTicket {
+  socketUrl: string | null;
+  simulated: boolean;
+}
+
 export interface DataClient {
   readonly mode: Mode;
   // Session
@@ -369,6 +404,33 @@ export interface DataClient {
   getWhiteLabel(): Promise<WhiteLabel | null>;
   /** Enregistre la marque blanche dans la démonstration. Mode connecté : aperçu non enregistré (erreur « preview_only »). */
   saveWhiteLabel(input: WhiteLabelInput): Promise<WhiteLabel>;
+  // Selio Cloud : accord, comptes, journal, fenêtre de connexion (le client se connecte lui-même)
+  /** Le Cloud selon l'offre : compris (Agence), en option à prix à décider (Pro), indisponible (accès de base, Starter). */
+  cloudAvailability(): Promise<CloudAvailabilityView>;
+  /** Texte d'accord courant, version et dernier accord enregistré (valable pour la version courante ou non). */
+  cloudConsent(): Promise<CloudConsentView>;
+  /** Enregistre l'accord (case cochée) pour la version courante : utilisateur, date, empreinte du texte. */
+  acceptCloudConsent(input: { version: string; accepted: true }): Promise<CloudConsentView>;
+  cloudAccounts(): Promise<CloudAccountView[]>;
+  /** Relie un compte Vinted au Cloud (accord valide, offre compatible, 10 comptes au plus) : il démarre « connexion à faire ». */
+  enableCloudAccount(connectionId: string): Promise<CloudAccount>;
+  pauseCloudAccount(id: string): Promise<CloudAccount>;
+  /** Reprise ; après un signal de Vinted (CAPTCHA, avertissement…), `acknowledge: true` est exigé. */
+  resumeCloudAccount(id: string, opts?: { acknowledge?: boolean }): Promise<CloudAccount>;
+  /** Arrête le Cloud du compte : session effacée, tâches annulées. */
+  stopCloudAccount(id: string): Promise<CloudAccount>;
+  /** Supprime la session enregistrée en un clic (le compte repasse « connexion à faire »). */
+  deleteCloudSession(id: string): Promise<CloudAccount>;
+  /** Niveaux d'action ; « lourd » refusé tant que le réglage serveur ne l'ouvre pas (à décider). */
+  updateCloudSettings(id: string, input: { levels: CloudActionLevel[] }): Promise<CloudAccount>;
+  cloudJournal(filters: CloudJournalFilters): Promise<Page<CloudAction>>;
+  exportCloudJournalCsv(filters: CloudJournalFilters): Promise<string>;
+  /** Ouvre une fenêtre de connexion sécurisée pour un compte Cloud. */
+  startCloudLogin(accountId: string): Promise<CloudLoginStart>;
+  /** Ferme une fenêtre de connexion sans rien enregistrer. */
+  cancelCloudLogin(loginSessionId: string): Promise<void>;
+  /** Démonstration seulement : la connexion simulée aboutit (aucune saisie, rien ne touche Vinted). */
+  completeSimulatedCloudLogin(loginSessionId: string): Promise<CloudAccount>;
   // Démo
   resetDemo(): Promise<void>;
   // Usage (pour la page Consommation)

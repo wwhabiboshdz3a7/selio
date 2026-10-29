@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Bot, Calculator, Cloud, Gauge, HandCoins, LayoutGrid, Lightbulb, FileStack, Palette, Radar, Settings, ShieldCheck, Shirt, Sparkles, Store, TrendingUp, UserPlus, Users, Workflow } from "lucide-react";
+import { Bot, Calculator, CircleUser, Cloud, FileCheck, Gauge, HandCoins, LayoutGrid, Lightbulb, FileStack, ListChecks, Palette, Radar, Settings, ShieldCheck, Shirt, SlidersHorizontal, Sparkles, Store, TrendingUp, UserPlus, Users, Workflow } from "lucide-react";
 import type { NavGroup } from "../layout";
 
 /**
@@ -71,10 +71,10 @@ export const SPACES: readonly SpaceDef[] = [
   },
   {
     id: "cloud", name: "Selio Cloud", short: "Cloud", tagline: "Vos automatisations, même ordinateur éteint",
-    description: "Les messages, la négociation, l'après-vente et le stock automatique tourneront sur nos serveurs : plus besoin de laisser l'ordinateur allumé avec l'extension.",
-    forWhom: "Pour vendre 24 h/24",
-    home: "/cloud", icon: <Cloud />, state: "development",
-    does: ["Automatisations actives en continu", "Plusieurs comptes Vinted en parallèle", "Suivi et alertes sur téléphone"],
+    description: "Vos réponses et vos relances continuent quand votre ordinateur est éteint : un navigateur isolé par compte Vinted sur notre machine, où vous vous connectez vous-même, au rythme humain et avec votre accord.",
+    forWhom: "Pour vendre même ordinateur éteint",
+    home: "/cloud", icon: <Cloud />, state: "preview",
+    does: ["Répondre aux messages, relancer après 24 h", "Jusqu'à 10 comptes Vinted, pause en un clic", "Journal des actions gardé 90 jours"],
   },
   {
     id: "generateur", name: "Générateur de compte Vinted", short: "Générateur", tagline: "Un nouveau compte vendeur prêt en quelques minutes",
@@ -134,8 +134,17 @@ export const SPACE_GROUPS: Record<Exclude<SpaceArea, "selio">, NavGroup[]> = {
     SETTINGS,
   ],
   cloud: [
-    { title: "Selio Cloud", items: [{ to: "/cloud", label: "Présentation", icon: <Cloud />, end: true }] },
-    { title: "Dans Selio", items: [{ to: "/app/automatisation", label: "Automatisation", icon: <Workflow /> }] },
+    { title: "Selio Cloud", items: [
+      { to: "/cloud", label: "Tableau de bord", icon: <Cloud />, end: true, hint: "État du Cloud, comptes, dernières actions" },
+      { to: "/cloud/comptes", label: "Comptes Cloud", icon: <CircleUser />, hint: "Relier, se connecter, pause, arrêt" },
+      { to: "/cloud/journal", label: "Journal des actions", icon: <ListChecks />, hint: "Gardé 90 jours, export CSV" },
+      { to: "/cloud/accord", label: "Accord et risques", icon: <FileCheck />, hint: "À lire avant toute activation" },
+      { to: "/cloud/reglages", label: "Réglages", icon: <SlidersHorizontal />, hint: "Heures, rythme, plafonds" },
+    ] },
+    { title: "Dans Selio", items: [
+      { to: "/app/automatisation", label: "Automatisation", icon: <Workflow /> },
+      { to: "/app/accounts", label: "Comptes Vinted", icon: <Users /> },
+    ] },
     SETTINGS,
   ],
   generateur: [

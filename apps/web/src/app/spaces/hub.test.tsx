@@ -36,7 +36,12 @@ describe("accueil central des espaces", () => {
     // États honnêtes.
     expect(within(card("Selio")).getByText("Disponible")).toBeTruthy();
     expect(within(card("Selio Agents")).getAllByText("Aperçu").length).toBeGreaterThan(0);
-    for (const name of ["Selio Track", "Selio Cloud", "Générateur de compte Vinted"]) expect(within(card(name)).getByText("En développement")).toBeTruthy();
+    for (const name of ["Selio Track", "Générateur de compte Vinted"]) expect(within(card(name)).getByText("En développement")).toBeTruthy();
+    // Selio Cloud : en aperçu, avec ses chiffres (comptes de la démonstration) et l'état de l'accord.
+    const cloud = card("Selio Cloud");
+    expect(within(cloud).getAllByText("Aperçu").length).toBeGreaterThan(0);
+    expect((await within(cloud).findByText("Comptes Cloud")).nextElementSibling?.textContent).toBe("2");
+    expect(await within(cloud).findByText("Accord à donner avant toute action")).toBeTruthy();
     expect(within(card("Selio Agents")).getAllByText(/fictives|exemples fictifs/).length).toBeGreaterThan(0);
     // Studio : nombre d'annonces générées calculé depuis l'état de la démo, et leurs vignettes.
     const studio = card("Selio Studio");
@@ -45,6 +50,7 @@ describe("accueil central des espaces", () => {
     expect(within(studio).getByRole("list", { name: "Dernières annonces générées" }).children.length).toBe(Math.min(5, generated.length));
     // Chaque filiale s'ouvre depuis sa carte.
     expect(screen.getByRole("link", { name: "Ouvrir Selio Agents" }).getAttribute("href")).toBe("/agents");
-    expect(screen.getByRole("link", { name: "Découvrir Selio Cloud" }).getAttribute("href")).toBe("/cloud");
+    expect(screen.getByRole("link", { name: "Ouvrir Selio Cloud" }).getAttribute("href")).toBe("/cloud");
+    expect(screen.getByRole("link", { name: "Découvrir Selio Track" }).getAttribute("href")).toBe("/track");
   });
 });

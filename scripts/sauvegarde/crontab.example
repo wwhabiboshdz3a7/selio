@@ -1,0 +1,24 @@
+# Planification de la sauvegarde de Selio (voir docs/SAUVEGARDE.md). Modèle à recopier avec
+# `sudo crontab -e` (root) ; les heures sont celles de la machine (Europe/Paris conseillé).
+# Les scripts lisent /etc/selio/backup.env (chmod 600). Leur sortie va dans le journal système
+# (journalctl -t selio-sauvegarde) ; le détail reste aussi dans /var/backups/selio/backup.log et
+# restore-test.log. Aucun secret n'y est écrit.
+MAILTO=""
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# --- Machine de production (Marseille) ----------------------------------------------------------
+# Chaque nuit à 03:30 : PostgreSQL + photos MinIO, chiffrés, copiés hors machine, rotation 30 jours.
+# nice/ionice : la sauvegarde passe après les navigateurs du Cloud et l'IA.
+30 3 * * * nice -n 10 ionice -c3 /opt/selio/scripts/sauvegarde/backup.sh 2>&1 | logger -t selio-sauvegarde
+
+# --- Test de restauration, le 1er de chaque mois ------------------------------------------------
+# Avec age (conseillé), la clé privée n'est PAS sur la machine de production : le test tourne sur
+# l'ordinateur portable de secours, depuis la copie hors machine (--remote). Le portable n'étant pas
+# toujours allumé, préférer anacron ou un minuteur systemd « Persistent=true » sur le portable.
+# Ligne à mettre dans la crontab du PORTABLE (après la copie hors machine de la nuit) :
+# 0 10 1 * * $HOME/selio/scripts/sauvegarde/restore-test.sh --env $HOME/.config/selio/backup.env --remote 2>&1 | logger -t selio-sauvegarde
+#
+# Avec gpg (BACKUP_PASSPHRASE_FILE sur la machine), le test peut tourner sur la machine elle-même,
+# le 1er du mois, après la sauvegarde de 03:30 :
+# 30 5 1 * * /opt/selio/scripts/sauvegarde/restore-test.sh 2>&1 | logger -t selio-sauvegarde

@@ -12,18 +12,6 @@ interface DevContent {
 
 /** Ce que chaque filiale en développement apportera, et ce qui existe déjà aujourd'hui dans Selio. */
 const CONTENT: Partial<Record<SpaceId, DevContent>> = {
-  cloud: {
-    steps: [
-      { t: "Vous reliez vos comptes une fois", d: "Comme aujourd'hui avec l'extension, mais la session tourne ensuite sur nos serveurs." },
-      { t: "Vos automatisations tournent seules", d: "Messages aux favoris, réponses, négociation, après-vente et stock automatique continuent, ordinateur éteint." },
-      { t: "Vous suivez tout sur téléphone", d: "Ventes, offres acceptées, colis à déposer : une alerte quand il faut agir, rien d'autre." },
-    ],
-    today: [
-      { to: "/app/automatisation", label: "Automatisation", d: "Les réglages que Selio Cloud fera tourner en continu." },
-      { to: "/app/accounts", label: "Comptes Vinted", d: "Les comptes vente, achat et perso déjà reliés." },
-    ],
-    note: "Aujourd'hui, les actions sur Vinted passent par l'extension, navigateur ouvert. Selio Cloud n'est ni activé ni facturé.",
-  },
   generateur: {
     steps: [
       { t: "Vous choisissez le style de la boutique", d: "Mode femme, homme, enfant, vintage, luxe… Selio propose un pseudo et une présentation." },
@@ -42,8 +30,8 @@ const CONTENT: Partial<Record<SpaceId, DevContent>> = {
 export default function SpaceDevelopment() {
   const { pathname } = useLocation();
   const id = spaceForPath(pathname);
-  const space = SPACES.find((s) => s.id === id) ?? SPACES.find((s) => s.id === "cloud")!;
-  const content = CONTENT[space.id] ?? CONTENT.cloud!;
+  const space = SPACES.find((s) => s.id === id && CONTENT[s.id]) ?? SPACES.find((s) => s.id === "generateur")!;
+  const content = CONTENT[space.id] ?? CONTENT.generateur!;
   return (
     <>
       <PageHeader eyebrow={`${space.name} · ${SPACE_STATE_LABEL[space.state]}`} title={space.tagline} description={space.description} actions={<StatusBadge tone="neutral">{SPACE_STATE_LABEL[space.state]}</StatusBadge>} />

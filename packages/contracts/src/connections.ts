@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { id, isoDate, provider } from "./common";
+import { normalizeVintedHost } from "./vinted-domains";
 
 export const CONNECTOR_STATUSES = [
   "not_configured",
@@ -74,7 +75,20 @@ export const connectionCreate = z.object({
   label: z.string().trim().min(1).max(80),
   /** Vente par défaut. */
   usage: connectionUsage.optional(),
-  config: z.object({ displayHandle: displayHandle.optional() }).passthrough().optional(),
+  /**
+   * Options non secrètes. `vintedHost` (domaine Vinted du compte, pour les adresses du Cloud) n'est
+   * accepté que s'il appartient à la liste fermée des domaines de Vinted : jamais un hôte libre vers
+   * lequel le navigateur du Cloud pourrait être envoyé.
+   */
+  config: z
+    .object({ displayHandle: displayHandle.optional() })
+    .passthrough()
+    .superRefine((v, ctx) => {
+      if (v.vintedHost !== undefined && normalizeVintedHost(v.vintedHost) === null) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["vintedHost"], message: "Domaine Vinted inconnu : seuls les domaines officiels de Vinted sont acceptés." });
+      }
+    })
+    .optional(),
   secret: z.string().max(4000).optional(),
 });
 export type ConnectionCreate = z.infer<typeof connectionCreate>;

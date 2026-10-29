@@ -84,7 +84,7 @@ function UsageReport({ u, actionsToday, planLabel }: { u: UsageSummary; actionsT
         <UsageMeter label="Filtres suivis" counter={u.track.filtersFollowed} hint="Relus toutes les 2 h." planned />
       </Section>
 
-      <Section title="Selio Cloud" tag={<Tag>En développement</Tag>} description={u.cloud.included ? "Inclus dans votre offre : vos automatisations tournent quand votre ordinateur est éteint." : "En option pour Starter et Pro, inclus dans Agence."}>
+      <Section title="Selio Cloud" tag={<Tag>Aperçu</Tag>} description={u.cloud.included ? "Inclus dans votre offre : vos réponses et relances continuent quand votre ordinateur est éteint." : "Inclus dans Agence ; en option avec Pro, prix à décider."}>
         <UsageMeter label="Actions Cloud aujourd'hui" counter={u.cloud.actions} hint="Plafond par jour, au rythme humain." excludedHint="Plafond par jour de votre offre" />
       </Section>
 

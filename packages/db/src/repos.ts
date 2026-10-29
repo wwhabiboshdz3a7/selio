@@ -1,9 +1,10 @@
 import {
-  aiRequest, auditLog, automationRule, conversation as conversationSchema, customer as customerSchema, extensionToken, inventoryEvent, inventoryItem, invoice as invoiceSchema, job as jobSchema, marketplaceConnection, membership as membershipSchema, message as messageSchema, opportunity as opportunitySchema, order as orderSchema, organization as organizationSchema, paymentOrder as paymentOrderSchema, purchaseRequest as purchaseSchema, radarSearch as radarSchema, shipment as shipmentSchema, subscription as subscriptionSchema, usageEvent, user as userSchema, quotasForPlan, isLegacyQuotas, resolveQuotas,
-  type AiRequest, type AuditLog, type AutomationRule, type Conversation, type ConversationQuery, type Customer, type CustomerQuery, type ExtensionToken, type InventoryEvent, type InventoryItem, type InventoryQuery, type Invoice, type Job, type JobQuery, type MarketplaceConnection, type Membership, type Message, type Opportunity, type Order, type OrderQuery, type Organization, type Page, type PaymentOrder, type PurchaseRequest, type RadarSearch, type Shipment, type Subscription, type UsageEvent, type User,
+  aiRequest, auditLog, cloudAccount as cloudAccountSchema, cloudAction as cloudActionSchema, cloudConsent as cloudConsentSchema, cloudLoginSession as cloudLoginSessionSchema, automationRule, conversation as conversationSchema, customer as customerSchema, extensionToken, inventoryEvent, inventoryItem, invoice as invoiceSchema, job as jobSchema, marketplaceConnection, membership as membershipSchema, message as messageSchema, opportunity as opportunitySchema, order as orderSchema, organization as organizationSchema, paymentOrder as paymentOrderSchema, purchaseRequest as purchaseSchema, radarSearch as radarSchema, shipment as shipmentSchema, subscription as subscriptionSchema, usageEvent, user as userSchema, quotasForPlan, isLegacyQuotas, resolveQuotas,
+  type AiRequest, type AuditLog, type AutomationRule, type CloudAccount, type CloudAction, type CloudActionDetail, type CloudConsent, type CloudJournalQuery, type CloudLoginSession, type Conversation, type ConversationQuery, type Customer, type CustomerQuery, type ExtensionToken, type InventoryEvent, type InventoryItem, type InventoryQuery, type Invoice, type Job, type JobQuery, type MarketplaceConnection, type Membership, type Message, type Opportunity, type Order, type OrderQuery, type Organization, type Page, type PaymentOrder, type PurchaseRequest, type RadarSearch, type Shipment, type Subscription, type UsageEvent, type User,
 } from "@selio/contracts";
 import type { ZodType, ZodTypeDef } from "zod";
 import type { AccountStats } from "@selio/domain";
+import { objectToColumns } from "./mapping";
 import { DbError, type Tx } from "./pool";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -506,11 +507,32 @@ export const jobs = {
     if (customerId) return tx.count("select count(*) from jobs where org_id = $1 and rule_id = $2 and created_at >= $3 and status <> 'cancelled' and payload->>'customerId' = $4", [tx.orgId, ruleId, since, customerId]);
     return tx.count("select count(*) from jobs where org_id = $1 and rule_id = $2 and created_at >= $3 and status = 'succeeded'", [tx.orgId, ruleId, since]);
   },
+  /** Tâches serveur et navigateur échues ; les tâches Cloud ont leur propre planificateur (`dueCloud`). */
   async dueQueued(tx: Tx, limit = 50): Promise<Job[]> {
-    return (await tx.query("select * from jobs where org_id = $1 and status = 'queued' and scheduled_for <= now() order by scheduled_for limit $2", [tx.orgId, limit])).map((r) => parse(jobSchema, r));
+    return (await tx.query("select * from jobs where org_id = $1 and status = 'queued' and runs_in <> 'cloud' and scheduled_for <= now() order by scheduled_for limit $2", [tx.orgId, limit])).map((r) => parse(jobSchema, r));
   },
   async recentErrors(tx: Tx, limit = 20): Promise<Job[]> {
     return (await tx.query("select * from jobs where org_id = $1 and error is not null order by updated_at desc limit $2", [tx.orgId, limit])).map((r) => parse(jobSchema, r));
+  },
+  /** Tâches Cloud échues (en file, `runs_in = 'cloud'`) à l'instant `now` (horloge des services). */
+  async dueCloud(tx: Tx, now: string, limit = 200): Promise<Job[]> {
+    return (await tx.query("select * from jobs where org_id = $1 and runs_in = 'cloud' and status = 'queued' and scheduled_for <= $2 order by scheduled_for, created_at, id limit $3", [tx.orgId, now, limit])).map((r) => parse(jobSchema, r));
+  },
+  /**
+   * Prise d'une tâche Cloud (UPDATE conditionnel) : null si elle n'est plus en file (déjà prise par
+   * un autre passage, annulée…). C'est ce qui garantit qu'une tâche ne s'exécute jamais deux fois.
+   */
+  async claimCloud(tx: Tx, id: string, now: string): Promise<Job | null> {
+    const r = await tx.maybeOne("update jobs set status = 'running', started_at = $3, attempts = attempts + 1, updated_at = now() where org_id = $1 and id = $2 and status = 'queued' and runs_in = 'cloud' returning *", [tx.orgId, id, now]);
+    return r ? parse(jobSchema, r) : null;
+  },
+  /** Tâches Cloud restées « en cours » depuis avant `before` (passage interrompu). */
+  async staleCloudRunning(tx: Tx, before: string): Promise<Job[]> {
+    return (await tx.query("select * from jobs where org_id = $1 and runs_in = 'cloud' and status = 'running' and coalesce(started_at, updated_at) < $2 order by started_at limit 100", [tx.orgId, before])).map((r) => parse(jobSchema, r));
+  },
+  /** Annule les tâches Cloud pas encore exécutées d'un compte (arrêt du Cloud). */
+  async cancelCloudForAccount(tx: Tx, cloudAccountId: string): Promise<number> {
+    return (await tx.query("update jobs set status = 'cancelled', updated_at = now() where org_id = $1 and runs_in = 'cloud' and status in ('queued','awaiting_approval') and payload->>'cloudAccountId' = $2 returning id", [tx.orgId, cloudAccountId])).length;
   },
 };
 
@@ -796,6 +818,271 @@ export const invoices = {
   },
   async count(tx: Tx): Promise<number> {
     return tx.count("select count(*) from invoices where org_id = $1", [tx.orgId]);
+  },
+};
+
+// ---------------------------------------------------------------- Selio Cloud
+/**
+ * Comptes Cloud : la session chiffrée (`session_ciphertext`) n'est jamais lue par les lectures
+ * ordinaires, seulement sa présence (`has_session`). Seul `cloudAccounts.session` rend le bloc
+ * chiffré, à déchiffrer par le service au moment d'agir.
+ */
+const CLOUD_ACCOUNT_COLUMNS = "id, org_id, connection_id, status, paused_reason, paused_at, (session_ciphertext is not null) as has_session, session_saved_at, last_action_at, warnings_count, settings, created_at, updated_at";
+/** Statuts d'une action qui a ouvert le navigateur (comptés dans les plafonds). */
+const CLOUD_STARTED_STATUSES = ["running", "done", "failed", "paused"];
+
+export const cloudConsents = {
+  /** Dernier accord enregistré par l'organisation (tous membres confondus), ou null. */
+  async latest(tx: Tx): Promise<CloudConsent | null> {
+    const r = await tx.maybeOne("select * from cloud_consents where org_id = $1 order by accepted_at desc, created_at desc limit 1", [tx.orgId]);
+    return r ? parse(cloudConsentSchema, r) : null;
+  },
+  async add(tx: Tx, input: { userId: string; version: string; textHash: string; acceptedAt: string; ip: string | null }): Promise<CloudConsent> {
+    return parse(cloudConsentSchema, await tx.insert("cloud_consents", { ...input, orgId: tx.orgId }));
+  },
+};
+
+export const cloudAccounts = {
+  async list(tx: Tx): Promise<CloudAccount[]> {
+    return (await tx.query(`select ${CLOUD_ACCOUNT_COLUMNS} from cloud_accounts where org_id = $1 order by created_at, id`, [tx.orgId])).map((r) => parse(cloudAccountSchema, r));
+  },
+  async byId(tx: Tx, id: string): Promise<CloudAccount> {
+    return parse(cloudAccountSchema, await tx.one(`select ${CLOUD_ACCOUNT_COLUMNS} from cloud_accounts where org_id = $1 and id = $2`, [tx.orgId, id], "Compte Cloud"));
+  },
+  async byConnection(tx: Tx, connectionId: string): Promise<CloudAccount | null> {
+    const r = await tx.maybeOne(`select ${CLOUD_ACCOUNT_COLUMNS} from cloud_accounts where org_id = $1 and connection_id = $2`, [tx.orgId, connectionId]);
+    return r ? parse(cloudAccountSchema, r) : null;
+  },
+  async create(tx: Tx, input: { connectionId: string; status?: CloudAccount["status"]; settings?: CloudAccount["settings"] }): Promise<CloudAccount> {
+    const { columns, values } = objectToColumns({ orgId: tx.orgId, connectionId: input.connectionId, status: input.status ?? "needs_login", settings: input.settings ?? { levels: ["light"] } });
+    const placeholders = values.map((_, i) => `$${i + 1}`);
+    return parse(cloudAccountSchema, await tx.one(`insert into cloud_accounts (${columns.join(", ")}) values (${placeholders.join(", ")}) returning ${CLOUD_ACCOUNT_COLUMNS}`, values));
+  },
+  async update(tx: Tx, id: string, patch: Partial<Pick<CloudAccount, "status" | "pausedReason" | "pausedAt" | "lastActionAt" | "warningsCount" | "settings">>): Promise<CloudAccount> {
+    const { columns, values } = objectToColumns(patch);
+    const sets = [...columns.map((c, i) => `${c} = $${i + 3}`), "updated_at = now()"];
+    return parse(cloudAccountSchema, await tx.one(`update cloud_accounts set ${sets.join(", ")} where org_id = $1 and id = $2 returning ${CLOUD_ACCOUNT_COLUMNS}`, [tx.orgId, id, ...values], "Compte Cloud"));
+  },
+  /** Bloc chiffré de la session (SecretBox, données associées = id du compte), ou null. */
+  async session(tx: Tx, id: string): Promise<Buffer | null> {
+    const r = await tx.maybeOne<{ sessionCiphertext: Buffer | null }>("select session_ciphertext from cloud_accounts where org_id = $1 and id = $2", [tx.orgId, id]);
+    return r?.sessionCiphertext ?? null;
+  },
+  /** Enregistre une session déjà chiffrée par l'appelant (jamais de clair en base). */
+  async setSession(tx: Tx, id: string, ciphertext: Buffer, savedAt: string): Promise<CloudAccount> {
+    return parse(cloudAccountSchema, await tx.one(`update cloud_accounts set session_ciphertext = $3, session_saved_at = $4, updated_at = now() where org_id = $1 and id = $2 returning ${CLOUD_ACCOUNT_COLUMNS}`, [tx.orgId, id, ciphertext, savedAt], "Compte Cloud"));
+  },
+  /** Efface la session (arrêt, suppression demandée, session refusée par Vinted). */
+  async clearSession(tx: Tx, id: string): Promise<CloudAccount> {
+    return parse(cloudAccountSchema, await tx.one(`update cloud_accounts set session_ciphertext = null, session_saved_at = null, updated_at = now() where org_id = $1 and id = $2 returning ${CLOUD_ACCOUNT_COLUMNS}`, [tx.orgId, id], "Compte Cloud"));
+  },
+  /**
+   * Compte relu SOUS VERROU de ligne (`for update`) : un arrêt ou une suppression de session en cours
+   * dans une autre transaction est attendu, puis vu tel qu'il a été validé.
+   */
+  async lockedById(tx: Tx, id: string): Promise<CloudAccount> {
+    return parse(cloudAccountSchema, await tx.one(`select ${CLOUD_ACCOUNT_COLUMNS} from cloud_accounts where org_id = $1 and id = $2 for update`, [tx.orgId, id], "Compte Cloud"));
+  },
+  /**
+   * Remplace la session rendue par une action, seulement si le compte a toujours la MÊME session
+   * qu'au début de l'action (date d'enregistrement inchangée), n'est pas arrêté et en a encore une :
+   * jamais une session recréée après « Arrêter » ou « Supprimer la session », jamais une session
+   * neuve (reconnexion pendant l'action) écrasée par l'ancienne. Vrai si la ligne a été écrite.
+   */
+  async replaceSessionIf(tx: Tx, id: string, ciphertext: Buffer, savedAt: string, expectedSavedAt: string | null): Promise<boolean> {
+    const r = await tx.maybeOne(
+      "update cloud_accounts set session_ciphertext = $3, session_saved_at = $4, updated_at = now() where org_id = $1 and id = $2 and session_ciphertext is not null and status <> 'stopped' and session_saved_at is not distinct from $5::timestamptz returning id",
+      [tx.orgId, id, ciphertext, savedAt, expectedSavedAt],
+    );
+    return r !== null;
+  },
+  /** Efface la session seulement si c'est encore celle de l'action (une session neuve n'est jamais effacée). */
+  async clearSessionIf(tx: Tx, id: string, expectedSavedAt: string | null): Promise<boolean> {
+    const r = await tx.maybeOne(
+      "update cloud_accounts set session_ciphertext = null, session_saved_at = null, updated_at = now() where org_id = $1 and id = $2 and session_ciphertext is not null and session_saved_at is not distinct from $3::timestamptz returning id",
+      [tx.orgId, id, expectedSavedAt],
+    );
+    return r !== null;
+  },
+  /**
+   * Pause après un signal de Vinted, écrite seule et en premier (transaction courte) : elle survit à
+   * un échec de l'enregistrement du reste. Un compte arrêté le reste ; le compteur de signaux monte
+   * dans tous les cas. Rend le compte à jour.
+   */
+  async pauseForSignal(tx: Tx, id: string, reason: NonNullable<CloudAccount["pausedReason"]>, at: string): Promise<CloudAccount> {
+    return parse(
+      cloudAccountSchema,
+      await tx.one(
+        `update cloud_accounts set status = case when status = 'stopped' then status else 'paused' end, paused_reason = case when status = 'stopped' then paused_reason else $3 end, paused_at = case when status = 'stopped' then paused_at else $4::timestamptz end, warnings_count = warnings_count + 1, last_action_at = $4::timestamptz, updated_at = now() where org_id = $1 and id = $2 returning ${CLOUD_ACCOUNT_COLUMNS}`,
+        [tx.orgId, id, reason, at],
+        "Compte Cloud",
+      ),
+    );
+  },
+  /** Comptes Cloud qui comptent dans la limite par organisation : tous sauf les arrêtés. */
+  async countActive(tx: Tx): Promise<number> {
+    return tx.count("select count(*) from cloud_accounts where org_id = $1 and status <> 'stopped'", [tx.orgId]);
+  },
+  /**
+   * Verrou applicatif d'un compte (UPDATE conditionnel) : posé seulement si le compte est actif et
+   * libre (ou si le verrou date d'avant `staleBefore`, passage interrompu). Null sinon.
+   */
+  async lock(tx: Tx, id: string, now: string, staleBefore: string): Promise<CloudAccount | null> {
+    const r = await tx.maybeOne(`update cloud_accounts set running_since = $3 where org_id = $1 and id = $2 and status = 'active' and (running_since is null or running_since < $4) returning ${CLOUD_ACCOUNT_COLUMNS}`, [tx.orgId, id, now, staleBefore]);
+    return r ? parse(cloudAccountSchema, r) : null;
+  },
+  async unlock(tx: Tx, id: string): Promise<void> {
+    await tx.query("update cloud_accounts set running_since = null where org_id = $1 and id = $2", [tx.orgId, id]);
+  },
+};
+
+export interface CloudJournalFilters extends Partial<CloudJournalQuery> {
+  /** Bornes de date (ISO) sur la création de la ligne. */
+  from?: string;
+  to?: string;
+}
+
+function cloudJournalWhere(tx: Tx, q: CloudJournalFilters): { where: string[]; params: unknown[] } {
+  const where = ["org_id = $1"];
+  const params: unknown[] = [tx.orgId];
+  if (q.kind) { params.push(q.kind); where.push(`kind = $${params.length}`); }
+  if (q.status) { params.push(q.status); where.push(`status = $${params.length}`); }
+  if (q.accountId) { params.push(q.accountId); where.push(`account_id = $${params.length}`); }
+  if (q.from) { params.push(q.from); where.push(`created_at >= $${params.length}`); }
+  if (q.to) { params.push(q.to); where.push(`created_at < $${params.length}`); }
+  return { where, params };
+}
+
+/** Journal des actions Cloud (visible du client, conservé 90 jours). `detail` ne porte jamais de secret. */
+export const cloudActions = {
+  async add(tx: Tx, input: { accountId: string; kind: CloudAction["kind"]; level: CloudAction["level"]; status: CloudAction["status"]; detail?: CloudActionDetail; jobId?: string | null; startedAt?: string | null; finishedAt?: string | null; createdAt?: string }): Promise<CloudAction> {
+    return parse(cloudActionSchema, await tx.insert("cloud_actions", { ...input, detail: input.detail ?? {}, orgId: tx.orgId }));
+  },
+  async update(tx: Tx, id: string, patch: Partial<Pick<CloudAction, "status" | "detail" | "startedAt" | "finishedAt">>): Promise<CloudAction> {
+    const { columns, values } = objectToColumns(patch);
+    if (columns.length === 0) return parse(cloudActionSchema, await tx.one("select * from cloud_actions where org_id = $1 and id = $2", [tx.orgId, id], "Action Cloud"));
+    const sets = columns.map((c, i) => `${c} = $${i + 3}`);
+    return parse(cloudActionSchema, await tx.one(`update cloud_actions set ${sets.join(", ")} where org_id = $1 and id = $2 returning *`, [tx.orgId, id, ...values], "Action Cloud"));
+  },
+  async byJob(tx: Tx, jobId: string): Promise<CloudAction | null> {
+    const r = await tx.maybeOne("select * from cloud_actions where org_id = $1 and job_id = $2 order by created_at desc limit 1", [tx.orgId, jobId]);
+    return r ? parse(cloudActionSchema, r) : null;
+  },
+  /** Retire une ligne « en cours » d'une action qui n'a jamais ouvert de navigateur (tâche remise en file). */
+  async remove(tx: Tx, id: string): Promise<void> {
+    await tx.query("delete from cloud_actions where org_id = $1 and id = $2", [tx.orgId, id]);
+  },
+  async list(tx: Tx, q: CloudJournalFilters): Promise<Page<CloudAction>> {
+    const { where, params } = cloudJournalWhere(tx, q);
+    const pageSize = Math.min(200, Math.max(1, q.pageSize ?? 25));
+    const p = Math.max(1, q.page ?? 1);
+    const total = await tx.count(`select count(*) from cloud_actions where ${where.join(" and ")}`, params);
+    const rows = await tx.query(`select * from cloud_actions where ${where.join(" and ")} order by created_at desc, id limit ${pageSize} offset ${(p - 1) * pageSize}`, params);
+    return page(rows.map((r) => parse(cloudActionSchema, r)), total, p, pageSize);
+  },
+  /** Lignes pour l'export CSV, plafonnées (le journal ne garde que 90 jours). */
+  async listAll(tx: Tx, q: CloudJournalFilters, limit = 10_000): Promise<CloudAction[]> {
+    const { where, params } = cloudJournalWhere(tx, q);
+    params.push(limit);
+    return (await tx.query(`select * from cloud_actions where ${where.join(" and ")} order by created_at desc, id limit $${params.length}`, params)).map((r) => parse(cloudActionSchema, r));
+  },
+  /**
+   * Actions qui ont ouvert le navigateur depuis `since` (horloge des services), pour un compte ou
+   * pour toute l'organisation : base des plafonds horaire et journalier.
+   */
+  async countSince(tx: Tx, since: string, accountId?: string): Promise<number> {
+    if (accountId) return tx.count("select count(*) from cloud_actions where org_id = $1 and account_id = $2 and started_at >= $3 and status = any($4)", [tx.orgId, accountId, since, CLOUD_STARTED_STATUSES]);
+    return tx.count("select count(*) from cloud_actions where org_id = $1 and started_at >= $2 and status = any($3)", [tx.orgId, since, CLOUD_STARTED_STATUSES]);
+  },
+  /** Rétention : supprime les lignes créées avant `now - days` (90 jours pour le journal Cloud). */
+  async purgeOlderThan(tx: Tx, days: number, now: Date = new Date()): Promise<number> {
+    const before = new Date(now.getTime() - days * 86_400_000).toISOString();
+    return (await tx.query("delete from cloud_actions where org_id = $1 and created_at < $2 returning id", [tx.orgId, before])).length;
+  },
+};
+
+/** Ligne globale d'une fenêtre de connexion (fonction SECURITY DEFINER, sans ouvrir la table). */
+export interface CloudLoginLookup {
+  id: string;
+  orgId: string;
+  accountId: string;
+  status: CloudLoginSession["status"];
+  expiresAt: string;
+  ticketHash: string;
+  /** Ticket déjà consommé par une WebSocket (null : jamais utilisé). */
+  attachedAt: string | null;
+}
+
+/** Fenêtres de connexion : le ticket n'est stocké qu'haché (SHA-256). */
+export const cloudLoginSessions = {
+  async create(tx: Tx, input: { accountId: string; ticketHash: string; expiresAt: string }): Promise<CloudLoginSession> {
+    return parse(cloudLoginSessionSchema, await tx.insert("cloud_login_sessions", { ...input, status: "open", orgId: tx.orgId }));
+  },
+  async byId(tx: Tx, id: string): Promise<CloudLoginSession | null> {
+    const r = await tx.maybeOne("select * from cloud_login_sessions where org_id = $1 and id = $2", [tx.orgId, id]);
+    return r ? parse(cloudLoginSessionSchema, r) : null;
+  },
+  /** Recherche globale par identifiant (worker qui ferme la fenêtre). */
+  async findGlobal(tx: Tx, id: string): Promise<CloudLoginLookup | null> {
+    return tx.maybeOne<CloudLoginLookup>("select * from app_find_cloud_login_session($1, null)", [id]);
+  },
+  /** Recherche globale par empreinte de ticket (connexion de la fenêtre côté API). */
+  async byTicketHash(tx: Tx, ticketHash: string): Promise<CloudLoginLookup | null> {
+    return tx.maybeOne<CloudLoginLookup>("select * from app_find_cloud_login_session(null, $1)", [ticketHash]);
+  },
+  /** Ferme une fenêtre encore ouverte (UPDATE conditionnel) ; null si elle ne l'était plus. */
+  async close(tx: Tx, id: string, status: Exclude<CloudLoginSession["status"], "open">): Promise<CloudLoginSession | null> {
+    const r = await tx.maybeOne("update cloud_login_sessions set status = $3, updated_at = now() where org_id = $1 and id = $2 and status = 'open' returning *", [tx.orgId, id, status]);
+    return r ? parse(cloudLoginSessionSchema, r) : null;
+  },
+  /** Ferme toutes les fenêtres ouvertes d'un compte (nouvelle fenêtre, arrêt du Cloud). */
+  async closeOpenForAccount(tx: Tx, accountId: string, status: Exclude<CloudLoginSession["status"], "open">): Promise<number> {
+    return (await tx.query("update cloud_login_sessions set status = $3, updated_at = now() where org_id = $1 and account_id = $2 and status = 'open' returning id", [tx.orgId, accountId, status])).length;
+  },
+  /**
+   * Consomme le ticket (première WebSocket) : UPDATE conditionnel, une seule fois, fenêtre ouverte
+   * et non expirée. Faux si le ticket a déjà servi : toute seconde connexion est refusée.
+   */
+  async attach(tx: Tx, id: string, now: string): Promise<boolean> {
+    const r = await tx.maybeOne("update cloud_login_sessions set attached_at = $3, updated_at = now() where org_id = $1 and id = $2 and status = 'open' and attached_at is null and expires_at > $3 returning id", [tx.orgId, id, now]);
+    return r !== null;
+  },
+  /** Fenêtres encore ouvertes et non expirées de l'organisation (limite par organisation). */
+  async countOpen(tx: Tx, now: string): Promise<number> {
+    return tx.count("select count(*) from cloud_login_sessions where org_id = $1 and status = 'open' and expires_at > $2", [tx.orgId, now]);
+  },
+  /** Fenêtres ouvertes dont l'échéance est passée à l'instant `now` → « expired ». */
+  async expireStale(tx: Tx, now: string): Promise<number> {
+    return (await tx.query("update cloud_login_sessions set status = 'expired', updated_at = now() where org_id = $1 and status = 'open' and expires_at <= $2 returning id", [tx.orgId, now])).length;
+  },
+};
+
+/**
+ * Coupe-circuit de la machine (table `cloud_runtime`, une ligne, sans donnée d'organisation) : après
+ * un « trop de requêtes » ou un blocage de Vinted, plus aucune action Cloud jusqu'à `suspendedUntil`.
+ */
+export const cloudRuntime = {
+  async get(tx: Tx): Promise<{ suspendedUntil: string | null; reason: "rate_limited" | "blocked" | null }> {
+    const r = await tx.maybeOne<{ suspendedUntil: string | Date | null; reason: "rate_limited" | "blocked" | null }>("select suspended_until, reason from cloud_runtime where id = 1");
+    const until = r?.suspendedUntil ?? null;
+    return { suspendedUntil: until === null ? null : new Date(until).toISOString(), reason: r?.reason ?? null };
+  },
+  /** Prolonge la suspension jusqu'à `until` (jamais raccourcie par un signal plus ancien). */
+  async suspend(tx: Tx, until: string, reason: "rate_limited" | "blocked"): Promise<void> {
+    await tx.query(
+      "update cloud_runtime set suspended_until = greatest(coalesce(suspended_until, $1::timestamptz), $1::timestamptz), reason = $2, updated_at = now() where id = 1",
+      [until, reason],
+    );
+  },
+  async clear(tx: Tx): Promise<void> {
+    await tx.query("update cloud_runtime set suspended_until = null, reason = null, updated_at = now() where id = 1");
+  },
+};
+
+export const cloudOrgs = {
+  /** Organisations ayant au moins un compte Cloud (fonction SECURITY DEFINER) : worker uniquement. */
+  async ids(tx: Tx): Promise<string[]> {
+    return (await tx.query<{ orgId: string }>("select org_id from app_cloud_org_ids()")).map((r) => r.orgId);
   },
 };
 

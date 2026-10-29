@@ -1,5 +1,5 @@
 import { counterOfferWording } from "@selio/ai";
-import { automationRuleCreate, jobQuery, type AutomationRule, type Job } from "@selio/contracts";
+import { CLOUD_RULE_ACTIONS, automationRuleCreate, jobQuery, type AutomationRule, type CloudAccount, type Job, type RunLocation, type RuleKind } from "@selio/contracts";
 import { repos, type Tx } from "@selio/db";
 import { PERSONAL_ACCOUNT_SKIP, daysInStock, evaluateOffer, gateRule, isAutomatable, jobDedupeKey, localDayKey, renderTemplate, retryDelayMs, type NegotiationResult } from "@selio/domain";
 import { AppError, nowIso, requireAction, withOrg, type OrgContext } from "../context";
@@ -69,7 +69,19 @@ async function personalAccountIds(tx: Tx): Promise<Set<string>> {
   return new Set((await repos.connections.list(tx)).filter((c) => !isAutomatable(c)).map((c) => c.id));
 }
 
-/** Exécute une tâche (serveur). Les tâches « navigateur » ne sont exécutables que par l'extension. */
+/**
+ * Transport d'une tâche (fonction pure) : une réponse ou une relance passe par Selio Cloud quand le
+ * compte Vinted de la conversation y est actif (session enregistrée, ni en pause ni arrêté) ; sinon
+ * la tâche garde l'emplacement déclaré par la règle (serveur ou extension). Les autres règles ne
+ * passent jamais par le Cloud au lancement (actions légères seulement sur l'adresse partagée).
+ */
+export function decideRunsIn(input: { ruleKind: RuleKind; ruleRunsIn: RunLocation; cloudAccount: Pick<CloudAccount, "status" | "hasSession"> | null | undefined }): RunLocation {
+  if (CLOUD_RULE_ACTIONS[input.ruleKind] && input.cloudAccount?.status === "active" && input.cloudAccount.hasSession) return "cloud";
+  // Une règle ne se déclare jamais « cloud » : sans compte actif, la tâche part vers l'extension.
+  return input.ruleRunsIn === "cloud" ? "browser" : input.ruleRunsIn;
+}
+
+/** Exécute une tâche (serveur). Les tâches « navigateur » ne sont exécutables que par l'extension, les tâches « cloud » par Selio Cloud. */
 export async function executeJobTx(ctx: OrgContext, tx: Tx, job: Job): Promise<Job> {
   // Le compte a pu passer en « Perso » entre la planification et la validation : on n'agit pas.
   const personal = await personalAccountIds(tx);
@@ -80,6 +92,10 @@ export async function executeJobTx(ctx: OrgContext, tx: Tx, job: Job): Promise<J
     if (target?.connectionId && personal.has(target.connectionId)) {
       return repos.jobs.update(tx, job.id, { status: "skipped", result: { reason: PERSONAL_ACCOUNT_SKIP }, finishedAt: nowIso(ctx) });
     }
+  }
+  if (job.runsIn === "cloud") {
+    // Exécutée par le planificateur Cloud (worker), jamais ici : la tâche attend en file.
+    return repos.jobs.update(tx, job.id, { status: "queued", scheduledFor: job.status === "queued" ? job.scheduledFor : nowIso(ctx), result: { ...(job.result ?? {}), awaitingCloud: true, note: "À exécuter par Selio Cloud (navigateur isolé sur notre machine)." } });
   }
   if (job.runsIn === "browser") {
     // En mode connecté, une action navigateur est remise à l'extension : on la marque en file pour elle.
@@ -142,8 +158,9 @@ export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): 
   const skip = (r: string) => skipped.set(r, (skipped.get(r) ?? 0) + 1);
   const dayStart = new Date(now); dayStart.setUTCHours(0, 0, 0, 0);
   let evaluated = 0, created = 0;
-  const targets: { targetId: string; payload: Record<string, unknown>; kind: Job["kind"] }[] = [];
+  const targets: { targetId: string; payload: Record<string, unknown>; kind: Job["kind"]; connectionId?: string | null }[] = [];
   const personal = await personalAccountIds(tx);
+  const cloudByConnection = CLOUD_RULE_ACTIONS[rule.kind] ? new Map((await repos.cloudAccounts.list(tx)).map((a) => [a.connectionId, a])) : new Map<string, CloudAccount>();
   if (["reply_on_new_message", "follow_up_no_reply", "auto_negotiate", "post_sale_message"].includes(rule.kind)) {
     for (const conv of await repos.conversations.open(tx)) {
       evaluated++;
@@ -167,7 +184,7 @@ export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): 
         const orders = conv.itemId ? await repos.orders.forItem(tx, conv.itemId) : [];
         if (!orders.some((o) => o.customerId === conv.customerId && (o.status === "paid" || o.status === "shipped"))) { skip("Pas de vente récente"); continue; }
       }
-      targets.push({ targetId: conv.id, kind: "automation.send_message", payload: { conversationId: conv.id, customerId: conv.customerId, ruleName: rule.name } });
+      targets.push({ targetId: conv.id, kind: "automation.send_message", connectionId: conv.connectionId, payload: { conversationId: conv.id, customerId: conv.customerId, ruleName: rule.name } });
     }
   } else {
     for (const item of (await repos.items.all(tx)).filter((i) => i.status === "listed")) {
@@ -188,7 +205,10 @@ export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): 
     if (!gate.allowed) { skip(gate.reason); continue; }
     const dedupeKey = jobDedupeKey(rule, t.targetId, now);
     if (await repos.jobs.byDedupe(tx, dedupeKey)) { skip("Déjà planifié aujourd'hui (idempotence)"); continue; }
-    const job = await repos.jobs.create(tx, { kind: t.kind, status: rule.requiresApproval ? "awaiting_approval" : "queued", dedupeKey, ruleId: rule.id, payload: t.payload, runsIn: rule.runsIn, scheduledFor: nowIso(ctx) });
+    const cloudAccount = t.connectionId ? cloudByConnection.get(t.connectionId) : undefined;
+    const runsIn = decideRunsIn({ ruleKind: rule.kind, ruleRunsIn: rule.runsIn, cloudAccount });
+    const payload = runsIn === "cloud" && cloudAccount ? { ...t.payload, cloudAccountId: cloudAccount.id, cloudKind: CLOUD_RULE_ACTIONS[rule.kind] } : t.payload;
+    const job = await repos.jobs.create(tx, { kind: t.kind, status: rule.requiresApproval ? "awaiting_approval" : "queued", dedupeKey, ruleId: rule.id, payload, runsIn, scheduledFor: nowIso(ctx) });
     created++; actions++; lastActionAt = now;
     if (job.status === "queued") await executeJobTx(ctx, tx, job);
   }
@@ -241,6 +261,7 @@ export function processDueJobs(ctx: OrgContext): Promise<number> {
   return withOrg(ctx, async (tx) => {
     let n = 0;
     for (const job of await repos.jobs.dueQueued(tx)) {
+      if (job.runsIn === "cloud") continue;
       if (job.runsIn === "browser" && job.result && (job.result as { awaitingBrowser?: boolean }).awaitingBrowser) continue;
       await executeJobTx(ctx, tx, job);
       n++;
