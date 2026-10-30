@@ -12,6 +12,9 @@
  * - `runner/probe` : vérification de démarrage (Chromium et son bac à sable).
  * - `runner/fake` : exécuteur factice pour les tests (aussi exporté par `@selio/cloud/fake`).
  * - `login-window` : fenêtre de connexion sécurisée (capture d'écran CDP, entrées relayées).
+ * - `radar` : Selio Radar — lecture des pages catalogue depuis le compte Achat (`RadarReader`),
+ *   mesures (délais, taux de blocage, ralentissement), achat Radar Auto (`PurchaseRunner`, essai
+ *   à blanc par défaut, 3-D Secure attendu du client), conduite imposée par un signal de Vinted.
  */
 export * from "./types";
 export * from "./session";
@@ -33,3 +36,6 @@ export { probeChromium, SANDBOX_UNAVAILABLE_MESSAGE } from "./runner/probe";
 export type { ChromiumProbeInput, ChromiumProbeResult } from "./runner/probe";
 export { FakeRunner, FakeLoginWindow, fakeOutcome } from "./runner/fake";
 export type { FakeRunCall, FakeRunnerOptions, FakeScenario, FakeScenarioName } from "./runner/fake";
+export * from "./radar";
+export { FakeBrowsingPage, FakeBrowsingSession, FAKE_BLOCK_PAGE_HTML, FAKE_RATE_LIMIT_HTML, fakeFetchOutcome } from "./radar/fake";
+export type { FakeBrowsingScenario, FakeClickEffect, FakeFetchCall, FakeFetchScenario, FakeFetchScenarioName, FakeSite } from "./radar/fake";

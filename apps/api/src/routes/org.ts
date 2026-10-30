@@ -1,9 +1,33 @@
 import type { FastifyInstance } from "fastify";
-import type { Role } from "@selio/contracts";
-import { org as orgService } from "@selio/core";
+import { orgUpdate, type Role } from "@selio/contracts";
+import { repos } from "@selio/db";
+import { AppError, org as orgService, radar, requireAction, withOrg } from "@selio/core";
 
 export default async function orgRoutes(app: FastifyInstance) {
-  app.patch("/api/org", async (req) => orgService.updateOrg(app.requireCtx(req), req.body));
+  /**
+   * Paramètres de l'organisation. Les réglages de Selio Radar (`settings.radar`) et de Radar Auto
+   * (`settings.autoBuy`) passent par `radar.updateRadarSettings` : droits propres (Radar Auto : propriétaire),
+   * verrou serveur à l'activation (RADAR_AUTO_ENABLED, mention de l'adresse partagée), date et auteur de
+   * l'activation enregistrés par le serveur. Le reste suit le chemin habituel.
+   */
+  app.patch("/api/org", async (req) => {
+    const ctx = app.requireCtx(req);
+    const body = req.body && typeof req.body === "object" ? (req.body as { name?: unknown; settings?: unknown }) : {};
+    const settings = body.settings && typeof body.settings === "object" && !Array.isArray(body.settings) ? { ...(body.settings as Record<string, unknown>) } : null;
+    if (!settings || (!("radar" in settings) && !("autoBuy" in settings))) return orgService.updateOrg(ctx, req.body);
+    const { radar: radarSettings, autoBuy, ...rest } = settings;
+    const restBody = { ...(body.name !== undefined ? { name: body.name } : {}), settings: rest };
+    const hasRest = body.name !== undefined || Object.keys(rest).length > 0;
+    // Le reste est vérifié (droits, schéma) avant d'enregistrer quoi que ce soit : pas de mise à jour à moitié faite.
+    if (hasRest) {
+      requireAction(ctx, "org.update");
+      const parsed = orgUpdate.safeParse(restBody);
+      if (!parsed.success) throw new AppError("validation", "Paramètres invalides", 400, parsed.error.flatten());
+    }
+    await radar.updateRadarSettings(ctx, { ...(radarSettings !== undefined ? { radar: radarSettings } : {}), ...(autoBuy !== undefined ? { autoBuy } : {}) });
+    if (hasRest) return orgService.updateOrg(ctx, restBody);
+    return withOrg(ctx, (tx) => repos.orgs.byId(tx, ctx.orgId));
+  });
   app.delete("/api/org", async (req, reply) => {
     await orgService.deleteOrganization(app.requireCtx(req), String((req.body as { confirmName?: string })?.confirmName ?? ""));
     reply.clearCookie("selio_session", { path: "/" });

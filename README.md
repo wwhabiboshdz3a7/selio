@@ -76,5 +76,6 @@ packages/core    services serveur partagés API/worker           packages/demo-d
 - [docs/CLES-ET-CONFIGURATION.md](docs/CLES-ET-CONFIGURATION.md) · [docs/OLLAMA-SETUP.md](docs/OLLAMA-SETUP.md) · [docs/EXTENSION-INSTALL.md](docs/EXTENSION-INSTALL.md)
 - [docs/TEST-REPORT.md](docs/TEST-REPORT.md) · [docs/PRODUCTION-CHECKLIST.md](docs/PRODUCTION-CHECKLIST.md)
 - [docs/CLOUD.md](docs/CLOUD.md) (Selio Cloud, désactivé par défaut) · [docs/SAUVEGARDE.md](docs/SAUVEGARDE.md) (sauvegarde chiffrée, test de restauration, bascule sur le portable)
+- [docs/RADAR.md](docs/RADAR.md) (Selio Radar : lecture depuis le compte Achat via le Cloud, alertes sur le téléphone, « 1 clic » ; Radar Auto et achat réel désactivés par défaut, mesures et procédure de test)
 
 La charte (tokens, preset Tailwind, guidelines) est dans `brand/` et `packages/ui`.

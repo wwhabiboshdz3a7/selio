@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { currency, email, id, isoDate, nonNegCents, rate, role, slug } from "./common";
+import { RADAR_ALERT_MIN_SCORE_DEFAULT, RADAR_DEFAULT_MAX_PAGES_PER_MINUTE } from "./radar";
 
 export const user = z.object({
   id,
@@ -52,9 +53,10 @@ export const buyerFees = z.object({
 export type BuyerFees = z.infer<typeof buyerFees>;
 
 /**
- * Achat automatique : au-dessus du seuil de score, l'application achète
- * seule, dans la limite d'un plafond journalier, puis laisse un délai pour
- * annuler. Désactivé par défaut.
+ * Achat automatique (Radar Auto) : au-dessus du seuil de score, l'application achète
+ * seule, dans la limite d'un prix maximum par article et d'un plafond journalier, puis
+ * laisse un délai pour annuler. Désactivé par défaut, et derrière un second verrou côté
+ * serveur (RADAR_AUTO_ENABLED, réservé aux comptes de l'équipe pour les tests).
  */
 export const autoBuySettings = z.object({
   enabled: z.boolean().default(false),
@@ -68,8 +70,55 @@ export const autoBuySettings = z.object({
   cancelWindowMinutes: z.number().int().min(0).max(1440).default(30),
   /** Compte « Achat » utilisé (null = le premier compte Achat actif). Jamais un compte Perso. */
   connectionId: id.nullable().default(null),
+  /**
+   * Traçabilité : date et auteur de la dernière activation (absents tant que jamais activé). Fixés
+   * par le serveur (`radar.updateRadarSettings`), jamais par le client. Facultatifs dans le type pour
+   * que les réglages enregistrés avant ce champ restent lisibles tels quels.
+   */
+  enabledAt: isoDate.nullable().optional(),
+  enabledBy: id.nullable().optional(),
+  /**
+   * Arrêt automatique de Radar Auto par Selio (réglage remis à « désactivé ») après un achat à l'issue
+   * incertaine (« Payer » cliqué sans confirmation, validation 3-D Secure expirée) : date et raison. Le
+   * client vérifie dans Vinted puis réactive lui-même (acquittement). Fixés par le serveur seulement.
+   */
+  suspendedAt: isoDate.nullable().optional(),
+  suspendedReason: z.string().max(300).nullable().optional(),
 });
 export type AutoBuySettings = z.infer<typeof autoBuySettings>;
+
+const hour = z.number().int().min(0).max(23);
+
+/**
+ * Heures calmes (fuseau de l'organisation) : aucune notification Radar entre `from` et `to`
+ * (par exemple 22 → 8) ; les alertes sont envoyées à la fin de la plage. La lecture continue.
+ */
+export const radarQuietHours = z.object({ from: hour, to: hour });
+export type RadarQuietHours = z.infer<typeof radarQuietHours>;
+
+/** Réglages de Selio Radar : alertes sur le téléphone (PWA) et plafond de lecture. */
+export const radarSettings = z.object({
+  /** Alertes push des nouvelles affaires. */
+  alertsEnabled: z.boolean().default(true),
+  /** Note minimale d'une affaire pour déclencher une alerte (75 = seuil « À valider »). */
+  alertMinScore: z.number().int().min(0).max(100).default(RADAR_ALERT_MIN_SCORE_DEFAULT),
+  /** Heures calmes des alertes (null : aucune). */
+  quietHours: radarQuietHours.nullable().default(null),
+  /** Pages lues en direct par minute, au plus, pour toute l'organisation. */
+  maxPagesPerMinute: z.number().int().min(1).max(60).default(RADAR_DEFAULT_MAX_PAGES_PER_MINUTE),
+});
+export type RadarSettings = z.infer<typeof radarSettings>;
+
+/**
+ * Mise à jour des réglages Radar et Radar Auto (`radar.updateRadarSettings`) : champs facultatifs,
+ * sans valeur par défaut (une mise à jour partielle ne remet rien à zéro). La traçabilité de
+ * l'activation (`enabledAt`, `enabledBy`) est fixée par le serveur, jamais saisie.
+ */
+export const radarSettingsUpdate = z.object({
+  radar: radarSettings.partial().optional(),
+  autoBuy: autoBuySettings.omit({ enabledAt: true, enabledBy: true, suspendedAt: true, suspendedReason: true }).partial().optional(),
+});
+export type RadarSettingsUpdate = z.infer<typeof radarSettingsUpdate>;
 
 /** Dressing intelligent : à partir de quand une annonce est à republier. */
 export const dressingSettings = z.object({
@@ -196,6 +245,7 @@ export const orgSettings = z.object({
   notifications: notificationSettings.default({}),
   buyerFees: buyerFees.default({}),
   autoBuy: autoBuySettings.default({}),
+  radar: radarSettings.default({}),
   dressing: dressingSettings.default({}),
   automation: automationSettings.default({}),
   retentionDays: z.object({

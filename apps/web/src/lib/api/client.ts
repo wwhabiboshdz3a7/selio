@@ -5,6 +5,9 @@ import type { ConnectorDescriptor } from "@selio/connectors";
 import type { HelpAnswer } from "@selio/contracts";
 import type { AccountStats, NegotiationResult, PeriodPreset } from "@selio/domain";
 import { DataError, type AdminOverview, type AdminUsageReport, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
+import type { AutoBuyStatus, OpportunityDetail, PushConfig, PushTestResult, RadarMetricsView, RadarRunResult, RadarSettingsResult, ResumeResult } from "../data/types";
+import { autoBuySettings, type PushSubscriptionInput, type PushSubscriptionView, type RadarSettingsUpdate } from "@selio/contracts";
+import { normalizeAutoBuyStatus, normalizePushConfig } from "../radar";
 import type { AiHealthData } from "../data/types";
 import type { BillingCycle, Invoice, InvoiceView, PaidPlan, WhiteLabel, WhiteLabelInput } from "@selio/contracts";
 import type { CheckoutOutcome, CloudAccountView, CloudAvailabilityView, CloudJournalFilters, CloudLoginStart } from "../data/types";
@@ -139,12 +142,37 @@ export class ApiClient implements DataClient {
   createSearch(input: RadarSearchCreate) { return this.post<RadarSearch>("/api/radar/searches", input); }
   updateSearch(id: string, input: Partial<RadarSearchCreate>) { return this.patch<RadarSearch>(`/api/radar/searches/${id}`, input); }
   deleteSearch(id: string) { return this.del<void>(`/api/radar/searches/${id}`); }
-  runSearch(id: string) { return this.post<{ found: number }>(`/api/radar/searches/${id}/run`); }
+  runSearch(id: string) { return this.post<RadarRunResult>(`/api/radar/searches/${id}/run`); }
   listOpportunities(query: { searchId?: string; status?: Opportunity["status"] }) { return this.get<Opportunity[]>("/api/radar/opportunities", query); }
+  async getOpportunity(id: string): Promise<OpportunityDetail> {
+    const o = await this.get<Opportunity & Partial<Pick<OpportunityDetail, "search" | "purchase" | "itemUrl">>>(`/api/radar/opportunities/${encodeURIComponent(id)}`);
+    return { ...o, search: o.search ?? null, purchase: o.purchase ?? null, itemUrl: o.itemUrl ?? null };
+  }
   setOpportunityStatus(id: string, status: Opportunity["status"]) { return this.post<Opportunity>(`/api/radar/opportunities/${id}/status`, { status }); }
+  radarMetrics(days?: number) { return this.get<RadarMetricsView>("/api/radar/metrics", { days }); }
+  updateRadarSettings(input: RadarSettingsUpdate) { return this.patch<RadarSettingsResult>("/api/radar/settings", input); }
 
-  quickBuy(opportunityId: string) { return this.post<PurchaseRequest>(`/api/radar/opportunities/${opportunityId}/buy`); }
+  quickBuy(opportunityId: string, opts: { paidCents?: number | null } = {}) { return this.post<PurchaseRequest>(`/api/radar/opportunities/${opportunityId}/buy`, typeof opts.paidCents === "number" ? { paidCents: opts.paidCents } : {}); }
   runAutoBuy() { return this.post<AutoBuyRunResult>("/api/purchases/auto-run"); }
+  /** Lu sans confiance : tout verrou absent de la réponse est affiché fermé. */
+  async autoBuyStatus(): Promise<AutoBuyStatus> {
+    return normalizeAutoBuyStatus(await this.get<unknown>("/api/radar/auto/status"), autoBuySettings.parse({}));
+  }
+  /** 202 `{ queued, purchase }` : la relecture est en file dans le worker ; sinon la demande à jour. */
+  async resumePurchase(id: string): Promise<ResumeResult> {
+    const r = await this.post<PurchaseRequest | { queued: true; purchase: PurchaseRequest }>(`/api/purchases/${encodeURIComponent(id)}/resume`);
+    return "queued" in r && r.queued ? { purchase: r.purchase, queued: true } : { purchase: r as PurchaseRequest, queued: false };
+  }
+
+  // Notifications de la PWA : seule la clé PUBLIQUE VAPID transite ; l'abonnement de l'appareil est envoyé une fois.
+  async pushConfig(): Promise<PushConfig> {
+    return normalizePushConfig(await this.get<unknown>("/api/push/config"));
+  }
+  listPushSubscriptions() { return this.get<PushSubscriptionView[]>("/api/push/subscriptions"); }
+  subscribePush(input: PushSubscriptionInput) { return this.post<PushSubscriptionView>("/api/push/subscriptions", input); }
+  unsubscribePush(endpoint: string) { return this.request<{ removed: boolean }>("DELETE", "/api/push/subscriptions", { endpoint }); }
+  removePushSubscription(id: string) { return this.request<{ removed: boolean }>("DELETE", `/api/push/subscriptions/${encodeURIComponent(id)}`); }
+  testPush() { return this.post<PushTestResult>("/api/push/test"); }
   generateListing(input: ListingGenerationInput) { return this.post<ListingDraft>("/api/studio/generate", input); }
   getDressing(query: DressingQuery) { return this.get<DressingData>("/api/dressing", query as Query); }
   republishItem(id: string, variantId: string) { return this.post<InventoryItem>(`/api/items/${id}/republish`, { variantId }); }

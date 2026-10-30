@@ -4,9 +4,11 @@ import type { WebSocket } from "ws";
 import { createPool, runMigrations, MIGRATIONS_DIR, SecretBox, hashSecret, repos as dbRepos } from "@selio/db";
 import { RevolutClient, computeRevolutSignature } from "@selio/connectors";
 import { CLOUD_CONSENT_VERSION, quotasForPlan } from "@selio/contracts";
-import { auth as authService, cloud as cloudService, type OrgContext } from "@selio/core";
+import { FakePushSender, auth as authService, cloud as cloudService, type OrgContext } from "@selio/core";
 import { NoopEmailProvider, type EmailProvider } from "@selio/email";
-import { loadEnv } from "../src/config";
+import webpush from "web-push";
+import { loadEnv, radarServicesConfig } from "../src/config";
+import { WebPushSender, isAllowedPushEndpoint, pushUrgency } from "../src/push";
 import { buildServer, type BuiltServer } from "../src/server";
 import { maskSecretsInUrl, wsClientMessageSchema } from "../src/cloud-relay";
 
@@ -817,22 +819,20 @@ describe("API Selio (mode connecté, base réelle)", () => {
     expect((await call("POST", `/api/radar/opportunities/${manual.id}/buy`)).status).toBe(409);
     expect((await call("POST", `/api/purchases/${bought.json.id}/cancel`)).status).toBe(409);
 
-    // Achat auto : désactivé par défaut, puis seuil 85 avec délai d'annulation.
+    // Radar Auto : verrou serveur fermé par défaut (RADAR_AUTO_ENABLED) → rien n'est évalué ni acheté, et
+    // l'activation par les paramètres de l'organisation est refusée avec la mention de l'adresse partagée.
+    // Le parcours complet (verrous ouverts, Cloud, achat simulé, annulation) est dans « Selio Radar (API) ».
     const auto = await mk("Pull exceptionnel", 92);
     const off = await call("POST", "/api/purchases/auto-run");
-    expect(off.json.bought).toBe(0);
+    expect(off.json).toMatchObject({ disabled: true, bought: 0, evaluated: 0 });
+    expect(off.json.reasons.join(" ")).toMatch(/RADAR_AUTO_ENABLED/);
     const cfg = await call("PATCH", "/api/org", { settings: { autoBuy: { enabled: true, threshold: 85, dailyCapCents: 20000, maxItemCents: 8000, cancelWindowMinutes: 30 } } });
-    expect(cfg.status).toBe(200);
-    const on = await call("POST", "/api/purchases/auto-run");
-    expect(on.json.bought).toBe(1);
-    const list = await call("GET", "/api/purchases");
-    const autoBuy = list.json.find((x: { opportunityId: string }) => x.opportunityId === auto.id);
-    expect(autoBuy.mode).toBe("auto");
-    expect(new Date(autoBuy.cancelableUntil).getTime()).toBeGreaterThan(Date.now());
-    const cancelled = await call("POST", `/api/purchases/${autoBuy.id}/cancel`);
-    expect(cancelled.json.status).toBe("cancelled");
+    expect(cfg.status).toBe(403);
+    expect(cfg.json.error.code).toBe("radar_auto_disabled");
+    expect(cfg.json.error.message).toMatch(/adresse partagée/);
+    expect((await call("GET", "/api/auth/session")).json.org.settings.autoBuy.enabled).toBe(false);
     const oppAfter = await call("GET", "/api/radar/opportunities");
-    expect(oppAfter.json.find((o: { id: string }) => o.id === auto.id).status).toBe("dismissed");
+    expect(oppAfter.json.find((o: { id: string }) => o.id === auto.id).status).toBe("new");
 
     // Marché : uniquement des annonces réellement observées (ici 2 captures de test).
     const market = await call("GET", "/api/market/insights?windowDays=30");
@@ -1475,5 +1475,403 @@ describe("Selio Cloud (API)", () => {
     expect(statuses[2]).toBe(429);
     // Limite par utilisateur : une autre personne n'est pas bloquée (ici, compte d'une autre organisation → 404).
     expect((await as("y", "POST", `/api/cloud/accounts/${accountX}/login`, undefined, cloudServer)).status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------- Selio Radar
+
+/**
+ * Selio Radar par l'API : notifications de la PWA, recherches prioritaires, verrous de Radar Auto,
+ * mesures honnêtes, page « 1 clic », reprise 3-D Secure (mise en file pour le worker), vue opérateur et
+ * isolation entre organisations. Aucune page Vinted n'est lue (l'API n'a pas de navigateur), aucune
+ * notification ne sort (envoi simulé), aucun achat réel.
+ */
+describe("Selio Radar (API)", () => {
+  const REDIS_URL = process.env.TEST_REDIS_URL ?? "redis://127.0.0.1:6379";
+  const jar: Record<string, string> = {};
+  const fakePush = new FakePushSender();
+  const vapid = webpush.generateVAPIDKeys();
+  const ENDPOINT = "https://fcm.googleapis.com/fcm/send/radar-appareil-x-0123456789";
+  const KEYS = { p256dh: "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM", auth: "tBHItJI5svbpez7KI4CCXg" };
+  let ctxX: OrgContext;
+  let orgX = "";
+  let orgY = "";
+  let pushServer: BuiltServer | null = null;
+  let redisServer: BuiltServer | null = null;
+
+  const as = async (who: string, method: "GET" | "POST" | "PATCH" | "DELETE", url: string, body?: unknown, server: BuiltServer = built) => {
+    const res = await server.app.inject({ method, url, payload: body as object | undefined, headers: { cookie: who === "none" ? "" : jar[who] ?? "" } });
+    let json: unknown = null;
+    try { json = res.body ? JSON.parse(res.body) : null; } catch { json = res.body; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { status: res.statusCode, json: json as any, res };
+  };
+  const opportunity = (orgId: string, searchId: string, title: string, score: number, source: "connector" | "demo_simulator" = "connector") =>
+    built.services.db.withOrg(orgId, (tx) => dbRepos.opportunities.create(tx, {
+      searchId, title,
+      observed: { priceCents: 2000, shippingCents: 450, brand: "Ralph Lauren", size: "M", condition: "very_good", category: "men", sellerHandle: "vendeur_radar_secret", sellerRating: 4.9, sellerReviews: 50, photoUrl: "https://images.vinted.net/radar-secret.jpg", photoCount: 6, url: source === "connector" ? "https://www.vinted.fr/items/9001-pull?ref=radar" : null, seenAt: new Date().toISOString(), source },
+      estimate: { resalePriceCents: 6000, expectedFeesCents: 0, marginCents: 3380, marginRate: 0.56, confidence: "high", method: "brand_category", comparableCount: 3 },
+      score, reasons: [], breakdown: [], status: "new",
+    }));
+
+  beforeAll(async () => {
+    if (!available) return;
+    const meta = { ip: null, userAgent: null, operatorEmails: ["radar-ops@test.local"] };
+    const x = await authService.register(built.services, { email: "radar-x@test.local", password: "motdepasse-RX1", displayName: "Xena", orgName: "Radar X" }, meta);
+    const y = await authService.register(built.services, { email: "radar-y@test.local", password: "motdepasse-RY1", displayName: "Yves", orgName: "Radar Y" }, meta);
+    const ops = await authService.register(built.services, { email: "radar-ops@test.local", password: "motdepasse-OP1", displayName: "Opérateur", orgName: "Selio Ops" }, meta);
+    jar.x = `selio_session=${x.sessionId}`;
+    jar.y = `selio_session=${y.sessionId}`;
+    jar.ops = `selio_session=${ops.sessionId}`;
+    orgX = x.orgId!;
+    orgY = y.orgId!;
+    ctxX = { services: built.services, orgId: orgX, userId: x.userId, role: "owner", isOperator: false, ip: null };
+    for (const orgId of [orgX, orgY]) await built.services.db.withOrg(orgId, (tx) => dbRepos.subscriptions.upsert(tx, { plan: "agence", status: "active", quotas: quotasForPlan("agence") }));
+    await built.services.db.withOrg(orgX, async (tx) => {
+      await dbRepos.connections.create(tx, { id: "radar-x-buy", provider: "vinted", label: "Achats X", status: "connected", usage: "purchase" });
+      await dbRepos.connections.create(tx, { id: "radar-x-sale", provider: "vinted", label: "Ventes X", status: "connected", usage: "sale" });
+    });
+    await built.services.db.withOrg(orgY, (tx) => dbRepos.connections.create(tx, { id: "radar-y-buy", provider: "vinted", label: "Achats Y", status: "connected", usage: "purchase" }));
+    // Serveur avec des clés VAPID et un envoi simulé (aucune requête vers un service de notification).
+    pushServer = await buildServer(loadEnv({ ...baseEnv, VAPID_PUBLIC_KEY: vapid.publicKey, VAPID_PRIVATE_KEY: vapid.privateKey, VAPID_SUBJECT: "mailto:ops@selio.test" }), { email: flakyEmail, payments: null, push: fakePush });
+    await pushServer.app.ready();
+    // Redis local : la reprise 3-D Secure est mise en file pour le worker (sautée sans Redis).
+    const probe = new IORedis(REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1, connectTimeout: 1000, retryStrategy: () => null });
+    probe.on("error", () => {});
+    const redisOk = await probe.connect().then(() => probe.ping()).then(() => true, () => false);
+    probe.disconnect();
+    if (redisOk) {
+      redisServer = await buildServer(loadEnv({ ...baseEnv, REDIS_URL }), { email: flakyEmail, payments: null });
+      await redisServer.app.ready();
+    }
+  });
+
+  afterAll(async () => {
+    if (pushServer) await pushServer.app.close();
+    if (redisServer) await redisServer.app.close();
+  });
+
+  it("configuration : notifications désactivées sans clés VAPID, clés à moitié remplies refusées ; Radar Auto et achat réel fermés par défaut", async () => {
+    if (!available) return;
+    expect((await as("none", "GET", "/api/push/config")).status).toBe(401);
+    const cfg = await as("x", "GET", "/api/push/config");
+    expect(cfg.status).toBe(200);
+    expect(cfg.json).toEqual({ enabled: false, publicKey: null });
+    const refused = await as("x", "POST", "/api/push/subscriptions", { endpoint: ENDPOINT, keys: KEYS });
+    expect(refused.status).toBe(503);
+    expect(refused.json.error.code).toBe("push_disabled");
+    expect((await as("x", "POST", "/api/push/test")).status).toBe(503);
+    expect(() => loadEnv({ ...baseEnv, VAPID_PUBLIC_KEY: vapid.publicKey })).toThrow(/VAPID_PUBLIC_KEY et VAPID_PRIVATE_KEY/);
+    expect(() => loadEnv({ ...baseEnv, VAPID_PUBLIC_KEY: "abc", VAPID_PRIVATE_KEY: vapid.privateKey, VAPID_SUBJECT: "mailto:a@b.fr" })).toThrow(/VAPID_PUBLIC_KEY invalide/);
+    expect(() => loadEnv({ ...baseEnv, VAPID_PUBLIC_KEY: vapid.publicKey, VAPID_PRIVATE_KEY: vapid.privateKey })).toThrow(/VAPID_SUBJECT/);
+    const env = loadEnv(baseEnv);
+    expect(radarServicesConfig(env)).toEqual({ radarAutoEnabled: false, radarAutoOrgIds: undefined, radarRealPurchase: false, radar3dsTimeoutMs: 600_000 });
+    expect(built.services.config).toMatchObject({ radarAutoEnabled: false, radarRealPurchase: false });
+    expect(built.services.push).toBeUndefined();
+    // En production, Radar Auto exige la liste des organisations de l'équipe.
+    const prod = { ...baseEnv, NODE_ENV: "production", AI_PROVIDER: "ollama", COOKIE_SECURE: "true" };
+    expect(() => loadEnv({ ...prod, RADAR_AUTO_ENABLED: "true" })).toThrow(/RADAR_AUTO_ORG_IDS/);
+    expect(radarServicesConfig(loadEnv({ ...prod, RADAR_AUTO_ENABLED: "true", RADAR_AUTO_ORG_IDS: "org-a, org-b" }))).toMatchObject({ radarAutoEnabled: true, radarAutoOrgIds: ["org-a", "org-b"] });
+  });
+
+  it("envoi Web Push : services de notification connus seulement, TTL 1 h, urgence haute pour les affaires, 404/410 lus sans l'adresse", async () => {
+    expect(isAllowedPushEndpoint(ENDPOINT)).toBe(true);
+    expect(isAllowedPushEndpoint("https://updates.push.services.mozilla.com/wpush/v2/abc")).toBe(true);
+    expect(isAllowedPushEndpoint("https://web.push.apple.com/QGx")).toBe(true);
+    for (const bad of ["http://fcm.googleapis.com/fcm/send/x", "https://127.0.0.1/push", "https://fcm.googleapis.com.evil.example/x", "https://evil.example/push.apple.com", "https://fcm.googleapis.com:8443/x", "https://u:p@fcm.googleapis.com/x", "pas une adresse"]) {
+      expect(isAllowedPushEndpoint(bad)).toBe(false);
+    }
+    expect(pushUrgency({ url: "/app/radar/affaires/abc" })).toBe("high");
+    expect(pushUrgency({ url: "/app/radar/achats/abc" })).toBe("high");
+    expect(pushUrgency({ url: "/app/cloud" })).toBe("normal");
+    const calls: { endpoint: string; body: string; options: Record<string, unknown> }[] = [];
+    let status = 201;
+    const sender = new WebPushSender({ publicKey: vapid.publicKey, privateKey: vapid.privateKey, subject: "mailto:ops@selio.test" }, {
+      send: (async (sub: { endpoint: string }, body: string, options: Record<string, unknown>) => {
+        calls.push({ endpoint: sub.endpoint, body, options });
+        if (status >= 400) throw Object.assign(new Error(`Received unexpected response code ${sub.endpoint}`), { statusCode: status });
+        return { statusCode: status, body: "", headers: {} };
+      }) as unknown as typeof webpush.sendNotification,
+    });
+    const payload = { title: "Affaire Radar : Pull", body: "20,00 € · note 92", url: "/app/radar/affaires/abc" };
+    expect(await sender.send({ endpoint: ENDPOINT, keys: KEYS }, payload)).toEqual({ ok: true, statusCode: 201 });
+    expect(JSON.parse(calls[0]!.body)).toEqual(payload);
+    expect(calls[0]!.options).toMatchObject({ TTL: 3600, urgency: "high", contentEncoding: "aes128gcm", vapidDetails: { subject: "mailto:ops@selio.test", publicKey: vapid.publicKey } });
+    status = 410;
+    const gone = await sender.send({ endpoint: ENDPOINT, keys: KEYS }, payload);
+    expect(gone).toMatchObject({ ok: false, statusCode: 410 });
+    expect(JSON.stringify(gone)).not.toContain("fcm.googleapis.com");
+    // Adresse hors liste : jamais contactée, traitée comme un abonnement disparu.
+    const before = calls.length;
+    expect(await sender.send({ endpoint: "https://169.254.169.254/latest", keys: KEYS }, payload)).toMatchObject({ ok: false, statusCode: 410 });
+    expect(calls).toHaveLength(before);
+  });
+
+  it("abonnement push créé, notification de test, appareil disparu désactivé, puis abonnement supprimé ; isolation entre organisations", async () => {
+    if (!available || !pushServer) return;
+    const server = pushServer;
+    const cfg = await as("x", "GET", "/api/push/config", undefined, server);
+    expect(cfg.json).toEqual({ enabled: true, publicKey: vapid.publicKey });
+    expect(JSON.stringify(cfg.json)).not.toContain(vapid.privateKey);
+    // Adresse hors des services de notification (machine, réseau local, autre site) : refusée.
+    for (const endpoint of ["https://127.0.0.1/push", "https://evil.example/push", "http://fcm.googleapis.com/fcm/send/x"]) {
+      expect((await as("x", "POST", "/api/push/subscriptions", { endpoint, keys: KEYS }, server)).status).toBe(400);
+    }
+    expect((await as("x", "POST", "/api/push/subscriptions", { endpoint: ENDPOINT, keys: { p256dh: "court", auth: "x" } }, server)).status).toBe(400);
+    const created = await as("x", "POST", "/api/push/subscriptions", { endpoint: ENDPOINT, keys: KEYS, userAgent: "Mozilla/5.0 (iPhone) Safari" }, server);
+    expect(created.status).toBe(201);
+    expect(created.json).toMatchObject({ endpoint: ENDPOINT, userAgent: "Mozilla/5.0 (iPhone) Safari", disabledAt: null });
+    expect(created.json.p256dh).toBeUndefined();
+    expect(created.res.body).not.toContain(KEYS.auth);
+    const mine = await as("x", "GET", "/api/push/subscriptions", undefined, server);
+    expect(mine.json).toHaveLength(1);
+    expect(mine.res.body).not.toContain(KEYS.p256dh);
+    // Autre organisation : ne voit ni ne supprime l'appareil de X.
+    expect((await as("y", "GET", "/api/push/subscriptions", undefined, server)).json).toEqual([]);
+    expect((await as("y", "DELETE", "/api/push/subscriptions", { endpoint: ENDPOINT }, server)).json).toEqual({ removed: false });
+    expect((await as("y", "POST", "/api/push/test", undefined, server)).status).toBe(404);
+    // Notification de test vers l'appareil de l'utilisateur.
+    const test = await as("x", "POST", "/api/push/test", undefined, server);
+    expect(test.status).toBe(200);
+    expect(test.json).toEqual({ devices: 1, sent: 1, failed: 0, disabled: 0 });
+    expect(fakePush.sent.at(-1)).toMatchObject({ endpoint: ENDPOINT, payload: { title: "Selio : notifications activées", url: "/app/radar" } });
+    // Le service de notification répond 410 : l'appareil est désactivé.
+    fakePush.respond(ENDPOINT, 410);
+    expect((await as("x", "POST", "/api/push/test", undefined, server)).json).toEqual({ devices: 1, sent: 0, failed: 0, disabled: 1 });
+    expect((await as("x", "GET", "/api/push/subscriptions", undefined, server)).json[0].disabledAt).not.toBeNull();
+    expect((await as("x", "POST", "/api/push/test", undefined, server)).status).toBe(404);
+    // Réabonnement du même appareil : réactivé.
+    fakePush.respond(ENDPOINT, 201);
+    await as("x", "POST", "/api/push/subscriptions", { endpoint: ENDPOINT, keys: KEYS }, server);
+    expect((await as("x", "GET", "/api/push/subscriptions", undefined, server)).json[0].disabledAt).toBeNull();
+    // Retrait d'un appareil par son identifiant (Paramètres › Notifications) : seulement le sien.
+    const deviceId = (await as("x", "GET", "/api/push/subscriptions", undefined, server)).json[0].id as string;
+    expect((await as("y", "DELETE", `/api/push/subscriptions/${deviceId}`, undefined, server)).json).toEqual({ removed: false });
+    expect((await as("x", "DELETE", `/api/push/subscriptions/${deviceId}`, undefined, server)).json).toEqual({ removed: true });
+    expect((await as("x", "GET", "/api/push/subscriptions", undefined, server)).json).toEqual([]);
+    await as("x", "POST", "/api/push/subscriptions", { endpoint: ENDPOINT, keys: KEYS }, server);
+    // Suppression.
+    const removed = await as("x", "DELETE", "/api/push/subscriptions", { endpoint: ENDPOINT }, server);
+    expect(removed.json).toEqual({ removed: true });
+    expect((await as("x", "GET", "/api/push/subscriptions", undefined, server)).json).toEqual([]);
+    expect((await as("x", "DELETE", `/api/push/subscriptions?endpoint=${encodeURIComponent(ENDPOINT)}`, undefined, server)).json).toEqual({ removed: false });
+  });
+
+  it("recherches : source, compte Achat et priorité (la 4e prioritaire refusée) ; lecture en direct jamais dans l'API", async () => {
+    if (!available) return;
+    const mk = (name: string, extra: Record<string, unknown> = {}) => as("x", "POST", "/api/radar/searches", { name, criteria: { brands: ["Ralph Lauren"], maxPriceCents: 3000 }, ...extra });
+    const ids: string[] = [];
+    for (const n of [1, 2, 3]) {
+      const r = await mk(`Prioritaire ${n}`, { source: "cloud", connectionId: "radar-x-buy", priority: true });
+      expect(r.status).toBe(201);
+      expect(r.json).toMatchObject({ source: "cloud", provider: "vinted", priority: true, connectionId: "radar-x-buy" });
+      ids.push(r.json.id);
+    }
+    const fourth = await mk("Prioritaire 4", { source: "cloud", priority: true });
+    expect(fourth.status).toBe(400);
+    expect(fourth.json.error.message).toMatch(/3 recherches prioritaires/);
+    const normal = await mk("Normale", { source: "cloud" });
+    expect(normal.status).toBe(201);
+    // PATCH : priorité refusée au-delà de 3, acceptée après en avoir retiré une.
+    expect((await as("x", "PATCH", `/api/radar/searches/${normal.json.id}`, { priority: true })).status).toBe(400);
+    expect((await as("x", "PATCH", `/api/radar/searches/${ids[2]}`, { priority: false })).json.priority).toBe(false);
+    const promoted = await as("x", "PATCH", `/api/radar/searches/${normal.json.id}`, { priority: true });
+    expect(promoted.status).toBe(200);
+    expect(promoted.json.priority).toBe(true);
+    // Compte lu : un compte Achat actif seulement (jamais un compte de vente ni un compte inconnu).
+    expect((await as("x", "PATCH", `/api/radar/searches/${normal.json.id}`, { connectionId: "radar-x-sale" })).status).toBe(400);
+    expect((await as("x", "PATCH", `/api/radar/searches/${normal.json.id}`, { connectionId: "radar-y-buy" })).status).toBe(400);
+    expect((await as("x", "PATCH", `/api/radar/searches/${normal.json.id}`, { connectionId: "radar-x-buy" })).json.connectionId).toBe("radar-x-buy");
+    // Source : retour au simulateur puis en direct.
+    const demo = await as("x", "PATCH", `/api/radar/searches/${ids[2]}`, { source: "demo" });
+    expect(demo.json).toMatchObject({ source: "demo", provider: "demo" });
+    expect((await as("x", "PATCH", `/api/radar/searches/${ids[2]}`, { source: "bogus" })).status).toBe(400);
+    // Intervalles calculés par le serveur : 60 s en direct (30 s seulement avec Radar Auto actif).
+    const list = await as("x", "GET", "/api/radar/searches");
+    expect(list.json.find((s: { id: string }) => s.id === ids[0]).intervalSeconds).toBe(60);
+    expect(list.json.find((s: { id: string }) => s.id === ids[2]).intervalSeconds).toBe(3600);
+    // Lecture en direct depuis l'API : sans Cloud sur le compte Achat → 409 avec l'erreur claire.
+    const live = await as("x", "POST", `/api/radar/searches/${ids[0]}/run`);
+    expect(live.status).toBe(409);
+    expect(live.json.error.message).toMatch(/Radar en direct demande Selio Cloud activé sur le compte Achat/);
+    // Autre organisation : ni lecture ni modification.
+    expect((await as("y", "PATCH", `/api/radar/searches/${ids[0]}`, { priority: false })).status).toBe(404);
+    expect((await as("y", "GET", "/api/radar/searches")).json).toEqual([]);
+  });
+
+  it("mesures « à mesurer » sans lecture en direct (le simulateur ne compte jamais)", async () => {
+    if (!available) return;
+    const empty = await as("y", "GET", "/api/radar/metrics?days=7");
+    expect(empty.status).toBe(200);
+    expect(empty.json).toMatchObject({ days: 7, status: "to_measure", label: "à mesurer", liveReads: 0, blocks: 0, blockRatePer1000: null, medianPublishToDetectSeconds: null, medianDetectToPurchaseSeconds: null, readsPerDay: [] });
+    const demo = await as("y", "POST", "/api/radar/searches", { name: "Simulateur", criteria: { brands: ["Nike"], maxPriceCents: 4000 } });
+    const ran = await as("y", "POST", `/api/radar/searches/${demo.json.id}/run`);
+    expect(ran.status).toBe(200);
+    expect(ran.json).toMatchObject({ source: "demo", skipped: null });
+    expect((await as("y", "GET", "/api/radar/metrics")).json).toMatchObject({ days: 30, status: "to_measure", liveReads: 0, blockRatePer1000: null });
+    expect((await as("y", "GET", "/api/radar/metrics?days=500")).json.days).toBe(90);
+    // Une lecture en direct d'une autre organisation n'est pas comptée ici.
+    await built.services.db.withOrg(orgX, (tx) => dbRepos.radarReads.add(tx, { searchId: null, connectionId: "radar-x-buy", source: "cloud", readAt: new Date().toISOString(), durationMs: 1200, outcome: "captcha", itemsSeen: 0, itemsNew: 0, factor: 1 }));
+    expect((await as("y", "GET", "/api/radar/metrics")).json.status).toBe("to_measure");
+    const mx = await as("x", "GET", "/api/radar/metrics");
+    expect(mx.json).toMatchObject({ status: "measured", liveReads: 1, blocks: 1, blockRatePer1000: 1000 });
+  });
+
+  it("Radar Auto : statut désactivé avec ses raisons, activation refusée, puis verrous ouverts (équipe, Cloud, accord) → achat simulé annulable", async () => {
+    if (!available) return;
+    const config = built.services.config!;
+    const saved = { ...config };
+    try {
+      const off = await as("x", "GET", "/api/radar/auto/status");
+      expect(off.status).toBe(200);
+      expect(off.json).toMatchObject({ active: false, realPurchase: false, account: { id: "radar-x-buy", label: "Achats X" }, settings: { enabled: false } });
+      expect(off.json.notice).toMatch(/adresse partagée tant qu'Ibrahim n'a pas tranché/);
+      const lock = (body: { locks: { key: string; ok: boolean }[] }, key: string) => body.locks.find((l) => l.key === key)!;
+      expect(off.json.locks.map((l: { key: string }) => l.key)).toEqual(["server", "shared_address", "organization", "cloud", "consent"]);
+      for (const key of ["server", "shared_address", "organization", "cloud", "consent"]) expect(lock(off.json, key).ok).toBe(false);
+      expect(off.json.reasons.join(" ")).toMatch(/RADAR_AUTO_ENABLED/);
+      expect(off.json.reasons.join(" ")).toMatch(/Radar en direct demande Selio Cloud activé sur le compte Achat/);
+      // Activation refusée tant que le verrou serveur est fermé, par l'organisation comme par la route Radar.
+      const refused = await as("x", "PATCH", "/api/org", { settings: { autoBuy: { enabled: true } } });
+      expect(refused.status).toBe(403);
+      expect(refused.json.error.details.notice).toMatch(/Ibrahim/);
+      expect((await as("x", "PATCH", "/api/radar/settings", { autoBuy: { enabled: true } })).status).toBe(403);
+      // Réglages Radar par la route de l'organisation (avec un autre paramètre), sans toucher à Radar Auto.
+      const radarCfg = await as("x", "PATCH", "/api/org", { name: "Radar X bis", settings: { radar: { alertMinScore: 80, quietHours: { from: 22, to: 8 } } } });
+      expect(radarCfg.status).toBe(200);
+      expect(radarCfg.json).toMatchObject({ name: "Radar X bis", settings: { radar: { alertMinScore: 80, quietHours: { from: 22, to: 8 }, alertsEnabled: true, maxPagesPerMinute: 10 }, autoBuy: { enabled: false } } });
+      expect((await as("x", "PATCH", "/api/org", { settings: { radar: { alertMinScore: 300 } } })).status).toBe(400);
+      expect((await as("x", "PATCH", "/api/org", { settings: { radar: { alertMinScore: 70 }, margin: { minMarginRate: 9 } } })).status).toBe(400);
+      expect((await as("x", "GET", "/api/auth/session")).json.org.settings.radar.alertMinScore).toBe(80);
+
+      // Verrou serveur ouvert pour les comptes de l'équipe (ici X seulement).
+      Object.assign(config, { radarAutoEnabled: true, radarAutoOrgIds: [orgX] });
+      const yStatus = await as("y", "GET", "/api/radar/auto/status");
+      expect(lock(yStatus.json, "server").ok).toBe(true);
+      expect(lock(yStatus.json, "shared_address").ok).toBe(false);
+      expect((await as("y", "PATCH", "/api/org", { settings: { autoBuy: { enabled: true } } })).status).toBe(403);
+      const enabled = await as("x", "PATCH", "/api/org", { settings: { autoBuy: { enabled: true, threshold: 85, dailyCapCents: 20000, maxItemCents: 8000, cancelWindowMinutes: 30, enabledBy: "pirate" } } });
+      expect(enabled.status).toBe(200);
+      expect(enabled.json.settings.autoBuy).toMatchObject({ enabled: true, threshold: 85, enabledBy: ctxX.userId });
+      expect(enabled.json.settings.autoBuy.enabledAt).toBeTruthy();
+      const half = await as("x", "GET", "/api/radar/auto/status");
+      expect(half.json.active).toBe(false);
+      expect(["server", "shared_address", "organization"].map((k) => lock(half.json, k).ok)).toEqual([true, true, true]);
+      expect(lock(half.json, "cloud").ok).toBe(false);
+      expect((await as("x", "POST", "/api/purchases/auto-run")).json).toMatchObject({ disabled: true, bought: 0 });
+
+      // Compte Achat relié à Selio Cloud : accord, activation, session (comme à la fin de la fenêtre de connexion).
+      expect((await as("x", "POST", "/api/cloud/consent", { version: CLOUD_CONSENT_VERSION, accepted: true })).status).toBe(200);
+      const account = await as("x", "POST", "/api/cloud/accounts", { connectionId: "radar-x-buy" });
+      expect(account.status).toBe(201);
+      const ticket = await cloudService.startLogin(ctxX, account.json.id);
+      await cloudService.completeLogin(built.services, ticket.loginSessionId, { cookies: [{ name: "_vinted_fr_session", value: "SESSION-RADAR-X", domain: ".vinted.fr", path: "/", expires: -1, httpOnly: true, secure: true, sameSite: "Lax" }], origins: [] });
+      const on = await as("x", "GET", "/api/radar/auto/status");
+      expect(on.json.active).toBe(true);
+      expect(on.json.locks.every((l: { ok: boolean }) => l.ok)).toBe(true);
+      expect(on.res.body).not.toContain("SESSION-RADAR-X");
+      // Recherche prioritaire relue toutes les 30 s quand Radar Auto est actif.
+      const searches = (await as("x", "GET", "/api/radar/searches")).json as { name: string; priority: boolean; source: string; intervalSeconds: number; id: string }[];
+      expect(searches.find((s) => s.priority && s.source === "cloud")!.intervalSeconds).toBe(30);
+      // Lecture en direct depuis l'API : le compte est prêt, mais seul le worker lit (503).
+      expect((await as("x", "POST", `/api/radar/searches/${searches.find((s) => s.source === "cloud")!.id}/run`)).status).toBe(503);
+
+      // Achat automatique sans navigateur (API) : une affaire LUE EN DIRECT n'est jamais « simulée » à la
+      // place du worker ; seule une affaire du simulateur l'est, annulable dans le délai ; achat réel faux.
+      const search = searches.find((s) => s.source === "cloud")!;
+      const liveOpp = await opportunity(orgX, search.id, "Pull exceptionnel lu en direct", 95);
+      const auto = await opportunity(orgX, search.id, "Pull exceptionnel Radar", 92, "demo_simulator");
+      const low = await opportunity(orgX, search.id, "Pull moyen Radar", 60, "demo_simulator");
+      const run = await as("x", "POST", "/api/purchases/auto-run");
+      expect(run.json).toMatchObject({ disabled: false, bought: 1, realPurchase: false, account: { id: "radar-x-buy" } });
+      expect(run.json.skipped).toContainEqual({ reason: "Affaire lue en direct : achetée seulement par le navigateur du worker", count: 1 });
+      const purchases = await as("x", "GET", "/api/purchases");
+      expect(purchases.json.some((x: { opportunityId: string }) => x.opportunityId === liveOpp.id)).toBe(false);
+      expect((await as("x", "GET", `/api/radar/opportunities/${liveOpp.id}`)).json.status).toBe("new");
+      const p = purchases.json.find((x: { opportunityId: string }) => x.opportunityId === auto.id);
+      expect(p).toMatchObject({ mode: "auto", status: "simulated", realPurchaseEnabled: false, connectionId: "radar-x-buy" });
+      expect(new Date(p.cancelableUntil).getTime()).toBeGreaterThan(Date.now());
+      expect(purchases.json.some((x: { opportunityId: string }) => x.opportunityId === low.id)).toBe(false);
+      const cancelled = await as("x", "POST", `/api/purchases/${p.id}/cancel`);
+      expect(cancelled.json.status).toBe("cancelled");
+      expect((await as("x", "GET", `/api/radar/opportunities/${auto.id}`)).json.status).toBe("dismissed");
+      // Autre organisation : n'annule rien chez X.
+      expect((await as("y", "POST", `/api/purchases/${p.id}/cancel`)).status).toBe(404);
+    } finally {
+      for (const k of Object.keys(config)) delete (config as Record<string, unknown>)[k];
+      Object.assign(config, saved);
+    }
+  });
+
+  it("affaire « 1 clic » : coût total, lien de l'annonce, demande en cours ; introuvable depuis une autre organisation", async () => {
+    if (!available) return;
+    const search = await as("x", "POST", "/api/radar/searches", { name: "1 clic", criteria: { maxPriceCents: 3000 } });
+    const opp = await opportunity(orgX, search.json.id, "Pull « 1 clic »", 81);
+    const detail = await as("x", "GET", `/api/radar/opportunities/${opp.id}`);
+    expect(detail.status).toBe(200);
+    expect(detail.json).toMatchObject({ id: opp.id, title: "Pull « 1 clic »", score: 81, search: { id: search.json.id, name: "1 clic", source: "demo" }, purchase: null, itemUrl: "https://www.vinted.fr/items/9001-pull" });
+    expect(detail.json.cost).toMatchObject({ itemCents: 2000, shippingCents: 450 });
+    expect(detail.json.cost.totalCents).toBe(detail.json.cost.itemCents + detail.json.cost.shippingCents + detail.json.cost.protectionCents);
+    expect((await as("x", "POST", `/api/radar/opportunities/${opp.id}/buy`, { paidCents: "trente" })).status).toBe(400);
+    // Prix réellement payé saisi par le client (port compris) : reporté tel quel dans Manager.
+    const bought = await as("x", "POST", `/api/radar/opportunities/${opp.id}/buy`, { paidCents: 2990 });
+    expect(bought.json).toMatchObject({ status: "simulated", mode: "manual", totalCents: 2990 });
+    expect((await as("x", "GET", `/api/radar/opportunities/${opp.id}`)).json.purchase).toMatchObject({ id: bought.json.id });
+    expect((await as("y", "GET", `/api/radar/opportunities/${opp.id}`)).status).toBe(404);
+    expect((await as("y", "POST", `/api/radar/opportunities/${opp.id}/buy`)).status).toBe(404);
+    expect((await as("x", "GET", "/api/radar/opportunities/inconnue")).status).toBe(404);
+  });
+
+  it("reprise 3-D Secure : mise en file pour le worker (une seule fois), délai dépassé → abandon et alerte, autre organisation → 404", async () => {
+    if (!available) return;
+    const search = await as("x", "POST", "/api/radar/searches", { name: "3DS", criteria: { maxPriceCents: 3000 } });
+    const opp = await opportunity(orgX, search.json.id, "Pull 3DS", 90);
+    const mkPurchase = (status: "awaiting_3ds" | "simulated", until: Date | null) => built.services.db.withOrg(orgX, (tx) => dbRepos.purchases.create(tx, { opportunityId: opp.id, dedupeKey: `test-3ds:${status}:${until?.getTime() ?? 0}`, maxPriceCents: 2620, budgetCents: 20000, status, mode: "auto", connectionId: "radar-x-buy", totalCents: 2620, awaiting3dsUntil: until ? until.toISOString() : null }));
+    const waiting = await mkPurchase("awaiting_3ds", new Date(Date.now() + 10 * 60_000));
+    expect((await as("y", "POST", `/api/purchases/${waiting.id}/resume`)).status).toBe(404);
+    // Sans Redis (serveur principal) : le worker est injoignable, réponse claire.
+    const noQueue = await as("x", "POST", `/api/purchases/${waiting.id}/resume`);
+    expect(noQueue.status).toBe(503);
+    expect(noQueue.json.error.code).toBe("radar_purchaser_unavailable");
+    if (redisServer) {
+      const queue = redisServer.queues.queues.get("selio-radar")!;
+      const queued = await as("x", "POST", `/api/purchases/${waiting.id}/resume`, undefined, redisServer);
+      expect(queued.status).toBe(202);
+      expect(queued.json).toMatchObject({ queued: true, purchase: { id: waiting.id, status: "awaiting_3ds" } });
+      expect((await as("x", "POST", `/api/purchases/${waiting.id}/resume`, undefined, redisServer)).status).toBe(202);
+      const job = await queue.getJob(`radar-resume-${waiting.id}`);
+      expect(job?.name).toBe("radar.resume");
+      expect(job?.data).toEqual({ orgId: orgX, purchaseId: waiting.id, userId: ctxX.userId });
+      expect(await queue.getJobCountByTypes("waiting", "delayed", "prioritized")).toBeGreaterThanOrEqual(1);
+      await job?.remove();
+    }
+    // Pas en attente de validation : 409.
+    const done = await mkPurchase("simulated", null);
+    expect((await as("x", "POST", `/api/purchases/${done.id}/resume`)).status).toBe(409);
+    // Délai dépassé : achat abandonné, affaire en observation, alerte en file pour le client.
+    await built.services.db.withOrg(orgX, (tx) => dbRepos.purchases.update(tx, waiting.id, { awaiting3dsUntil: new Date(Date.now() - 1000).toISOString() }));
+    const late = await as("x", "POST", `/api/purchases/${waiting.id}/resume`);
+    expect(late.status).toBe(409);
+    expect(late.json.error.message).toMatch(/délai de validation bancaire est dépassé/);
+    const after = (await as("x", "GET", "/api/purchases")).json.find((x: { id: string }) => x.id === waiting.id);
+    expect(after.status).toBe("cancelled");
+    expect(after.resultNote).toMatch(/Vérifiez dans Vinted/);
+    const alerts = await as("x", "GET", "/api/radar/alerts");
+    expect(alerts.json.some((a: { kind: string; dedupeKey: string; payload: { url: string } }) => a.kind === "payment_3ds" && a.dedupeKey === `payment_3ds_expired:${waiting.id}` && a.payload.url === `/app/radar/achats/${waiting.id}`)).toBe(true);
+    expect((await as("y", "GET", "/api/radar/alerts")).json).toEqual([]);
+  });
+
+  it("opérateur : /api/admin/radar (lectures, blocages, facteurs par organisation) sans aucune donnée de vendeur ; refusé aux clients", async () => {
+    if (!available) return;
+    expect((await as("x", "GET", "/api/admin/radar")).status).toBe(403);
+    const res = await as("ops", "GET", "/api/admin/radar?days=30");
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ days: 30, status: "measured" });
+    const rowX = res.json.orgs.find((o: { orgId: string }) => o.orgId === orgX);
+    expect(rowX).toMatchObject({ liveReads: 1, blocks: 1, blockRatePer1000: 1000, maxFactor: 1, plan: "agence" });
+    expect(rowX).toMatchObject({ liveSearches: 3, prioritySearches: 3 });
+    expect(rowX.demoSearches).toBeGreaterThanOrEqual(1);
+    // Ni pseudo, ni photo, ni titre, ni adresse d'annonce, ni session.
+    for (const secret of ["vendeur_radar_secret", "radar-secret.jpg", "Pull exceptionnel", "vinted.fr/items", "SESSION-RADAR-X"]) expect(res.res.body).not.toContain(secret);
   });
 });

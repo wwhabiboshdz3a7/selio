@@ -70,7 +70,18 @@ describe("client de démonstration", () => {
     await expect(client.createPurchaseRequest({ opportunityId: opps[0]!.id, maxPriceCents: 10_000, budgetCents: 20_000 })).rejects.toThrow(/doublon/);
     const c = await client.confirmPurchaseRequest(p.id);
     expect(c.status).toBe("simulated");
-    expect(c.checks.find((x) => x.code === "connector_authorized")?.ok).toBe(false);
+    // Achat fait par le client lui-même : seuls budget, prix maximum et marge sont vérifiés (avertissements, jamais bloquants).
+    expect(c.checks.map((x) => x.code).sort()).toEqual(["margin_positive", "price_within_max", "within_request_budget"]);
+    expect(c.resultNote).toMatch(/Selio n'a rien payé/);
+  });
+
+  it("« Je l'ai achetée » : jamais bloqué par le budget ou la marge, prix saisi reporté dans Manager", async () => {
+    const opps = await client.listOpportunities({ status: "new" });
+    const weak = opps.find((o) => o.estimate.marginCents <= 0) ?? opps[opps.length - 1]!;
+    const p = await client.quickBuy(weak.id, { paidCents: 4321 });
+    expect(p).toMatchObject({ status: "simulated", mode: "manual", totalCents: 4321 });
+    expect(p.reportedItemId).toBeTruthy();
+    await expect(client.quickBuy(weak.id, { paidCents: 100 })).rejects.toMatchObject({ status: 409 });
   });
 
   it("réinitialise la démonstration", async () => {
@@ -121,8 +132,10 @@ describe("nouveaux modules (démonstration)", () => {
     expect(["simulated", "blocked"]).toContain(p.status);
     expect(p.mode).toBe("manual");
     await expect(client.quickBuy(good.id)).rejects.toMatchObject({ status: 409 });
+    // Radar Auto est verrouillé en démonstration (RADAR_AUTO_ENABLED fermé, comme sur le serveur) : rien n'est évalué.
     const run = await client.runAutoBuy();
-    expect(run.evaluated).toBeGreaterThan(0);
+    expect(run).toMatchObject({ disabled: true, evaluated: 0, bought: 0 });
+    // L'achat automatique de départ reste annulable dans son délai.
     const purchases = await client.listPurchaseRequests();
     const auto = purchases.find((x) => x.mode === "auto" && x.status === "simulated" && x.cancelableUntil)!;
     const cancelled = await client.cancelPurchaseRequest(auto.id);

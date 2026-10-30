@@ -10,7 +10,7 @@ import type { Services } from "@selio/core";
 import { createPaymentProvider, loadPaymentConfig } from "@selio/connectors";
 import { createEmailProvider, loadEmailConfig, type EmailLogger } from "@selio/email";
 import { createStorageClient, loadStorageConfig } from "@selio/storage";
-import { cloudServicesConfig, startupNotices, type ApiEnv } from "./config";
+import { cloudServicesConfig, radarServicesConfig, startupNotices, type ApiEnv } from "./config";
 import { errorHandler } from "./errors";
 import authPlugin from "./plugins/auth";
 import authRoutes from "./routes/auth";
@@ -31,7 +31,9 @@ import studioRoutes from "./routes/studio";
 import helpRoutes from "./routes/help";
 import uploadsRoutes from "./routes/uploads";
 import cloudRoutes from "./routes/cloud";
-import { createQueues, type QueueHandle } from "./queue";
+import pushRoutes from "./routes/push";
+import { RADAR_QUEUE, createQueues, type QueueHandle } from "./queue";
+import { WebPushSender, loadVapidConfig } from "./push";
 import { CLOUD_LOGIN_QUEUE, createRedisCloudRelay, maskSecretsInUrl, type CloudRelay } from "./cloud-relay";
 
 export const API_VERSION = "0.1.0";
@@ -51,6 +53,9 @@ export function buildServices(env: ApiEnv, overrides: Partial<Services> = {}, lo
   const email = overrides.email ?? createEmailProvider(loadEmailConfig(env), { logger });
   // Paiement Revolut : null sans REVOLUT_SECRET_KEY (aucune commande créée) ; les tests injectent un client à HTTP simulé.
   const payments = overrides.payments !== undefined ? overrides.payments : createPaymentProvider(loadPaymentConfig(env), { logger });
+  // Notifications Web Push (alertes Radar, notification de test) : absent sans clés VAPID ; les tests injectent le leur.
+  const vapid = loadVapidConfig(env);
+  const push = "push" in overrides ? overrides.push : vapid ? new WebPushSender(vapid) : undefined;
   return {
     db,
     ai,
@@ -62,9 +67,12 @@ export function buildServices(env: ApiEnv, overrides: Partial<Services> = {}, lo
     publicWebUrl: overrides.publicWebUrl ?? env.PUBLIC_WEB_URL,
     payments,
     billing: overrides.billing ?? { franchiseTva: env.FRANCHISE_TVA },
-    // Réglages du Cloud (actions lourdes, comptes par organisation, navigateurs, option Pro, heures, ticket).
-    // Aucun exécuteur de navigateur dans l'API : `cloud` reste absent, seul le worker agit.
-    config: overrides.config ?? cloudServicesConfig(env),
+    // Réglages du Cloud (actions lourdes, comptes par organisation, navigateurs, option Pro, heures, ticket)
+    // et de Radar (verrous de Radar Auto, achat réel, délai 3-D Secure). Aucun navigateur dans l'API :
+    // `cloud` et `radar` restent absents (sauf injection par les tests), seul le worker lit et achète.
+    config: overrides.config ?? { ...cloudServicesConfig(env), ...radarServicesConfig(env) },
+    ...(push ? { push } : {}),
+    ...(overrides.radar ? { radar: overrides.radar } : {}),
   };
 }
 
@@ -111,7 +119,8 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(orderRoutes);
   await app.register(analyticsRoutes);
   await app.register(automationRoutes);
-  await app.register(radarRoutes);
+  // Reprise d'un achat après la validation 3-D Secure : le navigateur tenu ouvert vit dans le worker (file « selio-radar »).
+  await app.register(radarRoutes, { radarQueue: queues.queues.get(RADAR_QUEUE) ?? null });
   await app.register(connectionRoutes);
   await app.register(aiRoutes, { healthToken: env.AI_HEALTH_TOKEN });
   await app.register(billingRoutes);
@@ -124,6 +133,9 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   const loginQueue = queues.queues.get(CLOUD_LOGIN_QUEUE);
   const cloudRelay = env.CLOUD_ENABLED && env.REDIS_URL && loginQueue ? createRedisCloudRelay(env.REDIS_URL, loginQueue, { warn: (m) => app.log.warn(m) }) : null;
   await app.register(cloudRoutes, { enabled: env.CLOUD_ENABLED, relay: cloudRelay, activeHours: env.CLOUD_ACTIVE_HOURS, allowedOrigins: origins });
+  // Notifications de la PWA (clé publique VAPID seulement ; la clé privée ne quitte jamais le serveur).
+  const vapid = loadVapidConfig(env);
+  await app.register(pushRoutes, { publicKey: vapid?.publicKey ?? null });
 
   app.addHook("onClose", async () => {
     await cloudRelay?.close();

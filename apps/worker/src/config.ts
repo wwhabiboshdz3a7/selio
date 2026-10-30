@@ -4,8 +4,12 @@ import { z } from "zod";
 import { aiConfigSchema } from "@selio/ai";
 import { loadPaymentConfig, paymentConfigSchema } from "@selio/connectors";
 import { emailConfigSchema, loadEmailConfig } from "@selio/email";
+import type { ServicesConfig, radar } from "@selio/core";
+import { loadVapidConfig } from "./push";
 
 const bool = z.string().optional().transform((v) => v === "true" || v === "1");
+/** Texte facultatif : vide ou blanc = absent. */
+const optionalText = z.string().optional().transform((v) => (v && v.trim() ? v.trim() : undefined));
 
 /** Plage horaire « début-fin » en heures entières (ex. « 8-23 » : de 8 h à 23 h, fuseau de l'organisation). */
 export const activeHoursSchema = z
@@ -38,7 +42,37 @@ export const workerEnvSchema = z
     CRON_AUTOMATION_TICK: z.string().default("*/5 * * * *"),
     CRON_JOBS_PROCESS: z.string().default("* * * * *"),
     CRON_CONNECTOR_SYNC: z.string().default("*/15 * * * *"),
-    CRON_RADAR: z.string().default("0 * * * *"),
+    /**
+     * Selio Radar : passage toutes les 30 s (planning BullMQ `every`) — recherches dues selon leur rythme
+     * (60 s en direct, 30 s pour les prioritaires de Radar Auto, 1 h pour le simulateur, × facteur de
+     * ralentissement), dans le plafond de pages par minute.
+     */
+    RADAR_TICK_EVERY_MS: z.coerce.number().int().min(10_000).max(3_600_000).default(30_000),
+    /** Envoi des alertes Radar en file (notifications de la PWA) : chaque minute. */
+    CRON_ALERTS: z.string().default("* * * * *"),
+    /** Passage de Radar Auto (seulement si RADAR_AUTO_ENABLED) : toutes les 30 s. */
+    RADAR_AUTO_EVERY_MS: z.coerce.number().int().min(10_000).max(3_600_000).default(30_000),
+    /**
+     * Radar Auto, premier verrou côté serveur : faux par défaut, réservé aux comptes de l'équipe pour les
+     * tests ; pas activable pour les clients sur l'adresse partagée tant qu'Ibrahim n'a pas tranché.
+     */
+    RADAR_AUTO_ENABLED: bool,
+    /** Organisations de l'équipe autorisées (virgules) ; obligatoire en production si RADAR_AUTO_ENABLED=true. */
+    RADAR_AUTO_ORG_IDS: z.string().optional().transform((v) => (v ?? "").split(",").map((s) => s.trim()).filter(Boolean)),
+    /** Achat réel (D11) : faux par défaut ; sans lui, le parcours s'arrête avant le bouton de paiement. */
+    RADAR_REAL_PURCHASE: bool,
+    /** Pages lues en direct par minute sur toute la machine (toutes organisations ; défaut prudent 30). */
+    RADAR_MAX_PAGES_PER_MINUTE_GLOBAL: z.coerce.number().int().min(1).max(600).default(30),
+    /** Attente de la validation 3-D Secure par le client, navigateur tenu ouvert (ms). */
+    CLOUD_3DS_TIMEOUT_MS: z.coerce.number().int().min(60_000).max(30 * 60_000).default(600_000),
+    /** Budget d'une lecture de page Radar, navigateur compris (ms). */
+    RADAR_PAGE_BUDGET_MS: z.coerce.number().int().min(5_000).max(120_000).default(30_000),
+    /** Durée d'un achat Radar Auto jusqu'au paiement, hors attente 3-D Secure (ms). */
+    RADAR_PURCHASE_TIMEOUT_MS: z.coerce.number().int().min(20_000).max(300_000).default(90_000),
+    /** Notifications Web Push (alertes Radar) : mêmes clés VAPID que l'API ; absentes = alertes laissées en file. */
+    VAPID_PUBLIC_KEY: optionalText,
+    VAPID_PRIVATE_KEY: optionalText,
+    VAPID_SUBJECT: optionalText,
     CRON_RETENTION: z.string().default("0 3 * * *"),
     /**
      * Échéances d'abonnement (renouvellements, fins d'essai, relances J+1 / J+3 / J+7, annulation des
@@ -103,6 +137,45 @@ export function cloudServicesConfig(cfg: Pick<WorkerEnv, "CLOUD_HEAVY_ACTIONS" |
 }
 
 /**
+ * Réglages Radar transmis au cœur (`services.config`) : verrous de Radar Auto et achat réel fermés par
+ * défaut ; délai 3-D Secure (la demande d'achat expire en même temps que le navigateur tenu ouvert).
+ */
+export function radarServicesConfig(cfg: Pick<WorkerEnv, "RADAR_AUTO_ENABLED" | "RADAR_AUTO_ORG_IDS" | "RADAR_REAL_PURCHASE" | "CLOUD_3DS_TIMEOUT_MS">): Pick<ServicesConfig, "radarAutoEnabled" | "radarAutoOrgIds" | "radarRealPurchase"> & radar.RadarRuntimeConfig {
+  return {
+    radarAutoEnabled: cfg.RADAR_AUTO_ENABLED,
+    radarAutoOrgIds: cfg.RADAR_AUTO_ORG_IDS.length > 0 ? [...cfg.RADAR_AUTO_ORG_IDS] : undefined,
+    radarRealPurchase: cfg.RADAR_REAL_PURCHASE,
+    radar3dsTimeoutMs: cfg.CLOUD_3DS_TIMEOUT_MS,
+  };
+}
+
+/** Plannings de la file « selio-maintenance » : cron (`pattern`) ou intervalle (`every`, en ms). */
+export type MaintenanceSchedule = { name: string; pattern: string } | { name: string; every: number };
+
+/**
+ * Plannings du worker. « radar.tick » tourne toutes les 30 s, « alerts.send » chaque minute ;
+ * « radar.auto » n'existe que si RADAR_AUTO_ENABLED (sinon son planning est retiré au démarrage).
+ */
+export function maintenanceSchedules(env: WorkerEnv): MaintenanceSchedule[] {
+  return [
+    { name: "automation.tick", pattern: env.CRON_AUTOMATION_TICK },
+    { name: "jobs.process", pattern: env.CRON_JOBS_PROCESS },
+    { name: "connector.sync", pattern: env.CRON_CONNECTOR_SYNC },
+    { name: "radar.tick", every: env.RADAR_TICK_EVERY_MS },
+    { name: "alerts.send", pattern: env.CRON_ALERTS },
+    ...(env.RADAR_AUTO_ENABLED ? [{ name: "radar.auto", every: env.RADAR_AUTO_EVERY_MS }] : []),
+    { name: "retention.cleanup", pattern: env.CRON_RETENTION },
+    { name: "billing.renew", pattern: env.CRON_BILLING_RENEW },
+    { name: "cloud.tick", pattern: env.CRON_CLOUD },
+  ];
+}
+
+/** Plannings retirés au démarrage quand ils ne doivent plus tourner (Radar Auto fermé). */
+export function disabledSchedules(env: WorkerEnv): string[] {
+  return env.RADAR_AUTO_ENABLED ? [] : ["radar.auto"];
+}
+
+/**
  * Fenêtres de connexion simultanées sur la machine : jamais tous les navigateurs, un créneau reste
  * toujours aux actions (CLOUD_MAX_BROWSERS - 1, au moins 1). La limite par organisation est dans le cœur.
  */
@@ -115,9 +188,22 @@ export function cloudDrainMs(actionTimeoutMs: number): number {
   return actionTimeoutMs + 15_000;
 }
 
-/** Âge au-delà duquel un dossier de travail Chromium est forcément abandonné (action ou fenêtre la plus longue + marge). */
-export function cloudProfileMaxAgeMs(cfg: Pick<WorkerEnv, "CLOUD_ACTION_TIMEOUT_MS" | "CLOUD_LOGIN_TIMEOUT_MS">): number {
-  return Math.max(cfg.CLOUD_ACTION_TIMEOUT_MS, cfg.CLOUD_LOGIN_TIMEOUT_MS) + 3 * 60_000;
+/**
+ * Durée de vie maximale d'un navigateur d'achat Radar Auto : parcours jusqu'au paiement, attente de la
+ * validation 3-D Secure (navigateur tenu ouvert), plus une marge pour relire la confirmation.
+ */
+export function radarBrowsingMaxMs(cfg: Pick<WorkerEnv, "RADAR_PURCHASE_TIMEOUT_MS" | "CLOUD_3DS_TIMEOUT_MS">): number {
+  return cfg.RADAR_PURCHASE_TIMEOUT_MS + cfg.CLOUD_3DS_TIMEOUT_MS + 60_000;
+}
+
+/**
+ * Âge au-delà duquel un dossier de travail Chromium est forcément abandonné : action, fenêtre de
+ * connexion, page Radar ou achat Radar Auto le plus long (attente 3-D Secure comprise), plus une marge.
+ * Un navigateur d'achat qui attend la banque n'écrit rien dans son dossier : le balayage ne doit
+ * jamais le supprimer sous lui.
+ */
+export function cloudProfileMaxAgeMs(cfg: Pick<WorkerEnv, "CLOUD_ACTION_TIMEOUT_MS" | "CLOUD_LOGIN_TIMEOUT_MS" | "RADAR_PAGE_BUDGET_MS" | "RADAR_PURCHASE_TIMEOUT_MS" | "CLOUD_3DS_TIMEOUT_MS">): number {
+  return Math.max(cfg.CLOUD_ACTION_TIMEOUT_MS, cfg.CLOUD_LOGIN_TIMEOUT_MS, cfg.RADAR_PAGE_BUDGET_MS, radarBrowsingMaxMs(cfg)) + 3 * 60_000;
 }
 
 /** Le Cloud n'agit que si CLOUD_ENABLED=true et qu'un Chromium local est indiqué. */
@@ -130,10 +216,15 @@ export function loadEnv(env: Record<string, string | undefined> = process.env): 
   if (!parsed.success) throw new Error(`Configuration worker invalide :\n${parsed.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n")}`);
   if (parsed.data.NODE_ENV === "production" && (parsed.data.ALLOW_AI_FALLBACK || parsed.data.AI_PROVIDER === "mock")) throw new Error("En production : AI_PROVIDER=ollama et ALLOW_AI_FALLBACK=false.");
   if (parsed.data.NODE_ENV === "production" && !parsed.data.CLOUD_CHROMIUM_SANDBOX) throw new Error("En production : CLOUD_CHROMIUM_SANDBOX=false est refusé (Chromium ne tourne jamais sans son bac à sable).");
-  // Paiement ou email à moitié configurés (ou mode live non autorisé) : arrêt explicite, comme l'API.
+  // Radar Auto reste réservé aux comptes de l'équipe : en production, la liste est obligatoire (comme l'API).
+  if (parsed.data.NODE_ENV === "production" && parsed.data.RADAR_AUTO_ENABLED && parsed.data.RADAR_AUTO_ORG_IDS.length === 0) {
+    throw new Error("Configuration worker invalide :\n  - RADAR_AUTO_ENABLED=true exige RADAR_AUTO_ORG_IDS en production (Radar Auto réservé aux comptes de l'équipe, pas aux clients sur l'adresse partagée).");
+  }
+  // Paiement, email ou notifications à moitié configurés (ou mode live non autorisé) : arrêt explicite, comme l'API.
   try {
     loadPaymentConfig(parsed.data);
     loadEmailConfig(parsed.data);
+    loadVapidConfig(parsed.data);
   } catch (err) {
     throw new Error(`Configuration worker invalide :\n  - ${err instanceof Error ? err.message : String(err)}`);
   }

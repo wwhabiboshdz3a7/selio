@@ -8,6 +8,7 @@ import { daysLeft } from "../lib/billing";
 import { REVIEW_THRESHOLD } from "@selio/domain";
 import { useClient, useData, useRequiredSession, useSession } from "../lib/data/provider";
 import { useTheme } from "../lib/theme";
+import { unsubscribeOnLogout } from "../lib/push";
 import { Logo } from "../components/Logo";
 import { ROLE_LABELS } from "@selio/contracts";
 import { HandCoins } from "lucide-react";
@@ -128,7 +129,9 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
     window.scrollTo({ top: 0 });
   }, [location.pathname]);
   const onboardingDone = s.org.settings.onboarding.dismissed || s.org.settings.onboarding.completedSteps.length >= 6;
-  const autoBuyOn = s.org.settings.autoBuy.enabled;
+  // Radar Auto « Activé » seulement si tous ses verrous sont levés (verrou serveur fermé par défaut).
+  const autoBuyStatus = useQuery({ queryKey: ["radar-auto"], queryFn: () => client.autoBuyStatus(), enabled: s.org.settings.autoBuy.enabled, staleTime: 60_000 });
+  const autoBuyOn = s.org.settings.autoBuy.enabled && autoBuyStatus.data?.active === true;
   // Espace affiché : celui de l'adresse ; les pages communes (paramètres, administration) gardent le dernier.
   const ownedArea = spaceForPath(location.pathname);
   const area: SpaceArea = ownedArea ?? readLastSpace();
@@ -220,7 +223,8 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
           items={[
             { label: resolved === "dark" ? "Mode clair" : "Mode sombre", icon: resolved === "dark" ? <Sun /> : <Moon />, onSelect: () => setPreference(resolved === "dark" ? "light" : "dark") },
             { label: "Paramètres", icon: <Settings />, onSelect: () => navigate("/app/settings") },
-            { label: "Se déconnecter", icon: <LogOut />, onSelect: async () => { await client.logout(); navigate("/connexion"); } },
+            // Les alertes Radar de cet appareil sont retirées avant la déconnexion (best effort, jamais bloquant).
+            { label: "Se déconnecter", icon: <LogOut />, onSelect: async () => { await unsubscribeOnLogout(client); await client.logout(); navigate("/connexion"); } },
           ]}
         />
       </div>

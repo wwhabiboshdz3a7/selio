@@ -48,6 +48,9 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Notifications push (alertes Selio Radar) : gestionnaire « push » et « notificationclick » dans
+        // public/push-handler.js, chargé par le service worker généré (workbox reste en generateSW).
+        importScripts: ["push-handler.js"],
         globPatterns: ["**/*.{js,css,html,png,woff2,webmanifest}"],
         navigateFallback: "/index.html",
         navigateFallbackDenylist: [/^\/api\//],

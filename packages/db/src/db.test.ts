@@ -266,6 +266,203 @@ describe("base de données", () => {
     expect(await app.withOrg(orgA.id, (tx) => repos.cloudAccounts.list(tx))).toHaveLength(0);
   });
 
+  it("0012 : Selio Radar — mesures, abonnements, alertes et cache isolés par RLS, dédoublonnage, purge des données du vendeur", async () => {
+    if (!available) return;
+    const tables = await owner.withGlobal((tx) => tx.query<{ tablename: string; rowsecurity: boolean; forcerls: boolean }>("select c.relname as tablename, c.relrowsecurity as rowsecurity, c.relforcerowsecurity as forcerls from pg_class c where c.relname = any($1) and c.relkind = 'r' order by 1", [["radar_reads", "push_subscriptions", "radar_alerts", "embeddings_cache"]]));
+    expect(tables.map((t) => t.tablename)).toEqual(["embeddings_cache", "push_subscriptions", "radar_alerts", "radar_reads"]);
+    for (const t of tables) expect(t, t.tablename).toMatchObject({ rowsecurity: true, forcerls: true });
+    const { orgA, orgB, userA, userB } = await owner.withGlobal(async (tx) => {
+      const userA = await repos.users.create(tx, { email: "radar-a@test.local", displayName: "RA", passwordHash: "x", passwordSalt: "y" });
+      const userB = await repos.users.create(tx, { email: "radar-b@test.local", displayName: "RB", passwordHash: "x", passwordSalt: "y" });
+      const orgA = await repos.orgs.create(tx, { name: "Radar A", slug: "radar-a", settings: {} });
+      const orgB = await repos.orgs.create(tx, { name: "Radar B", slug: "radar-b", settings: {} });
+      await repos.memberships.create(tx, { orgId: orgA.id, userId: userA.id, role: "owner" });
+      await repos.memberships.create(tx, { orgId: orgB.id, userId: userB.id, role: "owner" });
+      return { orgA, orgB, userA, userB };
+    });
+    const now = new Date("2026-10-30T10:00:00.000Z");
+    const { search, opp } = await app.withOrg(orgA.id, async (tx) => {
+      const conn = await repos.connections.create(tx, { id: "radar-conn-a", provider: "vinted", label: "Achats", status: "connected", usage: "purchase" });
+      const search = await repos.searches.create(tx, { name: "Pulls", source: "cloud", priority: true, connectionId: conn.id });
+      expect(search).toMatchObject({ source: "cloud", priority: true, slowdownFactor: 1, pagesRead: 0, blocksCount: 0, lastReadAt: null, lastBlockAt: null });
+      expect(await repos.searches.countPriority(tx)).toBe(1);
+      expect(await repos.searches.countPriority(tx, search.id)).toBe(0);
+      // Mesures d'une lecture : compteurs incrémentés en SQL, dernier blocage daté.
+      const after = await repos.searches.recordRead(tx, search.id, { readAt: now.toISOString(), livePages: 1, blocked: true, slowdownFactor: 2 });
+      expect(after).toMatchObject({ pagesRead: 1, blocksCount: 1, slowdownFactor: 2, lastReadAt: now.toISOString(), lastBlockAt: now.toISOString(), lastRunAt: now.toISOString() });
+      const ok = await repos.searches.recordRead(tx, search.id, { readAt: "2026-10-30T10:02:00.000Z", livePages: 1, blocked: false, slowdownFactor: 2 });
+      expect(ok).toMatchObject({ pagesRead: 2, blocksCount: 1, lastBlockAt: now.toISOString() });
+      // Une annonce Vinted ne donne qu'une affaire par organisation.
+      const observed = { priceCents: 1500, shippingCents: 450, seenAt: now.toISOString(), source: "connector" as const, externalRef: "4242", publishedAt: "2026-10-30T09:58:00.000Z", publishedAtSource: "absolute" as const, detectedAt: now.toISOString(), sellerHandle: "vendeuse_x", sellerRating: 4.9, sellerReviews: 12, photoUrl: "https://images.vinted.net/p.jpg", url: "https://www.vinted.fr/items/4242-pull" };
+      const estimate = { resalePriceCents: 4000, marginCents: 1500, marginRate: 0.4, confidence: "medium" as const, method: "embeddings", comparableCount: 3 };
+      const opp = await repos.opportunities.create(tx, { searchId: search.id, title: "Pull Ralph Lauren", observed, estimate, score: 88, status: "new" } as never);
+      expect(opp.observed).toMatchObject({ externalRef: "4242", detectedAt: now.toISOString() });
+      expect((await repos.opportunities.byExternalRef(tx, "4242"))?.id).toBe(opp.id);
+      expect(await repos.opportunities.byExternalRef(tx, "9999")).toBeNull();
+      expect(await repos.opportunities.detectionDelays(tx, "2026-10-01T00:00:00.000Z")).toEqual([{ publishedAt: "2026-10-30T09:58:00.000Z", detectedAt: now.toISOString() }]);
+      // Stock initial, date relative à l'heure près ou d'origine inconnue : hors de la mesure du délai.
+      const extra = (ref: string, o: Record<string, unknown>) => repos.opportunities.create(tx, { searchId: search.id, title: `Pull ${ref}`, observed: { ...observed, externalRef: ref, ...o }, estimate, score: 50, status: "new" } as never);
+      await extra("4243", { initialStock: true });
+      await extra("4244", { publishedAtSource: "relative", publishedAt: "2026-10-30T08:00:00.000Z" });
+      await extra("4245", { publishedAtSource: "unknown" });
+      await extra("4246", { publishedAtSource: "relative", publishedAt: "2026-10-30T09:57:00.000Z" });
+      expect((await repos.opportunities.detectionDelays(tx, "2026-10-01T00:00:00.000Z")).map((d) => d.publishedAt).sort()).toEqual(["2026-10-30T09:57:00.000Z", "2026-10-30T09:58:00.000Z"]);
+      await tx.query("delete from opportunities where org_id = $1 and observed->>'externalRef' in ('4243', '4244', '4245', '4246')", [tx.orgId]);
+      // Ralentissement par organisation : facteur et date du dernier blocage, gardés hors des recherches.
+      expect(await repos.radarOrgState.get(tx)).toEqual({ slowdownFactor: 1, lastBlockAt: null });
+      await repos.radarOrgState.set(tx, { slowdownFactor: 4, blockAt: now.toISOString() });
+      await repos.radarOrgState.set(tx, { slowdownFactor: 200 });
+      expect(await repos.radarOrgState.get(tx)).toEqual({ slowdownFactor: 64, lastBlockAt: now.toISOString() });
+      // Lectures anormales consécutives : +1, remis à zéro par une lecture correcte, arrêt avec la raison.
+      await repos.searches.recordRead(tx, search.id, { readAt: now.toISOString(), livePages: 1, blocked: false, slowdownFactor: 1, anomaly: true });
+      expect((await repos.searches.recordRead(tx, search.id, { readAt: now.toISOString(), livePages: 1, blocked: false, slowdownFactor: 1, anomaly: true })).consecutiveFailures).toBe(2);
+      expect((await repos.searches.recordRead(tx, search.id, { readAt: now.toISOString(), livePages: 1, blocked: false, slowdownFactor: 1, anomaly: null })).consecutiveFailures).toBe(2);
+      expect((await repos.searches.recordRead(tx, search.id, { readAt: now.toISOString(), livePages: 1, blocked: false, slowdownFactor: 1, anomaly: false })).consecutiveFailures).toBe(0);
+      expect(await repos.searches.suspend(tx, search.id, "Page non reconnue")).toMatchObject({ enabled: false, suspendedReason: "Page non reconnue" });
+      await repos.searches.update(tx, search.id, { enabled: true, suspendedReason: null });
+      // Compte tenu par un achat en attente de la validation 3-D Secure : aucun verrou (lecture, action, achat) jusqu'à l'échéance.
+      const acc = await repos.cloudAccounts.create(tx, { connectionId: conn.id, status: "active" });
+      await repos.cloudAccounts.hold(tx, acc.id, "2026-10-30T10:10:00.000Z");
+      expect(await repos.cloudAccounts.heldUntil(tx, acc.id)).toBe("2026-10-30T10:10:00.000Z");
+      expect(await repos.cloudAccounts.lock(tx, acc.id, now.toISOString(), "2026-10-30T09:45:00.000Z")).toBeNull();
+      expect(await repos.cloudAccounts.lock(tx, acc.id, "2026-10-30T10:10:01.000Z", "2026-10-30T09:55:01.000Z")).not.toBeNull();
+      await repos.cloudAccounts.unlock(tx, acc.id);
+      await repos.cloudAccounts.release(tx, acc.id);
+      expect(await repos.cloudAccounts.lock(tx, acc.id, now.toISOString(), "2026-10-30T09:45:00.000Z")).not.toBeNull();
+      await tx.query("delete from cloud_accounts where id = $1", [acc.id]);
+      await tx.query("update radar_searches set pages_read = 2, last_read_at = $2, last_run_at = $2 where id = $1", [search.id, "2026-10-30T10:02:00.000Z"]);
+      return { search, opp };
+    });
+    await expect(app.withOrg(orgA.id, (tx) => repos.opportunities.create(tx, { searchId: search.id, title: "Doublon", observed: { ...opp.observed }, estimate: opp.estimate, score: 10 }))).rejects.toMatchObject({ code: "conflict" });
+    // Contraintes : source, résultat de lecture, sorte de vecteur, une seule demande d'achat active par affaire.
+    await expect(app.withOrg(orgA.id, (tx) => tx.query("update radar_searches set source = 'vinted' where id = $1", [search.id]))).rejects.toMatchObject({ code: "validation" });
+    await expect(app.withOrg(orgA.id, (tx) => tx.query("insert into radar_reads (org_id, outcome) values ($1, 'warning')", [tx.orgId]))).rejects.toMatchObject({ code: "validation" });
+    await expect(app.withOrg(orgA.id, (tx) => tx.query("insert into embeddings_cache (org_id, kind, ref, model, dims, text_hash, vector) values ($1, 'seller', 'x', 'm', 1, 'h', '[1]')", [tx.orgId]))).rejects.toMatchObject({ code: "validation" });
+
+    await app.withOrg(orgA.id, async (tx) => {
+      // Mesures : fenêtre glissante, plafond par minute (le simulateur ne compte pas), par jour, rétention 90 jours.
+      const read = (readAt: string, outcome: "ok" | "captcha" | "rate_limited" | "error", source: "cloud" | "demo" = "cloud") => repos.radarReads.add(tx, { searchId: search.id, connectionId: "radar-conn-a", source, readAt, durationMs: 1234.4, outcome, itemsSeen: 20, itemsNew: 2, factor: 1 });
+      expect(await read("2026-10-30T09:59:30.000Z", "ok")).toMatchObject({ durationMs: 1234, outcome: "ok", source: "cloud" });
+      await read("2026-10-30T09:59:40.000Z", "captcha");
+      await read("2026-10-30T09:59:50.000Z", "ok", "demo");
+      await read("2026-10-29T12:00:00.000Z", "rate_limited");
+      await read("2026-10-29T12:01:00.000Z", "error");
+      await read("2026-07-01T12:00:00.000Z", "ok");
+      expect(await repos.radarReads.countLiveSince(tx, "2026-10-30T09:59:00.000Z")).toBe(2);
+      expect(await repos.radarReads.liveWindow(tx, 1000)).toEqual({ reads: 5, blocks: 2 });
+      expect(await repos.radarReads.liveWindow(tx, 2)).toEqual({ reads: 2, blocks: 1 });
+      expect(await repos.radarReads.dailyLive(tx, "2026-10-29T00:00:00.000Z")).toEqual([{ day: "2026-10-29", reads: 2, blocks: 1 }, { day: "2026-10-30", reads: 2, blocks: 1 }]);
+      expect(await repos.radarReads.purgeOlderThan(tx, 90, now)).toBe(1);
+      expect(await repos.radarReads.list(tx, { searchId: search.id })).toHaveLength(5);
+      // Pages d'un achat Radar Auto : comptées dans les plafonds par minute et dans la fenêtre (en pages).
+      const buyRead = await repos.radarReads.add(tx, { kind: "purchase", pages: 3, searchId: search.id, connectionId: "radar-conn-a", source: "cloud", readAt: "2026-10-30T09:59:55.000Z", durationMs: 9000, outcome: "page_changed", itemsSeen: 0, itemsNew: 0, factor: 1 });
+      expect(buyRead).toMatchObject({ kind: "purchase", pages: 3, outcome: "page_changed" });
+      expect(await repos.radarReads.countLiveSince(tx, "2026-10-30T09:59:00.000Z")).toBe(5);
+      expect(await repos.radarReads.liveWindow(tx, 1)).toEqual({ reads: 3, blocks: 0 });
+      await repos.radarReads.setItemsNew(tx, buyRead.id, 4);
+      expect((await repos.radarReads.list(tx, { limit: 1 }))[0]).toMatchObject({ id: buyRead.id, itemsNew: 4 });
+      await tx.query("delete from radar_reads where id = $1", [buyRead.id]);
+
+      // Abonnements Web Push : adresse unique, réabonnement remis à zéro, désactivation et échecs.
+      const sub = await repos.pushSubscriptions.upsert(tx, { userId: userA.id, endpoint: "https://push.example/abc", p256dh: "p".repeat(40), auth: "a".repeat(16), userAgent: "Mozilla/5.0 ".repeat(30) });
+      expect(sub.userAgent?.length).toBe(120);
+      expect(await repos.pushSubscriptions.markFailure(tx, sub.id, now.toISOString(), 2)).toMatchObject({ failures: 1, disabledAt: null });
+      expect(await repos.pushSubscriptions.markFailure(tx, sub.id, now.toISOString(), 2)).toMatchObject({ failures: 2, disabledAt: now.toISOString() });
+      expect(await repos.pushSubscriptions.listActive(tx)).toHaveLength(0);
+      const again = await repos.pushSubscriptions.upsert(tx, { userId: userA.id, endpoint: "https://push.example/abc", p256dh: "q".repeat(40), auth: "b".repeat(16), userAgent: null });
+      expect(again).toMatchObject({ id: sub.id, failures: 0, disabledAt: null, p256dh: "q".repeat(40) });
+      await repos.pushSubscriptions.markUsed(tx, sub.id, now.toISOString());
+      expect((await repos.pushSubscriptions.listActive(tx, userA.id)).map((x) => x.lastUsedAt)).toEqual([now.toISOString()]);
+      expect(await repos.pushSubscriptions.listActive(tx, userB.id)).toHaveLength(0);
+      expect((await repos.pushSubscriptions.listActive(tx))[0]).toMatchObject({ role: "owner" });
+      // Abonnement d'un utilisateur qui n'est pas (ou plus) membre de l'organisation : jamais servi.
+      await repos.pushSubscriptions.upsert(tx, { userId: userB.id, endpoint: "https://push.example/non-membre", p256dh: "p".repeat(40), auth: "a".repeat(16), userAgent: null });
+      expect((await repos.pushSubscriptions.listActive(tx)).map((x) => x.endpoint)).toEqual(["https://push.example/abc"]);
+      expect(await repos.pushSubscriptions.removeForUser(tx, tx.orgId!, userB.id)).toBe(1);
+      expect(await repos.pushSubscriptions.removeById(tx, sub.id, userB.id)).toBe(false);
+      await repos.pushSubscriptions.disable(tx, sub.id, now.toISOString());
+      expect(await repos.pushSubscriptions.listActive(tx)).toHaveLength(0);
+
+      // File d'alertes : une seule par affaire, prise conditionnelle, envoi, rétention.
+      const payload = { title: "Affaire Radar : Pull Ralph Lauren", body: "15,00 € · note 88 · revente estimée 40,00 €", url: `/app/radar/affaires/${opp.id}` };
+      const alert = await repos.radarAlerts.enqueue(tx, { kind: "opportunity", opportunityId: opp.id, dedupeKey: `opportunity:${opp.id}`, payload, scheduledFor: now.toISOString() });
+      expect(alert).toMatchObject({ status: "queued", attempts: 0, channel: "push", payload });
+      expect(await repos.radarAlerts.enqueue(tx, { kind: "opportunity", opportunityId: opp.id, dedupeKey: `opportunity:${opp.id}`, payload, scheduledFor: now.toISOString() })).toBeNull();
+      expect(await repos.radarAlerts.enqueue(tx, { kind: "opportunity", opportunityId: opp.id, dedupeKey: `autre:${opp.id}`, payload, scheduledFor: now.toISOString() })).toBeNull();
+      expect(await repos.radarAlerts.due(tx, "2026-10-30T09:00:00.000Z")).toHaveLength(0);
+      expect((await repos.radarAlerts.due(tx, now.toISOString())).map((a) => a.id)).toEqual([alert!.id]);
+      expect(await repos.radarAlerts.claim(tx, alert!.id, 0, "2026-10-30T10:02:00.000Z")).toMatchObject({ attempts: 1 });
+      expect(await repos.radarAlerts.claim(tx, alert!.id, 0, "2026-10-30T10:02:00.000Z")).toBeNull();
+      expect(await repos.radarAlerts.due(tx, now.toISOString())).toHaveLength(0);
+      await repos.radarAlerts.markSent(tx, alert!.id, now.toISOString());
+      expect(await repos.radarAlerts.byDedupeKey(tx, `opportunity:${opp.id}`)).toMatchObject({ status: "sent", sentAt: now.toISOString() });
+      expect(await repos.radarAlerts.purgeOlderThan(tx, 90, new Date("2027-03-01T00:00:00.000Z"))).toBe(1);
+
+      // Cache des embeddings : un vecteur par (sorte, référence, modèle), mis à jour si le texte change.
+      expect(await repos.embeddingsCache.put(tx, [{ kind: "sale", ref: "o1", model: "m1", textHash: "h1", vector: [0.1, 0.2] }, { kind: "sale", ref: "o2", model: "m1", textHash: "h2", vector: [] }])).toBe(1);
+      await repos.embeddingsCache.put(tx, [{ kind: "sale", ref: "o1", model: "m1", textHash: "h1b", vector: [0.3, 0.4, 0.5] }, { kind: "sale", ref: "o1", model: "m2", textHash: "h1", vector: [1] }]);
+      const cached = await repos.embeddingsCache.get(tx, "sale", ["o1", "o2"], "m1");
+      expect([...cached.entries()]).toEqual([["o1", { vector: [0.3, 0.4, 0.5], textHash: "h1b" }]]);
+      expect(await repos.embeddingsCache.count(tx)).toBe(2);
+
+      // Achats : montant engagé (réservation de l'achat automatique comprise), attente 3-D Secure, délais.
+      const base = { opportunityId: opp.id, maxPriceCents: 2000, budgetCents: 5000 };
+      const p1 = await repos.purchases.create(tx, { ...base, dedupeKey: `purchase:${opp.id}`, status: "awaiting_3ds", mode: "auto", totalCents: 1820, awaiting3dsUntil: "2026-10-30T10:15:00.000Z", confirmedAt: now.toISOString() });
+      expect(p1).toMatchObject({ status: "awaiting_3ds", totalCents: 1820, orderRef: null, reportedItemId: null });
+      expect(await repos.purchases.spentSince(tx, "2026-10-30T00:00:00.000Z")).toBe(1820);
+      expect(await repos.purchases.spentSince(tx, "2026-10-30T00:00:00.000Z", p1.id)).toBe(0);
+      expect(await repos.purchases.awaiting3dsCount(tx)).toBe(1);
+      // Plafond du jour : une demande bloquée ou annulée dont « Payer » a été cliqué reste comptée ;
+      // un achat fait à la main par le client n'entre pas dans le plafond de Radar Auto.
+      const opp2 = await repos.opportunities.create(tx, { searchId: search.id, title: "Pull 2", observed: { ...opp.observed, externalRef: "5252" }, estimate: opp.estimate, score: 50 });
+      const opp3 = await repos.opportunities.create(tx, { searchId: search.id, title: "Pull 3", observed: { ...opp.observed, externalRef: "5353" }, estimate: opp.estimate, score: 50 });
+      const uncertain = await repos.purchases.create(tx, { opportunityId: opp2.id, maxPriceCents: 3000, budgetCents: 5000, dedupeKey: `purchase:${opp2.id}`, status: "blocked", mode: "auto", paymentAttempted: true, confirmedAt: now.toISOString() });
+      expect(uncertain.paymentAttempted).toBe(true);
+      await repos.purchases.create(tx, { opportunityId: opp3.id, maxPriceCents: 900, budgetCents: 5000, dedupeKey: `purchase:${opp3.id}`, status: "simulated", mode: "manual", totalCents: 900, executedAt: now.toISOString() });
+      expect(await repos.purchases.spentSince(tx, "2026-10-30T00:00:00.000Z")).toBe(1820 + 3000);
+      const draft = await repos.purchases.create(tx, { opportunityId: opp3.id, maxPriceCents: 900, budgetCents: 5000, dedupeKey: `purchase-draft:${opp3.id}`, status: "draft", mode: "auto" });
+      expect(await repos.purchases.deleteDraft(tx, draft.id)).toBe(true);
+      expect(await repos.purchases.deleteDraft(tx, uncertain.id)).toBe(false);
+      await tx.query("delete from purchase_requests where opportunity_id in ($1, $2)", [opp2.id, opp3.id]);
+      await tx.query("delete from opportunities where id in ($1, $2)", [opp2.id, opp3.id]);
+      expect(await repos.purchases.awaiting3dsExpired(tx, "2026-10-30T10:10:00.000Z")).toHaveLength(0);
+      expect((await repos.purchases.awaiting3dsExpired(tx, "2026-10-30T10:16:00.000Z")).map((p) => p.id)).toEqual([p1.id]);
+      const item = await repos.items.create(tx, { title: "Pull Ralph Lauren", purchasePriceCents: 1820, status: "in_stock", tags: ["radar"] });
+      await repos.purchases.update(tx, p1.id, { status: "executed", executedAt: "2026-10-30T10:01:30.000Z", realPurchaseEnabled: true, orderRef: "V-123", reportedItemId: item.id });
+      expect(await repos.purchases.detectToPurchaseDelays(tx, "2026-10-01T00:00:00.000Z")).toEqual([{ detectedAt: now.toISOString(), executedAt: "2026-10-30T10:01:30.000Z" }]);
+    });
+
+    // RLS : l'organisation B ne voit rien de A ; un appareil qui s'abonne pour B quitte A.
+    await app.withOrg(orgB.id, async (tx) => {
+      expect(await tx.query("select id from radar_reads")).toHaveLength(0);
+      expect(await tx.query("select id from radar_alerts")).toHaveLength(0);
+      expect(await tx.query("select id from embeddings_cache")).toHaveLength(0);
+      expect(await repos.pushSubscriptions.list(tx)).toHaveLength(0);
+      const moved = await repos.pushSubscriptions.upsert(tx, { userId: userB.id, endpoint: "https://push.example/abc", p256dh: "r".repeat(40), auth: "c".repeat(16), userAgent: null });
+      expect(moved.orgId).toBe(orgB.id);
+    });
+    await expect(app.withOrg(orgB.id, (tx) => tx.query("insert into radar_reads (org_id, outcome) values ($1, 'ok')", [orgA.id]))).rejects.toBeInstanceOf(Error);
+    expect(await app.withOrg(orgA.id, (tx) => repos.pushSubscriptions.list(tx))).toHaveLength(0);
+    // Une seule demande active par affaire (index unique partiel).
+    await expect(app.withOrg(orgA.id, (tx) => repos.purchases.create(tx, { opportunityId: opp.id, maxPriceCents: 2000, budgetCents: 5000, dedupeKey: `purchase:${opp.id}`, status: "draft", mode: "auto" }))).rejects.toMatchObject({ code: "conflict" });
+    expect(await app.withGlobal((tx) => tx.query("select id from push_subscriptions"))).toHaveLength(0);
+    expect(await app.withGlobal((tx) => repos.radarOrgs.ids(tx))).toContain(orgA.id);
+
+    // Purge : données du vendeur effacées après 30 jours, affaire écartée supprimée (avec ses alertes).
+    await app.withOrg(orgA.id, async (tx) => {
+      await tx.query("update opportunities set created_at = $2 where id = $1", [opp.id, "2026-09-01T00:00:00.000Z"]);
+      expect(await repos.opportunities.purgeSellerData(tx, 30, now)).toEqual({ deleted: 0, stripped: 1 });
+      const stripped = await repos.opportunities.byId(tx, opp.id);
+      expect(stripped.observed).toMatchObject({ sellerHandle: null, sellerRating: null, sellerReviews: null, photoUrl: null, url: null, externalRef: "4242", priceCents: 1500 });
+      expect(await repos.opportunities.purgeSellerData(tx, 30, now)).toEqual({ deleted: 0, stripped: 0 });
+      await repos.radarAlerts.enqueue(tx, { kind: "opportunity", opportunityId: opp.id, dedupeKey: `opportunity:${opp.id}:2`, payload: { title: "t", body: "b", url: "/app/radar" }, scheduledFor: now.toISOString() }).catch(() => null);
+      await repos.opportunities.update(tx, opp.id, { status: "dismissed" });
+      await tx.query("update opportunities set updated_at = $2 where id = $1", [opp.id, "2026-09-15T00:00:00.000Z"]);
+      expect(await repos.opportunities.purgeSellerData(tx, 30, now)).toEqual({ deleted: 1, stripped: 0 });
+      expect(await tx.count("select count(*) from radar_alerts where opportunity_id = $1", [opp.id])).toBe(0);
+    });
+  });
+
   it("limite le débit par fenêtre", async () => {
     if (!available) return;
     const a = await app.withGlobal((tx) => repos.rateLimits.hit(tx, "test:ip", 60_000));

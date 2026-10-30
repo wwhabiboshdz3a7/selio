@@ -1,6 +1,6 @@
 import {
-  aiRequest, auditLog, cloudAccount as cloudAccountSchema, cloudAction as cloudActionSchema, cloudConsent as cloudConsentSchema, cloudLoginSession as cloudLoginSessionSchema, automationRule, conversation as conversationSchema, customer as customerSchema, extensionToken, inventoryEvent, inventoryItem, invoice as invoiceSchema, job as jobSchema, marketplaceConnection, membership as membershipSchema, message as messageSchema, opportunity as opportunitySchema, order as orderSchema, organization as organizationSchema, paymentOrder as paymentOrderSchema, purchaseRequest as purchaseSchema, radarSearch as radarSchema, shipment as shipmentSchema, subscription as subscriptionSchema, usageEvent, user as userSchema, quotasForPlan, isLegacyQuotas, resolveQuotas,
-  type AiRequest, type AuditLog, type AutomationRule, type CloudAccount, type CloudAction, type CloudActionDetail, type CloudConsent, type CloudJournalQuery, type CloudLoginSession, type Conversation, type ConversationQuery, type Customer, type CustomerQuery, type ExtensionToken, type InventoryEvent, type InventoryItem, type InventoryQuery, type Invoice, type Job, type JobQuery, type MarketplaceConnection, type Membership, type Message, type Opportunity, type Order, type OrderQuery, type Organization, type Page, type PaymentOrder, type PurchaseRequest, type RadarSearch, type Shipment, type Subscription, type UsageEvent, type User,
+  aiRequest, auditLog, cloudAccount as cloudAccountSchema, cloudAction as cloudActionSchema, cloudConsent as cloudConsentSchema, cloudLoginSession as cloudLoginSessionSchema, automationRule, conversation as conversationSchema, customer as customerSchema, extensionToken, inventoryEvent, inventoryItem, invoice as invoiceSchema, job as jobSchema, marketplaceConnection, membership as membershipSchema, message as messageSchema, opportunity as opportunitySchema, order as orderSchema, organization as organizationSchema, paymentOrder as paymentOrderSchema, purchaseRequest as purchaseSchema, radarSearch as radarSchema, radarRead as radarReadSchema, radarAlert as radarAlertSchema, pushSubscription as pushSubscriptionSchema, RADAR_BLOCK_OUTCOMES, shipment as shipmentSchema, subscription as subscriptionSchema, usageEvent, user as userSchema, quotasForPlan, isLegacyQuotas, resolveQuotas,
+  type AiRequest, type AuditLog, type AutomationRule, type CloudAccount, type CloudAction, type CloudActionDetail, type CloudConsent, type CloudJournalQuery, type CloudLoginSession, type Conversation, type ConversationQuery, type Customer, type CustomerQuery, type ExtensionToken, type InventoryEvent, type InventoryItem, type InventoryQuery, type Invoice, type Job, type JobQuery, type MarketplaceConnection, type Membership, type Message, type Opportunity, type Order, type OrderQuery, type Organization, type Page, type PaymentOrder, type PurchaseRequest, type RadarSearch, type RadarRead, type RadarReadOutcome, type RadarSourceKind, type RadarAlert, type RadarAlertKind, type RadarAlertPayload, type PushSubscription, type Shipment, type Subscription, type UsageEvent, type User,
 } from "@selio/contracts";
 import type { ZodType, ZodTypeDef } from "zod";
 import type { AccountStats } from "@selio/domain";
@@ -552,7 +552,58 @@ export const searches = {
   async delete(tx: Tx, id: string): Promise<void> {
     await tx.query("delete from radar_searches where org_id = $1 and id = $2", [tx.orgId, id]);
   },
+  /** Recherches prioritaires (Radar Auto) de l'organisation, hors `excludeId` : 3 au plus. */
+  async countPriority(tx: Tx, excludeId: string | null = null): Promise<number> {
+    return tx.count("select count(*) from radar_searches where org_id = $1 and priority and id is distinct from $2", [tx.orgId, excludeId]);
+  },
+  /**
+   * Mesures d'une lecture, écrites d'un bloc (compteurs incrémentés en SQL, jamais relus puis
+   * réécrits) : dernière lecture, pages lues en direct, blocages, facteur de ralentissement.
+   */
+  async recordRead(tx: Tx, id: string, input: { readAt: string; livePages: number; blocked: boolean; slowdownFactor: number; anomaly?: boolean | null }): Promise<RadarSearch> {
+    // `anomaly` : vrai → une lecture anormale de plus ; faux → compteur remis à zéro ; null → inchangé.
+    const anomaly = input.anomaly === true ? 1 : input.anomaly === false ? 0 : -1;
+    return parse(
+      radarSchema,
+      await tx.one(
+        "update radar_searches set last_run_at = $3, last_read_at = $3, pages_read = pages_read + $4, blocks_count = blocks_count + $5, last_block_at = case when $5 > 0 then $3::timestamptz else last_block_at end, slowdown_factor = $6, consecutive_failures = case when $7 = 1 then consecutive_failures + 1 when $7 = 0 then 0 else consecutive_failures end, updated_at = now() where org_id = $1 and id = $2 returning *",
+        [tx.orgId, id, input.readAt, Math.max(0, input.livePages), input.blocked ? 1 : 0, Math.max(1, Math.min(64, Math.round(input.slowdownFactor))), anomaly],
+        "Recherche",
+      ),
+    );
+  },
+  /**
+   * Arrêt de la lecture en direct décidé par Selio (lectures anormales consécutives) : recherche
+   * désactivée avec la raison. Le client la réactive lui-même après vérification.
+   */
+  async suspend(tx: Tx, id: string, reason: string): Promise<RadarSearch> {
+    return parse(radarSchema, await tx.one("update radar_searches set enabled = false, suspended_reason = $3, updated_at = now() where org_id = $1 and id = $2 returning *", [tx.orgId, id, reason.slice(0, 300)], "Recherche"));
+  },
 };
+
+/**
+ * Ralentissement de Selio Radar par organisation : un facteur pour toutes les recherches en direct
+ * (même adresse, mêmes comptes Achat), gardé hors des recherches (une recherche supprimée puis
+ * recréée ne repart pas à ×1).
+ */
+export const radarOrgState = {
+  async get(tx: Tx): Promise<{ slowdownFactor: number; lastBlockAt: string | null }> {
+    const r = await tx.maybeOne<{ slowdownFactor: number; lastBlockAt: Date | string | null }>("select slowdown_factor, last_block_at from radar_org_state where org_id = $1", [tx.orgId]);
+    const at = r?.lastBlockAt ?? null;
+    return { slowdownFactor: Number(r?.slowdownFactor ?? 1), lastBlockAt: at === null ? null : new Date(at).toISOString() };
+  },
+  /** Fixe le facteur (borné à 1 – 64) et, si `blockAt` est donné, la date du dernier blocage. */
+  async set(tx: Tx, input: { slowdownFactor: number; blockAt?: string | null }): Promise<void> {
+    const f = Math.max(1, Math.min(64, Math.round(input.slowdownFactor)));
+    await tx.query(
+      "insert into radar_org_state (org_id, slowdown_factor, last_block_at, updated_at) values ($1, $2, $3, now()) on conflict (org_id) do update set slowdown_factor = excluded.slowdown_factor, last_block_at = coalesce(excluded.last_block_at, radar_org_state.last_block_at), updated_at = now()",
+      [tx.orgId, f, input.blockAt ?? null],
+    );
+  },
+};
+
+/** Raison de la note qui remplace, à la purge, un ancien texte citant la note du vendeur. */
+export const SELLER_REASON_PURGED = "Fiabilité du vendeur : détail effacé après 30 jours.";
 
 export const opportunities = {
   async list(tx: Tx, q: { searchId?: string; status?: string }): Promise<Opportunity[]> {
@@ -573,6 +624,60 @@ export const opportunities = {
   },
   async update(tx: Tx, id: string, patch: Partial<Opportunity>): Promise<Opportunity> {
     return parse(opportunitySchema, await tx.update("opportunities", id, patch, "Opportunité"));
+  },
+  /**
+   * Crée l'affaire sauf si la même annonce Vinted (référence) existe déjà pour l'organisation
+   * (`insert … on conflict do nothing`) : deux lectures simultanées ne créent jamais deux affaires et
+   * n'interrompent pas la transaction. Null si elle existait.
+   */
+  async createIfAbsent(tx: Tx, input: Partial<Opportunity>): Promise<Opportunity | null> {
+    const { columns, values } = objectToColumns({ ...input, orgId: tx.orgId });
+    const r = await tx.maybeOne(`insert into opportunities (${columns.join(", ")}) values (${values.map((_, i) => `$${i + 1}`).join(", ")}) on conflict do nothing returning *`, values);
+    return r ? parse(opportunitySchema, r) : null;
+  },
+  /** Une annonce Vinted (référence numérique) ne donne qu'une affaire par organisation. */
+  async byExternalRef(tx: Tx, externalRef: string): Promise<Opportunity | null> {
+    const r = await tx.maybeOne("select * from opportunities where org_id = $1 and observed->>'externalRef' = $2 limit 1", [tx.orgId, externalRef]);
+    return r ? parse(opportunitySchema, r) : null;
+  },
+  /**
+   * Délais publication → détection des affaires lues EN DIRECT (source « connector ») créées depuis
+   * `since`, hors stock initial, dont la date de publication est absolue ou à la minute près (date
+   * relative de moins d'une heure : « il y a 3 min », jamais « il y a 2 h » ni « il y a 3 j »).
+   */
+  async detectionDelays(tx: Tx, since: string): Promise<{ publishedAt: string; detectedAt: string }[]> {
+    return tx.query<{ publishedAt: string; detectedAt: string }>(
+      `select observed->>'publishedAt' as published_at, observed->>'detectedAt' as detected_at from opportunities
+       where org_id = $1 and created_at >= $2 and observed->>'source' = 'connector' and observed->>'publishedAt' is not null and observed->>'detectedAt' is not null
+         and coalesce(observed->>'initialStock', 'false') <> 'true'
+         and (observed->>'publishedAtSource' = 'absolute'
+              or (observed->>'publishedAtSource' = 'relative' and (observed->>'detectedAt')::timestamptz - (observed->>'publishedAt')::timestamptz < interval '1 hour'))`,
+      [tx.orgId, since],
+    );
+  },
+  /**
+   * Données du vendeur gardées le temps de l'affaire seulement : les affaires écartées depuis plus de
+   * `days` jours sont supprimées (alertes comprises) ; les autres perdent pseudo, note, nombre d'avis,
+   * photo et adresse de l'annonce (qui mène au vendeur), et toute raison de la note qui citerait la
+   * note du vendeur (affaires d'avant le texte générique) est remplacée.
+   */
+  async purgeSellerData(tx: Tx, days: number, now: Date): Promise<{ deleted: number; stripped: number }> {
+    const before = new Date(now.getTime() - days * 86_400_000).toISOString();
+    const deleted = (await tx.query("delete from opportunities where org_id = $1 and status = 'dismissed' and updated_at < $2 returning id", [tx.orgId, before])).length;
+    const stripped = (
+      await tx.query(
+        `update opportunities set
+           observed = observed || jsonb_build_object('sellerHandle', null, 'sellerRating', null, 'sellerReviews', null, 'photoUrl', null, 'url', null),
+           reasons = coalesce((select jsonb_agg(case when r.value like 'Vendeur noté%' then to_jsonb($3::text) else to_jsonb(r.value) end order by r.ordinality) from jsonb_array_elements_text(reasons) with ordinality as r(value, ordinality)), '[]'::jsonb),
+           updated_at = now()
+         where org_id = $1 and created_at < $2
+           and (observed->>'sellerHandle' is not null or observed->>'photoUrl' is not null or observed->>'sellerRating' is not null
+                or observed->>'sellerReviews' is not null or observed->>'url' is not null or reasons::text like '%Vendeur noté%')
+         returning id`,
+        [tx.orgId, before, SELLER_REASON_PURGED],
+      )
+    ).length;
+    return { deleted, stripped };
   },
 };
 
@@ -597,6 +702,42 @@ export const purchases = {
   },
   async update(tx: Tx, id: string, patch: Partial<PurchaseRequest>): Promise<PurchaseRequest> {
     return parse(purchaseSchema, await tx.update("purchase_requests", id, patch, "Demande d'achat"));
+  },
+  /**
+   * Montant engagé par Radar Auto depuis `since` (horloge des services) : achats automatiques faits
+   * (réels ou simulés), en attente de validation 3-D Secure, réservés par un achat en cours, et toute
+   * demande dont « Payer » a été cliqué même si elle a fini bloquée ou annulée (issue incertaine : le
+   * paiement a pu partir). Total relu s'il est connu, sinon le maximum accepté. Les achats faits à la
+   * main par le client ne comptent pas dans le plafond de Radar Auto.
+   */
+  async spentSince(tx: Tx, since: string, excludeId: string | null = null): Promise<number> {
+    const row = await tx.maybeOne<{ total: number | string | null }>(
+      `select coalesce(sum(coalesce(total_cents, max_price_cents)), 0) as total from purchase_requests
+       where org_id = $1 and id is distinct from $2 and mode = 'auto'
+         and (status in ('simulated', 'executed', 'awaiting_3ds', 'draft') or (payment_attempted and status in ('blocked', 'cancelled')))
+         and coalesce(executed_at, confirmed_at, created_at) >= $3`,
+      [tx.orgId, excludeId, since],
+    );
+    return Number(row?.total ?? 0);
+  },
+  /** Retire une réservation d'achat automatique qui n'a lancé aucun navigateur (rien n'a touché Vinted). */
+  async deleteDraft(tx: Tx, id: string): Promise<boolean> {
+    return (await tx.query("delete from purchase_requests where org_id = $1 and id = $2 and status = 'draft' returning id", [tx.orgId, id])).length > 0;
+  },
+  /** Achats qui attendent la validation 3-D Secure du client (un seul achat à la fois par organisation). */
+  async awaiting3dsCount(tx: Tx): Promise<number> {
+    return tx.count("select count(*) from purchase_requests where org_id = $1 and status = 'awaiting_3ds'", [tx.orgId]);
+  },
+  /** Demandes en attente de validation 3-D Secure dont le délai est passé à l'instant `now`. */
+  async awaiting3dsExpired(tx: Tx, now: string): Promise<PurchaseRequest[]> {
+    return (await tx.query("select * from purchase_requests where org_id = $1 and status = 'awaiting_3ds' and awaiting3ds_until <= $2 order by awaiting3ds_until", [tx.orgId, now])).map((r) => parse(purchaseSchema, r));
+  },
+  /** Délais détection → achat des achats RÉELS exécutés depuis `since`. */
+  async detectToPurchaseDelays(tx: Tx, since: string): Promise<{ detectedAt: string; executedAt: string }[]> {
+    return tx.query<{ detectedAt: string; executedAt: string }>(
+      "select o.observed->>'detectedAt' as detected_at, p.executed_at from purchase_requests p join opportunities o on o.id = p.opportunity_id and o.org_id = p.org_id where p.org_id = $1 and p.status = 'executed' and p.real_purchase_enabled and p.executed_at >= $2 and o.observed->>'detectedAt' is not null",
+      [tx.orgId, since],
+    );
   },
 };
 
@@ -928,11 +1069,25 @@ export const cloudAccounts = {
    * libre (ou si le verrou date d'avant `staleBefore`, passage interrompu). Null sinon.
    */
   async lock(tx: Tx, id: string, now: string, staleBefore: string): Promise<CloudAccount | null> {
-    const r = await tx.maybeOne(`update cloud_accounts set running_since = $3 where org_id = $1 and id = $2 and status = 'active' and (running_since is null or running_since < $4) returning ${CLOUD_ACCOUNT_COLUMNS}`, [tx.orgId, id, now, staleBefore]);
+    // Un compte tenu par un achat Radar Auto en attente de validation 3-D Secure (`held_until` futur)
+    // n'est jamais verrouillé : ni lecture, ni action Cloud, ni second achat avec la même session.
+    const r = await tx.maybeOne(`update cloud_accounts set running_since = $3 where org_id = $1 and id = $2 and status = 'active' and (running_since is null or running_since < $4) and (held_until is null or held_until <= $3::timestamptz) returning ${CLOUD_ACCOUNT_COLUMNS}`, [tx.orgId, id, now, staleBefore]);
     return r ? parse(cloudAccountSchema, r) : null;
   },
   async unlock(tx: Tx, id: string): Promise<void> {
     await tx.query("update cloud_accounts set running_since = null where org_id = $1 and id = $2", [tx.orgId, id]);
+  },
+  /** Compte tenu par un achat qui attend la banque, jusqu'à `until` (ou jusqu'à `release`). */
+  async hold(tx: Tx, id: string, until: string): Promise<void> {
+    await tx.query("update cloud_accounts set held_until = $3 where org_id = $1 and id = $2", [tx.orgId, id, until]);
+  },
+  async release(tx: Tx, id: string): Promise<void> {
+    await tx.query("update cloud_accounts set held_until = null where org_id = $1 and id = $2", [tx.orgId, id]);
+  },
+  /** Fin de la tenue du compte par un achat en attente de la banque (null : libre). */
+  async heldUntil(tx: Tx, id: string): Promise<string | null> {
+    const r = await tx.maybeOne<{ heldUntil: Date | string | null }>("select held_until from cloud_accounts where org_id = $1 and id = $2", [tx.orgId, id]);
+    return r?.heldUntil ? new Date(r.heldUntil).toISOString() : null;
   },
 };
 
@@ -1083,6 +1238,192 @@ export const cloudOrgs = {
   /** Organisations ayant au moins un compte Cloud (fonction SECURITY DEFINER) : worker uniquement. */
   async ids(tx: Tx): Promise<string[]> {
     return (await tx.query<{ orgId: string }>("select org_id from app_cloud_org_ids()")).map((r) => r.orgId);
+  },
+};
+
+// ---------------------------------------------------------------- Selio Radar (0012)
+
+const RADAR_BLOCKS_SQL = `outcome in (${RADAR_BLOCK_OUTCOMES.map((o) => `'${o}'`).join(", ")})`;
+
+/** Mesures de chaque lecture (90 jours) : taux de blocage, ralentissement, plafond de pages par minute. */
+export const radarReads = {
+  async add(tx: Tx, input: { searchId: string | null; connectionId: string | null; source: RadarSourceKind; readAt: string; durationMs: number; outcome: RadarReadOutcome; itemsSeen: number; itemsNew: number; factor: number; kind?: "search" | "purchase"; pages?: number }): Promise<RadarRead> {
+    return parse(radarReadSchema, await tx.insert("radar_reads", { ...input, kind: input.kind ?? "search", pages: Math.max(0, Math.round(input.pages ?? 1)), durationMs: Math.max(0, Math.round(input.durationMs)), orgId: tx.orgId }));
+  },
+  /** Annonces nouvelles d'une lecture, écrites après leur traitement (la mesure est enregistrée avant). */
+  async setItemsNew(tx: Tx, id: string, itemsNew: number): Promise<void> {
+    await tx.query("update radar_reads set items_new = $3 where org_id = $1 and id = $2", [tx.orgId, id, Math.max(0, Math.round(itemsNew))]);
+  },
+  /** Pages lues EN DIRECT par l'organisation depuis `since`, achats compris (le simulateur ne compte jamais). */
+  async countLiveSince(tx: Tx, since: string): Promise<number> {
+    return tx.count("select coalesce(sum(pages), 0) as count from radar_reads where org_id = $1 and source = 'cloud' and read_at >= $2", [tx.orgId, since]);
+  },
+  /** Fenêtre glissante : pages et blocages parmi les `limit` dernières mesures en direct de l'organisation. */
+  async liveWindow(tx: Tx, limit: number): Promise<{ reads: number; blocks: number }> {
+    const r = await tx.maybeOne<{ reads: number | string | null; blocks: number | string }>(
+      `select coalesce(sum(pages), 0) as reads, count(*) filter (where ${RADAR_BLOCKS_SQL}) as blocks from (select outcome, pages from radar_reads where org_id = $1 and source = 'cloud' order by read_at desc, id desc limit $2) w`,
+      [tx.orgId, Math.max(1, limit)],
+    );
+    return { reads: Number(r?.reads ?? 0), blocks: Number(r?.blocks ?? 0) };
+  },
+  /** Pages lues et blocages en direct par jour (UTC) depuis `since`, achats compris. */
+  async dailyLive(tx: Tx, since: string): Promise<{ day: string; reads: number; blocks: number }[]> {
+    const rows = await tx.query<{ day: string; reads: number | string; blocks: number | string }>(
+      `select to_char(date_trunc('day', read_at at time zone 'UTC'), 'YYYY-MM-DD') as day, coalesce(sum(pages), 0) as reads, count(*) filter (where ${RADAR_BLOCKS_SQL}) as blocks from radar_reads where org_id = $1 and source = 'cloud' and read_at >= $2 group by 1 order by 1`,
+      [tx.orgId, since],
+    );
+    return rows.map((r) => ({ day: r.day, reads: Number(r.reads), blocks: Number(r.blocks) }));
+  },
+  async list(tx: Tx, q: { searchId?: string; limit?: number } = {}): Promise<RadarRead[]> {
+    const params: unknown[] = [tx.orgId];
+    const where = ["org_id = $1"];
+    if (q.searchId) { params.push(q.searchId); where.push(`search_id = $${params.length}`); }
+    params.push(Math.min(1000, Math.max(1, q.limit ?? 100)));
+    return (await tx.query(`select * from radar_reads where ${where.join(" and ")} order by read_at desc, id desc limit $${params.length}`, params)).map((r) => parse(radarReadSchema, r));
+  },
+  /** Rétention : mesures gardées 90 jours. */
+  async purgeOlderThan(tx: Tx, days: number, now: Date): Promise<number> {
+    const before = new Date(now.getTime() - days * 86_400_000).toISOString();
+    return (await tx.query("delete from radar_reads where org_id = $1 and read_at < $2 returning id", [tx.orgId, before])).length;
+  },
+};
+
+/** Abonnements Web Push (PWA). Les clés ne sortent du serveur que vers le service de notification. */
+export const pushSubscriptions = {
+  /**
+   * Enregistre (ou rafraîchit) l'abonnement d'un appareil. L'adresse est unique : un appareil abonné
+   * pour une autre organisation y est d'abord retiré (fonction limitée), puis réabonné ici.
+   */
+  async upsert(tx: Tx, input: { userId: string; endpoint: string; p256dh: string; auth: string; userAgent: string | null }): Promise<PushSubscription> {
+    await tx.query("select app_push_endpoint_release($1, $2)", [input.endpoint, tx.orgId]);
+    return parse(
+      pushSubscriptionSchema,
+      await tx.one(
+        "insert into push_subscriptions (org_id, user_id, endpoint, p256dh, auth, user_agent) values ($1, $2, $3, $4, $5, $6) on conflict (endpoint) do update set user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, user_agent = excluded.user_agent, failures = 0, disabled_at = null returning *",
+        [tx.orgId, input.userId, input.endpoint, input.p256dh, input.auth, input.userAgent ? input.userAgent.slice(0, 120) : null],
+      ),
+    );
+  },
+  async list(tx: Tx): Promise<PushSubscription[]> {
+    return (await tx.query("select * from push_subscriptions where org_id = $1 order by created_at", [tx.orgId])).map((r) => parse(pushSubscriptionSchema, r));
+  },
+  /**
+   * Abonnements actifs (non désactivés), d'un utilisateur ou de toute l'organisation, des seuls MEMBRES
+   * ACTUELS de l'organisation (un ancien membre ne reçoit plus rien, même si son abonnement traîne),
+   * avec leur rôle (l'appelant vérifie le droit de voir Radar).
+   */
+  async listActive(tx: Tx, userId: string | null = null): Promise<(PushSubscription & { role: Membership["role"] })[]> {
+    const rows = await tx.query<Record<string, unknown>>(
+      "select p.*, m.role as member_role from push_subscriptions p join memberships m on m.org_id = p.org_id and m.user_id = p.user_id where p.org_id = $1 and p.disabled_at is null and ($2::text is null or p.user_id = $2) order by p.created_at",
+      [tx.orgId, userId],
+    );
+    return rows.map((r) => ({ ...parse(pushSubscriptionSchema, r), role: r.memberRole as Membership["role"] }));
+  },
+  /** Membre retiré de l'organisation : tous ses appareils sont désabonnés (`orgId` explicite : appel hors contexte d'organisation). */
+  async removeForUser(tx: Tx, orgId: string, userId: string): Promise<number> {
+    return (await tx.query("delete from push_subscriptions where org_id = $1 and user_id = $2 returning id", [orgId, userId])).length;
+  },
+  /** Retire un appareil de l'utilisateur (Paramètres › Notifications), par son identifiant. */
+  async removeById(tx: Tx, id: string, userId: string): Promise<boolean> {
+    return (await tx.query("delete from push_subscriptions where org_id = $1 and id = $2 and user_id = $3 returning id", [tx.orgId, id, userId])).length > 0;
+  },
+  async markUsed(tx: Tx, id: string, at: string): Promise<void> {
+    await tx.query("update push_subscriptions set last_used_at = $3, failures = 0 where org_id = $1 and id = $2", [tx.orgId, id, at]);
+  },
+  /** Échec d'envoi : compteur, et désactivation au-delà de `maxFailures` échecs consécutifs. */
+  async markFailure(tx: Tx, id: string, at: string, maxFailures: number): Promise<PushSubscription | null> {
+    const r = await tx.maybeOne("update push_subscriptions set failures = failures + 1, disabled_at = case when failures + 1 >= $4 then $3::timestamptz else disabled_at end where org_id = $1 and id = $2 returning *", [tx.orgId, id, at, maxFailures]);
+    return r ? parse(pushSubscriptionSchema, r) : null;
+  },
+  /** Le service de notification a répondu 404 ou 410 : l'abonnement n'existe plus. */
+  async disable(tx: Tx, id: string, at: string): Promise<void> {
+    await tx.query("update push_subscriptions set disabled_at = coalesce(disabled_at, $3::timestamptz) where org_id = $1 and id = $2", [tx.orgId, id, at]);
+  },
+  async removeByEndpoint(tx: Tx, endpoint: string, userId: string | null = null): Promise<boolean> {
+    return (await tx.query("delete from push_subscriptions where org_id = $1 and endpoint = $2 and ($3::text is null or user_id = $3) returning id", [tx.orgId, endpoint, userId])).length > 0;
+  },
+};
+
+/** File des alertes Radar : une par affaire (clé `opportunity:<id>`), sans donnée du vendeur. */
+export const radarAlerts = {
+  /** Met une alerte en file ; null si elle existe déjà (même clé ou même affaire). */
+  async enqueue(tx: Tx, input: { kind: RadarAlertKind; dedupeKey: string; payload: RadarAlertPayload; scheduledFor: string; opportunityId?: string | null; purchaseId?: string | null; userId?: string | null; channel?: "push" | "email" }): Promise<RadarAlert | null> {
+    const { columns, values } = objectToColumns({ orgId: tx.orgId, kind: input.kind, dedupeKey: input.dedupeKey, payload: input.payload, scheduledFor: input.scheduledFor, opportunityId: input.opportunityId ?? null, purchaseId: input.purchaseId ?? null, userId: input.userId ?? null, channel: input.channel ?? "push" });
+    const r = await tx.maybeOne(`insert into radar_alerts (${columns.join(", ")}) values (${values.map((_, i) => `$${i + 1}`).join(", ")}) on conflict do nothing returning *`, values);
+    return r ? parse(radarAlertSchema, r) : null;
+  },
+  async byDedupeKey(tx: Tx, dedupeKey: string): Promise<RadarAlert | null> {
+    const r = await tx.maybeOne("select * from radar_alerts where org_id = $1 and dedupe_key = $2", [tx.orgId, dedupeKey]);
+    return r ? parse(radarAlertSchema, r) : null;
+  },
+  async list(tx: Tx, limit = 100): Promise<RadarAlert[]> {
+    return (await tx.query("select * from radar_alerts where org_id = $1 order by created_at desc, id limit $2", [tx.orgId, Math.min(500, Math.max(1, limit))])).map((r) => parse(radarAlertSchema, r));
+  },
+  /** Alertes en file dont l'envoi est échu à l'instant `now`. */
+  async due(tx: Tx, now: string, limit = 50): Promise<RadarAlert[]> {
+    return (await tx.query("select * from radar_alerts where org_id = $1 and status = 'queued' and scheduled_for <= $2 order by scheduled_for, id limit $3", [tx.orgId, now, limit])).map((r) => parse(radarAlertSchema, r));
+  },
+  /**
+   * Prise de l'alerte pour un envoi (UPDATE conditionnel sur le nombre d'essais) : un second passage
+   * simultané ne l'envoie pas une deuxième fois. Le prochain essai éventuel est repoussé à `leaseUntil`.
+   */
+  async claim(tx: Tx, id: string, attempts: number, leaseUntil: string): Promise<RadarAlert | null> {
+    const r = await tx.maybeOne("update radar_alerts set attempts = attempts + 1, scheduled_for = $4, updated_at = now() where org_id = $1 and id = $2 and status = 'queued' and attempts = $3 returning *", [tx.orgId, id, attempts, leaseUntil]);
+    return r ? parse(radarAlertSchema, r) : null;
+  },
+  async markSent(tx: Tx, id: string, at: string): Promise<void> {
+    await tx.query("update radar_alerts set status = 'sent', sent_at = $3, error = null, updated_at = now() where org_id = $1 and id = $2", [tx.orgId, id, at]);
+  },
+  async markFailed(tx: Tx, id: string, error: string): Promise<void> {
+    await tx.query("update radar_alerts set status = 'failed', error = $3, updated_at = now() where org_id = $1 and id = $2", [tx.orgId, id, error.slice(0, 300)]);
+  },
+  /** Remet une alerte prise en file (échec passager), avec la raison. */
+  async retryLater(tx: Tx, id: string, scheduledFor: string, error: string): Promise<void> {
+    await tx.query("update radar_alerts set scheduled_for = $3, error = $4, updated_at = now() where org_id = $1 and id = $2 and status = 'queued'", [tx.orgId, id, scheduledFor, error.slice(0, 300)]);
+  },
+  async purgeOlderThan(tx: Tx, days: number, now: Date): Promise<number> {
+    const before = new Date(now.getTime() - days * 86_400_000).toISOString();
+    return (await tx.query("delete from radar_alerts where org_id = $1 and created_at < $2 and status <> 'queued' returning id", [tx.orgId, before])).length;
+  },
+};
+
+export type EmbeddingKind = "sale" | "market" | "opportunity";
+
+/** Vecteurs du modèle 2 en cache, par organisation, sorte, référence et modèle. */
+export const embeddingsCache = {
+  async get(tx: Tx, kind: EmbeddingKind, refs: readonly string[], model: string): Promise<Map<string, { vector: number[]; textHash: string }>> {
+    if (refs.length === 0) return new Map();
+    const rows = await tx.query<{ ref: string; vector: unknown; textHash: string }>("select ref, vector, text_hash from embeddings_cache where org_id = $1 and kind = $2 and model = $3 and ref = any($4)", [tx.orgId, kind, model, [...refs]]);
+    const out = new Map<string, { vector: number[]; textHash: string }>();
+    for (const r of rows) {
+      if (Array.isArray(r.vector) && r.vector.every((x) => typeof x === "number" && Number.isFinite(x))) out.set(r.ref, { vector: r.vector as number[], textHash: r.textHash });
+    }
+    return out;
+  },
+  async put(tx: Tx, rows: readonly { kind: EmbeddingKind; ref: string; model: string; textHash: string; vector: readonly number[] }[]): Promise<number> {
+    let n = 0;
+    for (const r of rows) {
+      if (r.vector.length === 0) continue;
+      await tx.query(
+        "insert into embeddings_cache (org_id, kind, ref, model, dims, text_hash, vector) values ($1, $2, $3, $4, $5, $6, $7) on conflict (org_id, kind, ref, model) do update set dims = excluded.dims, text_hash = excluded.text_hash, vector = excluded.vector, created_at = now()",
+        [tx.orgId, r.kind, r.ref, r.model, r.vector.length, r.textHash, JSON.stringify(r.vector)],
+      );
+      n++;
+    }
+    return n;
+  },
+  async count(tx: Tx, kind?: EmbeddingKind): Promise<number> {
+    return tx.count("select count(*) from embeddings_cache where org_id = $1 and ($2::text is null or kind = $2)", [tx.orgId, kind ?? null]);
+  },
+};
+
+export const radarOrgs = {
+  /**
+   * Organisations ayant une recherche active, une alerte en file ou un paiement 3-D Secure en attente
+   * (fonction SECURITY DEFINER, sans aucune donnée) : passages du worker uniquement.
+   */
+  async ids(tx: Tx): Promise<string[]> {
+    return (await tx.query<{ orgId: string }>("select org_id from app_radar_org_ids()")).map((r) => r.orgId);
   },
 };
 

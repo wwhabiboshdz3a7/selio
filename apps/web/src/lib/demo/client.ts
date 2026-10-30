@@ -31,6 +31,15 @@ import type { Action } from "@selio/domain";
 import type { CloudAccountView, CloudJournalFilters, CloudLoginStart } from "../data/types";
 import { cloudAvailabilityFor } from "../cloud/availability";
 import { currentConsentHash, seedDemoCloud, type DemoCloudState } from "./cloud";
+import {
+  OPPORTUNITY_STATUSES, RADAR_3DS_TIMEOUT_MINUTES, RADAR_AUTO_SHARED_ADDRESS_NOTICE, RADAR_LIVE_REQUIRES_CLOUD, RADAR_MAX_PRIORITY_SEARCHES,
+  pushSubscriptionInput as pushSubscriptionInputSchema, radarSettings as radarSettingsSchema, radarSettingsUpdate as radarSettingsUpdateSchema,
+  type PushSubscriptionInput, type PushSubscriptionView, type RadarSettings, type RadarSettingsUpdate,
+} from "@selio/contracts";
+import { isActiveAccount } from "@selio/domain";
+import type { AutoBuyStatus, OpportunityDetail, PushConfig, PushTestResult, RadarAutoLock, RadarMetricsView, RadarRunResult, RadarSettingsResult, ResumeResult } from "../data/types";
+import { RADAR_AUTO_LOCK_LABELS, canAddPriority, formatDuration, liveReadiness, searchIntervalSeconds, vintedListingUrl } from "../radar";
+import { demoRadarMetrics, recordDemoRead, seedDemoRadar, withSearchDefaults, type DemoRadarState } from "./radar";
 
 function paginate<T>(items: T[], page = 1, pageSize = 25): Page<T> {
   const total = items.length;
@@ -53,6 +62,16 @@ type Subsidiaries = Pick<UsageSummary, "studio" | "track" | "cloud">;
 type DemoBillingState = DemoState & { invoices?: Invoice[] };
 /** Selio Cloud de la démonstration : même principe, créé au premier accès (voir ./cloud.ts). */
 type DemoCloudHolder = DemoState & { cloud?: DemoCloudState };
+/** Selio Radar de la démonstration (recherche « en direct » simulée, mesures fictives, abonnements) : voir ./radar.ts. */
+type DemoRadarHolder = DemoState & { radar?: DemoRadarState };
+
+export interface DemoClientOptions {
+  /**
+   * Verrou serveur de Radar Auto (RADAR_AUTO_ENABLED) simulé. Faux par défaut, comme sur le serveur :
+   * la démonstration montre Radar Auto verrouillé. Vrai seulement dans les tests (comptes de l'équipe).
+   */
+  radarAutoServerEnabled?: boolean;
+}
 
 const isPaid = (plan: Plan | null | undefined): plan is PaidPlan => (PAID_PLANS as readonly string[]).includes(plan ?? "");
 /** Identifiants fictifs du client et de la carte « enregistrée pour le marchand » (jamais une donnée de carte). */
@@ -93,7 +112,7 @@ export class DemoClient implements DataClient {
   private readonly ai: AIService;
   private listeners = new Set<() => void>();
 
-  constructor(private readonly storage: DemoStorage = new LocalDemoStorage(), private readonly clock: () => Date = () => new Date()) {
+  constructor(private readonly storage: DemoStorage = new LocalDemoStorage(), private readonly clock: () => Date = () => new Date(), private readonly options: DemoClientOptions = {}) {
     this.state = storage.load();
     this.ai = new AIService({ provider: new MockAIProvider({ latencyMs: 250 }), concurrency: 2, maxPending: 20, circuitFailures: 3, circuitCooldownMs: 30_000, timeoutMs: 5000, allowFallback: true });
     // Toute valeur renvoyée est un instantané : l'état interne est muté en place, le cache de
@@ -1046,26 +1065,64 @@ export class DemoClient implements DataClient {
   }
 
   // ---------- radar ----------
-  async listSearches(): Promise<RadarSearch[]> {
-    return [...this.s.searches];
+  /**
+   * État Radar de la démonstration, créé au premier accès : champs des recherches complétés, une recherche
+   * « en direct » SIMULÉE et ses mesures fictives (voir ./radar.ts). Enregistré sans réveiller l'interface.
+   */
+  private radar(): DemoRadarState {
+    const st = this.s as DemoRadarHolder;
+    if (!st.radar || st.radar.version !== 1) {
+      st.radar = seedDemoRadar(st.searches, st.opportunities, this.clock());
+      this.storage.save(st);
+    }
+    return st.radar;
   }
-  async createSearch(input: RadarSearchCreate): Promise<RadarSearch> {
-    const parsed = radarSearchCreateSchema.safeParse(input);
-    if (!parsed.success) throw new DataError("validation", "Recherche invalide", 400, parsed.error.flatten());
-    const now = this.now();
-    const s: RadarSearch = { ...parsed.data, id: newId(), orgId: this.s.org.id, lastRunAt: null, createdAt: now, updatedAt: now };
-    this.s.searches.unshift(s);
-    this.audit("radar.search_created", "radar_search", s.id, {});
-    this.persist();
-    return s;
+  private radarSettingsNow(): RadarSettings {
+    return this.s.org.settings.radar ?? radarSettingsSchema.parse({});
   }
-  async updateSearch(id: string, input: Partial<RadarSearchCreate>): Promise<RadarSearch> {
+  private searchById(id: string): RadarSearch {
+    this.radar();
     const s = this.s.searches.find((x) => x.id === id);
     if (!s) throw new DataError("not_found", "Recherche introuvable", 404);
-    const merged = radarSearchCreateSchema.parse({ ...s, ...input, criteria: { ...s.criteria, ...(input.criteria ?? {}) } });
-    Object.assign(s, merged, { updatedAt: this.now() });
-    this.persist();
     return s;
+  }
+  /** Vue d'une recherche : facteur courant et intervalle effectif (Radar Auto n'est jamais actif en démonstration sans verrou serveur). */
+  private searchView(s: RadarSearch): RadarSearch {
+    const { factor, intervalSeconds } = searchIntervalSeconds(s, this.clock(), this.radarAutoActive());
+    return { ...s, slowdownFactor: factor, intervalSeconds };
+  }
+  /** Mêmes contrôles que le serveur : 3 recherches prioritaires au plus, compte lu = compte Achat actif. */
+  private validateSearch(input: { priority: boolean; connectionId: string | null }, id: string | null): void {
+    if (input.priority && !canAddPriority(this.s.searches, id)) throw new DataError("validation", `${RADAR_MAX_PRIORITY_SEARCHES} recherches prioritaires au plus par organisation (Radar Auto).`, 400);
+    if (input.connectionId) {
+      const c = this.s.connections.find((x) => x.id === input.connectionId);
+      if (!c || c.usage !== "purchase" || !isActiveAccount(c)) throw new DataError("validation", "Le compte lu par Radar doit être un compte Vinted « Achat » actif (jamais un compte Perso ni un compte de vente).", 400);
+    }
+  }
+  async listSearches(): Promise<RadarSearch[]> {
+    this.radar();
+    return this.s.searches.map((s) => this.searchView(s));
+  }
+  async createSearch(input: RadarSearchCreate): Promise<RadarSearch> {
+    this.radar();
+    const parsed = radarSearchCreateSchema.safeParse(input);
+    if (!parsed.success) throw new DataError("validation", "Recherche invalide", 400, parsed.error.flatten());
+    this.validateSearch(parsed.data, null);
+    const now = this.now();
+    const s: RadarSearch = withSearchDefaults({ ...parsed.data, provider: parsed.data.source === "cloud" ? "vinted" : "demo", id: newId(), orgId: this.s.org.id, lastRunAt: null, createdAt: now, updatedAt: now } as RadarSearch);
+    this.s.searches.unshift(s);
+    this.audit("radar.search_created", "radar_search", s.id, { source: s.source, priority: s.priority });
+    this.persist();
+    return this.searchView(s);
+  }
+  async updateSearch(id: string, input: Partial<RadarSearchCreate>): Promise<RadarSearch> {
+    const s = this.searchById(id);
+    const merged = radarSearchCreateSchema.safeParse({ ...s, ...input, criteria: { ...s.criteria, ...(input.criteria ?? {}) } });
+    if (!merged.success) throw new DataError("validation", "Recherche invalide", 400, merged.error.flatten());
+    this.validateSearch(merged.data, id);
+    Object.assign(s, merged.data, { provider: merged.data.source === "cloud" ? "vinted" : "demo", updatedAt: this.now() });
+    this.persist();
+    return this.searchView(s);
   }
   async deleteSearch(id: string): Promise<void> {
     this.s.searches = this.s.searches.filter((s) => s.id !== id);
@@ -1073,12 +1130,55 @@ export class DemoClient implements DataClient {
     this.audit("radar.search_deleted", "radar_search", id, {});
     this.persist();
   }
-  async runSearch(id: string): Promise<{ found: number; autoBought: number }> {
+  /** Lecture en direct : compte Achat relié au Cloud de la démonstration (actif, session, accord). */
+  private async liveReadinessFor(search: RadarSearch | null) {
+    const cloud = this.cloud();
+    const consent = await this.cloudConsentView();
+    return liveReadiness({ search, connections: this.s.connections, cloudAccounts: cloud.accounts, consent, autoBuyConnectionId: this.s.org.settings.autoBuy.connectionId });
+  }
+  /**
+   * Analyse : le simulateur, ou une lecture « en direct » SIMULÉE (aucune page Vinted lue). Comme le
+   * serveur, la lecture en direct exige le compte Achat relié au Cloud (sinon refus avec l'explication),
+   * respecte l'arrêt global et le rythme (× facteur de ralentissement).
+   */
+  async runSearch(id: string): Promise<RadarRunResult> {
     const st = this.s;
-    const search = st.searches.find((x) => x.id === id);
-    if (!search) throw new DataError("not_found", "Recherche introuvable", 404);
-    await this.delay(500);
+    const search = this.searchById(id);
     const now = this.clock();
+    const live = search.source === "cloud";
+    const { factor, intervalSeconds } = searchIntervalSeconds(search, now, this.radarAutoActive());
+    const last = search.lastReadAt ?? search.lastRunAt;
+    const nextReadAt = last ? new Date(new Date(last).getTime() + intervalSeconds * 1000) : now;
+    const skip = (skipped: string, message: string): RadarRunResult => ({ found: 0, autoBought: 0, source: "cloud", outcome: null, skipped, message, factor, intervalSeconds, nextReadAt: nextReadAt.toISOString(), simulated: true });
+    if (live) {
+      if (st.automation.globalPaused) return skip("global_pause", "Arrêt global des automatisations : aucune lecture en direct.");
+      if (nextReadAt.getTime() > now.getTime()) return skip("too_soon", `Prochaine lecture possible dans ${formatDuration((nextReadAt.getTime() - now.getTime()) / 1000)} (rythme de ${formatDuration(intervalSeconds)}${factor > 1 ? `, ralenti × ${factor} après un blocage` : ""}).`);
+      const ready = await this.liveReadinessFor(search);
+      if (!ready.ready) throw new DataError("radar_live_requires_cloud", ready.problem ?? RADAR_LIVE_REQUIRES_CLOUD, 409, { reason: "not_ready" });
+    }
+    await this.delay(500);
+    const found = this.simulateFind(search, now, live);
+    search.lastRunAt = this.now();
+    search.lastReadAt = search.lastRunAt;
+    if (live) {
+      search.pagesRead += 1;
+      recordDemoRead(this.radar(), now);
+    } else {
+      this.usage("connector.sync", { kind: "radar", searchId: id });
+    }
+    this.audit("radar.run", "radar_search", id, { found, source: search.source, simulated: true });
+    this.persist();
+    const auto = st.org.settings.autoBuy.enabled ? await this.runAutoBuy() : null;
+    const after = searchIntervalSeconds(search, now, this.radarAutoActive());
+    return {
+      found, autoBought: auto?.bought ?? 0, source: search.source, outcome: "ok", skipped: null, factor: after.factor, intervalSeconds: after.intervalSeconds,
+      nextReadAt: new Date(now.getTime() + after.intervalSeconds * 1000).toISOString(), paused: false, simulated: true,
+      ...(live ? { message: "Lecture en direct SIMULÉE (démonstration) : aucune page Vinted n'a été lue." } : {}),
+    };
+  }
+  /** Affaires du simulateur (vraies photos, annonces fictives) ; en direct simulé, datées de leur « publication ». */
+  private simulateFind(search: RadarSearch, now: Date, live: boolean): number {
+    const st = this.s;
     const rnd = seededRandom(hashString(search.id + localDayKey(now, st.org.settings.timezone) + st.opportunities.length));
     // Annonces réelles (vraies photos) correspondant aux critères de la recherche.
     const wanted = search.criteria.brands.map((b) => b.toLowerCase());
@@ -1096,7 +1196,8 @@ export class DemoClient implements DataClient {
       const priceCents = Math.round((search.criteria.maxPriceCents * (0.5 + rnd() * 0.6)) / 100) * 100;
       const shippingCents = 450 + Math.floor(rnd() * 3) * 100;
       const size = entry.size ?? (search.criteria.sizes.length ? search.criteria.sizes[Math.floor(rnd() * search.criteria.sizes.length)]! : "M");
-      const seenAt = new Date(now.getTime() - Math.floor(rnd() * 20) * 3_600_000).toISOString();
+      // En direct, l'annonce vient d'être publiée (30 s à 3 min avant la lecture) ; le simulateur remonte jusqu'à 20 h.
+      const seenAt = new Date(now.getTime() - (live ? (30 + Math.floor(rnd() * 150)) * 1000 : Math.floor(rnd() * 20) * 3_600_000)).toISOString();
       const photoCount = 1 + Math.floor(rnd() * 8);
       const sellerRating = Math.round((3.6 + rnd() * 1.4) * 10) / 10;
       const sellerReviews = Math.floor(rnd() * 180);
@@ -1106,29 +1207,73 @@ export class DemoClient implements DataClient {
       const dedupe = `${search.id}:${title}:${priceCents}`;
       if (st.opportunities.some((o) => o.searchId === search.id && `${search.id}:${o.title}:${o.observed.priceCents}` === dedupe)) continue;
       const photoUrl = entry.photos[0]!;
-      st.opportunities.unshift({ id: newId(), orgId: st.org.id, searchId: search.id, title, observed: { priceCents, shippingCents, brand, size, condition, category, sellerHandle: `vendeur_${Math.floor(rnd() * 900 + 100)}`, sellerRating, sellerReviews, photoUrl, photoCount, url: `https://demo.invalid/items/${Math.floor(rnd() * 90000)}`, seenAt, source: "demo_simulator" }, estimate: { resalePriceCents: est.resalePriceCents, expectedFeesCents: 0, marginCents: scored.marginCents, marginRate: scored.marginRate, confidence: est.confidence, method: est.method, comparableCount: est.comparableCount }, score: scored.score, reasons: scored.reasons, breakdown: scored.breakdown, status: "new", createdAt: seenAt, updatedAt: this.now() });
+      const ref = Math.floor(rnd() * 90000);
+      st.opportunities.unshift({
+        id: newId(), orgId: st.org.id, searchId: search.id, title,
+        observed: {
+          priceCents, shippingCents, brand, size, condition, category, sellerHandle: `vendeur_${Math.floor(rnd() * 900 + 100)}`, sellerRating, sellerReviews, photoUrl, photoCount, url: `https://demo.invalid/items/${ref}`, seenAt, source: "demo_simulator",
+          ...(live ? { externalRef: String(4_100_000_000 + ref), publishedAt: seenAt, detectedAt: now.toISOString() } : {}),
+        },
+        estimate: { resalePriceCents: est.resalePriceCents, expectedFeesCents: 0, marginCents: scored.marginCents, marginRate: scored.marginRate, confidence: est.confidence, method: est.method, comparableCount: est.comparableCount },
+        score: scored.score, reasons: scored.reasons, breakdown: scored.breakdown, status: "new", createdAt: seenAt, updatedAt: this.now(),
+      });
       found++;
     }
-    search.lastRunAt = this.now();
-    this.usage("connector.sync", { kind: "radar", searchId: id });
-    this.audit("radar.run", "radar_search", id, { found });
-    this.persist();
-    const auto = st.org.settings.autoBuy.enabled ? await this.runAutoBuy() : null;
-    return { found, autoBought: auto?.bought ?? 0 };
+    return found;
   }
   async listOpportunities(query: { searchId?: string; status?: Opportunity["status"] }): Promise<Opportunity[]> {
+    this.radar();
     let list = this.s.opportunities;
     if (query.searchId) list = list.filter((o) => o.searchId === query.searchId);
     if (query.status) list = list.filter((o) => o.status === query.status);
     return rankOpportunities(list);
   }
+  async getOpportunity(id: string): Promise<OpportunityDetail> {
+    this.radar();
+    const o = this.s.opportunities.find((x) => x.id === id);
+    if (!o) throw new DataError("not_found", "Affaire introuvable", 404);
+    const search = this.s.searches.find((x) => x.id === o.searchId);
+    const purchase = this.s.purchases.find((p) => p.opportunityId === o.id && p.status !== "cancelled" && p.status !== "blocked") ?? null;
+    // Annonces de démonstration : adresse fictive (demo.invalid), jamais un lien Vinted.
+    return { ...o, search: search ? { id: search.id, name: search.name, source: search.source } : null, purchase, itemUrl: vintedListingUrl(o.observed.url) };
+  }
   async setOpportunityStatus(id: string, status: Opportunity["status"]): Promise<Opportunity> {
     const o = this.s.opportunities.find((x) => x.id === id);
     if (!o) throw new DataError("not_found", "Opportunité introuvable", 404);
+    if (!(OPPORTUNITY_STATUSES as readonly string[]).includes(status)) throw new DataError("validation", "Statut inconnu", 400);
     o.status = status;
     o.updatedAt = this.now();
     this.persist();
     return o;
+  }
+  /** Mesures : « à mesurer » sans recherche en direct ; sinon chiffres FICTIFS marqués « démo ». */
+  async radarMetrics(days?: number): Promise<RadarMetricsView> {
+    const radar = this.radar();
+    return demoRadarMetrics({ searches: this.s.searches, opportunities: this.s.opportunities, purchases: this.s.purchases, state: radar, now: this.clock(), days });
+  }
+  /** Réglages Radar et Radar Auto : activer Radar Auto exige le verrou serveur (fermé en démonstration). */
+  async updateRadarSettings(input: RadarSettingsUpdate): Promise<RadarSettingsResult> {
+    const st = this.s;
+    this.requireCan("radar.write", "Votre rôle ne permet pas de modifier les réglages du Radar.");
+    const parsed = radarSettingsUpdateSchema.safeParse(input);
+    if (!parsed.success) throw new DataError("validation", "Réglages Radar invalides", 400, parsed.error.flatten());
+    if (parsed.data.autoBuy) this.requireCan("purchase.execute", "Seul le propriétaire peut modifier Radar Auto.");
+    const radar = { ...this.radarSettingsNow(), ...(parsed.data.radar ?? {}) };
+    const autoBuy = { ...st.org.settings.autoBuy, ...(parsed.data.autoBuy ?? {}) };
+    if (autoBuy.enabled && !st.org.settings.autoBuy.enabled) {
+      const server = this.radarAutoServerGate();
+      if (!server.allowed) throw new DataError("radar_auto_disabled", server.reason!, 403, { notice: RADAR_AUTO_SHARED_ADDRESS_NOTICE });
+      autoBuy.enabledAt = this.now();
+      autoBuy.enabledBy = st.user.id;
+    }
+    if (parsed.data.autoBuy?.connectionId) {
+      const c = st.connections.find((x) => x.id === parsed.data.autoBuy!.connectionId);
+      if (!c || c.usage !== "purchase" || !isActiveAccount(c)) throw new DataError("validation", "Radar Auto n'utilise qu'un compte Vinted « Achat » actif (jamais un compte Perso).", 400);
+    }
+    st.org = { ...st.org, settings: { ...st.org.settings, radar, autoBuy }, updatedAt: this.now() };
+    this.audit("radar.settings_updated", "organization", st.org.id, { radar: parsed.data.radar ?? null, autoBuy: parsed.data.autoBuy ?? null });
+    this.persist();
+    return { radar, autoBuy };
   }
 
   // ---------- achat assisté ----------
@@ -1148,22 +1293,47 @@ export class DemoClient implements DataClient {
     this.persist();
     return p;
   }
-  async confirmPurchaseRequest(id: string): Promise<PurchaseRequest> {
+  /**
+   * Prix d'achat reporté dans Manager (même règle que le serveur) : article « en stock », prix d'achat =
+   * total payé, étiquette « radar », historique qui garde le lien vers l'affaire et la demande d'achat.
+   */
+  private reportToManager(p: PurchaseRequest, opp: Opportunity, totalCents: number, at: string): string {
+    const st = this.s;
+    const parsed = inventoryItemCreateSchema.parse({ title: opp.title.slice(0, 200), brand: opp.observed.brand, size: opp.observed.size, category: opp.observed.category ?? "other", condition: opp.observed.condition ?? "good", purchasePriceCents: totalCents, status: "in_stock", tags: ["radar"], purchasedAt: at });
+    const item: InventoryItem = { ...parsed, id: newId(), orgId: st.org.id, sku: parsed.sku || nextSku(parsed.category, st.items.map((i) => i.sku)), listedAt: null, soldAt: null, archivedAt: null, createdAt: at, updatedAt: at };
+    st.items.unshift(item);
+    this.logEvent(item.id, "created", { source: { from: null, to: "radar" }, opportunityId: { from: null, to: opp.id }, purchaseRequestId: { from: null, to: p.id } }, "Acheté avec Selio Radar : prix d'achat reporté.");
+    this.audit("item.created", "inventory_item", item.id, { source: "radar" });
+    return item.id;
+  }
+  /**
+   * Report d'un achat fait À LA MAIN par le client (même règle que le serveur) : seul l'anti-doublon
+   * bloque ; budget de la recherche et marge estimée ne sont que des avertissements ; prix saisi par le
+   * client (port compris) ou, à défaut, coût estimé de l'affaire.
+   */
+  async confirmPurchaseRequest(id: string, opts: { paidCents?: number | null } = {}): Promise<PurchaseRequest> {
     const p = this.s.purchases.find((x) => x.id === id);
     if (!p) throw new DataError("not_found", "Demande introuvable", 404);
     if (p.status !== "awaiting_confirmation") throw new DataError("conflict", "Cette demande n'est plus en attente de confirmation.", 409);
+    if (this.s.purchases.some((x) => x.id !== p.id && x.opportunityId === p.opportunityId && x.status !== "cancelled" && x.status !== "blocked")) throw new DataError("conflict", "Une demande d'achat existe déjà pour cette affaire (prévention des doublons).", 409);
+    const paid = opts.paidCents ?? null;
+    if (paid !== null && (!Number.isInteger(paid) || paid < 0 || paid > 1_000_000)) throw new DataError("validation", "Prix payé invalide (centimes, de 0 à 10 000 €).", 400);
     const opp = this.s.opportunities.find((o) => o.id === p.opportunityId)!;
     p.confirmedAt = this.now();
-    const spentToday = this.spentToday();
-    const checks = runPurchaseChecks({ opportunity: opp, request: p, spentTodayCents: spentToday, dailyBudgetCents: this.s.org.settings.autoBuy.dailyCapCents, duplicateExists: this.s.purchases.some((x) => x.id !== p.id && x.opportunityId === p.opportunityId && (x.status === "simulated" || x.status === "executed")), connectorAllowsPurchase: false, fees: this.s.org.settings.buyerFees });
+    const checks = runPurchaseChecks({ opportunity: opp, request: p, spentTodayCents: 0, dailyBudgetCents: Number.MAX_SAFE_INTEGER, duplicateExists: false, connectorAllowsPurchase: false, fees: this.s.org.settings.buyerFees })
+      .filter((c) => c.code === "price_within_max" || c.code === "within_request_budget" || c.code === "margin_positive");
     p.checks = checks.map(({ code, ok, label }) => ({ code, ok, label }));
-    const outcome = purchaseOutcome(checks, p.realPurchaseEnabled);
-    p.status = outcome;
-    p.executedAt = outcome === "blocked" ? null : this.now();
-    p.resultNote = outcome === "blocked" ? "Contrôles non satisfaits : aucun achat (même simulé) n'a été effectué." : "Achat SIMULÉ de bout en bout : aucun paiement ni commande réels. L'achat réel est désactivé et exige un connecteur autorisé.";
-    if (outcome !== "blocked") { opp.status = "purchased"; opp.updatedAt = this.now(); }
+    const warnings = checks.filter((c) => !c.ok).map((c) => c.label);
+    const totalCents = paid ?? purchaseCost(opp.observed, this.s.org.settings.buyerFees).totalCents;
+    p.status = "simulated";
+    p.executedAt = this.now();
+    p.totalCents = totalCents;
+    p.reportedItemId = this.reportToManager(p, opp, totalCents, p.confirmedAt);
+    p.resultNote = `Acheté par vous sur Vinted : Selio n'a rien payé ni commandé. Prix d'achat ${paid === null ? "estimé" : "saisi"} reporté dans Manager (article en stock) pour suivre la marge.${warnings.length ? ` À vérifier : ${warnings.join(" ; ")}.` : ""}`.slice(0, 500);
+    opp.status = "purchased";
+    opp.updatedAt = this.now();
     p.updatedAt = this.now();
-    this.audit("purchase.confirmed", "purchase_request", id, { outcome });
+    this.audit("purchase.confirmed", "purchase_request", id, { outcome: "reported", reportedItemId: p.reportedItemId, warnings: warnings.length });
     this.persist();
     return p;
   }
@@ -1177,6 +1347,8 @@ export class DemoClient implements DataClient {
       const opp = this.s.opportunities.find((o) => o.id === p.opportunityId);
       if (opp) { opp.status = "dismissed"; opp.updatedAt = this.now(); }
       p.resultNote = "Achat automatique annulé dans le délai prévu (simulation).";
+    } else if (p.status === "awaiting_3ds") {
+      p.resultNote = "Achat abandonné pendant l'attente de la validation bancaire : vérifiez dans Vinted qu'aucune commande n'a été passée.";
     }
     p.status = "cancelled";
     p.updatedAt = this.now();
@@ -1185,21 +1357,81 @@ export class DemoClient implements DataClient {
     return p;
   }
 
-  /** « À valider » : un clic crée la demande et la confirme (contrôles compris). */
-  async quickBuy(opportunityId: string): Promise<PurchaseRequest> {
+  /** « 1 clic » : le client a acheté lui-même ; un clic crée la demande et la confirme (seul l'anti-doublon bloque), prix reporté dans Manager. */
+  async quickBuy(opportunityId: string, opts: { paidCents?: number | null } = {}): Promise<PurchaseRequest> {
     const opp = this.s.opportunities.find((o) => o.id === opportunityId);
     if (!opp) throw new DataError("not_found", "Affaire introuvable", 404);
     const total = purchaseCost(opp.observed, this.s.org.settings.buyerFees).totalCents;
     const budget = this.s.searches.find((x) => x.id === opp.searchId)?.budgetCents ?? total;
-    const req = await this.createPurchaseRequest({ opportunityId, maxPriceCents: total, budgetCents: budget });
-    return this.confirmPurchaseRequest(req.id);
+    const req = await this.createPurchaseRequest({ opportunityId, maxPriceCents: Math.max(total, opts.paidCents ?? 0), budgetCents: budget });
+    return this.confirmPurchaseRequest(req.id, opts);
   }
 
-  /** Achat automatique : toutes les affaires nouvelles au-dessus du seuil, dans les garde-fous. */
+  /** Premier verrou de Radar Auto : le serveur de démonstration le garde FERMÉ (RADAR_AUTO_ENABLED=false). */
+  private radarAutoServerGate(): { allowed: boolean; reason: string | null } {
+    if (this.options.radarAutoServerEnabled === true) return { allowed: true, reason: null };
+    return { allowed: false, reason: `Radar Auto est désactivé sur le serveur (RADAR_AUTO_ENABLED) : ${RADAR_AUTO_SHARED_ADDRESS_NOTICE}` };
+  }
+  private radarAutoActive(): boolean {
+    return this.radarAutoServerGate().allowed && this.s.org.settings.autoBuy.enabled;
+  }
+  /** Verrous de Radar Auto, mêmes clés et même ordre que le serveur : serveur, adresse partagée, organisation, Cloud, accord. */
+  private async radarAutoLocks(): Promise<{ locks: RadarAutoLock[]; account: MarketplaceConnection | null }> {
+    const st = this.s;
+    const server = this.radarAutoServerGate();
+    const ready = await this.liveReadinessFor(null);
+    const consent = await this.cloudConsentView();
+    // Comme le serveur : le verrou « Cloud » ne tient pas compte de l'accord (verrou à part).
+    const cloudOk = ready.cloudAccount !== null && ready.cloudAccount.status === "active" && ready.cloudAccount.hasSession;
+    const label = (key: string) => RADAR_AUTO_LOCK_LABELS[key] ?? key;
+    const enabledAt = st.org.settings.autoBuy.enabledAt;
+    const locks: RadarAutoLock[] = [
+      { key: "server", ok: server.allowed, label: label("server"), detail: server.allowed ? "Ouvert sur ce serveur, pour les tests de l'équipe." : "Fermé : Radar Auto est désactivé sur ce serveur (RADAR_AUTO_ENABLED=false)." },
+      { key: "shared_address", ok: server.allowed, label: label("shared_address"), detail: RADAR_AUTO_SHARED_ADDRESS_NOTICE },
+      { key: "organization", ok: st.org.settings.autoBuy.enabled, label: label("organization"), detail: st.org.settings.autoBuy.enabled ? `Activé${enabledAt ? ` le ${enabledAt}` : ""}.` : "Désactivé dans les réglages de Radar Auto." },
+      {
+        key: "cloud", ok: cloudOk, label: label("cloud"),
+        detail: cloudOk ? "Compte Achat actif dans Selio Cloud, session enregistrée."
+          : !ready.account ? `${RADAR_LIVE_REQUIRES_CLOUD} : aucun compte Vinted « Achat » actif.`
+          : ready.cloudAccount ? `${RADAR_LIVE_REQUIRES_CLOUD} : le compte « ${ready.account.label} » n'est pas actif dans le Cloud (connexion à faire, pause ou arrêt).`
+          : `${RADAR_LIVE_REQUIRES_CLOUD} : le compte « ${ready.account.label} » n'est pas relié au Cloud.`,
+      },
+      { key: "consent", ok: consent.current, label: label("consent"), detail: consent.current ? "Accord accepté pour la version courante du texte." : "Accord Selio Cloud à accepter (ou à relire : le texte a changé)." },
+    ];
+    return { locks, account: ready.account };
+  }
+  async autoBuyStatus(): Promise<AutoBuyStatus> {
+    const st = this.s;
+    const { locks, account } = await this.radarAutoLocks();
+    const reasons = locks.filter((l) => !l.ok).map((l) => `${l.label} : ${l.detail}`);
+    if (st.automation.globalPaused) reasons.push("Arrêt global des automatisations.");
+    return {
+      active: reasons.length === 0,
+      serverEnabled: this.radarAutoServerGate().allowed,
+      orgEnabled: st.org.settings.autoBuy.enabled,
+      realPurchase: false,
+      locks,
+      reasons,
+      notice: RADAR_AUTO_SHARED_ADDRESS_NOTICE,
+      account: account ? { id: account.id, label: account.label } : null,
+      settings: st.org.settings.autoBuy,
+      simulated: true,
+    };
+  }
+
+  /**
+   * Radar Auto (simulé) : derrière les mêmes verrous que le serveur ; un verrou fermé → `{ disabled, reasons }`
+   * sans rien évaluer. Verrous levés (comptes de l'équipe) : affaires nouvelles au-dessus du seuil, dans les
+   * garde-fous, achat SIMULÉ sans navigateur.
+   */
   async runAutoBuy(): Promise<AutoBuyRunResult> {
     const st = this.s;
     const settings = st.org.settings.autoBuy;
-    const account = this.purchaseAccount();
+    const { locks, account } = await this.radarAutoLocks();
+    const base = { evaluated: 0, bought: 0, spentCents: 0, skipped: [] as { reason: string; count: number }[], account: account ? { id: account.id, label: account.label } : null, awaiting3ds: 0, realPurchase: false, notice: RADAR_AUTO_SHARED_ADDRESS_NOTICE };
+    const reasons = locks.filter((l) => !l.ok).map((l) => `${l.label} : ${l.detail}`);
+    if (st.automation.globalPaused) reasons.push("Arrêt global des automatisations.");
+    if (reasons.length > 0) return { ...base, disabled: true, reasons };
     const via = account ? ` via le compte Achat « ${account.label} »` : "";
     const skipped = new Map<string, number>();
     let evaluated = 0, bought = 0, spentCents = 0;
@@ -1216,13 +1448,71 @@ export class DemoClient implements DataClient {
       const search = st.searches.find((x) => x.id === opp.searchId);
       const checks = runPurchaseChecks({ opportunity: opp, request: { maxPriceCents: decision.totalCents, budgetCents: search?.budgetCents ?? decision.totalCents, realPurchaseEnabled: false, confirmedAt: now.toISOString() }, spentTodayCents: this.spentToday(), dailyBudgetCents: settings.dailyCapCents, duplicateExists: false, connectorAllowsPurchase: false, fees: st.org.settings.buyerFees });
       const outcome = purchaseOutcome(checks, false);
-      const p: PurchaseRequest = { id: newId(), orgId: st.org.id, opportunityId: opp.id, dedupeKey: `purchase:${opp.id}`, maxPriceCents: decision.totalCents, budgetCents: search?.budgetCents ?? decision.totalCents, status: outcome, mode: "auto", connectionId: account?.id ?? null, cancelableUntil: outcome === "blocked" ? null : cancelableUntil(now, settings), checks: checks.map(({ code, ok, label }) => ({ code, ok, label })), realPurchaseEnabled: false, confirmedAt: now.toISOString(), executedAt: outcome === "blocked" ? null : now.toISOString(), resultNote: outcome === "blocked" ? "Achat automatique bloqué par les contrôles." : `Achat automatique SIMULÉ${via} : ${decision.reason}. Annulable pendant ${settings.cancelWindowMinutes} min.`.slice(0, 500), createdAt: now.toISOString(), updatedAt: now.toISOString() };
+      const p: PurchaseRequest = { id: newId(), orgId: st.org.id, opportunityId: opp.id, dedupeKey: `purchase:${opp.id}`, maxPriceCents: decision.totalCents, budgetCents: search?.budgetCents ?? decision.totalCents, status: outcome, mode: "auto", connectionId: account?.id ?? null, cancelableUntil: outcome === "blocked" ? null : cancelableUntil(now, settings), checks: checks.map(({ code, ok, label }) => ({ code, ok, label })), realPurchaseEnabled: false, confirmedAt: now.toISOString(), executedAt: outcome === "blocked" ? null : now.toISOString(), totalCents: outcome === "blocked" ? null : decision.totalCents, resultNote: outcome === "blocked" ? "Achat automatique bloqué par les contrôles." : `Achat automatique SIMULÉ${via} : ${decision.reason}. Aucun navigateur ouvert, aucun paiement. Annulable pendant ${settings.cancelWindowMinutes} min.`.slice(0, 500), createdAt: now.toISOString(), updatedAt: now.toISOString() };
       st.purchases.unshift(p);
       if (outcome !== "blocked") { opp.status = "purchased"; opp.updatedAt = this.now(); bought++; spentCents += decision.totalCents; }
       this.audit("purchase.auto", "purchase_request", p.id, { outcome, score: opp.score });
     }
     this.persist();
-    return { evaluated, bought, spentCents, skipped: [...skipped.entries()].map(([reason, count]) => ({ reason, count })), account: account ? { id: account.id, label: account.label } : null };
+    return { ...base, evaluated, bought, spentCents, skipped: [...skipped.entries()].map(([reason, count]) => ({ reason, count })) };
+  }
+  /**
+   * Paiement 3-D Secure validé par le client dans son application bancaire : la démonstration relit une
+   * confirmation simulée (aucun code saisi, aucun paiement réel). Délai dépassé : achat abandonné.
+   */
+  async resumePurchase(id: string): Promise<ResumeResult> {
+    const p = this.s.purchases.find((x) => x.id === id);
+    if (!p) throw new DataError("not_found", "Demande introuvable", 404);
+    if (p.status !== "awaiting_3ds") throw new DataError("conflict", "Cet achat n'attend pas de validation bancaire.", 409);
+    const now = this.now();
+    if (p.awaiting3dsUntil && p.awaiting3dsUntil <= now) {
+      Object.assign(p, { status: "cancelled", awaiting3dsUntil: null, updatedAt: now, resultNote: `Validation bancaire non reçue en ${RADAR_3DS_TIMEOUT_MINUTES} min : achat abandonné. Vérifiez dans Vinted qu'aucune commande n'a été passée.` } satisfies Partial<PurchaseRequest>);
+      this.persist();
+      throw new DataError("conflict", "Le délai de validation bancaire est dépassé : l'achat a été abandonné. Vérifiez dans Vinted qu'aucune commande n'a été passée.", 409);
+    }
+    Object.assign(p, { status: "simulated", executedAt: now, awaiting3dsUntil: null, updatedAt: now, resultNote: "Validation bancaire reçue : achat SIMULÉ (démonstration), aucun paiement ni commande réels." } satisfies Partial<PurchaseRequest>);
+    const opp = this.s.opportunities.find((o) => o.id === p.opportunityId);
+    if (opp) { opp.status = "purchased"; opp.updatedAt = now; }
+    this.audit("purchase.resumed", "purchase_request", id, { simulated: true });
+    this.persist();
+    return { purchase: p, queued: false };
+  }
+
+  // ---------- alertes Radar sur le téléphone (démonstration : rien n'est envoyé) ----------
+  async pushConfig(): Promise<PushConfig> {
+    return { enabled: false, publicKey: null, reason: "Démonstration : aucune notification ne part d'un serveur. Le test s'affiche sur cet appareil seulement.", simulated: true };
+  }
+  async listPushSubscriptions(): Promise<PushSubscriptionView[]> {
+    return this.radar().pushSubscriptions.filter((s) => s.userId === this.s.user.id);
+  }
+  async subscribePush(input: PushSubscriptionInput): Promise<PushSubscriptionView> {
+    const parsed = pushSubscriptionInputSchema.safeParse(input);
+    if (!parsed.success) throw new DataError("validation", "Abonnement aux notifications invalide", 400, parsed.error.flatten());
+    const radar = this.radar();
+    const existing = radar.pushSubscriptions.find((s) => s.endpoint === parsed.data.endpoint);
+    const view: PushSubscriptionView = { id: existing?.id ?? newId(), orgId: this.s.org.id, userId: this.s.user.id, endpoint: parsed.data.endpoint, userAgent: parsed.data.userAgent?.slice(0, 120) ?? null, createdAt: existing?.createdAt ?? this.now(), lastUsedAt: null, failures: 0, disabledAt: null };
+    radar.pushSubscriptions = [view, ...radar.pushSubscriptions.filter((s) => s.endpoint !== view.endpoint)];
+    this.audit("radar.push.subscribed", "push_subscription", view.id, { simulated: true });
+    this.persist();
+    return view;
+  }
+  async unsubscribePush(endpoint: string): Promise<{ removed: boolean }> {
+    const radar = this.radar();
+    const before = radar.pushSubscriptions.length;
+    radar.pushSubscriptions = radar.pushSubscriptions.filter((s) => !(s.endpoint === endpoint && s.userId === this.s.user.id));
+    this.persist();
+    return { removed: radar.pushSubscriptions.length < before };
+  }
+  async removePushSubscription(id: string): Promise<{ removed: boolean }> {
+    const radar = this.radar();
+    const before = radar.pushSubscriptions.length;
+    radar.pushSubscriptions = radar.pushSubscriptions.filter((s) => !(s.id === id && s.userId === this.s.user.id));
+    this.persist();
+    return { removed: radar.pushSubscriptions.length < before };
+  }
+  /** Rien n'est envoyé : la page affiche `payload` sur cet appareil (notification locale si permise, sinon bandeau). */
+  async testPush(): Promise<PushTestResult> {
+    return { sent: 0, simulated: true, payload: { title: "Selio Radar : notification de test", body: "Démonstration : voici à quoi ressemble une alerte d'affaire sur votre téléphone.", url: "/app/radar" }, message: "Démonstration : rien n'est envoyé, la notification s'affiche sur cet appareil." };
   }
 
   // ---------- générateur d'annonces ----------

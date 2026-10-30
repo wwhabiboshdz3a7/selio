@@ -1,6 +1,6 @@
 # Selio — clés et configuration
 
-_Version du 29 octobre 2026 · branche `claude/gracious-wright-rf41nt`_
+_Version du 30 octobre 2026 · branche `claude/gracious-wright-rf41nt`_
 
 ## En bref
 
@@ -103,7 +103,7 @@ Mêmes variables base / Redis / chiffrement / IA que l'API. Les cadences ont des
 
 | Variable | Statut | Exemple / format | À quoi elle sert |
 |---|---|---|---|
-| `CRON_AUTOMATION_TICK, CRON_JOBS_PROCESS, CRON_CONNECTOR_SYNC, CRON_RADAR, CRON_RETENTION` | Facultatif | `*/5 * * * *, * * * * *, */15 * * * *, 0 * * * *, 0 3 * * *` | Expressions cron (UTC) : automatisations, file, synchronisation, radar, rétention. |
+| `CRON_AUTOMATION_TICK, CRON_JOBS_PROCESS, CRON_CONNECTOR_SYNC, CRON_RETENTION` | Facultatif | `*/5 * * * *, * * * * *, */15 * * * *, 0 3 * * *` | Expressions cron (UTC) : automatisations, file, synchronisation, rétention. L'ancien `CRON_RADAR` (passage horaire) est remplacé par `RADAR_TICK_EVERY_MS` (section 11). |
 | `CRON_BILLING_RENEW` | Facultatif | `0 * * * *` | Échéances d'abonnement, **toutes les heures** : fins d'essai (débit de l'offre retenue, ou accès de base sans carte, après relecture des cartes enregistrées chez Revolut), renouvellements à l'initiative du marchand, relances J+1 / J+3 / J+7 après un échec (calculées à l'heure de l'échéance : un passage horaire les tient le jour annoncé par email ; un passage quotidien les décalerait d'un jour), annulation des autorisations de vérification restées posées. Idempotent : rien n'est tenté hors échéance. Le worker a besoin de `REVOLUT_SECRET_KEY`, `REVOLUT_MODE`, `FRANCHISE_TVA`, `PUBLIC_WEB_URL` et des variables d'email (section 7) ; pas du secret de webhook. |
 
 ## 7. Emails transactionnels (invitations, mot de passe oublié, échec de paiement, alertes)
@@ -174,21 +174,59 @@ Fichier à part, **`/etc/selio/backup.env`** (`chmod 600`, propriétaire root), 
 | `BACKUP_AGE_IDENTITY` | Test de restauration (age) | `~/.config/selio/selio-sauvegarde.key` | Clé **privée** age : sur le portable de secours seulement, jamais sur la machine. |
 | `RESTORE_CHECK_PHOTOS` | Facultatif | `true` | Vérifie aussi l'archive des photos. |
 
+## 11. Selio Radar, Radar Auto et notifications de la PWA
+
+Fonctionnement, règles et procédure de test : docs/RADAR.md. **Radar Auto et l'achat réel sont fermés par défaut**, et doivent le rester tant qu'Ibrahim n'a pas tranché et que l'avocat n'a pas donné son avis (docs/PRODUCTION-CHECKLIST.md). La lecture en direct n'a pas d'interrupteur propre : elle passe par Selio Cloud (section 9). Sans `CLOUD_ENABLED=true` et Chromium, seules les recherches du simulateur sont lues. Ces variables sont lues par l'API et le worker, livrés en parallèle de RADAR.md (état dans docs/BUILD_STATUS.md) ; leurs valeurs factices sont dans `apps/api/.env.example` et `apps/worker/.env.example`.
+
+| Variable | Où | Statut | Exemple / format | À quoi elle sert |
+|---|---|---|---|---|
+| `VAPID_PUBLIC_KEY` | API et worker | Recommandé (vide = notifications désactivées) | base64 « url », 87 caractères | Clé **publique** des notifications Web Push : le navigateur la reçoit pour s'abonner. Paire à générer **une fois** (commande ci-dessous), mêmes valeurs côté API et worker. Vide : les alertes Radar restent en file et expirent après 12 h ; signalé au démarrage. |
+| `VAPID_PRIVATE_KEY` | API et worker | Obligatoire avec la clé publique | base64 « url », 43 caractères | Clé **privée** : signe chaque notification. **Secret** : fichier `.env` du serveur seulement, jamais dans Git, Netlify ou le navigateur. Une clé à moitié remplie ou mal formée arrête le démarrage. |
+| `VAPID_SUBJECT` | API et worker | Obligatoire avec les clés | `mailto:contact@votre-domaine.fr` | Contact de l'émetteur, exigé par les services de notification (`mailto:` ou URL `https:`). |
+| `RADAR_AUTO_ENABLED` | API et worker | Facultatif | `false` (défaut) | Premier verrou de Radar Auto, côté serveur. **Réservé aux comptes de l'équipe pour les tests ; pas activable pour les clients sur l'adresse partagée tant qu'Ibrahim n'a pas tranché.** `false` : aucune organisation ne peut activer Radar Auto, et le passage `radar.auto` du worker n'existe pas. |
+| `RADAR_AUTO_ORG_IDS` | API et worker | Obligatoire en production si `RADAR_AUTO_ENABLED=true` | `identifiant1,identifiant2` | Organisations de l'équipe autorisées pour Radar Auto, séparées par des virgules ; toute autre organisation est refusée. En production, `RADAR_AUTO_ENABLED=true` sans elle arrête le démarrage. |
+| `RADAR_REAL_PURCHASE` | API et worker | Facultatif | `false` (défaut) | Achat réel (D11). Il faut `RADAR_AUTO_ENABLED=true` **et** `RADAR_REAL_PURCHASE=true` pour que le navigateur clique sur « Payer ». Sinon, l'achat s'arrête avant le bouton de paiement et il est enregistré « simulé ». Sans effet si `RADAR_AUTO_ENABLED=false` (avertissement au démarrage). |
+| `CLOUD_3DS_TIMEOUT_MS` | API et worker | Facultatif | `600000` (10 min ; de 60000 à 1800000) | Attente de la validation 3-D Secure par le client, dans l'application de sa banque : le navigateur de l'achat reste ouvert pendant ce temps, et la demande d'achat expire en même temps. Même valeur des deux côtés. Selio ne saisit jamais de code. |
+| `RADAR_TICK_EVERY_MS` | Worker | Facultatif | `30000` | Passage de Radar (ms) : lit les recherches dues (60 s en direct, 30 s pour les 3 prioritaires quand Radar Auto est ouvert, 1 h pour le simulateur, multiplié par le facteur de ralentissement). Remplace `CRON_RADAR`. |
+| `RADAR_MAX_PAGES_PER_MINUTE_GLOBAL` | Worker | Facultatif | `30` | Pages lues en direct par minute sur toute la machine, toutes organisations confondues. Le plafond par organisation (10 par défaut) est un réglage de l'organisation. |
+| `RADAR_PAGE_BUDGET_MS` | Worker | Facultatif | `30000` | Durée maximale d'une lecture de page, navigateur compris (jamais plus que `CLOUD_ACTION_TIMEOUT_MS`). |
+| `RADAR_PURCHASE_TIMEOUT_MS` | Worker | Facultatif | `90000` | Durée maximale d'un achat Radar Auto jusqu'au paiement, hors attente 3-D Secure. |
+| `RADAR_AUTO_EVERY_MS` | Worker | Facultatif | `30000` | Passage de Radar Auto (ms), seulement si `RADAR_AUTO_ENABLED=true` : un achat par le navigateur au plus par passage. |
+| `CRON_ALERTS` | Worker | Facultatif | `* * * * *` | Envoi des alertes en file (notifications), expression cron UTC. |
+
+### Générer les clés VAPID, pas à pas
+
+1. Sur la machine (ou le poste de l'opérateur), **une seule fois** :
+
+   ```bash
+   npx web-push generate-vapid-keys
+   # ou, avec la version déjà installée dans le dépôt (sans téléchargement) :
+   pnpm --filter @selio/worker exec web-push generate-vapid-keys
+   ```
+
+2. Copier « Public Key » dans `VAPID_PUBLIC_KEY` et « Private Key » dans `VAPID_PRIVATE_KEY`, dans le `.env` de l'API **et** du worker ; renseigner `VAPID_SUBJECT` avec une vraie adresse de contact. Ne jamais commiter ces valeurs, ne jamais les coller dans une conversation.
+3. Redémarrer l'API et le worker : leur journal dit « Notifications Web Push activées ».
+4. Dans l'application : Paramètres › Notifications › activer sur le téléphone, puis « notification de test ». Sur iPhone, ajouter d'abord Selio à l'écran d'accueil et l'ouvrir depuis son icône.
+5. Ranger les clés avec la copie chiffrée des `.env` (docs/SAUVEGARDE.md §1.1). Ne les changer qu'en cas de fuite : chaque appareil devrait se réabonner.
+
 ## Réglages faits dans l'application (pas des clés)
 
 - **Extension navigateur** : Pas de variable : dans Selio › Comptes Vinted › « Avancé — relier l'extension Selio », créez un jeton d'extension, puis collez l'adresse de l'API et le jeton dans les options de l'extension.
-- **Achat auto** : Page « Achat auto » : seuil de note (85 conseillé), plafond par jour, prix maximal par article, délai d'annulation. Désactivé par défaut.
+- **Radar Auto (achat auto)** : Page « Achat auto » : seuil de note (85 conseillé), plafond par jour, prix maximal par article, délai d'annulation, compte Achat. Désactivé par défaut ; l'activation est refusée tant que `RADAR_AUTO_ENABLED=false` (section 11), et elle est réservée aux comptes de l'équipe (docs/RADAR.md §6).
+- **Selio Radar** : sur chaque recherche, source (simulateur ou en direct depuis le compte Achat relié à Selio Cloud) et priorité (3 recherches au plus) ; réglages des alertes (note minimale, 75 par défaut ; heures calmes) et pages lues par minute (10 par défaut).
+- **Notifications sur le téléphone** : Paramètres › Notifications, appareil par appareil (sur iPhone, Selio ajouté à l'écran d'accueil). Exige les clés VAPID (section 11).
 - **Coût réel d'achat** : Page « Achat auto » : protection acheteurs = part fixe + pourcentage (par défaut 0,70 € + 5 %, modifiable).
 - **Dressing intelligent** : Republication conseillée après 7 jours (réglable : 5 à 30 jours).
 - **Assistant IA** : Paramètres › Assistant IA : ton, signature, validation avant envoi, quota mensuel.
 
 ## Inutile
 
-- Aucune clé Vinted : Vinted ne propose pas d'API publique pour les vendeurs. La lecture et l'aide à la publication passent par l'extension Selio, dans votre navigateur, avec votre session. Selio Cloud ne demande pas non plus de mot de passe Vinted : le client se connecte lui-même dans la fenêtre sécurisée.
+- Aucune clé Vinted : Vinted ne propose pas d'API publique pour les vendeurs. La lecture et l'aide à la publication passent par l'extension Selio, dans votre navigateur, avec votre session. Selio Cloud ne demande pas non plus de mot de passe Vinted : le client se connecte lui-même dans la fenêtre sécurisée. Selio Radar lit avec cette même session, celle du compte Achat.
 - Aucune clé OpenAI ou autre IA payante : Selio est prévu pour votre modèle personnel (Ollama).
 - Aucun secret dans Netlify : seules les variables VITE_ ci-dessus, qui sont publiques (adresse de l'API, tarifs indicatifs, mentions des factures).
 - Aucune autre clé de paiement : tout passe par Revolut (section 5), et seul le serveur détient la clé secrète. Le navigateur ne reçoit que le jeton public d'une commande, consommé par le formulaire Revolut.
 - Aucune clé Supabase (anon / service) : la base est un PostgreSQL 16 standard (Docker sur le serveur). Vous pouvez l'héberger chez Supabase ou un autre Postgres managé : seule DATABASE_URL change.
+- Aucun service de notification payant (ni Firebase, ni OneSignal) : les notifications Web Push passent par les services gratuits des navigateurs, signées par vos propres clés VAPID (section 11).
 
 ## Mise en ligne pas à pas
 
@@ -207,8 +245,8 @@ Fichier à part, **`/etc/selio/backup.env`** (`chmod 600`, propriétaire root), 
 ### Mode connecté (vrais comptes, base de données)
 
 1. Louer un serveur Linux (VPS) et y installer Docker.
-2. Cloner le dépôt, copier apps/api/.env.example vers deploy/.env et remplir les sections 2, 3 et 4 (puis 5 pour le paiement Revolut, 7 et 8 quand le service d'email et MinIO sont choisis).
-3. docker compose -f deploy/docker-compose.prod.yml up -d --build (migrations comprises, jusqu'à la 0009 : tables de paiement et de factures).
+2. Cloner le dépôt, copier apps/api/.env.example vers deploy/.env et remplir les sections 2, 3 et 4 (puis 5 pour le paiement Revolut, 7 et 8 quand le service d'email et MinIO sont choisis, 11 pour les clés des notifications).
+3. docker compose -f deploy/docker-compose.prod.yml up -d --build (migrations comprises, jusqu'à la 0012 : paiement et factures, Selio Cloud, Selio Radar).
 4. Mettre Caddy devant l'API (deploy/Caddyfile) pour le HTTPS, puis renseigner VITE_API_BASE_URL dans Netlify.
 5. Mettre en place la sauvegarde chiffrée de la nuit et le test de restauration mensuel (section 10, docs/SAUVEGARDE.md) avant d'accueillir de vrais clients.
 
@@ -224,7 +262,8 @@ Fichier à part, **`/etc/selio/backup.env`** (`chmod 600`, propriétaire root), 
 - Sauvegardez `SECRETS_ENCRYPTION_KEY` séparément de la base.
 - N'exposez pas le port 11434 d'Ollama sur Internet : VPN ou passerelle authentifiée.
 - En production, le serveur refuse de démarrer si `COOKIE_SECURE` n'est pas `true`, si `AI_PROVIDER=mock` ou si `ALLOW_AI_FALLBACK=true`. Il démarre mais avertit si `EMAIL_PROVIDER=noop` (aucun email envoyé) ou si `STORAGE_ENDPOINT` est vide (pas de photos).
-- `SMTP_URL`, `STORAGE_SECRET_KEY`, `REVOLUT_SECRET_KEY` et `REVOLUT_WEBHOOK_SECRET` sont des secrets au même titre que `SECRETS_ENCRYPTION_KEY` : fichier `.env` du serveur seulement, jamais dans Netlify ni dans le navigateur.
+- `SMTP_URL`, `STORAGE_SECRET_KEY`, `REVOLUT_SECRET_KEY`, `REVOLUT_WEBHOOK_SECRET` et `VAPID_PRIVATE_KEY` sont des secrets au même titre que `SECRETS_ENCRYPTION_KEY` : fichier `.env` du serveur seulement, jamais dans Netlify ni dans le navigateur. `VAPID_PUBLIC_KEY` n'est pas secrète (le navigateur la reçoit), mais elle va avec la clé privée.
 - Sauvegarde : `/etc/selio/backup.env`, `rclone.conf` et le fichier de phrase de passe gpg sont des secrets (`chmod 600`). La clé **privée** age n'est jamais sur la machine. Les `.env` ne sont pas dans la sauvegarde automatique : copie chiffrée à part (docs/SAUVEGARDE.md §1.1).
 - Selio Cloud : `CLOUD_ENABLED=false` tant que l'avocat n'a pas donné son avis ; `CLOUD_HEAVY_ACTIONS=false` tant qu'Ibrahim n'a pas décidé.
+- Selio Radar : `RADAR_AUTO_ENABLED=false` et `RADAR_REAL_PURCHASE=false` (D11) ; Radar Auto n'est pas activable pour les clients sur l'adresse partagée tant qu'Ibrahim n'a pas tranché. Pour un test de l'équipe, `RADAR_AUTO_ORG_IDS` limite Radar Auto à ses organisations (obligatoire en production), puis tout revient à `false`.
 - `REVOLUT_MODE=live` sans `REVOLUT_LIVE_ALLOWED=true` arrête le démarrage : impossible d'encaisser de l'argent réel par inadvertance.
