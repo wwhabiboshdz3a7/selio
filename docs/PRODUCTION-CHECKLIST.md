@@ -16,7 +16,7 @@
 - [ ] Tarifs définitifs décidés ; `VITE_SHOW_INDICATIVE_PRICING` ajusté ; CGV rédigées.
 - [ ] Service d'email choisi avec Ibrahim et branché (`EMAIL_PROVIDER=smtp`, `SMTP_URL`, `EMAIL_FROM`, SPF/DKIM) : invitations et mot de passe oublié sont prêts ; par défaut `noop`, rien ne part (avertissement au démarrage).
 - [ ] Stockage objet pour les photos (MinIO sur la machine derrière Caddy, `STORAGE_*`) : routes `/api/uploads` prêtes, envoi depuis le navigateur à brancher (data URL en démo, URL en base en connecté tant que ce n'est pas fait).
-- [ ] `pnpm db:migrate` exécuté (0005 → 0011 : carte enregistrée, vue administrateur de l'usage, jetons, rattrapage des quotas des anciens abonnements, paiement Revolut avec `payment_orders` et `invoices`, compteur de factures transactionnel et réservation des webhooks, tables de Selio Cloud).
+- [ ] `pnpm db:migrate` exécuté (0005 → 0012 : carte enregistrée, vue administrateur de l'usage, jetons, rattrapage des quotas des anciens abonnements, paiement Revolut avec `payment_orders` et `invoices`, compteur de factures transactionnel et réservation des webhooks, tables de Selio Cloud, tables de Selio Radar). Si la 0012 a averti « doublons actifs existants », les résoudre puis la relancer pour créer l'index d'une seule demande d'achat active par affaire.
 - [ ] Logo vectoriel officiel fourni (`logo-principal.svg`) pour favicons nets.
 
 ## Connecteurs et IA
@@ -50,6 +50,20 @@
 - [ ] Sélecteurs propres au Cloud (bouton d'envoi, menu du membre, cookies de session, URL de connexion) validés sur un **compte Vinted de test** appartenant à l'équipe, puis reportés dans un adaptateur `v2` du connecteur ; motifs de `detectBlock` complétés avec les vrais signaux observés.
 - [ ] Parcours complet vérifié avec ce compte de test : accord, fenêtre de connexion (aucune frappe dans les journaux de l'API, du worker et de Redis), réponse envoyée et confirmée dans le journal, pause manuelle, suppression de la session en un clic, arrêt.
 - [ ] Politique du site (`netlify.toml`, `deploy/netlify/_headers`) avec `wss:` dans `connect-src` ; WebSocket testé à travers Caddy et le tunnel.
+
+## Selio Radar et Radar Auto (RADAR.md)
+- [ ] **`RADAR_AUTO_ENABLED=false`** côté API **et** worker (défaut), et **`RADAR_REAL_PURCHASE=false`** (D11). `RADAR_AUTO_ORG_IDS` vide, sauf pendant un test de l'équipe (et alors uniquement ses organisations). Le journal de démarrage ne contient pas « Radar Auto OUVERT ».
+- [ ] **Décision d'Ibrahim** sur Radar Auto pour les clients : tant qu'elle n'est pas prise, il n'est pas activable sur l'adresse partagée, et la mention est visible sur la page Radar Auto.
+- [ ] **Avis écrit de l'avocat** sur la lecture en direct (par Selio Cloud) et sur le bot d'achat, avant toute activation pour un client ; texte de l'accord Cloud étendu à Radar (lecture des recherches, achat automatique) et `CLOUD_CONSENT_VERSION` incrémentée.
+- [ ] **Clés VAPID en production** : paire générée une fois sur la machine (`npx web-push generate-vapid-keys`), `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` et `VAPID_SUBJECT` (vraie adresse de contact) identiques côté API et worker, dans le `.env` du serveur seulement (jamais dans Git ni Netlify), rangées avec la copie chiffrée des `.env` ; le démarrage dit « Notifications Web Push activées ».
+- [ ] **Test de notification** réussi : « notification de test » reçue sur Android (Chrome), sur iPhone (Selio ajouté à l'écran d'accueil) et sur ordinateur ; une vraie alerte d'affaire reçue, qui ouvre la bonne page ; heures calmes respectées ; aucun pseudo, aucune note, aucune photo de vendeur dans la notification.
+- [ ] Sélecteurs du catalogue et du paiement relevés sur une vraie page avec un **compte Vinted de l'équipe** (adaptateurs `v2` et fixtures si besoin) ; identifiants numériques des marques, tailles, états et catégories relevés ; paramètres de l'adresse de recherche confirmés.
+- [ ] **Procédure de test de RADAR.md §10** menée sur nos propres comptes, tableaux de mesures (§7) remplis, critères d'arrêt respectés : zéro blocage avant chaque montée en charge.
+- [ ] Rythmes et plafonds validés par Ibrahim : 60 s / 30 s, 10 pages par minute et par organisation, 30 pour la machine (`RADAR_MAX_PAGES_PER_MINUTE_GLOBAL`), lecture la nuit ou non ; coupe-circuit partagé avec le Cloud accepté.
+- [ ] Écarts tranchés : plafond du facteur de ralentissement (×64 appliqué par le cœur, ×8 demandé), délai 3-D Secure (10 min serveur, 15 min affichées).
+- [ ] `CLOUD_MAX_BROWSERS` fixé en comptant les lectures et achats de Radar (créneaux partagés, créneau gardé pendant une attente 3-D Secure).
+- [ ] Purge des données des vendeurs vérifiée après une tâche de rétention (affaires écartées supprimées après 30 jours ; pseudo, note et photo effacés des autres après 30 jours).
+- [ ] Achat réel : `RADAR_REAL_PURCHASE=true` seulement le temps d'un test d'achat sur un compte de l'équipe, décidé par écrit par Ibrahim, puis retour à `false`.
 
 ## Qualité
 - [ ] `pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e && pnpm build` verts sur la branche de release.

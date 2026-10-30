@@ -69,32 +69,31 @@ export async function connectorSyncTick(services: Services, log: TaskLogger): Pr
   return n;
 }
 
-export async function radarTick(services: Services, log: TaskLogger): Promise<number> {
-  let n = 0;
-  for (const orgId of await allOrgIds(services.db)) {
-    const ctx = systemContext(services, orgId);
-    for (const s of await services.db.withOrg(orgId, (tx) => repos.searches.list(tx))) {
-      if (!s.enabled) continue;
-      try {
-        await radar.runSearch(ctx, s.id);
-        n++;
-      } catch (err) {
-        log.warn({ err, orgId, searchId: s.id }, "radar : échec");
-      }
-    }
-  }
-  return n;
-}
-
 /**
  * Rétention : messages, audit, requêtes IA et sessions expirées selon les réglages de chaque
  * organisation ; journal du Cloud gardé 90 jours, fenêtres de connexion expirées fermées, comptes
- * Cloud arrêtés (session effacée) quand l'offre ne comprend plus le Cloud.
+ * Cloud arrêtés (session effacée) quand l'offre ne comprend plus le Cloud. Selio Radar : mesures de
+ * lecture (`radar_reads`) gardées 90 jours, affaires écartées supprimées après 30 jours, pseudo, note et
+ * photo du vendeur effacés des autres affaires après 30 jours, alertes traitées gardées 90 jours.
  */
-export async function retentionTick(services: Services) {
+export async function retentionTick(services: Services, log?: TaskLogger) {
   const base = await admin.retentionCleanup(services);
   const cloudResult = await cloud.cloudMaintenance(services);
-  return { ...base, cloud: cloudResult };
+  const radarResult = { orgs: 0, reads: 0, deleted: 0, stripped: 0, alerts: 0, errors: 0 };
+  for (const orgId of await allOrgIds(services.db)) {
+    try {
+      const r = await radar.purgeRadarData(services, orgId);
+      radarResult.orgs++;
+      radarResult.reads += r.reads;
+      radarResult.deleted += r.deleted;
+      radarResult.stripped += r.stripped;
+      radarResult.alerts += r.alerts;
+    } catch (err) {
+      radarResult.errors++;
+      log?.error({ orgId, error: err instanceof Error ? err.name : "Error" }, "rétention radar : échec pour une organisation");
+    }
+  }
+  return { ...base, cloud: cloudResult, radar: radarResult };
 }
 
 export interface RenewalSummary {

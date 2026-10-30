@@ -6,6 +6,8 @@ import type { PaymentProvider } from "@selio/connectors";
 import { can, type Action } from "@selio/domain";
 import type { BillingOptions } from "./types";
 import type { CloudExecutor } from "./services/cloud";
+import type { PushSender } from "./services/alerts";
+import type { PurchaseRunner, RadarReader } from "./services/radar-sources";
 
 export class AppError extends Error {
   constructor(public readonly code: string, message: string, public readonly status = 400, public readonly details?: unknown) {
@@ -42,7 +44,17 @@ export interface Services {
    * ouvert pour une action puis refermé). Absent dans l'API : aucune action Cloud n'y est exécutée.
    */
   cloud?: CloudExecutor;
-  /** Réglages serveur lus dans l'environnement (`cloudConfigFromEnv`). Valeurs prudentes par défaut. */
+  /**
+   * Notifications Web Push de la PWA (alertes Radar). Implémenté par le worker (clés VAPID hors base) ;
+   * absent : les alertes restent en file et expirent sans être envoyées.
+   */
+  push?: PushSender;
+  /**
+   * Navigateur de Selio Radar (worker uniquement, socle @selio/cloud) : lecture des pages de recherche
+   * depuis le compte Achat et achat pas à pas (Radar Auto). Absent dans l'API : aucune page n'y est lue.
+   */
+  radar?: { reader?: RadarReader; purchaser?: PurchaseRunner };
+  /** Réglages serveur lus dans l'environnement (`cloudConfigFromEnv`, `radarConfigFromEnv`). Valeurs prudentes par défaut. */
   config?: ServicesConfig;
 }
 
@@ -60,6 +72,18 @@ export interface ServicesConfig {
   cloudActiveHours?: { startHour: number; endHour: number };
   /** CLOUD_LOGIN_TIMEOUT_MS : durée de validité d'une fenêtre de connexion (ticket). Absent : 15 min (contrats). */
   cloudLoginTimeoutMs?: number;
+  /**
+   * RADAR_AUTO_ENABLED : Radar Auto (achat automatique). Faux par défaut, réservé aux comptes de l'équipe
+   * pour les tests ; pas ouvert aux clients sur l'adresse partagée tant qu'Ibrahim n'a pas tranché.
+   */
+  radarAutoEnabled?: boolean;
+  /** RADAR_AUTO_ORG_IDS : organisations (comptes de l'équipe) autorisées ; renseigné, toute autre organisation est refusée. */
+  radarAutoOrgIds?: string[];
+  /**
+   * RADAR_REAL_PURCHASE : achat réel par Radar Auto (D11). Faux par défaut : le parcours s'arrête avant
+   * le bouton de paiement (essai à blanc) et l'achat est enregistré « simulé ».
+   */
+  radarRealPurchase?: boolean;
 }
 
 /** Contexte d'une requête authentifiée dans une organisation. */

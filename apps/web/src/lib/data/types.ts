@@ -7,6 +7,7 @@ import type { ReplySuggestion } from "@selio/contracts";
 import type { BillingCycle, CheckoutResult, Invoice, InvoiceView, PaidPlan, SubsidiaryUsage, TrialDays, UsageCounter } from "@selio/contracts";
 import type { HelpAnswer } from "@selio/contracts";
 import type { CloudAccount, CloudAction, CloudActionKind, CloudActionLevel, CloudActionStatus, CloudAvailability, CloudConsentView, CloudLoginTicket } from "@selio/contracts";
+import type { AutoBuySettings, PushSubscriptionInput, PushSubscriptionView, RadarAlertPayload, RadarMetrics, RadarReadOutcome, RadarSettings, RadarSettingsUpdate, RadarSourceKind } from "@selio/contracts";
 import type { AccountStats, AiHealthSummary, BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
 
 export type VariantLeaderboardRow = ReturnType<typeof variantLeaderboard>[number];
@@ -206,7 +207,125 @@ export interface AutoBuyRunResult {
   skipped: { reason: string; count: number }[];
   /** Compte Achat utilisé (null = aucun compte Achat actif). */
   account?: { id: string; label: string } | null;
+  /** Vrai : un verrou de Radar Auto est fermé, rien n'a été évalué (`reasons`). */
+  disabled?: boolean;
+  reasons?: string[];
+  /** Achats en attente de la validation 3-D Secure du client. */
+  awaiting3ds?: number;
+  /** Achat réel ouvert sur le serveur (sinon essai à blanc, enregistré « simulé »). */
+  realPurchase?: boolean;
+  notice?: string;
 }
+
+// ---------------------------------------------------------------- Selio Radar (miroir de packages/core/src/services/radar.ts)
+
+/**
+ * Résultat d'une analyse (miroir de `RunSearchResult`). Les champs autres que `found` sont facultatifs :
+ * la démonstration et les serveurs plus anciens ne les rendent pas tous.
+ */
+export interface RadarRunResult {
+  found: number;
+  autoBought?: number;
+  source?: RadarSourceKind;
+  /** Résultat de la lecture (null : aucune page lue). */
+  outcome?: RadarReadOutcome | null;
+  /** Lecture écartée (`too_soon`, `pages_per_minute`, `machine_paused`…), avec son explication. */
+  skipped?: string | null;
+  message?: string;
+  itemsSeen?: number;
+  duplicates?: number;
+  factor?: number;
+  intervalSeconds?: number;
+  nextReadAt?: string | null;
+  /** Vinted a arrêté la lecture : compte Cloud en pause. */
+  paused?: boolean;
+  /** Démonstration : lecture simulée, aucune page Vinted lue. */
+  simulated?: boolean;
+}
+
+/** Statistiques de Radar ; `demo` : chiffres fictifs de la démonstration (jamais présentés comme mesurés). */
+export interface RadarMetricsView extends RadarMetrics {
+  demo?: boolean;
+}
+
+/** Verrou de Radar Auto (mêmes clés que `RadarAutoStatus`, packages/core/src/services/radar.ts). */
+export type RadarAutoLockKey = "server" | "shared_address" | "organization" | "cloud" | "consent" | (string & {});
+
+export interface RadarAutoLock {
+  key: RadarAutoLockKey;
+  /** Verrou levé. */
+  ok: boolean;
+  label: string;
+  detail: string;
+}
+
+/**
+ * État de Radar Auto (GET /api/radar/auto/status) : verrous et réglages. Radar Auto n'achète que si TOUS
+ * les verrous sont levés ; le réglage n'est modifiable que si le verrou serveur (RADAR_AUTO_ENABLED,
+ * comptes de l'équipe sur l'adresse partagée) est ouvert.
+ */
+export interface AutoBuyStatus {
+  /** Tous les verrous levés et rien n'arrête les achats : Radar Auto peut acheter au prochain passage. */
+  active: boolean;
+  /** Verrou serveur ouvert pour cette organisation (RADAR_AUTO_ENABLED et comptes de l'équipe). */
+  serverEnabled: boolean;
+  /** Réglage de l'organisation. */
+  orgEnabled: boolean;
+  /** Achat réel ouvert (D11 : faux par défaut ; sinon le parcours s'arrête avant le paiement). */
+  realPurchase: boolean;
+  locks: RadarAutoLock[];
+  /** Raisons qui empêchent Radar Auto d'acheter, en clair. */
+  reasons: string[];
+  /** Mention de l'adresse partagée (décision d'Ibrahim en attente). */
+  notice: string;
+  account: { id: string; label: string } | null;
+  settings: AutoBuySettings;
+  /** Démonstration : état simulé (serveur de démonstration, Radar Auto fermé). */
+  simulated?: boolean;
+}
+
+/** Une affaire prête pour le « 1 clic » (miroir de `OpportunityDetail`). */
+export interface OpportunityDetail extends Opportunity {
+  search: { id: string; name: string; source: RadarSourceKind } | null;
+  /** Demande d'achat active (ni annulée ni bloquée), s'il y en a une. */
+  purchase: PurchaseRequest | null;
+  /** Adresse de l'annonce sur Vinted (https, liste fermée des domaines), sinon null. */
+  itemUrl: string | null;
+}
+
+/** Reprise après une validation 3-D Secure : directe, ou mise en file pour le worker (réponse 202). */
+export interface ResumeResult {
+  purchase: PurchaseRequest;
+  /** Vrai : la relecture de la confirmation est en file dans le worker ; l'issue se lit dans la liste des achats. */
+  queued: boolean;
+}
+
+/** Notifications Web Push (GET /api/push/config) : clé publique VAPID seulement, jamais la clé privée. */
+export interface PushConfig {
+  /** Le serveur a ses clés VAPID et peut envoyer des notifications. */
+  enabled: boolean;
+  publicKey: string | null;
+  /** Pourquoi les notifications sont indisponibles (null si elles le sont). */
+  reason: string | null;
+  /** Démonstration : rien ne part d'un serveur, le test s'affiche sur cet appareil. */
+  simulated?: boolean;
+}
+
+/** Résultat d'une notification de test. */
+export interface PushTestResult {
+  sent: number;
+  /** Appareils abonnés visés. */
+  devices?: number;
+  failed?: number;
+  /** Appareils désactivés (le service de notification a répondu 404 ou 410). */
+  disabled?: number;
+  /** Démonstration : rien n'est envoyé, `payload` s'affiche localement. */
+  simulated?: boolean;
+  payload?: RadarAlertPayload;
+  message?: string;
+}
+
+export type RadarSettingsResult = { radar: RadarSettings; autoBuy: AutoBuySettings };
 
 /** Compte Cloud vu par l'application (miroir de `CloudAccountView`, packages/core/src/services/cloud.ts). */
 export interface CloudAccountView extends CloudAccount {
@@ -326,12 +445,34 @@ export interface DataClient {
   createSearch(input: RadarSearchCreate): Promise<RadarSearch>;
   updateSearch(id: string, input: Partial<RadarSearchCreate>): Promise<RadarSearch>;
   deleteSearch(id: string): Promise<void>;
-  runSearch(id: string): Promise<{ found: number; autoBought?: number }>;
+  /** Analyse une recherche ; en direct, une lecture non prête est refusée avec son explication. */
+  runSearch(id: string): Promise<RadarRunResult>;
   listOpportunities(query: { searchId?: string; status?: Opportunity["status"] }): Promise<Opportunity[]>;
+  /** Une affaire (page « 1 clic ») : recherche d'origine, demande d'achat active, lien Vinted vérifié. */
+  getOpportunity(id: string): Promise<OpportunityDetail>;
   setOpportunityStatus(id: string, status: Opportunity["status"]): Promise<Opportunity>;
+  /** Mesures de Radar sur `days` jours : « à mesurer » tant qu'aucune lecture en direct n'existe. */
+  radarMetrics(days?: number): Promise<RadarMetricsView>;
+  /** Réglages Radar (alertes, heures calmes) et Radar Auto ; activer Radar Auto exige le verrou serveur. */
+  updateRadarSettings(input: RadarSettingsUpdate): Promise<RadarSettingsResult>;
   // Bonnes affaires : validation en un clic et achat automatique
-  quickBuy(opportunityId: string): Promise<PurchaseRequest>;
+  /** « Je l'ai achetée » : report d'un achat fait par le client ; `paidCents` = prix réellement payé (port compris), sinon le coût estimé. */
+  quickBuy(opportunityId: string, opts?: { paidCents?: number | null }): Promise<PurchaseRequest>;
   runAutoBuy(): Promise<AutoBuyRunResult>;
+  /** Verrous, réglages et dépense du jour de Radar Auto. */
+  autoBuyStatus(): Promise<AutoBuyStatus>;
+  /** Le client a validé le paiement 3-D Secure dans son application bancaire : Selio relit la confirmation. */
+  resumePurchase(id: string): Promise<ResumeResult>;
+  // Alertes Radar sur le téléphone (notifications de la PWA)
+  pushConfig(): Promise<PushConfig>;
+  /** Appareils abonnés de l'utilisateur (sans les clés). */
+  listPushSubscriptions(): Promise<PushSubscriptionView[]>;
+  subscribePush(input: PushSubscriptionInput): Promise<PushSubscriptionView>;
+  unsubscribePush(endpoint: string): Promise<{ removed: boolean }>;
+  /** Retire un appareil abonné de l'utilisateur (appareil perdu, ancien téléphone). */
+  removePushSubscription(id: string): Promise<{ removed: boolean }>;
+  /** Notification de test vers les appareils abonnés de l'utilisateur. */
+  testPush(): Promise<PushTestResult>;
   // Générateur d'annonces (IA)
   generateListing(input: ListingGenerationInput): Promise<ListingDraft>;
   // Dressing intelligent

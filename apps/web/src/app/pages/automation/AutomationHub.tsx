@@ -4,6 +4,7 @@ import { ArrowRight, Bot, HandCoins, Heart, MessagesSquare, Package, Printer, Ra
 import { PageHeader, StatusBadge, buttonClass, cn } from "@selio/ui";
 import { useRequiredSession } from "../../../lib/data/provider";
 import { useNavCounts } from "../../layout";
+import { useAutoBuyStatus } from "../../components/radar";
 
 interface Stage {
   n: number;
@@ -24,9 +25,11 @@ export default function AutomationHub() {
   const s = session.org.settings;
   const a = s.automation;
   const counts = useNavCounts();
+  // Radar Auto « activé » seulement si TOUS ses verrous sont levés (serveur, adresse partagée, réglage, Cloud, accord).
+  const autoActive = useAutoBuyStatus().data?.active === true;
   const stages: Stage[] = [
     { n: 1, title: "Sourcing", icon: <TrendingUp />, text: "Repérer quoi acheter : Selio Track suit ce que vendent les autres comptes Vinted, le radar note chaque bonne affaire sur 100.", states: [{ label: "Radar actif", on: true }, { label: "Selio Track en développement", on: null }], links: [{ to: "/track", label: "Selio Track" }, { to: "/app/radar", label: "Bonnes affaires" }] },
-    { n: 2, title: "Achat", icon: <Bot />, text: "Achat assisté (vous validez chaque affaire) ou achat automatique au-dessus d'une note, dans un budget par jour.", states: [{ label: s.autoBuy.enabled ? "Achat auto activé" : "Achat assisté", on: s.autoBuy.enabled }], links: [{ to: "/app/purchase", label: "À valider" }, { to: "/app/auto-buy", label: "Achat auto" }] },
+    { n: 2, title: "Achat", icon: <Bot />, text: "Achat assisté (vous validez chaque affaire) ou achat automatique au-dessus d'une note, dans un budget par jour.", states: [{ label: autoActive ? "Achat auto activé" : s.autoBuy.enabled ? "Achat auto verrouillé" : "Achat assisté", on: autoActive }], links: [{ to: "/app/purchase", label: "À valider" }, { to: "/app/auto-buy", label: "Achat auto" }] },
     { n: 3, title: "Vente", icon: <Sparkles />, text: "Studio rédige l'annonce, puis Selio écrit aux favoris, répond aux questions et négocie selon vos règles.", states: [{ label: "Favoris", on: a.favorites.enabled }, { label: "Réponse auto", on: a.autoReply.enabled }, { label: "Négociation", on: a.negotiation.enabled }], links: [{ to: "/studio", label: "Générer une annonce" }, { to: "/app/automatisation/negociation", label: "Négociation" }] },
     { n: 4, title: "Collecte des bordereaux", icon: <Printer />, text: "Le bordereau est commandé dès la vente et imprimé tout seul si vous le cochez : aucune action manuelle.", states: [{ label: "Commande auto", on: a.afterSale.autoLabels }, { label: "Impression auto", on: a.afterSale.autoPrint }], links: [{ to: "/app/automatisation/apres-vente", label: "Régler" }, { to: "/app/orders", label: "Commandes" }] },
     { n: 5, title: "Après-vente", icon: <Package />, text: "Un message après l'achat, un autre quand la commande est finalisée, et une relance si le colis attend au point relais.", states: [{ label: "Après la vente", on: a.afterSale.soldMessage.enabled }, { label: "Après finalisation", on: a.afterSale.completedMessage.enabled }, { label: `Relance ${a.afterSale.pickupReminder.afterHours} h`, on: a.afterSale.pickupReminder.enabled }], links: [{ to: "/app/automatisation/apres-vente", label: "Régler les messages" }] },

@@ -3,8 +3,12 @@ import { aiConfigSchema } from "@selio/ai";
 import { loadStorageConfig, storageConfigSchema } from "@selio/storage";
 import { emailConfigSchema, emailStartupWarnings, loadEmailConfig } from "@selio/email";
 import { loadPaymentConfig, paymentConfigSchema, paymentStartupNotices } from "@selio/connectors";
+import type { ServicesConfig, radar } from "@selio/core";
+import { loadVapidConfig } from "./push";
 
 const bool = z.string().optional().transform((v) => v === "true" || v === "1");
+/** Texte facultatif : vide ou blanc = absent. */
+const optionalText = z.string().optional().transform((v) => (v && v.trim() ? v.trim() : undefined));
 
 /** Plage horaire « début-fin » en heures entières (ex. « 8-23 » : de 8 h à 23 h, fuseau de l'organisation). */
 export const activeHoursSchema = z
@@ -57,6 +61,26 @@ export const apiEnvSchema = z
     CLOUD_ACTIVE_HOURS: activeHoursSchema,
     /** Validité d'une fenêtre de connexion (ticket et fenêtre du worker), en ms. */
     CLOUD_LOGIN_TIMEOUT_MS: z.coerce.number().int().min(60_000).max(30 * 60_000).default(300_000),
+    /**
+     * Notifications Web Push de la PWA (alertes Radar) : clés VAPID du serveur (générer une fois avec
+     * `npx web-push generate-vapid-keys`) et contact de l'émetteur (`mailto:`). Absentes : push désactivé,
+     * GET /api/push/config répond `{ enabled: false }`. Mêmes valeurs dans le worker.
+     */
+    VAPID_PUBLIC_KEY: optionalText,
+    VAPID_PRIVATE_KEY: optionalText,
+    VAPID_SUBJECT: optionalText,
+    /**
+     * Radar Auto (achat automatique), premier verrou côté serveur : faux par défaut, réservé aux comptes
+     * de l'équipe pour les tests ; pas activable pour les clients sur l'adresse partagée tant qu'Ibrahim
+     * n'a pas tranché. En production, il exige RADAR_AUTO_ORG_IDS (organisations de l'équipe).
+     */
+    RADAR_AUTO_ENABLED: bool,
+    /** Organisations (comptes de l'équipe) autorisées pour Radar Auto, séparées par des virgules. */
+    RADAR_AUTO_ORG_IDS: z.string().optional().transform((v) => (v ?? "").split(",").map((s) => s.trim()).filter(Boolean)),
+    /** Achat réel (D11) : faux par défaut ; sans lui, l'achat s'arrête avant le bouton de paiement (« simulé »). */
+    RADAR_REAL_PURCHASE: bool,
+    /** Attente de la validation 3-D Secure par le client (ms) : même valeur que le worker. */
+    CLOUD_3DS_TIMEOUT_MS: z.coerce.number().int().min(60_000).max(30 * 60_000).default(600_000),
   })
   .merge(aiConfigSchema)
   // Stockage des photos (S3 / MinIO), emails transactionnels et paiement Revolut : blocs facultatifs, validés ci-dessous.
@@ -81,12 +105,17 @@ export function loadEnv(env: Record<string, string | undefined> = process.env): 
   }
   // La fenêtre de connexion du Cloud passe par Redis (file du worker, images et entrées relayées).
   if (cfg.CLOUD_ENABLED && !cfg.REDIS_URL) throw new Error("Configuration invalide :\n  - CLOUD_ENABLED=true exige REDIS_URL (fenêtre de connexion relayée par le worker).");
-  // Une configuration de stockage, d'email ou de paiement à moitié remplie (ou un mode live non
-  // autorisé) arrête le démarrage ici (même format de message).
+  // Radar Auto reste réservé aux comptes de l'équipe : en production, la liste est obligatoire.
+  if (cfg.NODE_ENV === "production" && cfg.RADAR_AUTO_ENABLED && cfg.RADAR_AUTO_ORG_IDS.length === 0) {
+    throw new Error("Configuration invalide :\n  - RADAR_AUTO_ENABLED=true exige RADAR_AUTO_ORG_IDS en production (Radar Auto réservé aux comptes de l'équipe, pas aux clients sur l'adresse partagée).");
+  }
+  // Une configuration de stockage, d'email, de paiement ou de notifications à moitié remplie (ou un
+  // mode live non autorisé) arrête le démarrage ici (même format de message).
   try {
     loadStorageConfig(cfg);
     loadEmailConfig(cfg);
     loadPaymentConfig(cfg);
+    loadVapidConfig(cfg);
   } catch (err) {
     throw new Error(`Configuration invalide :\n  - ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -102,6 +131,19 @@ export function cloudServicesConfig(cfg: Pick<ApiEnv, "CLOUD_HEAVY_ACTIONS" | "C
     cloudProOption: cfg.CLOUD_PRO_OPTION,
     cloudActiveHours: cfg.CLOUD_ACTIVE_HOURS,
     cloudLoginTimeoutMs: cfg.CLOUD_LOGIN_TIMEOUT_MS,
+  };
+}
+
+/**
+ * Réglages Radar transmis au cœur (`services.config`) : Radar Auto et l'achat réel fermés par défaut,
+ * délai 3-D Secure aligné sur le worker (le navigateur et la demande d'achat expirent ensemble).
+ */
+export function radarServicesConfig(cfg: Pick<ApiEnv, "RADAR_AUTO_ENABLED" | "RADAR_AUTO_ORG_IDS" | "RADAR_REAL_PURCHASE" | "CLOUD_3DS_TIMEOUT_MS">): Pick<ServicesConfig, "radarAutoEnabled" | "radarAutoOrgIds" | "radarRealPurchase"> & radar.RadarRuntimeConfig {
+  return {
+    radarAutoEnabled: cfg.RADAR_AUTO_ENABLED,
+    radarAutoOrgIds: cfg.RADAR_AUTO_ORG_IDS.length > 0 ? [...cfg.RADAR_AUTO_ORG_IDS] : undefined,
+    radarRealPurchase: cfg.RADAR_REAL_PURCHASE,
+    radar3dsTimeoutMs: cfg.CLOUD_3DS_TIMEOUT_MS,
   };
 }
 
@@ -126,5 +168,11 @@ export function startupNotices(cfg: ApiEnv): StartupNotice[] {
   out.push(...paymentStartupNotices(loadPaymentConfig(cfg), cfg.NODE_ENV));
   out.push({ level: "info", message: cfg.CLOUD_ENABLED ? `Selio Cloud activé : fenêtres de connexion relayées par Redis, ${cfg.CLOUD_MAX_BROWSERS} navigateurs au plus (hypothèse à mesurer), actions lourdes ${cfg.CLOUD_HEAVY_ACTIONS ? "ouvertes" : "fermées"}.` : "Selio Cloud désactivé (CLOUD_ENABLED=false) : réglages consultables, aucune fenêtre de connexion ouverte." });
   if (cfg.FRANCHISE_TVA) out.push({ level: "info", message: "FRANCHISE_TVA=true : factures sans TVA (« TVA non applicable, art. 293 B du CGI »)." });
+  out.push({ level: !loadVapidConfig(cfg) && prod ? "warn" : "info", message: loadVapidConfig(cfg) ? "Notifications Web Push activées (clés VAPID)." : "Notifications Web Push désactivées (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY absentes) : les alertes Radar restent en file." });
+  if (cfg.RADAR_AUTO_ENABLED) {
+    out.push({ level: "warn", message: `Radar Auto OUVERT côté serveur (RADAR_AUTO_ENABLED=true) pour ${cfg.RADAR_AUTO_ORG_IDS.length > 0 ? `${cfg.RADAR_AUTO_ORG_IDS.length} organisation(s) de l'équipe` : "toutes les organisations (hors production)"} ; achat réel ${cfg.RADAR_REAL_PURCHASE ? "ouvert" : "fermé (essai à blanc, D11)"}.` });
+  } else if (cfg.RADAR_REAL_PURCHASE) {
+    out.push({ level: "warn", message: "RADAR_REAL_PURCHASE=true sans RADAR_AUTO_ENABLED : sans effet, aucun achat réel." });
+  }
   return out;
 }

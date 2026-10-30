@@ -4,16 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Bot, Check, Images, User, X } from "lucide-react";
 import type { PurchaseRequest } from "@selio/contracts";
 import { REVIEW_THRESHOLD, dealEconomics, resolvePurchaseAccount } from "@selio/domain";
-import { Alert, Button, Card, ConfirmDialog, EmptyState, PageHeader, StatusBadge, Tag, formatCents, formatDateTime } from "@selio/ui";
+import { Alert, Button, Card, ConfirmDialog, EmptyState, PageHeader, Tag, formatCents, formatDateTime } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
 import { OpportunityCard } from "../components/deals";
+import { PurchaseStatusBadge, RADAR_KEYS } from "../components/radar";
 import { ScoreRing } from "../../components/charts";
 
-const STATUS: Record<PurchaseRequest["status"], { label: string; tone: "neutral" | "warning" | "success" | "danger" | "muted" | "accent" }> = {
-  draft: { label: "Brouillon", tone: "muted" }, awaiting_confirmation: { label: "À confirmer", tone: "warning" }, simulated: { label: "Acheté (simulé)", tone: "success" }, blocked: { label: "Bloqué", tone: "danger" }, executed: { label: "Acheté", tone: "success" }, cancelled: { label: "Annulé", tone: "muted" },
-};
 
 export default function Purchase() {
   const client = useClient();
@@ -21,10 +19,10 @@ export default function Purchase() {
   const toReview = useQuery({ queryKey: ["opportunities", "to-review"], queryFn: async () => (await client.listOpportunities({ status: "new" })).filter((o) => o.score >= REVIEW_THRESHOLD) });
   const purchases = useQuery({ queryKey: ["purchases"], queryFn: () => client.listPurchaseRequests() });
   const [confirm, setConfirm] = useState<PurchaseRequest | null>(null);
-  const buy = useAppMutation((id: string) => client.quickBuy(id), { invalidate: ["purchases", "opportunities", "nav-counts"], success: (p) => (p.status === "blocked" ? "Achat bloqué par les contrôles : voir le détail dans l'historique" : "Achat validé (simulé) en un clic") });
+  const buy = useAppMutation((id: string) => client.quickBuy(id), { invalidate: [...RADAR_KEYS, "items"], success: (p) => (p.status === "blocked" ? "Achat bloqué par les contrôles : voir le détail dans l'historique" : "Achat validé (simulé) en un clic : prix d'achat reporté dans Manager") });
   const dismiss = useAppMutation((id: string) => client.setOpportunityStatus(id, "dismissed"), { invalidate: ["opportunities", "nav-counts"], success: "Affaire écartée" });
   const watch = useAppMutation((id: string) => client.setOpportunityStatus(id, "watching"), { invalidate: ["opportunities", "nav-counts"], success: "Affaire suivie" });
-  const confirmMut = useAppMutation((id: string) => client.confirmPurchaseRequest(id), { invalidate: ["purchases", "opportunities", "nav-counts"], success: (p) => (p.status === "simulated" ? "Achat simulé de bout en bout (aucun paiement réel)" : p.status === "blocked" ? "Achat bloqué par les contrôles" : "Demande traitée"), onSuccess: () => setConfirm(null) });
+  const confirmMut = useAppMutation((id: string) => client.confirmPurchaseRequest(id), { invalidate: [...RADAR_KEYS, "items"], success: (p) => (p.status === "simulated" ? "Achat simulé de bout en bout (aucun paiement réel)" : p.status === "blocked" ? "Achat bloqué par les contrôles" : "Demande traitée"), onSuccess: () => setConfirm(null) });
   const cancel = useAppMutation((id: string) => client.cancelPurchaseRequest(id), { invalidate: ["purchases", "opportunities"], success: "Demande annulée" });
   const canBuy = session.role !== "viewer";
   const fees = session.org.settings.buyerFees;
@@ -56,7 +54,7 @@ export default function Purchase() {
         <QueryBoundary query={toReview} empty={(d) => d.length === 0 ? <EmptyState icon={<Check />} title="Rien à valider" description="Toutes les bonnes affaires ont été traitées. Lancez une analyse dans « Bonnes affaires » pour en trouver d'autres." action={<Link to="/app/radar"><Button variant="secondary">Bonnes affaires</Button></Link>} /> : null}>
           {(list) => (
             <div className="grid gap-3 2xl:grid-cols-2">
-              {list.map((o) => <OpportunityCard key={o.id} o={o} canWrite={canBuy} compact onBuy={() => buy.mutate(o.id)} buying={buy.isPending && buy.variables === o.id} onStatus={(s) => (s === "dismissed" ? dismiss.mutate(o.id) : s === "watching" ? watch.mutate(o.id) : undefined)} />)}
+              {list.map((o) => <OpportunityCard key={o.id} o={o} to={`/app/radar/affaires/${o.id}`} canWrite={canBuy} compact onBuy={() => buy.mutate(o.id)} buying={buy.isPending && buy.variables === o.id} onStatus={(s) => (s === "dismissed" ? dismiss.mutate(o.id) : s === "watching" ? watch.mutate(o.id) : undefined)} />)}
             </div>
           )}
         </QueryBoundary>
@@ -86,10 +84,11 @@ export default function Purchase() {
                         <td className="num px-4 py-3 font-medium">{d ? formatCents(d.totalCents) : formatCents(p.maxPriceCents)}{d ? <span className="block text-[11px] text-text-muted">{formatCents(d.itemCents)} + {formatCents(d.shippingCents)} + {formatCents(d.protectionCents)}</span> : null}</td>
                         <td className="num px-4 py-3">{d ? formatCents(d.resaleCents) : "—"}</td>
                         <td className="num px-4 py-3">{d ? <span className={d.profitCents > 0 ? "font-semibold text-success" : "font-semibold text-danger"}>{d.profitCents > 0 ? "+" : ""}{formatCents(d.profitCents)}<span className="block text-[11px] font-normal whitespace-nowrap text-text-muted">marge {Math.round(d.marginRate * 100)} %</span></span> : "—"}</td>
-                        <td className="px-4 py-3"><StatusBadge tone={STATUS[p.status].tone}>{STATUS[p.status].label}</StatusBadge>{p.checks.some((c) => !c.ok) ? <span className="mt-1 block text-[11px] text-danger">{p.checks.filter((c) => !c.ok && c.code !== "connector_authorized").map((c) => c.label).join(" · ")}</span> : null}</td>
+                        <td className="px-4 py-3"><PurchaseStatusBadge status={p.status} />{p.reportedItemId ? <Link to={`/app/items/${p.reportedItemId}`} className="mt-1 block text-[11px] font-medium text-accent underline-offset-2 hover:underline">Article dans le stock</Link> : null}{p.checks.some((c) => !c.ok) ? <span className="mt-1 block text-[11px] text-danger">{p.checks.filter((c) => !c.ok && c.code !== "connector_authorized").map((c) => c.label).join(" · ")}</span> : null}</td>
                         <td className="px-4 py-3 text-right">
                           {canBuy && p.status === "awaiting_confirmation" ? <span className="inline-flex gap-1"><Button size="sm" onClick={() => setConfirm(p)}>Confirmer</Button><Button size="sm" variant="ghost" icon={<X />} onClick={() => cancel.mutate(p.id)}>Annuler</Button></span> : null}
                           {p.mode === "auto" && p.cancelableUntil && new Date(p.cancelableUntil) > new Date() && p.status === "simulated" ? <Link to="/app/auto-buy" className="text-xs font-medium text-accent underline-offset-2 hover:underline">Annulable</Link> : null}
+                          {p.status === "awaiting_3ds" ? <Link to={`/app/radar/achats/${p.id}`} className="text-xs font-medium text-accent underline-offset-2 hover:underline">Valider le paiement</Link> : null}
                         </td>
                       </tr>
                     );

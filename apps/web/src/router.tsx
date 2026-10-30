@@ -84,9 +84,14 @@ export const router = createBrowserRouter([
       { path: "analytics", lazy: lazy(() => import("./app/pages/Analytics")) },
       { path: "automations", lazy: lazy(() => import("./app/pages/Automations")) },
       { path: "radar", lazy: lazy(() => import("./app/pages/Radar")) },
+      // Page d'une affaire (« 1 clic »), ouverte depuis une alerte sur le téléphone ; achat à valider (3-D Secure).
+      { path: "radar/affaires/:id", lazy: lazy(() => import("./app/pages/RadarDeal")) },
+      { path: "radar/achats/:id", lazy: lazy(() => import("./app/pages/AutoBuy")) },
       { path: "purchase", lazy: lazy(() => import("./app/pages/Purchase")) },
       { path: "accounts", lazy: lazy(() => import("./app/pages/Accounts")) },
       { path: "help", lazy: lazy(() => import("./app/pages/Help")) },
+      // Alerte « Radar en pause » : le compte Achat se reprend dans l'espace Cloud.
+      { path: "cloud", element: <Navigate to="/cloud/comptes" replace /> },
       { path: "settings", lazy: lazy(() => import("./app/pages/Settings")), children: [
         { index: true, element: <Navigate to="organisation" replace /> },
         { path: "organisation", lazy: lazy(() => import("./app/pages/settings/Organisation")) },

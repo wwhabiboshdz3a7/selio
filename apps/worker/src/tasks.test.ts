@@ -15,7 +15,12 @@ import { CLOUD_CONSENT_VERSION } from "@selio/contracts";
 import { FakeRunner } from "@selio/cloud";
 import IORedis from "ioredis";
 import { CloudTickRunner, RunnerCloudExecutor, cloudLoginTask, cloudTick, createRedisLoginBus, toRunnerAction, type CloudLoginBus, type ScreenMessage } from "./cloud";
-import { cloudDrainMs, cloudLoginConcurrency, cloudProfileMaxAgeMs, cloudRunnable, cloudServicesConfig, loadEnv } from "./config";
+import { cloudDrainMs, cloudLoginConcurrency, cloudProfileMaxAgeMs, cloudRunnable, cloudServicesConfig, disabledSchedules, loadEnv, maintenanceSchedules, radarServicesConfig } from "./config";
+import { readFileSync } from "node:fs";
+import { RadarReader, type BuyInput, type PurchaseResult, type RadarReadResult } from "@selio/cloud";
+import { FakePushSender, radar, radarAlerts } from "@selio/core";
+import type { RadarSearch } from "@selio/contracts";
+import { CloudOffRadarReader, CloudPurchaseAdapter, CloudRadarReader, PageRateLimiter, SingleFlight, alertsTick, radarAutoTick, radarResumeTask, radarTick, toCoreReadOutcome, toCorePurchaseOutcome } from "./radar";
 
 const OWNER_URL = process.env.TEST_DATABASE_URL ?? "postgres://selio:selio@127.0.0.1:5432/selio_test_worker";
 const APP_URL = process.env.TEST_DATABASE_URL_APP ?? "postgres://selio_app:selio_app@127.0.0.1:5432/selio_test_worker";
@@ -874,5 +879,486 @@ describe("worker : configuration du Cloud", () => {
     // Arrêt Docker / systemd réglé au-delà (150 s) : jamais de SIGKILL pendant une action.
     expect(cloudDrainMs(env.CLOUD_ACTION_TIMEOUT_MS)).toBeLessThan(150_000);
     expect(cloudProfileMaxAgeMs(env)).toBeGreaterThan(Math.max(env.CLOUD_ACTION_TIMEOUT_MS, env.CLOUD_LOGIN_TIMEOUT_MS));
+  });
+});
+
+// ---------------------------------------------------------------- Selio Radar
+
+/**
+ * Selio Radar dans le worker, sur PostgreSQL local avec une horloge simulée : lecteur de @selio/cloud sur
+ * FakeRunner (page catalogue de fixture, jamais vinted.fr), envoi des notifications simulé, exécuteur
+ * d'achat simulé (aucun achat réel). Chaque test désactive ses recherches à la fin (passages globaux).
+ */
+describe("worker : Selio Radar (FakeRunner, horloge simulée)", () => {
+  const T0 = new Date("2026-10-29T09:00:00.000Z");
+  const CATALOG_HTML = readFileSync(new URL("../../../packages/connectors/src/vinted/fixtures/catalog-page.v1.html", import.meta.url), "utf8");
+  const ENDPOINT = "https://fcm.googleapis.com/fcm/send/radar-worker-appareil";
+  const KEYS = { p256dh: "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM", auth: "tBHItJI5svbpez7KI4CCXg" };
+  let clock = new Date(T0);
+  let svc: Services;
+  let seq = 0;
+  const logs: { level: string; obj: object; msg: string }[] = [];
+  const capture = {
+    info: (obj: object, msg: string) => { logs.push({ level: "info", obj, msg }); },
+    warn: (obj: object, msg: string) => { logs.push({ level: "warn", obj, msg }); },
+    error: (obj: object, msg: string) => { logs.push({ level: "error", obj, msg }); },
+  };
+  const advance = (seconds: number) => { clock = new Date(clock.getTime() + seconds * 1000); };
+  const vintedState = () => ({
+    cookies: [{ name: "_vinted_fr_session", value: "SESSION-RADAR-WORKER", domain: ".vinted.fr", path: "/", expires: -1, httpOnly: true, secure: true, sameSite: "Lax" as const }],
+    origins: [],
+  });
+
+  beforeAll(() => {
+    if (!available) return;
+    svc = { ...services, now: () => new Date(clock), email: new NoopEmailProvider(), publicWebUrl: "https://app.selio.test", config: {} };
+  });
+
+  /** Organisation Agence, compte Vinted « Achat » relié à un compte Cloud actif (accord, session), recherches en direct. */
+  async function liveOrg(searches: { name: string; priority?: boolean }[]): Promise<{ ctx: OrgContext; accountId: string; connectionId: string; searches: RadarSearch[] }> {
+    const n = ++seq;
+    const ids = await svc.db.withGlobal(async (tx) => {
+      const u = await repos.users.create(tx, { email: `radar-w${n}@test.local`, displayName: `Radar ${n}`, passwordHash: "x", passwordSalt: "y" });
+      const o = await repos.orgs.create(tx, { name: `Org Radar W${n}`, slug: `org-radar-w${n}`, settings: {} });
+      await repos.memberships.create(tx, { orgId: o.id, userId: u.id, role: "owner" });
+      return { orgId: o.id, userId: u.id };
+    });
+    await svc.db.withOrg(ids.orgId, (tx) => repos.subscriptions.upsert(tx, { plan: "agence", status: "active", quotas: quotasForPlan("agence") }));
+    const ctx: OrgContext = { services: svc, orgId: ids.orgId, userId: ids.userId, role: "owner", isOperator: false, ip: null };
+    const connectionId = `conn-radar-w${n}`;
+    await svc.db.withOrg(ids.orgId, (tx) => repos.connections.create(tx, { id: connectionId, provider: "vinted", label: `Achats ${n}`, status: "connected", usage: "purchase" }));
+    await cloud.acceptConsent(ctx, { version: CLOUD_CONSENT_VERSION, accepted: true });
+    const account = await cloud.enableAccount(ctx, { connectionId });
+    const ticket = await cloud.startLogin(ctx, account.id);
+    await cloud.completeLogin(svc, ticket.loginSessionId, vintedState());
+    const created: RadarSearch[] = [];
+    for (const s of searches) created.push(await radar.createSearch(ctx, { name: s.name, source: "cloud", connectionId, priority: s.priority === true, criteria: { maxPriceCents: 10_000 }, budgetCents: 20_000 }));
+    return { ctx, accountId: account.id, connectionId, searches: created };
+  }
+
+  /** Fin de test : plus aucune recherche active ni Radar Auto pour cette organisation. */
+  async function retire(ctx: OrgContext): Promise<void> {
+    await svc.db.withOrg(ctx.orgId, async (tx) => {
+      for (const s of await repos.searches.list(tx)) await repos.searches.update(tx, s.id, { enabled: false });
+      const org = await repos.orgs.byId(tx, ctx.orgId);
+      await repos.orgs.update(tx, ctx.orgId, { settings: { ...org.settings, autoBuy: { ...org.settings.autoBuy, enabled: false } } });
+    });
+  }
+
+  const readerOn = (runner: FakeRunner) => new CloudRadarReader(new RadarReader({ fetcher: runner, now: () => new Date(clock) }), capture);
+  const readsOf = (ctx: OrgContext, searchId: string) => svc.db.withOrg(ctx.orgId, (tx) => repos.radarReads.list(tx, { searchId }));
+
+  it("tick toutes les 30 s : une recherche prioritaire (Radar Auto actif) est lue deux fois plus souvent qu'une normale", async () => {
+    if (!available) return;
+    clock = new Date(T0);
+    svc.config = { radarAutoEnabled: true };
+    const { ctx, searches } = await liveOrg([{ name: "Prioritaire", priority: true }, { name: "Normale" }]);
+    await radar.updateRadarSettings(ctx, { autoBuy: { enabled: true } });
+    const runner = new FakeRunner({ pageHtml: CATALOG_HTML });
+    svc.radar = { reader: readerOn(runner) };
+    const limiter = new PageRateLimiter(30);
+    try {
+      let found = 0;
+      // Cinq minutes de passages toutes les 30 s.
+      for (let i = 0; i < 10; i++) {
+        const r = await radarTick(svc, capture, { liveEnabled: true, limiter, concurrency: 1, now: () => new Date(clock) });
+        expect(r.errors).toBe(0);
+        found += r.found;
+        advance(30);
+      }
+      const [prio, normal] = searches;
+      const prioReads = await readsOf(ctx, prio!.id);
+      const normalReads = await readsOf(ctx, normal!.id);
+      expect(prioReads).toHaveLength(10);
+      expect(normalReads).toHaveLength(5);
+      expect(prioReads.every((r) => r.source === "cloud" && r.outcome === "ok" && r.factor === 1)).toBe(true);
+      expect(runner.fetchCalls).toHaveLength(15);
+      expect(runner.fetchCalls.every((c) => c.hadSession && c.url.startsWith("https://www.vinted.fr/catalog?"))).toBe(true);
+      // Les annonces de la page deviennent des affaires une seule fois (dédoublonnage par référence Vinted).
+      expect(found).toBeGreaterThan(0);
+      const opps = await svc.db.withOrg(ctx.orgId, (tx) => repos.opportunities.list(tx, {}));
+      expect(opps).toHaveLength(found);
+      expect(new Set(opps.map((o) => o.observed.externalRef)).size).toBe(opps.length);
+      // Journal du worker : jamais de pseudo, de titre ni de session.
+      const logged = JSON.stringify(logs);
+      expect(logged).not.toContain("SESSION-RADAR-WORKER");
+      for (const o of opps) {
+        expect(logged).not.toContain(o.title);
+        if (o.observed.sellerHandle) expect(logged).not.toContain(o.observed.sellerHandle);
+      }
+      const metrics = await radar.radarMetrics(ctx);
+      expect(metrics).toMatchObject({ status: "measured", liveReads: 15, blocks: 0, blockRatePer1000: 0 });
+    } finally {
+      await retire(ctx);
+      svc.config = {};
+    }
+  });
+
+  it("erreur après le chargement de la page : la place du plafond de la machine n'est pas rendue, la recherche n'est pas relue au passage suivant", async () => {
+    if (!available) return;
+    clock = new Date(T0);
+    const { ctx, searches } = await liveOrg([{ name: "Panne" }]);
+    const runner = new FakeRunner({ pageHtml: CATALOG_HTML });
+    svc.radar = { reader: readerOn(runner) };
+    const limiter = new PageRateLimiter(30);
+    const original = repos.orders.all;
+    repos.orders.all = async () => { throw new Error("panne"); };
+    try {
+      const r = await radarTick(svc, capture, { liveEnabled: true, limiter, concurrency: 1, now: () => new Date(clock) });
+      expect(r).toMatchObject({ errors: 1, liveReads: 0 });
+      expect(limiter.used(clock)).toBe(1);
+      expect((await readsOf(ctx, searches[0]!.id)).map((x) => x.outcome)).toEqual(["ok"]);
+      advance(30);
+      repos.orders.all = original;
+      const next = await radarTick(svc, capture, { liveEnabled: true, limiter, concurrency: 1, now: () => new Date(clock) });
+      expect(next.liveReads).toBe(0);
+      expect(runner.fetchCalls).toHaveLength(1);
+    } finally {
+      repos.orders.all = original;
+      await retire(ctx);
+    }
+  });
+
+  it("blocage : CAPTCHA → lecture arrêtée, compte Achat en pause, alerte au client, mesure enregistrée, rien n'est relu", async () => {
+    if (!available) return;
+    clock = new Date(T0);
+    const { ctx, accountId, searches } = await liveOrg([{ name: "Bloquée" }]);
+    await radarAlerts.subscribePush(ctx, { endpoint: ENDPOINT, keys: KEYS });
+    const push = new FakePushSender();
+    svc.push = push;
+    const runner = new FakeRunner({ pageHtml: CATALOG_HTML, fetchScenarios: ["blocked"] });
+    svc.radar = { reader: readerOn(runner) };
+    const limiter = new PageRateLimiter(30);
+    logs.length = 0;
+    try {
+      const r = await radarTick(svc, capture, { liveEnabled: true, limiter, concurrency: 1, now: () => new Date(clock) });
+      expect(r).toMatchObject({ liveReads: 1, blocked: 1, found: 0, circuitUntil: null });
+      const account = await svc.db.withOrg(ctx.orgId, (tx) => repos.cloudAccounts.byId(tx, accountId));
+      expect(account).toMatchObject({ status: "paused", pausedReason: "captcha" });
+      const reads = await readsOf(ctx, searches[0]!.id);
+      expect(reads.map((x) => x.outcome)).toEqual(["captcha"]);
+      const search = await svc.db.withOrg(ctx.orgId, (tx) => repos.searches.byId(tx, searches[0]!.id));
+      expect(search).toMatchObject({ blocksCount: 1, pagesRead: 1, lastBlockAt: T0.toISOString() });
+      expect(logs.some((l) => l.level === "warn" && /aucun contournement/.test(l.msg))).toBe(true);
+      // Alerte envoyée par le passage « alerts.send ».
+      const sent = await alertsTick(svc, capture, { now: new Date(clock) });
+      expect(sent).toMatchObject({ pushEnabled: true, sent: 1 });
+      expect(push.sent.map((s) => s.payload.title)).toEqual(["Radar en pause : Vinted a demandé une vérification"]);
+      expect(push.sent[0]!.payload.url).toBe("/app/cloud");
+      // Passages suivants : le compte est en pause, aucune page n'est relue (rien n'est retenté).
+      for (let i = 0; i < 4; i++) {
+        advance(60);
+        const next = await radarTick(svc, capture, { liveEnabled: true, limiter, concurrency: 1, now: () => new Date(clock) });
+        expect(next.liveReads).toBe(0);
+      }
+      expect(runner.fetchCalls).toHaveLength(1);
+    } finally {
+      await retire(ctx);
+      delete svc.push;
+    }
+  });
+
+  it("blocage : « trop de requêtes » → coupe-circuit de la machine (alerte de l'opérateur), plus aucune lecture en direct", async () => {
+    if (!available) return;
+    clock = new Date(T0);
+    const a = await liveOrg([{ name: "A" }]);
+    const b = await liveOrg([{ name: "B" }]);
+    const runner = new FakeRunner({ pageHtml: CATALOG_HTML, fetchScenarios: ["rate_limited"] });
+    svc.radar = { reader: readerOn(runner) };
+    logs.length = 0;
+    try {
+      const r = await radarTick(svc, capture, { liveEnabled: true, limiter: new PageRateLimiter(30), concurrency: 1, now: () => new Date(clock) });
+      expect(r.blocked).toBe(1);
+      expect(r.circuitUntil).not.toBeNull();
+      expect(r.skipped.machine_paused).toBe(1);
+      expect(runner.fetchCalls).toHaveLength(1);
+      expect(logs.some((l) => l.level === "error" && /COUPE-CIRCUIT/.test(l.msg))).toBe(true);
+      expect(await cloud.machinePausedUntil(svc)).not.toBeNull();
+    } finally {
+      await cloud.clearCircuit(svc);
+      await retire(a.ctx);
+      await retire(b.ctx);
+    }
+  });
+
+  it("plafond de pages par minute : machine (RADAR_MAX_PAGES_PER_MINUTE_GLOBAL) puis organisation (réglage)", async () => {
+    if (!available) return;
+    clock = new Date(T0);
+    const { ctx, searches } = await liveOrg([{ name: "P1" }, { name: "P2" }, { name: "P3" }, { name: "P4" }]);
+    const runner = new FakeRunner({ pageHtml: CATALOG_HTML });
+    svc.radar = { reader: readerOn(runner) };
+    const limiter = new PageRateLimiter(2);
+    try {
+      const first = await radarTick(svc, capture, { liveEnabled: true, limiter, concurrency: 1, now: () => new Date(clock) });
+      expect(first).toMatchObject({ liveReads: 2, skipped: { global_pages_per_minute: 2 } });
+      advance(30);
+      // Toujours dans la même minute : le plafond de la machine est atteint.
+      const second = await radarTick(svc, capture, { liveEnabled: true, limiter, concurrency: 1, now: () => new Date(clock) });
+      expect(second.liveReads).toBe(0);
+      expect(limiter.used(clock)).toBe(2);
+      advance(31);
+      const third = await radarTick(svc, capture, { liveEnabled: true, limiter, concurrency: 1, now: () => new Date(clock) });
+      expect(third.liveReads).toBe(2);
+      const counts = await Promise.all(searches.map((s) => readsOf(ctx, s.id).then((x) => x.length)));
+      expect(counts.reduce((a, b) => a + b, 0)).toBe(4);
+      expect(counts.every((c) => c >= 1)).toBe(true);
+      // Plafond de l'organisation : 1 page par minute.
+      await radar.updateRadarSettings(ctx, { radar: { maxPagesPerMinute: 1 } });
+      advance(120);
+      const fourth = await radarTick(svc, capture, { liveEnabled: true, limiter: new PageRateLimiter(30), concurrency: 1, now: () => new Date(clock) });
+      expect(fourth.liveReads).toBe(1);
+      expect(fourth.skipped.pages_per_minute).toBe(1);
+      expect(runner.fetchCalls).toHaveLength(5);
+    } finally {
+      await retire(ctx);
+    }
+  });
+
+  it("Cloud désactivé : seules les recherches du simulateur sont lues, rien n'est compté comme mesuré", async () => {
+    if (!available) return;
+    clock = new Date(T0);
+    const { ctx, searches } = await liveOrg([{ name: "En direct" }]);
+    const demo = await radar.createSearch(ctx, { name: "Simulateur", criteria: { brands: ["Nike"], maxPriceCents: 4000 } });
+    svc.radar = { reader: new CloudOffRadarReader() };
+    try {
+      const r = await radarTick(svc, capture, { liveEnabled: false, limiter: new PageRateLimiter(30), concurrency: 1, now: () => new Date(clock) });
+      expect(r).toMatchObject({ liveReads: 0, demoReads: 1, skipped: { cloud_disabled: 1 } });
+      expect(await readsOf(ctx, searches[0]!.id)).toEqual([]);
+      expect((await readsOf(ctx, demo.id)).map((x) => x.source)).toEqual(["demo"]);
+      expect((await radar.radarMetrics(ctx)).status).toBe("to_measure");
+      // Le lecteur de garde ne lance rien.
+      expect(await new CloudOffRadarReader().read()).toMatchObject({ ok: false, code: "unavailable", launched: false });
+    } finally {
+      await retire(ctx);
+    }
+  });
+
+  /** Navigateur d'achat simulé (interface de @selio/cloud) : aucun achat réel. */
+  class StubPurchases {
+    readonly buys: Omit<BuyInput, "session">[] = [];
+    readonly resumes: string[] = [];
+    readonly cancels: string[] = [];
+    readonly next: PurchaseResult[] = [];
+    readonly resumeNext: PurchaseResult[] = [];
+    async buy(input: BuyInput): Promise<PurchaseResult> {
+      const { session: _s, ...rest } = input;
+      this.buys.push(rest);
+      return this.next.shift() ?? { outcome: "dry_run", totalCents: 2620, itemPriceCents: 2000, walletOffered: true, walletSelected: true, durationMs: 5 };
+    }
+    async resume(token: string): Promise<PurchaseResult> {
+      this.resumes.push(token);
+      return this.resumeNext.shift() ?? { outcome: "failed", code: "3ds_timeout", message: "Attente introuvable.", sideEffects: "unknown", launched: true, stop: null, durationMs: 0 };
+    }
+    async cancel(token: string): Promise<boolean> {
+      this.cancels.push(token);
+      return true;
+    }
+  }
+  const awaiting = (token: string): PurchaseResult => ({ outcome: "awaiting_3ds", resumeToken: token, totalCents: 2620, expiresAt: new Date(clock.getTime() + 600_000).toISOString(), durationMs: 5 });
+  const addOpportunity = (ctx: OrgContext, searchId: string, ref: string) => svc.db.withOrg(ctx.orgId, (tx) => repos.opportunities.create(tx, {
+    searchId, title: `Pull Ralph Lauren ${ref}`,
+    observed: { priceCents: 2000, shippingCents: 450, brand: "Ralph Lauren", size: "M", condition: "very_good", category: "men", sellerHandle: "vendeur_w", sellerRating: 4.8, sellerReviews: 40, photoUrl: null, photoCount: 6, url: `https://www.vinted.fr/items/${ref}-pull`, seenAt: clock.toISOString(), source: "connector", externalRef: ref },
+    estimate: { resalePriceCents: 6000, expectedFeesCents: 0, marginCents: 3380, marginRate: 0.56, confidence: "high", method: "brand_category", comparableCount: 3 },
+    score: 92, reasons: [], breakdown: [], status: "new",
+  }));
+
+  it("Radar Auto : passage seulement si RADAR_AUTO_ENABLED ; 3-D Secure → le client valide, reprise par la file ; annulé → navigateur fermé ; délai CLOUD_3DS_TIMEOUT_MS → abandon avec alerte", async () => {
+    if (!available) return;
+    clock = new Date(T0);
+    svc.config = {};
+    const stub = new StubPurchases();
+    const adapter = new CloudPurchaseAdapter(stub, capture);
+    svc.radar = { purchaser: adapter };
+    expect(await radarAutoTick(svc, capture, { now: new Date(clock) })).toMatchObject({ enabled: false, bought: 0 });
+    svc.config = radarServicesConfig({ RADAR_AUTO_ENABLED: true, RADAR_AUTO_ORG_IDS: [], RADAR_REAL_PURCHASE: true, CLOUD_3DS_TIMEOUT_MS: 600_000 });
+    const { ctx, searches } = await liveOrg([{ name: "Auto" }]);
+    try {
+      await radar.updateRadarSettings(ctx, { autoBuy: { enabled: true, threshold: 85, maxItemCents: 8000, dailyCapCents: 20_000 } });
+      await radarAlerts.subscribePush(ctx, { endpoint: ENDPOINT, keys: KEYS });
+      const push = new FakePushSender();
+      svc.push = push;
+      // 1) Validation 3-D Secure demandée puis validée par le client : reprise par la file « selio-radar ».
+      await addOpportunity(ctx, searches[0]!.id, "4242");
+      stub.next.push(awaiting("tok-1"));
+      expect(await radarAutoTick(svc, capture, { now: new Date(clock) })).toMatchObject({ enabled: true, orgs: 1, awaiting3ds: 1, bought: 0 });
+      // Coût décidé (26,20 €) + 1 € : une hausse de prix au paiement au-delà arrête l'achat avant de payer.
+      expect(stub.buys[0]).toMatchObject({ dryRun: false, maxTotalCents: 2720, itemUrl: "https://www.vinted.fr/items/4242-pull" });
+      expect(adapter.pendingCount).toBe(1);
+      const first = (await radar.listPurchases(ctx))[0]!;
+      expect(first).toMatchObject({ status: "awaiting_3ds", awaiting3dsUntil: new Date(T0.getTime() + 600_000).toISOString() });
+      // Le client est prévenu tout de suite (sans attendre « alerts.send ») ; aucun code n'est saisi à sa place.
+      expect(push.sent.map((x) => x.payload)).toEqual([expect.objectContaining({ title: "Validez le paiement dans votre application bancaire", url: `/app/radar/achats/${first.id}` })]);
+      advance(90);
+      stub.resumeNext.push({ outcome: "purchased", orderRef: "V-42", totalCents: 2620, walletSelected: true, durationMs: 5 });
+      expect(await radarResumeTask(svc, { orgId: ctx.orgId, purchaseId: first.id, userId: ctx.userId }, capture)).toEqual({ status: "executed" });
+      expect(stub.resumes).toEqual(["tok-1"]);
+      expect(adapter.pendingCount).toBe(0);
+      expect(await radarResumeTask(svc, { orgId: ctx.orgId, purchaseId: first.id, userId: "inconnu" }, capture)).toEqual({ status: null, error: "not_member" });
+      expect(await radarResumeTask(svc, { orgId: ctx.orgId }, capture)).toEqual({ status: null, error: "invalid_job" });
+
+      // 2) En attente, puis annulé par le client : le navigateur tenu ouvert est fermé au passage suivant.
+      await addOpportunity(ctx, searches[0]!.id, "4343");
+      stub.next.push(awaiting("tok-2"));
+      await radarAutoTick(svc, capture, { now: new Date(clock) });
+      const second = (await radar.listPurchases(ctx)).find((p) => p.status === "awaiting_3ds")!;
+      await radar.cancelPurchase(ctx, second.id);
+      const tick = await radarTick(svc, capture, { liveEnabled: false, limiter: new PageRateLimiter(30), concurrency: 1, now: () => new Date(clock), purchases: adapter });
+      expect(tick.released3ds).toBe(1);
+      expect(stub.cancels).toEqual(["tok-2"]);
+
+      // 3) En attente, jamais validé : délai passé → achat abandonné, affaire en observation, alerte, navigateur fermé.
+      const opp3 = await addOpportunity(ctx, searches[0]!.id, "4444");
+      stub.next.push(awaiting("tok-3"));
+      await radarAutoTick(svc, capture, { now: new Date(clock) });
+      const third = (await radar.listPurchases(ctx)).find((p) => p.status === "awaiting_3ds")!;
+      expect(third.opportunityId).toBe(opp3.id);
+      advance(11 * 60);
+      const late = await radarTick(svc, capture, { liveEnabled: false, limiter: new PageRateLimiter(30), concurrency: 1, now: () => new Date(clock), purchases: adapter });
+      expect(late).toMatchObject({ expired3ds: 1, released3ds: 1 });
+      expect(stub.cancels).toEqual(["tok-2", "tok-3"]);
+      expect((await radar.listPurchases(ctx)).find((p) => p.id === third.id)).toMatchObject({ status: "cancelled" });
+      expect((await svc.db.withOrg(ctx.orgId, (tx) => repos.opportunities.byId(tx, opp3.id))).status).toBe("watching");
+      const alerts = await svc.db.withOrg(ctx.orgId, (tx) => repos.radarAlerts.list(tx));
+      expect(alerts.some((a) => a.kind === "payment_3ds" && a.dedupeKey === `payment_3ds_expired:${third.id}`)).toBe(true);
+      // 3-D Secure expirée : le paiement a pu partir, Radar Auto est arrêté jusqu'à la vérification du client.
+      expect(await radarAutoTick(svc, capture, { now: new Date(clock) })).toMatchObject({ orgs: 0, bought: 0 });
+      expect((await radar.autoStatus(ctx)).settings).toMatchObject({ enabled: false, suspendedReason: expect.stringContaining("3-D Secure") });
+      // Aucun achat réel n'a été exécuté : tout passe par le navigateur simulé.
+      expect(stub.buys).toHaveLength(3);
+    } finally {
+      await retire(ctx);
+      svc.config = {};
+      delete svc.push;
+    }
+  });
+
+  it("releaseSettled : jamais de fermeture d'un navigateur dont la demande est encore « en cours » (draft) ; plafond de pages de la machine partagé avec les achats", async () => {
+    if (!available) return;
+    clock = new Date(T0);
+    const stub = new StubPurchases();
+    const limiter = new PageRateLimiter(4);
+    const adapter = new CloudPurchaseAdapter(stub, capture, limiter, () => new Date(clock));
+    const { ctx, searches, accountId, connectionId } = await liveOrg([{ name: "Brouillon" }]);
+    try {
+      const opp = await addOpportunity(ctx, searches[0]!.id, "4545");
+      const draft = await svc.db.withOrg(ctx.orgId, (tx) => repos.purchases.create(tx, { opportunityId: opp.id, dedupeKey: `purchase:${opp.id}`, maxPriceCents: 2720, budgetCents: 5000, status: "draft", mode: "auto" }));
+      stub.next.push({ ...awaiting("tok-d"), pages: 3 });
+      const input = { orgId: ctx.orgId, purchaseId: draft.id, cloudAccountId: accountId, connectionId, session: vintedState(), itemUrl: "https://www.vinted.fr/items/4545-pull", externalRef: "4545", maxTotalCents: 2720, dryRun: false, paymentMethod: "vinted_wallet" as const };
+      expect(await adapter.buy(input)).toMatchObject({ status: "awaiting_3ds", pages: 3 });
+      // La base n'a pas encore écrit « awaiting_3ds » (fenêtre entre le navigateur et la transaction) : rien n'est fermé.
+      expect(await adapter.releaseSettled(svc)).toBe(0);
+      expect(stub.cancels).toEqual([]);
+      // Pages de l'achat comptées dans le plafond de la machine ; plafond atteint → aucun achat lancé.
+      expect(limiter.used(clock)).toBe(3);
+      limiter.record(clock, 1);
+      expect(await adapter.buy({ ...input, purchaseId: "autre" })).toMatchObject({ status: "failed", code: "unavailable", launched: false });
+      expect(stub.buys).toHaveLength(1);
+      // Demande terminée (bloquée) : le navigateur est fermé.
+      await svc.db.withOrg(ctx.orgId, (tx) => repos.purchases.update(tx, draft.id, { status: "blocked" }));
+      expect(await adapter.releaseSettled(svc)).toBe(1);
+      expect(stub.cancels).toEqual(["tok-d"]);
+    } finally {
+      await retire(ctx);
+    }
+  });
+
+  it("rétention : mesures de lecture gardées 90 jours, affaires écartées supprimées après 30 jours", async () => {
+    if (!available) return;
+    // Horloge réelle : les dates de la base (now()) et celles du service coïncident.
+    clock = new Date();
+    const { ctx, searches } = await liveOrg([{ name: "Rétention" }]);
+    try {
+      await svc.db.withOrg(ctx.orgId, async (tx) => {
+        await repos.radarReads.add(tx, { searchId: searches[0]!.id, connectionId: null, source: "cloud", readAt: new Date(clock.getTime() - 91 * 86_400_000).toISOString(), durationMs: 900, outcome: "ok", itemsSeen: 3, itemsNew: 0, factor: 1 });
+        await repos.radarReads.add(tx, { searchId: searches[0]!.id, connectionId: null, source: "cloud", readAt: new Date(clock.getTime() - 2 * 86_400_000).toISOString(), durationMs: 900, outcome: "ok", itemsSeen: 3, itemsNew: 0, factor: 1 });
+      });
+      const old = await addOpportunity(ctx, searches[0]!.id, "7070");
+      await svc.db.withOrg(ctx.orgId, (tx) => tx.query("update opportunities set status = 'dismissed', updated_at = now() - interval '31 days', created_at = now() - interval '31 days' where id = $1", [old.id]));
+      const res = await retentionTick(svc, capture);
+      expect(res.radar.errors).toBe(0);
+      expect(res.radar.reads).toBeGreaterThanOrEqual(1);
+      expect(res.radar.deleted).toBeGreaterThanOrEqual(1);
+      expect(await readsOf(ctx, searches[0]!.id)).toHaveLength(1);
+      expect(await svc.db.withOrg(ctx.orgId, (tx) => repos.opportunities.byId(tx, old.id)).catch(() => null)).toBeNull();
+    } finally {
+      await retire(ctx);
+    }
+  });
+});
+
+describe("worker : Selio Radar (adaptateurs, plafond, plannings, configuration)", () => {
+  const base = { DATABASE_URL: "postgres://x", REDIS_URL: "redis://127.0.0.1:6379", SECRETS_ENCRYPTION_KEY: "k".repeat(44) };
+  const read = (over: Partial<RadarReadResult>): RadarReadResult => ({ outcome: "ok", items: [], seenCount: 0, blocked: null, stop: null, measure: null, pageOk: true, durationMs: 1200, finalUrl: null, status: 200, launched: true, observedAt: "2026-10-29T09:00:00.000Z", message: "", missing: [], warnings: [], adapterVersion: "test", ...over });
+
+  it("lecture : résultats de @selio/cloud traduits pour le cœur (signal → pause, aucun navigateur → rien de compté)", () => {
+    const item = { externalRef: "5012345601", url: "https://www.vinted.fr/items/5012345601-veste", title: "Veste en jean", brand: "Levi's", size: "M", condition: "very_good" as const, priceCents: 2500, shippingCents: 399, sellerHandle: "vendeur", sellerRating: 4.5, sellerReviews: 12, photoCount: 4, photoUrl: null, publishedAt: "2026-10-29T08:55:00.000Z", publishedAtSource: "relative" as const, observedAt: "2026-10-29T09:00:00.000Z" };
+    expect(toCoreReadOutcome(read({ items: [item] }))).toMatchObject({ ok: true, durationMs: 1200, items: [{ externalRef: "5012345601", category: null, shippingCents: 399, publishedAt: "2026-10-29T08:55:00.000Z" }] });
+    expect(toCoreReadOutcome(read({ outcome: "blocked", blocked: { code: "rate_limited", pattern: "status.429", message: "" } }))).toMatchObject({ ok: false, code: "rate_limited", launched: true });
+    expect(toCoreReadOutcome(read({ outcome: "blocked", blocked: { code: "captcha", pattern: "x", message: "" }, launched: false }))).toMatchObject({ ok: false, code: "captcha", launched: true });
+    expect(toCoreReadOutcome(read({ outcome: "unavailable", launched: false }))).toMatchObject({ ok: false, code: "unavailable", launched: false });
+    expect(toCoreReadOutcome(read({ outcome: "page_changed" }))).toMatchObject({ ok: false, code: "selector_missing" });
+    expect(toCoreReadOutcome(read({ outcome: "not_logged_in" }))).toMatchObject({ ok: false, code: "not_logged_in" });
+  });
+
+  it("achat : résultats de @selio/cloud traduits pour le cœur (après « Payer », effets inconnus : jamais racheté)", () => {
+    expect(toCorePurchaseOutcome({ outcome: "dry_run", totalCents: 2620, itemPriceCents: 2000, walletOffered: true, walletSelected: true, durationMs: 1 }, 8000)).toMatchObject({ status: "dry_run", totalCents: 2620 });
+    expect(toCorePurchaseOutcome({ outcome: "purchased", orderRef: "V-1", totalCents: null, walletSelected: true, durationMs: 1 }, 8000)).toMatchObject({ status: "purchased", totalCents: 8000, orderRef: "V-1" });
+    expect(toCorePurchaseOutcome({ outcome: "price_changed", stage: "checkout", displayedCents: 9000, maxTotalCents: 8000, durationMs: 1 }, 8000)).toMatchObject({ status: "failed", code: "price_changed", sideEffects: "none" });
+    expect(toCorePurchaseOutcome({ outcome: "failed", code: "item_unavailable", unavailable: "sold", message: "", sideEffects: "none", launched: true, stop: null, durationMs: 1 }, 8000)).toMatchObject({ status: "unavailable", reason: "sold" });
+    expect(toCorePurchaseOutcome({ outcome: "failed", code: "unconfirmed", message: "", sideEffects: "unknown", launched: true, stop: null, durationMs: 1 }, 8000)).toMatchObject({ status: "failed", code: "timeout", sideEffects: "unknown" });
+    expect(toCorePurchaseOutcome({ outcome: "failed", code: "payment_failed", message: "", sideEffects: "none", launched: true, stop: null, durationMs: 1 }, 8000)).toMatchObject({ status: "failed", code: "payment_error" });
+    expect(toCorePurchaseOutcome({ outcome: "failed", code: "unavailable", message: "", sideEffects: "none", launched: false, stop: null, durationMs: 0 }, 8000)).toMatchObject({ status: "failed", code: "unavailable", launched: false });
+    expect(toCorePurchaseOutcome({ outcome: "failed", code: "real_purchase_disabled", message: "", sideEffects: "none", launched: false, stop: null, durationMs: 0 }, 8000)).toMatchObject({ status: "failed", code: "error" });
+  });
+
+  it("plafond de pages par minute : fenêtre glissante, place rendue quand rien n'est lu", () => {
+    const limiter = new PageRateLimiter(2);
+    const t = new Date("2026-10-29T09:00:00.000Z");
+    const a = limiter.tryTake(t);
+    expect(a).not.toBeNull();
+    expect(limiter.tryTake(t)).not.toBeNull();
+    expect(limiter.tryTake(t)).toBeNull();
+    limiter.release(a!);
+    expect(limiter.used(t)).toBe(1);
+    expect(limiter.tryTake(new Date(t.getTime() + 1000))).not.toBeNull();
+    expect(limiter.tryTake(new Date(t.getTime() + 30_000))).toBeNull();
+    expect(limiter.tryTake(new Date(t.getTime() + 60_001))).not.toBeNull();
+  });
+
+  it("un seul passage à la fois : le planning suivant ne relance pas un passage en cours ; arrêt", async () => {
+    let release: () => void = () => {};
+    let runs = 0;
+    const flight = new SingleFlight("radar.tick", () => { runs++; return new Promise<number>((r) => { release = () => r(runs); }); }, silent);
+    expect(flight.trigger()).toEqual({ started: true });
+    expect(flight.trigger()).toEqual({ started: false });
+    release();
+    await flight.drain(1000);
+    expect(flight.trigger()).toEqual({ started: true });
+    release();
+    await flight.drain(1000);
+    flight.stop();
+    expect(flight.trigger()).toEqual({ started: false });
+    expect(runs).toBe(2);
+  });
+
+  it("configuration : radar.tick toutes les 30 s, alertes chaque minute, Radar Auto et achat réel fermés par défaut", () => {
+    const env = loadEnv(base);
+    expect(env).toMatchObject({ RADAR_TICK_EVERY_MS: 30_000, CRON_ALERTS: "* * * * *", RADAR_AUTO_ENABLED: false, RADAR_REAL_PURCHASE: false, RADAR_MAX_PAGES_PER_MINUTE_GLOBAL: 30, CLOUD_3DS_TIMEOUT_MS: 600_000, RADAR_PAGE_BUDGET_MS: 30_000, RADAR_PURCHASE_TIMEOUT_MS: 90_000 });
+    expect(radarServicesConfig(env)).toEqual({ radarAutoEnabled: false, radarAutoOrgIds: undefined, radarRealPurchase: false, radar3dsTimeoutMs: 600_000 });
+    const schedules = maintenanceSchedules(env);
+    expect(schedules.find((s) => s.name === "radar.tick")).toEqual({ name: "radar.tick", every: 30_000 });
+    expect(schedules.find((s) => s.name === "alerts.send")).toEqual({ name: "alerts.send", pattern: "* * * * *" });
+    expect(schedules.some((s) => s.name === "radar.auto")).toBe(false);
+    expect(disabledSchedules(env)).toEqual(["radar.auto"]);
+    // Le balayage des dossiers de travail n'emporte jamais un navigateur d'achat qui attend la banque.
+    expect(cloudProfileMaxAgeMs(env)).toBeGreaterThan(env.RADAR_PURCHASE_TIMEOUT_MS + env.CLOUD_3DS_TIMEOUT_MS);
+    expect(cloudProfileMaxAgeMs(loadEnv({ ...base, CLOUD_3DS_TIMEOUT_MS: "1800000" }))).toBeGreaterThan(30 * 60_000);
+    const on = loadEnv({ ...base, RADAR_AUTO_ENABLED: "true", RADAR_AUTO_ORG_IDS: "org-1,org-2" });
+    expect(maintenanceSchedules(on).find((s) => s.name === "radar.auto")).toEqual({ name: "radar.auto", every: 30_000 });
+    expect(disabledSchedules(on)).toEqual([]);
+    expect(radarServicesConfig(on)).toMatchObject({ radarAutoEnabled: true, radarAutoOrgIds: ["org-1", "org-2"] });
+    expect(() => loadEnv({ ...base, NODE_ENV: "production", AI_PROVIDER: "ollama", RADAR_AUTO_ENABLED: "true" })).toThrow(/RADAR_AUTO_ORG_IDS/);
+    expect(() => loadEnv({ ...base, CLOUD_3DS_TIMEOUT_MS: "5000" })).toThrow(/CLOUD_3DS_TIMEOUT_MS/);
+    expect(() => loadEnv({ ...base, VAPID_PUBLIC_KEY: "abc" })).toThrow(/VAPID/);
   });
 });

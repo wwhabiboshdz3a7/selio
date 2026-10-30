@@ -2,8 +2,16 @@ import { Queue, type QueueOptions } from "bullmq";
 import IORedis from "ioredis";
 import type { QueueStats } from "@selio/core";
 
-/** « selio-cloud-login » : fenêtres de connexion du Cloud, ouvertes par le worker (job ajouté au POST login). */
-export const QUEUE_NAMES = ["selio-automation", "selio-sync", "selio-maintenance", "selio-cloud-login"] as const;
+/**
+ * « selio-cloud-login » : fenêtres de connexion du Cloud, ouvertes par le worker (job ajouté au POST login).
+ * « selio-radar » : reprise d'un achat Radar Auto après la validation 3-D Secure du client (le navigateur
+ * tenu ouvert vit dans le worker ; job ajouté au POST /api/purchases/:id/resume).
+ */
+export const QUEUE_NAMES = ["selio-automation", "selio-sync", "selio-maintenance", "selio-cloud-login", "selio-radar"] as const;
+
+/** File et job de reprise 3-D Secure (mêmes noms dans apps/worker/src/radar.ts, à garder alignés). */
+export const RADAR_QUEUE = "selio-radar";
+export const RADAR_RESUME_JOB = "radar.resume";
 
 export interface QueueHandle {
   connection: IORedis | null;

@@ -39,7 +39,8 @@ test.describe("nouveaux modules", () => {
     await gotoApp(page, "/app/auto-buy");
     await expect(page.getByText("Garde-fous")).toBeVisible();
     await page.getByRole("button", { name: "Annuler l'achat" }).first().click();
-    await expect(page.getByText("Achat automatique annulé")).toBeVisible();
+    // Le toast (exact) ; la ligne de l'achat affiche aussi sa note « Achat automatique annulé dans le délai… ».
+    await expect(page.getByText("Achat automatique annulé", { exact: true })).toBeVisible();
     await gotoApp(page, "/app");
     await page.getByRole("radio", { name: "Ce mois-ci" }).click();
     await page.getByRole("button", { name: "Personnaliser" }).click();

@@ -3,9 +3,23 @@ import { join } from "node:path";
 import { chromium, errors as pwErrors, type Browser, type BrowserContext, type ElementHandle, type JSHandle, type Locator, type Page } from "playwright-core";
 import type { CapturedConversation } from "@selio/connectors/vinted-adapter";
 import { CLOUD_DEFAULTS } from "../config";
-import { detectBlock, type BlockSignal } from "../guard";
+import { detectBlock, type BlockSignal, type DetectOptions } from "../guard";
 import { launchLoginWindow } from "../login-window";
-import { discardEmptyProfileDir, prepareProfileDir, removeProfileDir } from "../profile";
+import { createProfileDir, discardEmptyProfileDir, prepareProfileDir, removeProfileDir } from "../profile";
+import {
+  TargetRefusedError,
+  type BrowsingPage,
+  type BrowsingSession,
+  type ClickTarget,
+  type FetchPageInput,
+  type FetchPageOutcome,
+  type OpenBrowsingInput,
+  type OpenBrowsingOutcome,
+  type PageFetcher,
+  type PageOpener,
+  type RadarPageKind,
+} from "../radar/types";
+import { isRadarOrigin, resolveRadarUrl } from "../radar/urls";
 import { filterStorageState, isSessionEmpty, isVintedDomain } from "../session";
 import { BrowserSlots, BrowserSlotTimeoutError } from "../slots";
 import {
@@ -53,6 +67,14 @@ import { DEFAULT_VIEWPORT, contextOptions, launchOptions } from "./launch";
  * l'automatisation, pas de User-Agent ni d'empreinte modifiés, pas de
  * résolution de CAPTCHA. Au moindre signal de Vinted (`detectBlock`), on
  * s'arrête et on rend le code : le service met le compte en pause.
+ *
+ * Selio Radar passe par le même lancement (`BrowserLease` : créneau partagé,
+ * dossier de travail, minuterie, Chromium, contexte, session injectée) :
+ * - `fetchPage` lit une page catalogue ou annonce (HTML) puis referme tout,
+ *   sans aucune action sur la page ;
+ * - `openBrowsing` tient un navigateur ouvert le temps d'un achat (Radar Auto,
+ *   désactivé par défaut) : aller à une annonce, lire, cliquer sur un bouton
+ *   nommé, lire l'état d'une case. Aucune méthode n'écrit de texte.
  */
 
 export interface PlaywrightRunnerOptions {
@@ -73,6 +95,13 @@ export interface PlaywrightRunnerOptions {
   loginUrl?: string;
   /** Navigateurs simultanés (CLOUD_MAX_BROWSERS) ou créneaux partagés avec d'autres exécuteurs. */
   maxBrowsers?: number | BrowserSlots;
+  /**
+   * Dossier sous lequel `fetchPage` et `openBrowsing` créent leur dossier de travail quand
+   * l'appelant n'en fournit pas (CLOUD_PROFILE_DIR ; dossier temporaire du système par défaut).
+   */
+  profileBaseDir?: string;
+  /** Durée de vie maximale d'une navigation d'achat, attente 3-D Secure comprise (30 min par défaut). */
+  maxBrowsingMs?: number;
   /** Actions lourdes (CLOUD_HEAVY_ACTIONS) : refusées par défaut, en plus du contrôle du service. */
   heavyActions?: boolean;
   /**
@@ -181,11 +210,11 @@ export interface BlockCheckPage {
  * par-dessus le bouton. Un signal trouvé est rendu tel quel (pause du compte,
  * rien n'est retenté). Ne lève jamais.
  */
-export async function blockAfterError(page: BlockCheckPage, waitMs = 5_000): Promise<BlockSignal | null> {
+export async function blockAfterError(page: BlockCheckPage, waitMs = 5_000, options: DetectOptions = {}): Promise<BlockSignal | null> {
   for (let attempt = 0; attempt < 2; attempt++) {
     await page.waitForLoadState("domcontentloaded", { timeout: waitMs }).catch(() => {});
     try {
-      return detectBlock(await page.content(), page.url());
+      return detectBlock(await page.content(), page.url(), options);
     } catch {
       // page encore en navigation : une seconde lecture après le chargement
     }
@@ -193,7 +222,82 @@ export async function blockAfterError(page: BlockCheckPage, waitMs = 5_000): Pro
   return null;
 }
 
-export class PlaywrightRunner implements BrowserRunner {
+/**
+ * Un navigateur loué pour une exécution : créneau, dossier de travail, minuterie, Chromium, puis
+ * contexte et page. Fermeture idempotente : contexte, navigateur, dossier de travail supprimé,
+ * créneau rendu. La minuterie ferme tout à l'échéance (repoussable par `extend`, attente 3-D Secure).
+ */
+class BrowserLease {
+  browser: Browser | null = null;
+  context: BrowserContext | null = null;
+  page: Page | null = null;
+  release: (() => void) | null = null;
+  timedOut = false;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private closing: Promise<void> | null = null;
+
+  constructor(
+    readonly profileDir: string,
+    private deadline: number,
+  ) {}
+
+  get closed(): boolean {
+    return this.closing !== null;
+  }
+
+  remaining(): number {
+    return Math.max(0, this.deadline - Date.now());
+  }
+
+  /** Arme la minuterie : à l'échéance, tout est fermé (pendant le lancement, `lease` s'en charge). */
+  arm(): void {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      this.timedOut = true;
+      if (this.browser) void this.close();
+    }, this.remaining());
+  }
+
+  /** Repousse l'échéance à maintenant + `ms` (sans effet une fois fermé ou expiré). */
+  extend(ms: number): void {
+    if (this.closed || this.timedOut) return;
+    this.deadline = Date.now() + Math.max(0, ms);
+    this.arm();
+  }
+
+  close(): Promise<void> {
+    this.closing ??= (async () => {
+      if (this.timer) clearTimeout(this.timer);
+      this.timer = null;
+      await this.context?.close().catch(() => {});
+      await this.browser?.close().catch(() => {});
+      await removeProfileDir(this.profileDir).catch(() => {});
+      this.release?.();
+    })();
+    return this.closing;
+  }
+}
+
+/** Premier élément visible parmi des sélecteurs pris dans l'ordre (priorité de l'adaptateur). */
+async function firstVisibleLocator(page: Page, selectors: readonly string[], timeoutMs: number): Promise<Locator | null> {
+  if (selectors.length === 0) return null;
+  try {
+    await page.locator(selectors.join(", ")).first().waitFor({ state: "visible", timeout: timeoutMs });
+  } catch (err) {
+    if (err instanceof pwErrors.TimeoutError) return null;
+    throw err;
+  }
+  for (const s of selectors) {
+    const loc = page.locator(s).first();
+    if ((await loc.count()) > 0 && (await loc.isVisible())) return loc;
+  }
+  return null;
+}
+
+/** Rôles cherchés par nom visible quand aucun sélecteur de l'adaptateur ne répond. */
+const NAMED_ROLES = ["button", "radio", "link"] as const;
+
+export class PlaywrightRunner implements BrowserRunner, PageFetcher, PageOpener {
   private readonly chromiumPath: string;
   private readonly headless: boolean;
   private readonly slowMo: number | undefined;
@@ -209,6 +313,8 @@ export class PlaywrightRunner implements BrowserRunner {
   private readonly slotWaitMs: number;
   private readonly viewport: { width: number; height: number };
   private readonly logger: CloudLogger;
+  private readonly profileBaseDir: string | undefined;
+  private readonly maxBrowsingMs: number;
   readonly slots: BrowserSlots;
 
   constructor(options: PlaywrightRunnerOptions) {
@@ -229,6 +335,65 @@ export class PlaywrightRunner implements BrowserRunner {
     this.viewport = options.viewport ?? { ...DEFAULT_VIEWPORT };
     this.logger = options.logger ?? silentLogger;
     this.slots = options.maxBrowsers instanceof BrowserSlots ? options.maxBrowsers : new BrowserSlots(options.maxBrowsers ?? CLOUD_DEFAULTS.maxBrowsers);
+    this.profileBaseDir = options.profileBaseDir;
+    this.maxBrowsingMs = Math.max(10_000, options.maxBrowsingMs ?? 30 * 60_000);
+  }
+
+  /**
+   * Prépare le dossier de travail, prend un créneau, arme la minuterie et lance Chromium. Toute
+   * issue autre qu'un bail rend « unavailable » sans navigateur lancé : rien n'a touché Vinted.
+   * `retry` complète les messages (« l'action est remise en file », « la lecture est reportée »).
+   */
+  private async lease(profileDir: string, deadline: number, event: string, data: Record<string, unknown>, retry: string): Promise<BrowserLease | Failure> {
+    try {
+      // Dossier refusé (non vide, chemin relatif) : jamais supprimé, il ne nous appartient pas.
+      await prepareProfileDir(profileDir);
+    } catch (err) {
+      return notLaunched("unavailable", err instanceof Error ? err.message : "Dossier de travail inutilisable.");
+    }
+    try {
+      await mkdir(join(profileDir, "artifacts"), { mode: 0o700 });
+    } catch {
+      await removeProfileDir(profileDir).catch(() => {});
+      return notLaunched("unavailable", "Dossier de travail inutilisable.");
+    }
+    const lease = new BrowserLease(profileDir, deadline);
+    try {
+      lease.release = await this.slots.acquire(Math.min(this.slotWaitMs, lease.remaining()));
+    } catch (err) {
+      await lease.close();
+      if (err instanceof BrowserSlotTimeoutError) this.logger.warn(`${event}.no_slot`, data);
+      return notLaunched("unavailable", `Aucun navigateur libre dans le délai imparti : ${retry}.`);
+    }
+    lease.arm();
+    try {
+      lease.browser = await chromium.launch(
+        launchOptions({ chromiumPath: this.chromiumPath, headless: this.headless, slowMo: this.slowMo, timeoutMs: Math.min(30_000, lease.remaining()), sandbox: this.sandbox, workDir: profileDir, sourceEnv: this.sourceEnv }),
+      );
+    } catch {
+      // Lancement impossible (exécutable, bac à sable, mémoire) : rien n'a touché Vinted.
+      await lease.close();
+      this.logger.warn(`${event}.launch_failed`, data);
+      return notLaunched("unavailable", `Le navigateur du Cloud n'a pas pu être lancé : ${retry}.`);
+    }
+    if (lease.timedOut) {
+      await lease.close();
+      return notLaunched("unavailable", `Délai dépassé au lancement du navigateur : ${retry}.`);
+    }
+    return lease;
+  }
+
+  /** Contexte sans enregistrement (la session reste en mémoire, jamais dans un fichier), session injectée, une page. */
+  private async openPage(lease: BrowserLease, session: StorageState): Promise<{ context: BrowserContext; page: Page }> {
+    if (!lease.browser) throw new Error("Navigateur non lancé.");
+    const context = await lease.browser.newContext(contextOptions(this.viewport));
+    lease.context = context;
+    context.setDefaultTimeout(this.stepTimeoutMs);
+    context.setDefaultNavigationTimeout(this.stepTimeoutMs);
+    await injectSession(context, session);
+    const page = await context.newPage();
+    lease.page = page;
+    return { context, page };
   }
 
   /**
@@ -276,60 +441,14 @@ export class PlaywrightRunner implements BrowserRunner {
     const session = input.session ? filterStorageState(input.session) : null;
     if (!session || isSessionEmpty(session)) return refuse(notLaunched("not_logged_in", "Aucune session enregistrée : le client doit se connecter dans la fenêtre sécurisée."));
 
-    try {
-      // Dossier refusé (non vide, chemin relatif) : jamais supprimé, il ne nous appartient pas.
-      await prepareProfileDir(input.profileDir);
-    } catch (err) {
-      return finish(notLaunched("unavailable", err instanceof Error ? err.message : "Dossier de travail inutilisable."));
-    }
-    try {
-      await mkdir(join(input.profileDir, "artifacts"), { mode: 0o700 });
-    } catch {
-      await removeProfileDir(input.profileDir).catch(() => {});
-      return finish(notLaunched("unavailable", "Dossier de travail inutilisable."));
-    }
-
-    const deadline = started + this.actionTimeoutMs;
-    const remaining = () => Math.max(0, deadline - Date.now());
-    const step: Step = { clicked: false };
-    let release: (() => void) | null = null;
-    let browser: Browser | null = null;
-    let context: BrowserContext | null = null;
-    let page: Page | null = null;
-    let timedOut = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
     this.logger.info("cloud.run.start", { kind: action.kind, host: target.hostname });
+    const leased = await this.lease(input.profileDir, started + this.actionTimeoutMs, "cloud.run", { kind: action.kind }, "l'action est remise en file");
+    if (!(leased instanceof BrowserLease)) return finish(leased);
+    const lease = leased;
+    const step: Step = { clicked: false };
 
     try {
-      try {
-        release = await this.slots.acquire(Math.min(this.slotWaitMs, remaining()));
-      } catch (err) {
-        if (err instanceof BrowserSlotTimeoutError) {
-          this.logger.warn("cloud.run.no_slot", { kind: action.kind });
-          return finish(notLaunched("unavailable", "Aucun navigateur libre dans le délai imparti : l'action est remise en file."));
-        }
-        throw err;
-      }
-      timer = setTimeout(() => {
-        timedOut = true;
-        void browser?.close().catch(() => {});
-      }, remaining());
-      try {
-        browser = await chromium.launch(
-          launchOptions({ chromiumPath: this.chromiumPath, headless: this.headless, slowMo: this.slowMo, timeoutMs: Math.min(30_000, remaining()), sandbox: this.sandbox, workDir: input.profileDir, sourceEnv: this.sourceEnv }),
-        );
-      } catch {
-        // Lancement impossible (exécutable, bac à sable, mémoire) : rien n'a touché Vinted.
-        this.logger.warn("cloud.run.launch_failed", { kind: action.kind });
-        return finish(notLaunched("unavailable", "Le navigateur du Cloud n'a pas pu être lancé : l'action est remise en file."));
-      }
-      if (timedOut) return finish(notLaunched("unavailable", "Délai dépassé au lancement du navigateur : l'action est remise en file."));
-      // Contexte sans enregistrement : la session reste en mémoire, jamais dans un fichier du profil.
-      context = await browser.newContext(contextOptions(this.viewport));
-      context.setDefaultTimeout(this.stepTimeoutMs);
-      context.setDefaultNavigationTimeout(this.stepTimeoutMs);
-      await injectSession(context, session);
-      page = await context.newPage();
+      const { context, page } = await this.openPage(lease, session);
 
       const result = action.kind === "republish" ? await this.republish(page, target, step) : await this.sendMessage(page, target, action.text, step);
 
@@ -339,27 +458,24 @@ export class PlaywrightRunner implements BrowserRunner {
       return finish(result, after);
     } catch (err) {
       const sideEffects = step.clicked ? "unknown" : "none";
+      const page = lease.page;
       // Avant de conclure « erreur » ou « délai » : Vinted a pu afficher un CAPTCHA ou rediriger vers une
       // page de vérification pendant l'action. Impossible seulement si le minuteur global a tout fermé.
-      if (!timedOut && page && !page.isClosed()) {
-        const signal = await blockAfterError(page, Math.min(5_000, Math.max(500, remaining())));
+      if (!lease.timedOut && page && !page.isClosed()) {
+        const signal = await blockAfterError(page, Math.min(5_000, Math.max(500, lease.remaining())));
         if (signal) {
           this.logger.warn("cloud.run.stopped", { kind: action.kind, code: signal.code, afterError: true });
-          return finish(failure(signal.code, signal.message, sideEffects), context ? await readSession(context) : undefined);
+          return finish(failure(signal.code, signal.message, sideEffects), lease.context ? await readSession(lease.context) : undefined);
         }
       }
-      if (timedOut || err instanceof pwErrors.TimeoutError) {
+      if (lease.timedOut || err instanceof pwErrors.TimeoutError) {
         this.logger.warn("cloud.run.timeout", { kind: action.kind });
         return finish(failure("timeout", "Délai dépassé : l'action a été interrompue.", sideEffects));
       }
       this.logger.warn("cloud.run.error", { kind: action.kind, error: err instanceof Error ? err.name : "unknown" });
       return finish(failure("error", "Erreur du navigateur pendant l'action.", sideEffects));
     } finally {
-      if (timer) clearTimeout(timer);
-      await context?.close().catch(() => {});
-      await browser?.close().catch(() => {});
-      await removeProfileDir(input.profileDir).catch(() => {});
-      release?.();
+      await lease.close();
     }
   }
 
@@ -378,19 +494,8 @@ export class PlaywrightRunner implements BrowserRunner {
     return block ? failure(block.code, block.message, sideEffects) : null;
   }
 
-  /** Premier élément visible parmi des sélecteurs pris dans l'ordre (priorité de l'adaptateur). */
-  private async firstVisible(page: Page, selectors: readonly string[], timeoutMs: number): Promise<Locator | null> {
-    try {
-      await page.locator(selectors.join(", ")).first().waitFor({ state: "visible", timeout: timeoutMs });
-    } catch (err) {
-      if (err instanceof pwErrors.TimeoutError) return null;
-      throw err;
-    }
-    for (const s of selectors) {
-      const loc = page.locator(s).first();
-      if ((await loc.count()) > 0 && (await loc.isVisible())) return loc;
-    }
-    return null;
+  private firstVisible(page: Page, selectors: readonly string[], timeoutMs: number): Promise<Locator | null> {
+    return firstVisibleLocator(page, selectors, timeoutMs);
   }
 
   /** Bouton d'envoi : `submit` du formulaire du champ de réponse, sinon bouton « Envoyer ». */
@@ -457,6 +562,120 @@ export class PlaywrightRunner implements BrowserRunner {
     return (await loc.count()) > 0 && (await loc.isVisible()) ? loc : null;
   }
 
+  /** Vrai si `fetchPage` ou `openBrowsing` accepte cette adresse (vérifié avant tout lancement). */
+  allowsTarget(url: string, kind: RadarPageKind): boolean {
+    return resolveRadarUrl(url, [kind], this.baseUrl) !== null;
+  }
+
+  /** Résolution des adresses Radar (catalogue, annonce) sur Vinted ou l'origine de test injectée. */
+  resolveRadarTarget(url: string, kinds: readonly RadarPageKind[] = ["catalog", "item"]): URL | null {
+    return resolveRadarUrl(url, kinds, this.baseUrl);
+  }
+
+  /** Page affichée sur Vinted ou sur l'origine de test injectée (condition d'un clic). */
+  isAllowedOrigin(url: string): boolean {
+    return isRadarOrigin(url, this.baseUrl);
+  }
+
+  /**
+   * Selio Radar — lecture d'une page catalogue ou d'une annonce avec la session du compte Achat :
+   * un Chromium neuf (même lancement que `run`), la page chargée, son HTML lu, la session relue et
+   * filtrée, puis tout est refermé. Aucune action sur la page (ni clic, ni saisie, ni défilement).
+   * La détection des signaux de Vinted se fait sur le HTML rendu (lecteur Radar) ; après une
+   * exception, la page est relue (`blockAfterError`) pour ne pas confondre un CAPTCHA avec une erreur.
+   */
+  async fetchPage(input: FetchPageInput): Promise<FetchPageOutcome> {
+    const started = Date.now();
+    const notStarted = (code: RunFailureCode, message: string): FetchPageOutcome => ({ ok: false, code, message, launched: false, durationMs: Date.now() - started });
+    const target = this.resolveRadarTarget(input.url);
+    if (!target) return notStarted("error", "Adresse refusée : Radar ne lit que les pages catalogue et les annonces Vinted.");
+    const session = input.session ? filterStorageState(input.session) : null;
+    if (!session || isSessionEmpty(session)) return notStarted("not_logged_in", "Aucune session enregistrée pour le compte Achat : le client doit se connecter dans la fenêtre sécurisée.");
+    let profileDir = input.profileDir;
+    if (!profileDir) {
+      try {
+        profileDir = await createProfileDir(this.profileBaseDir);
+      } catch {
+        return notStarted("unavailable", "Dossier de travail inutilisable : la lecture est reportée.");
+      }
+    }
+    const budget = Math.min(this.actionTimeoutMs, Math.max(1_000, input.timeoutMs ?? this.actionTimeoutMs));
+    const leased = await this.lease(profileDir, started + budget, "radar.fetch", { host: target.hostname }, "la lecture est reportée");
+    if (!(leased instanceof BrowserLease)) return { ok: false, code: leased.code, message: leased.message, launched: false, durationMs: Date.now() - started };
+    const lease = leased;
+    const done = (o: Omit<Extract<FetchPageOutcome, { ok: false }>, "durationMs" | "launched">): FetchPageOutcome => ({ ...o, launched: true, durationMs: Date.now() - started });
+    try {
+      const { context, page } = await this.openPage(lease, session);
+      const response = await page.goto(target.toString(), { waitUntil: "domcontentloaded" });
+      const status = response?.status() ?? null;
+      // En-tête de vérification anti-robot (lu seulement pour s'arrêter, jamais pour le contourner).
+      const challenge = (await response?.allHeaders().catch(() => ({}) as Record<string, string>))?.["cf-mitigated"]?.toLowerCase() === "challenge";
+      // Signal de Vinted dès le chargement (CAPTCHA, « trop de requêtes »…) : arrêt immédiat, aucune attente.
+      const signaled = challenge || (status !== null && status >= 400) || detectBlock(await page.content(), page.url(), { status, expectMember: false }) !== null;
+      if (!signaled && input.waitForSelectors && input.waitForSelectors.length > 0) {
+        // Attente courte de la grille (rendu côté client) ; son absence est constatée par l'adaptateur.
+        await page
+          .locator(input.waitForSelectors.join(", "))
+          .first()
+          .waitFor({ state: "attached", timeout: Math.min(5_000, lease.remaining()) })
+          .catch(() => {});
+      }
+      const html = await page.content();
+      const finalUrl = page.url();
+      const after = await readSession(context);
+      return { ok: true, html, finalUrl, status, ...(challenge ? { challenge: true } : {}), durationMs: Date.now() - started, ...(after ? { session: after } : {}) };
+    } catch (err) {
+      const page = lease.page;
+      if (!lease.timedOut && page && !page.isClosed()) {
+        const signal = await blockAfterError(page, Math.min(5_000, Math.max(500, lease.remaining())), { expectMember: false });
+        if (signal) {
+          this.logger.warn("radar.fetch.stopped", { code: signal.code, afterError: true });
+          return done({ ok: false, code: signal.code, message: signal.message });
+        }
+      }
+      if (lease.timedOut || err instanceof pwErrors.TimeoutError) {
+        this.logger.warn("radar.fetch.timeout", { host: target.hostname });
+        return done({ ok: false, code: "timeout", message: "Délai dépassé : la page n'a pas été lue." });
+      }
+      this.logger.warn("radar.fetch.error", { error: err instanceof Error ? err.name : "unknown" });
+      return done({ ok: false, code: "error", message: "Erreur du navigateur pendant la lecture." });
+    } finally {
+      await lease.close();
+    }
+  }
+
+  /**
+   * Radar Auto — navigateur tenu ouvert le temps d'un achat (et, au plus, de l'attente d'une
+   * validation 3-D Secure), fermé automatiquement à l'échéance. Le créneau reste pris pendant ce
+   * temps. La page rendue ne sait que naviguer vers une annonce ou un catalogue Vinted, lire, cliquer
+   * sur un bouton nommé et lire l'état d'une case : aucune méthode n'écrit de texte.
+   */
+  async openBrowsing(input: OpenBrowsingInput): Promise<OpenBrowsingOutcome> {
+    const started = Date.now();
+    const notStarted = (code: RunFailureCode, message: string): OpenBrowsingOutcome => ({ ok: false, code, message, launched: false, durationMs: Date.now() - started });
+    const session = input.session ? filterStorageState(input.session) : null;
+    if (!session || isSessionEmpty(session)) return notStarted("not_logged_in", "Aucune session enregistrée pour le compte Achat : le client doit se connecter dans la fenêtre sécurisée.");
+    let profileDir = input.profileDir;
+    if (!profileDir) {
+      try {
+        profileDir = await createProfileDir(this.profileBaseDir);
+      } catch {
+        return notStarted("unavailable", "Dossier de travail inutilisable : l'achat est reporté.");
+      }
+    }
+    const ttl = Math.min(this.maxBrowsingMs, Math.max(1_000, input.timeoutMs ?? this.actionTimeoutMs));
+    const leased = await this.lease(profileDir, started + ttl, "radar.browse", {}, "l'achat est reporté");
+    if (!(leased instanceof BrowserLease)) return { ok: false, code: leased.code, message: leased.message, launched: false, durationMs: Date.now() - started };
+    try {
+      const { context, page } = await this.openPage(leased, session);
+      return { ok: true, browsing: new PlaywrightBrowsing(this, leased, context, page, this.maxBrowsingMs, Math.min(5_000, this.stepTimeoutMs)) };
+    } catch {
+      const timedOut = leased.timedOut;
+      await leased.close();
+      return { ok: false, code: timedOut ? "timeout" : "error", message: "Le navigateur d'achat n'a pas pu être préparé.", launched: true, durationMs: Date.now() - started };
+    }
+  }
+
   openLoginWindow(input: OpenLoginWindowInput): Promise<LoginWindowApi> {
     return launchLoginWindow({
       chromiumPath: this.chromiumPath,
@@ -470,6 +689,94 @@ export class PlaywrightRunner implements BrowserRunner {
       sandbox: this.sandbox,
       sourceEnv: this.sourceEnv,
     });
+  }
+}
+
+/**
+ * Navigation d'achat sur un vrai Chromium. Volontairement pauvre : aller à une annonce ou un
+ * catalogue Vinted, lire le HTML et l'adresse, cliquer sur un élément désigné par l'adaptateur (ou
+ * par son nom visible), lire l'état coché d'une case. Aucune saisie de texte n'existe : aucun code
+ * bancaire ne peut être tapé à la place du client. Aucun clic hors des pages Vinted.
+ */
+class PlaywrightBrowsing implements BrowsingSession {
+  readonly page: BrowsingPage;
+
+  constructor(
+    runner: PlaywrightRunner,
+    private readonly lease: BrowserLease,
+    private readonly context: BrowserContext,
+    pwPage: Page,
+    private readonly maxMs: number,
+    clickWaitMs: number,
+  ) {
+    this.page = {
+      goto: async (url: string) => {
+        const target = runner.resolveRadarTarget(url);
+        if (!target) throw new TargetRefusedError();
+        const response = await pwPage.goto(target.toString(), { waitUntil: "domcontentloaded" });
+        return { status: response?.status() ?? null };
+      },
+      content: async () => {
+        // Page en pleine navigation (redirection de Vinted ou de la banque) : relue après le chargement.
+        for (let attempt = 0; ; attempt++) {
+          try {
+            return await pwPage.content();
+          } catch (err) {
+            if (attempt >= 2 || pwPage.isClosed() || this.closed) throw err;
+            await pwPage.waitForLoadState("domcontentloaded", { timeout: 5_000 }).catch(() => {});
+          }
+        }
+      },
+      url: () => pwPage.url(),
+      click: async (target: ClickTarget) => {
+        if (!runner.isAllowedOrigin(pwPage.url())) return false;
+        let loc = await firstVisibleLocator(pwPage, target.selectors, clickWaitMs);
+        if (!loc && target.name) {
+          for (const role of NAMED_ROLES) {
+            const byName = pwPage.getByRole(role, { name: target.name }).first();
+            if ((await byName.count()) > 0 && (await byName.isVisible())) {
+              loc = byName;
+              break;
+            }
+          }
+        }
+        if (!loc) return false;
+        await loc.click();
+        return true;
+      },
+      isChecked: async (selectors: readonly string[]) => {
+        for (const s of selectors) {
+          const loc = pwPage.locator(s).first();
+          if ((await loc.count()) === 0) continue;
+          try {
+            return await loc.isChecked({ timeout: 1_000 });
+          } catch {
+            // élément qui n'est ni case ni bouton radio : sélecteur suivant
+          }
+        }
+        return null;
+      },
+      settle: async (timeoutMs: number) => {
+        await pwPage.waitForLoadState("domcontentloaded", { timeout: Math.max(1, timeoutMs) }).catch(() => {});
+      },
+      wait: (ms: number) => pwPage.waitForTimeout(Math.max(0, ms)),
+    };
+  }
+
+  get closed(): boolean {
+    return this.lease.closed || this.lease.timedOut;
+  }
+
+  extend(ms: number): void {
+    this.lease.extend(Math.min(this.maxMs, Math.max(0, ms)));
+  }
+
+  readSession(): Promise<StorageState | undefined> {
+    return this.closed ? Promise.resolve(undefined) : readSession(this.context);
+  }
+
+  close(): Promise<void> {
+    return this.lease.close();
   }
 }
 

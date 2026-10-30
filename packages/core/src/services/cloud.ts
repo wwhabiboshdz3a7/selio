@@ -567,6 +567,30 @@ export async function loginBlocked(services: Services, loginSessionId: string, c
   return result.closed;
 }
 
+/**
+ * Pause d'un compte Cloud décidée par le système hors d'une action Cloud : Selio Radar a vu un CAPTCHA,
+ * un avertissement, un blocage ou un « trop de requêtes » pendant une lecture ou un achat depuis le
+ * compte Achat. Même règle qu'une action : la pause est écrite SEULE et D'ABORD (transaction courte),
+ * un « trop de requêtes » ou un blocage déclenche le coupe-circuit de la machine (adresse partagée),
+ * les propriétaires reçoivent l'email, rien n'est retenté ; la reprise exige l'acquittement du client
+ * (`resume` avec `acknowledge: true`). Un compte arrêté le reste.
+ */
+export async function pauseFromSystem(
+  services: Services,
+  input: { orgId: string; accountId: string; code: CloudLoginSignal; origin: "radar_read" | "radar_purchase"; now?: Date; meta?: Record<string, string | number | boolean | null> },
+): Promise<{ account: CloudAccount; label: string; circuitUntil: string | null }> {
+  const now = input.now ?? services.now();
+  const result = await services.db.withOrg(input.orgId, async (tx) => {
+    const account = await repos.cloudAccounts.pauseForSignal(tx, input.accountId, input.code, now.toISOString());
+    const connection = await repos.connections.byId(tx, account.connectionId).catch(() => null);
+    await repos.audit.add(tx, { actorUserId: null, action: "cloud.account.paused", targetType: "cloud_account", targetId: account.id, meta: { ...(input.meta ?? {}), reason: input.code, automatic: true, origin: input.origin } });
+    return { account, label: connection?.label ?? "Compte Vinted" };
+  });
+  const circuitUntil = input.code === "rate_limited" || input.code === "blocked" ? await tripCircuit(services, input.code, now) : null;
+  await notifyPaused(services, input.orgId, result.label, input.code);
+  return { ...result, circuitUntil };
+}
+
 /** Fenêtre fermée sans connexion (annulée par le client ou expirée), côté worker. */
 export async function abandonLogin(services: Services, loginSessionId: string, status: "cancelled" | "expired"): Promise<boolean> {
   const found = await services.db.withGlobal((tx) => repos.cloudLoginSessions.findGlobal(tx, loginSessionId));

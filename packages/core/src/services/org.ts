@@ -1,6 +1,7 @@
 import { ROLES, inviteInput, orgSettings as orgSettingsSchema, orgUpdate, type Membership, type Organization, type Role, type User } from "@selio/contracts";
 import { repos, hashPassword, hashSecret, newSecret } from "@selio/db";
 import { PLAN_QUOTAS } from "@selio/demo-data";
+import { can } from "@selio/domain";
 import { invitationEmail } from "@selio/email";
 import { AppError, requireAction, sendEmail, webLink, withOrg, type OrgContext } from "../context";
 import type { Session } from "../types";
@@ -120,6 +121,8 @@ export async function updateMemberRole(ctx: OrgContext, membershipId: string, ro
     if ((role === "owner" || m.role === "owner") && ctx.role !== "owner") throw new AppError("forbidden", "Seul un propriétaire peut nommer ou changer un propriétaire.", 403);
     await repos.memberships.setRole(tx, membershipId, role);
     await tx.query("select set_config('app.org_id', $1, true)", [ctx.orgId]);
+    // Rôle qui ne voit plus Radar : ses appareils ne reçoivent plus les alertes.
+    if (!can(role, "radar.read")) await repos.pushSubscriptions.removeForUser(tx, ctx.orgId, m.userId);
     await repos.audit.add(tx, { orgId: ctx.orgId, actorUserId: ctx.userId, action: "member.role_changed", targetType: "membership", targetId: membershipId, meta: { role }, ip: ctx.ip });
   });
 }
@@ -134,7 +137,9 @@ export async function removeMember(ctx: OrgContext, membershipId: string): Promi
     await repos.memberships.delete(tx, membershipId);
     await repos.sessions.deleteForUser(tx, m.userId);
     await tx.query("select set_config('app.org_id', $1, true)", [ctx.orgId]);
-    await repos.audit.add(tx, { orgId: ctx.orgId, actorUserId: ctx.userId, action: "member.removed", targetType: "membership", targetId: membershipId, ip: ctx.ip });
+    // Ses téléphones ne reçoivent plus aucune alerte de l'organisation (affaires, paiements, pauses).
+    const devices = await repos.pushSubscriptions.removeForUser(tx, ctx.orgId, m.userId);
+    await repos.audit.add(tx, { orgId: ctx.orgId, actorUserId: ctx.userId, action: "member.removed", targetType: "membership", targetId: membershipId, meta: { pushDevicesRemoved: devices }, ip: ctx.ip });
   });
 }
 

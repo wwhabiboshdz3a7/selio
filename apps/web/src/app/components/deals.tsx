@@ -1,9 +1,11 @@
-import { CheckCircle2, Eye, EyeOff, Images, ShoppingCart, Star } from "lucide-react";
+import { Link } from "react-router";
+import { ArrowRight, CheckCircle2, Eye, EyeOff, Images, ShoppingCart, Star, Timer } from "lucide-react";
 import { ITEM_CONDITION_LABELS, type BuyerFees, type Opportunity } from "@selio/contracts";
 import { REVIEW_THRESHOLD, SCORE_BANDS, dealEconomics, scoreBand, type ScoreBand } from "@selio/domain";
-import { Button, Card, Tag, cn, formatCents, formatPercent, formatRelative } from "@selio/ui";
+import { Button, Card, Tag, buttonClass, cn, formatCents, formatPercent, formatRelative } from "@selio/ui";
 import { ScoreRing, scoreTone } from "../../components/charts";
 import { useRequiredSession } from "../../lib/data/provider";
+import { detectionDelaySeconds, formatDuration } from "../../lib/radar";
 
 /** Bandes de note : neutre → améthyste (bonne) → or (très bonne, exceptionnelle). */
 const BAND_CLASS: Record<ScoreBand["key"], string> = {
@@ -97,10 +99,11 @@ export function ScoreBreakdown({ breakdown, reasons }: { breakdown: Opportunity[
   );
 }
 
-/** Carte d'une affaire : photo, note, calcul complet, actions. */
-export function OpportunityCard({ o, canWrite, onBuy, buying, onStatus, compact = false }: { o: Opportunity; canWrite: boolean; onBuy: () => void; buying: boolean; onStatus: (s: Opportunity["status"]) => void; compact?: boolean }) {
+/** Carte d'une affaire : photo, note, calcul complet, actions ; `to` : page « 1 clic » de l'affaire. */
+export function OpportunityCard({ o, canWrite, onBuy, buying, onStatus, compact = false, to }: { o: Opportunity; canWrite: boolean; onBuy: () => void; buying: boolean; onStatus: (s: Opportunity["status"]) => void; compact?: boolean; to?: string }) {
   const session = useRequiredSession();
   const good = o.score >= REVIEW_THRESHOLD;
+  const delay = detectionDelaySeconds(o);
   return (
     <Card className="grid gap-4 md:grid-cols-[132px_minmax(0,1fr)]">
       <div className="relative">
@@ -110,7 +113,7 @@ export function OpportunityCard({ o, canWrite, onBuy, buying, onStatus, compact 
       </div>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-md font-semibold text-text">{o.title}</h2>
+          <h2 className="text-md font-semibold text-text">{to ? <Link to={to} className="hover:underline underline-offset-2">{o.title}</Link> : o.title}</h2>
           <BandBadge score={o.score} />
           {o.status === "purchased" ? <Tag accent><CheckCircle2 className="mr-1 size-3" aria-hidden />Achetée</Tag> : o.status === "watching" ? <Tag>Suivie</Tag> : o.status === "dismissed" ? <Tag>Écartée</Tag> : null}
         </div>
@@ -119,6 +122,7 @@ export function OpportunityCard({ o, canWrite, onBuy, buying, onStatus, compact 
           {o.observed.sellerHandle ? <span>Vendeur @{o.observed.sellerHandle}</span> : null}
           {o.observed.sellerRating !== null ? <span className="inline-flex items-center gap-0.5"><Star className="size-3 fill-current text-gold" aria-hidden />{o.observed.sellerRating.toFixed(1).replace(".", ",")} ({o.observed.sellerReviews ?? 0} avis)</span> : null}
           <span>· vue {formatRelative(o.observed.seenAt)}</span>
+          {delay !== null ? <span className="num inline-flex items-center gap-0.5"><Timer className="size-3" aria-hidden />repérée {formatDuration(delay)} après publication</span> : null}
         </p>
         <DealMath opportunity={o} fees={session.org.settings.buyerFees} className="mt-3" />
         {!compact ? <details className="mt-3 text-sm"><summary className="cursor-pointer font-medium text-text-muted hover:text-text">Pourquoi {o.score}/100 ?</summary><div className="mt-2"><ScoreBreakdown breakdown={o.breakdown} reasons={o.reasons} /></div></details> : null}
@@ -127,8 +131,9 @@ export function OpportunityCard({ o, canWrite, onBuy, buying, onStatus, compact 
             <Button size="sm" variant={good ? "accent" : "secondary"} icon={<ShoppingCart />} onClick={onBuy} loading={buying}>Valider l'achat</Button>
             {o.status !== "watching" ? <Button size="sm" variant="ghost" icon={<Eye />} onClick={() => onStatus("watching")}>Suivre</Button> : null}
             {o.status !== "dismissed" ? <Button size="sm" variant="ghost" icon={<EyeOff />} onClick={() => onStatus("dismissed")}>Écarter</Button> : <Button size="sm" variant="ghost" onClick={() => onStatus("new")}>Restaurer</Button>}
+            {to ? <Link to={to} className={buttonClass({ variant: "ghost", size: "sm" })}>Ouvrir l'affaire<ArrowRight aria-hidden /></Link> : null}
           </div>
-        ) : null}
+        ) : to ? <Link to={to} className={buttonClass({ variant: "ghost", size: "sm", className: "mt-3" })}>Ouvrir l'affaire<ArrowRight aria-hidden /></Link> : null}
       </div>
     </Card>
   );

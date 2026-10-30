@@ -15,10 +15,10 @@ Plusieurs comptes Vinted peuvent être connectés à une même organisation ; ch
 | Catégorie | Usage dans Selio |
 |---|---|
 | `sale` — Vente (défaut) | Annonces publiées et négociées : générateur d'annonces, dressing, messagerie, automatisations, Selio Cloud |
-| `purchase` — Achat | Compte qui achète les bonnes affaires : achats validés (« À valider ») et achat auto, enregistré sur chaque demande d'achat (`purchase_requests.connection_id`) |
+| `purchase` — Achat | Compte qui achète les bonnes affaires : achats validés (« À valider ») et achat auto, enregistré sur chaque demande d'achat (`purchase_requests.connection_id`). Seul compte lu par Selio Radar en direct et utilisé par Radar Auto, et seulement s'il est relié à un compte Selio Cloud actif (RADAR.md) |
 | `personal` — Perso | Compte personnel : jamais utilisé par les automatisations (tâches ignorées, même déjà planifiées), ni par l'achat auto, ni par Selio Cloud |
 
-Le générateur d'annonces ne propose que les comptes Vente (puis Perso, signalé). L'achat auto utilise le compte Achat choisi dans ses réglages (`autoBuy.connectionId`), sinon le premier compte Achat actif. Le simulateur de démonstration ne compte pas dans le quota de comptes du plan. `GET /api/connections/stats` renvoie par compte : annonces en ligne, ventes du mois, achats, conversations ouvertes.
+Le générateur d'annonces ne propose que les comptes Vente (puis Perso, signalé). L'achat auto utilise le compte Achat choisi dans ses réglages (`autoBuy.connectionId`), sinon le premier compte Achat actif. Une recherche Radar en direct lit le compte Achat choisi sur la recherche (refusé s'il n'est pas un compte Achat actif), sinon celui de l'achat auto, sinon le premier compte Achat actif. Le simulateur de démonstration ne compte pas dans le quota de comptes du plan. `GET /api/connections/stats` renvoie par compte : annonces en ligne, ventes du mois, achats, conversations ouvertes.
 
 ## Simulateur de démonstration (`demo`)
 
@@ -70,6 +70,28 @@ Réutilisation de l'adaptateur DOM : la page de conversation est lue par `parseC
 - Le respect des conditions d'utilisation de la plateforme : avis de l'avocat attendu avant toute activation client.
 
 Un compte de catégorie **Perso** n'est jamais utilisé par le Cloud. Déconnecter ou supprimer un compte Vinted arrête son compte Cloud et efface sa session.
+
+## Vinted pour Selio Radar (adaptateurs catalogue et paiement) — EXPÉRIMENTAL, NON VÉRIFIÉ EN RÉEL
+
+Selio Radar lit les pages de recherche de Vinted et Radar Auto peut acheter, **depuis le compte Achat** du client et par Selio Cloud (même session, même Chromium, mêmes règles). Fonctionnement, verrous et procédure de test : [RADAR.md](RADAR.md). Comme pour le transport `cloud`, ce n'est pas une capacité de `describe()` : c'est un chemin d'exécution à part (`RadarReader` et `PurchaseRunner` dans `packages/cloud/src/radar/`, appelés par le cœur). **Rien n'a été vérifié sur le vrai site** ; Radar Auto et l'achat réel sont fermés par défaut (D11).
+
+| Adaptateur | Fichier | Ce qu'il lit | Fixtures (synthétiques) |
+|---|---|---|---|
+| `vinted-catalog-v1` — page de recherche (`/catalog?…`) | `adapters/v1-catalog.ts` | Grille de résultats : jusqu'à 96 cartes (référence, adresse, titre, marque, taille, état, prix, port s'il est affiché, nombre de photos, photo, pseudo et note du vendeur, date de publication lue ou estimée depuis « il y a … ») ; page de blocage (`blocked`) ; page inconnue (`pageOk=false`, rien n'est inventé). `buildSearchUrl` construit l'adresse de la recherche, `filterCatalogItems` filtre après lecture | `catalog-page.v1.html`, `catalog-blocked.v1.html` |
+| `vinted-checkout-v1` — bouton « Acheter » d'une annonce et page de paiement | `adapters/v1-checkout.ts` | Annonce vendue, réservée ou masquée ; bouton « Acheter » ; page de paiement (prix, port, protection, total, porte-monnaie Vinted proposé ou choisi, bouton de paiement) ; demande de validation 3-D Secure (reconnue pour **attendre**, aucun sélecteur de champ de code, volontairement) ; confirmation et référence de commande ; refus de paiement | `item-buy.v1.html`, `checkout-page.v1.html`, `checkout-3ds.v1.html`, `checkout-done.v1.html` |
+| Lecteur HTML | `adapters/html.ts` | Le HTML d'une page reçu en texte (le navigateur est déjà refermé), vers l'interface DOM minimale des adaptateurs : tolérant, borné (8 millions de caractères, 300 000 nœuds, profondeur 400), sans exécution ni chargement, sélecteurs CSS limités. Un test vérifie qu'il donne le même résultat qu'un vrai DOM (happy-dom) | — |
+
+Adresse de recherche (`buildSearchUrl`) : `https://<domaine Vinted du compte>/catalog?search_text=…&price_to=…&currency=EUR&order=newest_first`. Seuls les mots-clés (plus la marque quand il n'y en a qu'une) et le prix maximum passent à Vinted ; le domaine doit être dans la liste fermée `VINTED_DOMAINS`. Marques, tailles et états sont filtrés **après** lecture ; la catégorie, invisible sur une carte, n'est pas filtrée.
+
+### Ce qui exige une validation dans un navigateur réel (compte Vinted de l'équipe)
+- **Tous les sélecteurs** du catalogue et du paiement : ils suivent les conventions des autres adaptateurs (`data-testid` d'abord, replis ensuite) mais sont construits sur des fixtures synthétiques.
+- **Les identifiants numériques de Vinted** pour les marques (`brand_ids[]`), tailles (`size_ids[]`), états (`status_ids[]`) et catégories (`catalog[]`), à relever dans l'adresse d'une vraie recherche filtrée à la main ; rien n'est inventé en attendant.
+- **Le format des paramètres** `price_to`, `currency` et `order=newest_first`.
+- **La date de publication** : horodatage absolu présent ou non sur les cartes, textes relatifs exacts.
+- **Le parcours de paiement** : porte-monnaie Vinted, total, bouton « Payer », page de confirmation et référence ; la validation 3-D Secure (cadre dans la page ou redirection complète vers la banque : ce second cas n'est pas reconnu aujourd'hui et finit en « non confirmé », effets inconnus).
+- **Les pages de blocage** réelles (CAPTCHA, avertissement, « trop de requêtes ») pour compléter `detectBlock`.
+
+Procédure : relevé à la main dans un navigateur ordinaire, sans aucune automatisation (RADAR.md §10, étape 1). Un écart se corrige dans un nouvel adaptateur `v2-catalog.ts` ou `v2-checkout.ts` avec ses fixtures, **jamais en modifiant `v1` en place**.
 
 ## Paiement (Revolut Merchant API)
 
