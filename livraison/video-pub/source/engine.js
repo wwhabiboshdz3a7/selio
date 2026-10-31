@@ -167,7 +167,7 @@ function drawCaps(t) {
     for (const w of spans) {
       const on = t >= w.t, col = w.st === "g" ? "#E2C67C" : w.st === "r" ? "#FF8F85" : "#FFFFFF", u = P(t, w.t, w.t + 0.18);
       css(w.s, "color", on ? col : c.slam ? "rgba(255,255,255,.14)" : "rgba(255,255,255,.28)");
-      if (c.slam) { css(w.s, "transform", on ? `scale(${(1 + 0.4 * (1 - eOut(u))).toFixed(3)})` : "scale(1)"); css(w.s, "filter", on && u < 1 ? `blur(${f2(7 * (1 - eOut(u)))}px)` : "none"); }
+      if (c.slam) { css(w.s, "transform", on ? `scale(${(1 + 0.18 * (1 - eOut(u))).toFixed(3)})` : "scale(1)"); css(w.s, "filter", on && u < 1 ? `blur(${f2(7 * (1 - eOut(u)))}px)` : "none"); }
       else { css(w.s, "transform", `translateY(${f2(on ? 12 * (1 - eOut(u)) : 12)}px)`); css(w.s, "filter", on && u < 1 ? `blur(${f2(5 * (1 - eOut(u)))}px)` : "none"); }
       css(w.s, "backgroundSize", w.st === "g" && on && !c.slam ? `${(100 * eOut(P(t, w.t + 0.05, w.t + 0.35))).toFixed(1)}% 30%` : "0% 30%");
     }

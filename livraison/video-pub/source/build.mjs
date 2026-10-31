@@ -54,7 +54,7 @@ const CAPS = [
 const VO_TAIL = { words: [["Rejoins", 39.6], ["la", 39.78], ["bêta", 39.88], ["gratuite :", 40.08], ["lien", 40.6], ["en", 40.72], ["bio.", 40.82]], out: 41.8 };
 
 // ---------- Compteur en haut à droite : [instant, texte, style] ("" = masqué) ----------
-const CHIP = [[3.6, "Note 99 / 100", "gold"], [5.85, "", ""], [7.95, "Selio Radar", ""], [16.75, "Selio Studio", ""], [23.95, "Négociation IA", ""], [28.75, "Automatisations", ""], [31.25, "Analyses", ""], [34.55, "", ""]];
+const CHIP = [[7.95, "Selio Radar", ""], [16.75, "Selio Studio", ""], [23.95, "Négociation IA", ""], [28.75, "Automatisations", ""], [31.25, "Analyses", ""], [34.55, "", ""]];
 
 // ---------- Acte 1 : la carte de l'affaire (chiffres de la démo, affaire « Exceptionnelle » du Radar) ----------
 const HOOK = { photo: "r-s33t", title: "Sweat à col V rayé", brand: "Tommy Hilfiger · M", spotted: "repérée 2 min après publication" };
