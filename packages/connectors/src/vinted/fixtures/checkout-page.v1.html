@@ -1,0 +1,38 @@
+<!doctype html>
+<!-- FIXTURE SYNTHÉTIQUE — page de paiement plausible, NON copiée d'une page réelle et NON vérifiée contre vinted.fr.
+     Aucun numéro de carte : seuls le porte-monnaie Vinted et « carte enregistrée » sont proposés. -->
+<html lang="fr">
+<head><meta charset="utf-8"><title>Paiement | Vinted</title></head>
+<body>
+  <header>
+    <a href="/" aria-label="Accueil">Vinted</a>
+    <button data-testid="header--user-menu" aria-label="Mon compte">Mon compte</button>
+  </header>
+  <main data-testid="checkout" data-item-id="5012345601">
+    <h1>Paiement</h1>
+    <section data-testid="checkout-item">
+      <img src="https://images.example.invalid/catalog/5012345601-1.jpg" alt="">
+      <h2 data-testid="checkout-item-title">Veste en jean Levi's Trucker</h2>
+    </section>
+    <section data-testid="checkout-payment-methods">
+      <h2>Moyen de paiement</h2>
+      <label data-testid="payment-method-wallet">
+        <input type="radio" name="payment_method" value="wallet">
+        Porte-monnaie Vinted
+        <span data-testid="payment-method-wallet-balance">Solde : 35,20 €</span>
+      </label>
+      <label data-testid="payment-method-card">
+        <input type="radio" name="payment_method" value="card" checked>
+        Carte bancaire enregistrée
+      </label>
+    </section>
+    <section data-testid="checkout-summary">
+      <div data-testid="checkout-item-price"><span>Commande</span> <span>18,00 €</span></div>
+      <div data-testid="checkout-protection-fee"><span>Frais de Protection acheteurs</span> <span>1,60 €</span></div>
+      <div data-testid="checkout-shipping-price"><span>Envoi</span> <span>2,88 €</span></div>
+      <div data-testid="checkout-total"><span>Total</span> <span>22,48 €</span></div>
+    </section>
+    <button type="button" data-testid="checkout-pay-button">Payer</button>
+  </main>
+</body>
+</html>

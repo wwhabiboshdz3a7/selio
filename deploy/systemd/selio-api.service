@@ -1,0 +1,21 @@
+[Unit]
+Description=Selio API
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=selio
+WorkingDirectory=/opt/selio
+EnvironmentFile=/etc/selio/api.env
+ExecStart=/usr/bin/node /opt/selio/apps/api/dist/main.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/selio/var
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

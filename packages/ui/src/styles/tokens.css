@@ -1,0 +1,268 @@
+/* ==========================================================================
+   Selio — Design tokens v3.0 (octobre 2026)
+   Direction : épurée, encre et porcelaine, accent violet « Améthyste »,
+   rehaut or « Champagne » utilisé avec parcimonie (notes, primes, éclats).
+   Importer ce fichier une fois, à la racine de l'app. Ne jamais coder une
+   couleur en dur dans un composant : toujours passer par une variable.
+
+   - Police Inter auto-hébergée (@fontsource/inter, 400/500/600) dans base.css.
+   - `color-scheme` pour que les contrôles natifs suivent le mode.
+   - Les noms de tons historiques (braise, teal…) sont conservés pour la
+     compatibilité ; leurs valeurs suivent la nouvelle palette violet/or.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* ---- Palette brute (ne pas utiliser directement dans les composants) -- */
+  --gray-0:   #FFFFFF;
+  --gray-25:  #FCFCFD;
+  --gray-50:  #FAFAFB;
+  --gray-100: #F3F2F6;
+  --gray-200: #E6E4EC;
+  --gray-300: #D3D0DB;
+  --gray-400: #A3A0AE;
+  --gray-500: #6E6A7B;
+  --gray-600: #535061;
+  --gray-700: #3D3A48;
+  --gray-800: #2A2733;
+  --gray-900: #1C1A24;
+  --gray-950: #121017;
+
+  /* Améthyste (marque). 600 : texte et boutons avec texte blanc (contraste ≥ 6:1). */
+  --violet-50:  #F5F2FF;
+  --violet-100: #ECE6FF;
+  --violet-200: #D9CCFF;
+  --violet-300: #BBA6FF;
+  --violet-400: #9B80F7;
+  --violet-500: #7C5CEB;
+  --violet-600: #6442D6;
+  --violet-700: #5232B5;
+  --violet-800: #3E2689;
+  --violet-900: #29195C;
+
+  /* Champagne (rehaut). 700 : seul niveau autorisé pour du texte sur fond clair. */
+  --gold-50:  #FBF7EC;
+  --gold-100: #F5EBCF;
+  --gold-200: #ECD9A4;
+  --gold-300: #E2C67C;
+  --gold-400: #D4AC57;
+  --gold-500: #C1933B;
+  --gold-600: #9E7426;
+  --gold-700: #7A591A;
+
+  --green-600: #1D7F4E;
+  --amber-600: #A15C07;
+  --red-600:   #B42318;
+
+  /* Porcelaine : fond de page (retour démo du 13/10 : le blanc pur est trop dur). */
+  --porcelain: #F5F5F7;
+
+  /* Tons de fonctionnalités et de graphiques : palette resserrée autour du violet et de l'or. */
+  --tone-braise:  #7B5BE6; /* améthyste (marque) */
+  --tone-teal:    #2E8A82; /* jade */
+  --tone-indigo:  #5865D4; /* pervenche */
+  --tone-amber:   #C1933B; /* champagne */
+  --tone-rose:    #B4569A; /* orchidée */
+  --tone-emerald: #3A9170; /* sauge */
+  --tone-sky:     #4A80BC; /* acier */
+  --tone-slate:   #6E6A7B; /* ardoise */
+
+  /* ---- Rôles (à utiliser dans les composants) -------------------------- */
+  --bg:             var(--porcelain);
+  --surface:        #FFFFFF;
+  --surface-sidebar:#FAFAFB;
+  --surface-muted:  #F1F0F4;
+  --border:         #E7E5EC;
+  --border-strong:  #D6D3DE;
+
+  --text:           #1C1A24;
+  --text-muted:     var(--gray-500);
+  --text-subtle:    var(--gray-400);
+  --text-inverse:   var(--gray-0);
+
+  --primary:        var(--gray-900);  /* bouton principal = encre */
+  --primary-hover:  var(--gray-800);
+  --on-primary:     var(--gray-0);
+
+  --accent:         var(--violet-600); /* 1 action forte par écran max */
+  --accent-hover:   var(--violet-700);
+  --accent-soft:    var(--violet-50);
+  --accent-vivid:   var(--violet-500);
+  --on-accent:      var(--gray-0);
+
+  --gold:           var(--gold-500);   /* décor : étoiles, notes, éclats */
+  --gold-soft:      var(--gold-50);
+  --gold-text:      var(--gold-700);   /* texte or lisible */
+  --brand-gradient: linear-gradient(135deg, var(--violet-600) 0%, var(--violet-500) 55%, var(--gold-400) 130%);
+
+  --tone-braise-soft:  #F1EDFE;
+  --tone-teal-soft:    #E3F2F0;
+  --tone-indigo-soft:  #E9EBFB;
+  --tone-amber-soft:   #F8F0DC;
+  --tone-rose-soft:    #F7E8F2;
+  --tone-emerald-soft: #E4F2EC;
+  --tone-sky-soft:     #E6EEF8;
+  --tone-slate-soft:   #EDECF1;
+
+  --success: var(--green-600);
+  --warning: var(--amber-600);
+  --danger:  var(--red-600);
+
+  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--violet-400);
+
+  /* ---- Typographie ----------------------------------------------------- */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --text-xs:   12px;
+  --text-sm:   13px;
+  --text-base: 14px;
+  --text-md:   16px;
+  --text-lg:   20px;
+  --text-xl:   24px;
+  --text-2xl:  32px;
+  --text-3xl:  48px;
+
+  --weight-regular: 400;
+  --weight-medium:  500;
+  --weight-semibold: 600;
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --tracking-tight: -0.02em;
+
+  /* ---- Espacement (grille de 4px) -------------------------------------- */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
+  --space-12: 48px; --space-16: 64px;
+
+  /* ---- Formes ---------------------------------------------------------- */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(18, 16, 23, 0.04);
+  --shadow-card: 0 1px 2px rgba(18, 16, 23, 0.03), 0 6px 18px rgba(18, 16, 23, 0.03);
+  --shadow-md: 0 6px 20px rgba(18, 16, 23, 0.07);
+  --shadow-lg: 0 16px 48px rgba(18, 16, 23, 0.12);
+
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  --sidebar-width: 264px;
+  --content-max: 1600px;
+}
+
+/* ---- Mode sombre (système, sauf choix « clair ») et mode sombre forcé ---- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    /* Sombre éclairci (retour démo : « on ne voit rien »), texte blanc cassé. */
+    --bg: #1A1820;
+    --surface: #23202A;
+    --surface-sidebar: #1E1B24;
+    --surface-muted: #2D2A35;
+    --border: #37333F;
+    --border-strong: #48434F;
+    --text: #EEEBF3;
+    --text-muted: #B4AFC0;
+    --text-subtle: #868193;
+    --text-inverse: #1A1820;
+    --primary: #EEEBF3;
+    --primary-hover: #DAD6E2;
+    --on-primary: #1A1820;
+    --accent: #B5A3FF;
+    --accent-hover: #CFC2FF;
+    --accent-soft: rgba(155, 128, 247, 0.18);
+    --accent-vivid: #9B80F7;
+    --on-accent: #1A1820;
+    --gold: #E2C67C;
+    --gold-soft: rgba(212, 172, 87, 0.16);
+    --gold-text: #E8CF8E;
+    --brand-gradient: linear-gradient(135deg, #7C5CEB 0%, #9B80F7 55%, #E2C67C 130%);
+    --success: #5CC896;
+    --warning: #E5B259;
+    --danger: #F0857A;
+    --tone-braise: #A08BFF;
+    --tone-teal: #52B3A9;
+    --tone-indigo: #8C95F0;
+    --tone-amber: #E2C06E;
+    --tone-rose: #D883BE;
+    --tone-emerald: #63BD94;
+    --tone-sky: #7CA9DD;
+    --tone-slate: #9C97AA;
+    --tone-braise-soft: rgba(160, 139, 255, 0.16);
+    --tone-teal-soft: rgba(82, 179, 169, 0.16);
+    --tone-indigo-soft: rgba(140, 149, 240, 0.16);
+    --tone-amber-soft: rgba(226, 192, 110, 0.15);
+    --tone-rose-soft: rgba(216, 131, 190, 0.15);
+    --tone-emerald-soft: rgba(99, 189, 148, 0.15);
+    --tone-sky-soft: rgba(124, 169, 221, 0.15);
+    --tone-slate-soft: rgba(156, 151, 170, 0.18);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2), 0 6px 18px rgba(0, 0, 0, 0.12);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+    --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px #9B80F7;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  /* Sombre éclairci (retour démo : « on ne voit rien »), texte blanc cassé. */
+  --bg: #1A1820;
+  --surface: #23202A;
+  --surface-sidebar: #1E1B24;
+  --surface-muted: #2D2A35;
+  --border: #37333F;
+  --border-strong: #48434F;
+  --text: #EEEBF3;
+  --text-muted: #B4AFC0;
+  --text-subtle: #868193;
+  --text-inverse: #1A1820;
+  --primary: #EEEBF3;
+  --primary-hover: #DAD6E2;
+  --on-primary: #1A1820;
+  --accent: #B5A3FF;
+  --accent-hover: #CFC2FF;
+  --accent-soft: rgba(155, 128, 247, 0.18);
+  --accent-vivid: #9B80F7;
+  --on-accent: #1A1820;
+  --gold: #E2C67C;
+  --gold-soft: rgba(212, 172, 87, 0.16);
+  --gold-text: #E8CF8E;
+  --brand-gradient: linear-gradient(135deg, #7C5CEB 0%, #9B80F7 55%, #E2C67C 130%);
+  --success: #5CC896;
+  --warning: #E5B259;
+  --danger: #F0857A;
+  --tone-braise: #A08BFF;
+  --tone-teal: #52B3A9;
+  --tone-indigo: #8C95F0;
+  --tone-amber: #E2C06E;
+  --tone-rose: #D883BE;
+  --tone-emerald: #63BD94;
+  --tone-sky: #7CA9DD;
+  --tone-slate: #9C97AA;
+  --tone-braise-soft: rgba(160, 139, 255, 0.16);
+  --tone-teal-soft: rgba(82, 179, 169, 0.16);
+  --tone-indigo-soft: rgba(140, 149, 240, 0.16);
+  --tone-amber-soft: rgba(226, 192, 110, 0.15);
+  --tone-rose-soft: rgba(216, 131, 190, 0.15);
+  --tone-emerald-soft: rgba(99, 189, 148, 0.15);
+  --tone-sky-soft: rgba(124, 169, 221, 0.15);
+  --tone-slate-soft: rgba(156, 151, 170, 0.18);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2), 0 6px 18px rgba(0, 0, 0, 0.12);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px #9B80F7;
+}
+
+/* ---- Base --------------------------------------------------------------- */
+html { font-family: var(--font-sans); font-size: var(--text-base); color: var(--text); background: var(--bg);
+  -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss01"; }
+h1, h2, h3 { font-weight: var(--weight-semibold); letter-spacing: var(--tracking-tight); line-height: var(--leading-tight); }
+.num, td.num, [data-num] { font-variant-numeric: tabular-nums; }
+:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

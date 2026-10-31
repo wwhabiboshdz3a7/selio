@@ -1,21 +1,27 @@
 node_modules/
 dist/
+build/
 .netlify/
 .env
-.env.local
+.env.*
+!.env.example
 *.local
-src/routeTree.gen.ts
+coverage/
+playwright-report/
+test-results/
+.turbo/
+*.tsbuildinfo
+apps/web/dev-dist/
+apps/extension/release/
+.DS_Store
 
-# Spot publicitaire (video/) : fichiers intermédiaires de rendu
-video/out/stills/
-video/out/segs/
-video/out/*.log
-video/out/test_seg.mp4
-video/out/sheet*.png
-video/out/wave.png
-video/out/spec.png
-video/out/*_noaudio.mp4
-video/audio/*.log
-video/audio/*.wav
-video/audio45/
-video/out/qa*/
+# Sauvegardes locales de Redis (développement)
+dump.rdb
+
+# Spot publicitaire (livraison/video-pub) : fichiers intermédiaires de rendu
+livraison/video-pub/source/frames/
+livraison/video-pub/source/stills/
+livraison/video-pub/source/qa/
+livraison/video-pub/source/*.wav
+livraison/video-pub/source/scene.html
+livraison/video-pub/source/timeline.json
