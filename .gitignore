@@ -5,3 +5,16 @@ dist/
 .env.local
 *.local
 src/routeTree.gen.ts
+
+# Spot publicitaire (video/) : fichiers intermédiaires de rendu
+video/out/stills/
+video/out/segs/
+video/out/*.log
+video/out/test_seg.mp4
+video/out/sheet*.png
+video/out/wave.png
+video/out/spec.png
+video/out/*_noaudio.mp4
+video/audio/*.log
+video/audio/*.wav
+video/audio45/
