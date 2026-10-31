@@ -1,0 +1,17 @@
+{
+  "name": "@selio/email",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "nodemailer": "^10.2.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": { "@types/node": "^22.20.5", "typescript": "^5.9.3", "vitest": "^3.2.7" }
+}

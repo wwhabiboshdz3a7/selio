@@ -1,0 +1,18 @@
+{
+  "name": "@selio/demo-data",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@selio/connectors": "workspace:*",
+    "@selio/contracts": "workspace:*",
+    "@selio/domain": "workspace:*"
+  },
+  "devDependencies": { "typescript": "^5.9.3", "vitest": "^3.2.7" }
+}

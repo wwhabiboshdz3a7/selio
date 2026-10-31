@@ -1,0 +1,973 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Selio V4 Master</title>
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* Plan : tableau de bord opérationnel, charte Selio (encre et porcelaine, améthyste et champagne), Inter seul,
+   navigation collante par vues, tableaux denses, statuts encodés par forme et couleur. */
+:root {
+  --bg: #F5F5F7; --surface: #FFFFFF; --surface-2: #F3F2F6; --ink: #1C1A24; --muted: #6E6A7B; --subtle: #A3A0AE;
+  --line: #E7E5EC; --line-strong: #D6D3DE;
+  --accent: #6442D6; --accent-ink: #5232B5; --accent-soft: #ECE6FF; --accent-faint: #F5F2FF;
+  --gold: #C1933B; --gold-ink: #7A591A; --gold-soft: #FBF7EC; --gold-line: #ECD9A4;
+  --night: #121017;
+  --ok: #1D7F4E; --ok-soft: #E6F4EC; --warn: #A15C07; --warn-soft: #FDF3E7; --bad: #B42318; --bad-soft: #FCEEED; --info: #0F6E8C; --info-soft: #E5F3F7;
+  --shadow: 0 10px 30px rgba(28, 26, 36, 0.08);
+  --font: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121017; --surface: #1B1824; --surface-2: #231F2E; --ink: #EEEBF3; --muted: #B4AFC0; --subtle: #7E7890;
+    --line: #2C2838; --line-strong: #3A3548;
+    --accent: #9C82F2; --accent-ink: #B9A6F7; --accent-soft: #2B2342; --accent-faint: #211B33;
+    --gold: #E2C67C; --gold-ink: #F0DDA4; --gold-soft: #2A2416; --gold-line: #4A3E1E;
+    --ok: #5CCB8E; --ok-soft: #15301F; --warn: #F0B35B; --warn-soft: #34260F; --bad: #F08A80; --bad-soft: #3A1A17; --info: #6FC3DD; --info-soft: #12303A;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121017; --surface: #1B1824; --surface-2: #231F2E; --ink: #EEEBF3; --muted: #B4AFC0; --subtle: #7E7890;
+  --line: #2C2838; --line-strong: #3A3548;
+  --accent: #9C82F2; --accent-ink: #B9A6F7; --accent-soft: #2B2342; --accent-faint: #211B33;
+  --gold: #E2C67C; --gold-ink: #F0DDA4; --gold-soft: #2A2416; --gold-line: #4A3E1E;
+  --ok: #5CCB8E; --ok-soft: #15301F; --warn: #F0B35B; --warn-soft: #34260F; --bad: #F08A80; --bad-soft: #3A1A17; --info: #6FC3DD; --info-soft: #12303A;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { font-size: 15px; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); line-height: 1.5; font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--night); }
+a { color: var(--accent-ink); }
+h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; }
+p { margin: 0; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* Barre de navigation */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 9; background: var(--night); color: #EEEBF3; border-bottom: 1px solid #2C2838; }
+.top .in { display: flex; align-items: center; gap: 12px; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; white-space: nowrap; }
+.brand .mark { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, #5232B5, #7C5CEB); display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px; }
+.brand small { font-weight: 500; color: #B4AFC0; }
+nav.views { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0; }
+nav.views::-webkit-scrollbar { display: none; }
+nav.views a { color: #CFC9DC; text-decoration: none; padding: 7px 10px; border-radius: 8px; font-size: 13px; white-space: nowrap; }
+nav.views a:hover { background: rgba(255,255,255,0.06); color: #fff; }
+nav.views a[aria-current="page"] { background: rgba(124, 92, 235, 0.28); color: #fff; }
+.ready-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: #CFC9DC; white-space: nowrap; }
+.ready-pill .bar { width: 72px; height: 6px; border-radius: 99px; background: rgba(255,255,255,0.12); overflow: hidden; }
+.ready-pill .bar i { display: block; height: 100%; background: linear-gradient(90deg, #E2C67C, #9C82F2); width: 0; }
+
+/* Mise en page */
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 24px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+section.view { display: none; }
+section.view.on { display: block; }
+.head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; margin-bottom: 20px; }
+.head h2 { font-size: 1.6rem; }
+.head .eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-ink); font-weight: 600; margin-bottom: 4px; }
+.lead { color: var(--muted); max-width: 68ch; }
+.grid { display: grid; gap: 16px; }
+.g2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.g3 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; min-width: 0; }
+.card h3 { font-size: 1.02rem; margin-bottom: 8px; }
+.card.accent { background: var(--accent-faint); border-color: var(--accent-soft); }
+.card.gold { background: var(--gold-soft); border-color: var(--gold-line); }
+.card.night { background: var(--night); color: #EEEBF3; border-color: #2C2838; }
+.stack { display: grid; gap: 16px; }
+.stack > * { min-width: 0; }
+ul.clean { margin: 0; padding-left: 18px; }
+ul.clean li { margin: 3px 0; }
+ul.clean li::marker { color: var(--accent); }
+.small { font-size: 12.5px; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 0.9em; }
+hr.sep { border: 0; border-top: 1px solid var(--line); margin: 20px 0; }
+
+/* Badges d'état décisionnel */
+.b { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; border-radius: 99px; padding: 2px 8px; white-space: nowrap; line-height: 1.6; vertical-align: middle; }
+.b::before { content: ""; width: 7px; height: 7px; border-radius: 99px; background: currentColor; }
+.b.decide { background: var(--ok-soft); color: var(--ok); }
+.b.prop { background: var(--accent-soft); color: var(--accent-ink); }
+.b.prop::before { border-radius: 2px; }
+.b.adecider { background: var(--warn-soft); color: var(--warn); }
+.b.adecider::before { clip-path: polygon(50% 0, 100% 100%, 0 100%); border-radius: 0; }
+.b.juridique { background: var(--bad-soft); color: var(--bad); }
+.b.juridique::before { clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); border-radius: 0; }
+.b.mesurer { background: var(--info-soft); color: var(--info); }
+.b.mesurer::before { background: transparent; border: 2px solid currentColor; width: 5px; height: 5px; }
+.p { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 6px; padding: 1px 7px; font-family: var(--mono); }
+.p.P0 { background: var(--bad-soft); color: var(--bad); }
+.p.P1 { background: var(--warn-soft); color: var(--warn); }
+.p.P2 { background: var(--surface-2); color: var(--muted); }
+.who { display: inline-block; font-size: 11.5px; font-weight: 600; border-radius: 6px; padding: 1px 7px; border: 1px solid var(--line-strong); }
+.who.E { color: var(--accent-ink); border-color: var(--accent-soft); background: var(--accent-faint); }
+.who.I { color: var(--gold-ink); border-color: var(--gold-line); background: var(--gold-soft); }
+.who.EI { color: var(--ink); background: var(--surface-2); }
+.ms { font-size: 11px; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 12.5px; color: var(--muted); }
+
+/* Tableaux */
+.tablewrap { overflow-x: auto; max-width: 100%; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; background: var(--surface-2); padding: 9px 12px; position: sticky; top: 0; }
+td { padding: 9px 12px; border-top: 1px solid var(--line); vertical-align: top; }
+td.k { font-weight: 600; }
+tr.done td { color: var(--muted); }
+tr.done td.task { text-decoration: line-through; text-decoration-color: var(--subtle); }
+tr.blocked td.task::after { content: " · bloquée"; color: var(--bad); font-size: 12px; text-decoration: none; display: inline-block; }
+select.st { font: inherit; font-size: 12.5px; border: 1px solid var(--line-strong); border-radius: 7px; padding: 3px 6px; background: var(--surface); color: var(--ink); }
+select.st.s-fait { border-color: var(--ok); color: var(--ok); }
+select.st.s-encours { border-color: var(--accent); color: var(--accent-ink); }
+select.st.s-bloque { border-color: var(--bad); color: var(--bad); }
+.dep { font-size: 12px; color: var(--muted); }
+.dep b { font-weight: 600; color: var(--ink); }
+.dep .late { color: var(--bad); font-weight: 600; }
+
+/* Filtres */
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+.chip { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 99px; padding: 5px 11px; font-size: 12.5px; cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.filters input[type="search"] { font: inherit; font-size: 13px; border: 1px solid var(--line-strong); border-radius: 99px; padding: 6px 12px; background: var(--surface); color: var(--ink); min-width: 200px; }
+.filters .sp { flex: 1; }
+.btn { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.quiet { border-color: transparent; color: var(--muted); }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--night); color: #fff; padding: 9px 14px; border-radius: 10px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 20; }
+.toast.on { opacity: 1; }
+
+/* Couverture */
+.cover { background: var(--night); color: #EEEBF3; border-radius: 16px; padding: 44px 36px; position: relative; overflow: hidden; }
+.cover::before { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse 70% 50% at 80% 10%, rgba(100,66,214,.55), rgba(18,16,23,0) 70%), radial-gradient(ellipse 50% 40% at 5% 100%, rgba(82,50,181,.25), rgba(18,16,23,0) 70%); }
+.cover > * { position: relative; }
+.cover .kicker { color: #E2C67C; letter-spacing: .16em; text-transform: uppercase; font-size: 11.5px; font-weight: 600; }
+.cover h1 { font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.08; color: #fff; margin: 12px 0 10px; }
+.cover .sub { font-size: 1.1rem; color: #CFC9DC; max-width: 60ch; }
+.cover .meta { margin-top: 26px; display: flex; flex-wrap: wrap; gap: 10px 26px; font-size: 13px; color: #B4AFC0; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 28px; }
+.tile { border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); border-radius: 12px; padding: 14px; }
+.tile .v { display: block; font-size: 1.35rem; font-weight: 600; color: #fff; }
+.tile .l { display: block; font-size: 12px; color: #B4AFC0; margin-top: 4px; line-height: 1.35; }
+.quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 20px; }
+.quick a { display: block; text-decoration: none; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+.quick a:hover { border-color: var(--accent); }
+.quick a b { display: block; font-size: 15px; }
+.quick a span { font-size: 12.5px; color: var(--muted); }
+
+/* Mind map et timeline */
+svg text { font-family: var(--font); }
+.map-wrap, .tl-wrap { overflow-x: auto; }
+.map-node { cursor: pointer; }
+.map-node:hover rect, .map-node:hover ellipse { stroke: var(--accent); stroke-width: 2; }
+
+/* Timeline en CSS */
+.phases { display: grid; grid-template-columns: repeat(7, minmax(120px, 1fr)); gap: 6px; }
+.ph { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; position: relative; }
+.ph.now { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ph .t { font-weight: 600; font-size: 13.5px; }
+.ph .d { font-size: 12px; color: var(--muted); }
+.ph .prog { height: 6px; border-radius: 99px; background: var(--surface-2); margin-top: 8px; overflow: hidden; }
+.ph .prog i { display: block; height: 100%; width: 0; background: var(--accent); }
+.ph .n { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.ph .now-tag { position: absolute; top: -9px; left: 10px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; border-radius: 99px; padding: 1px 7px; letter-spacing: .06em; }
+
+/* Checklists */
+.check { display: grid; gap: 6px; }
+.check label { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; cursor: pointer; }
+.check input { margin-top: 3px; accent-color: var(--accent); }
+.gauge { display: flex; align-items: center; gap: 14px; }
+.gauge .ring { width: 86px; height: 86px; border-radius: 50%; background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--surface-2) 0); display: grid; place-items: center; flex: none; }
+.gauge .ring span { width: 66px; height: 66px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; font-weight: 700; font-size: 16px; }
+
+/* Matrice de décisions */
+.matrix { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.matrix .col { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; min-width: 0; }
+.matrix .col h3 { font-size: 13px; margin-bottom: 8px; }
+.matrix .col ul { margin: 0; padding-left: 16px; font-size: 13px; }
+.matrix .col li { margin: 4px 0; }
+
+/* Callouts */
+.callout { border-radius: var(--radius); padding: 12px 14px; border: 1px solid var(--line); background: var(--surface-2); font-size: 13.5px; }
+.callout.warn { background: var(--warn-soft); border-color: transparent; }
+.callout.bad { background: var(--bad-soft); border-color: transparent; }
+.callout.ok { background: var(--ok-soft); border-color: transparent; }
+.callout b { font-weight: 600; }
+
+/* Kanban « maintenant » */
+.now-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.now-col h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 8px; }
+.now-item { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size: 13.5px; }
+.now-item .m { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+
+footer { color: var(--muted); font-size: 12.5px; margin-top: 40px; border-top: 1px solid var(--line); padding-top: 16px; }
+
+@media (max-width: 720px) {
+  .cover { padding: 30px 20px; }
+  .phases { grid-template-columns: repeat(7, 150px); }
+  th, td { padding: 8px 9px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media print {
+  .top, .filters, .btn, .toast { display: none !important; }
+  section.view { display: block !important; break-before: page; }
+  section.view:first-of-type { break-before: auto; }
+  body { background: #fff; color: #000; }
+  .cover { background: #121017 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
+
+<header class="top">
+  <div class="in">
+    <div class="brand"><span class="mark">S</span>Selio <small>V4 Master</small></div>
+    <nav class="views" aria-label="Vues du dossier">
+      <a href="#couverture">Couverture</a>
+      <a href="#mindmap">Mind map</a>
+      <a href="#maintenant">Maintenant</a>
+      <a href="#calendrier">Calendrier</a>
+      <a href="#workflow">Workflow</a>
+      <a href="#decisions">Décisions</a>
+      <a href="#produits">Produits</a>
+      <a href="#beta">Bêta</a>
+      <a href="#contenu">Contenu</a>
+      <a href="#acquisition">Acquisition</a>
+      <a href="#lancement">Lancement</a>
+      <a href="#support">Support</a>
+      <a href="#juridique">Juridique</a>
+      <a href="#capacite">Capacité</a>
+      <a href="#prix">Prix</a>
+      <a href="#prets">Prêts ?</a>
+      <a href="#sources">Sources</a>
+    </nav>
+    <div class="ready-pill" title="Part des tâches P0 « avant lancement » marquées faites"><span>Prêt à lancer</span><span class="bar"><i id="readyBar"></i></span><span id="readyPct">0 %</span></div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ====================================================== COUVERTURE -->
+<section class="view" id="v-couverture">
+  <div class="cover">
+    <p class="kicker">Dossier de stratégie · Version 4 Master · Octobre 2026</p>
+    <h1>SELIO<br>Dossier de stratégie V4 Master</h1>
+    <p class="sub">Workflow opérationnel jusqu’au lancement public — fin décembre 2026. Qui fait quoi, quand, dans quel ordre, ce qui bloque, ce qui reste à décider.</p>
+    <div class="meta"><span>Elias · direction, marketing, bêta, acquisition</span><span>Ibrahim · produit, infrastructure, IA, vidéos</span><span>Document de travail : rien n’est définitif tant que ce n’est pas marqué <span class="b decide">Décidé</span></span></div>
+    <div class="tiles">
+      <div class="tile"><span class="v">Fin déc. 2026</span><span class="l">Lancement public (J0 proposé : lundi 28 décembre)</span></div>
+      <div class="tile"><span class="v">4 semaines</span><span class="l">Bêta fermée, 15 à 20 testeurs</span></div>
+      <div class="tile"><span class="v" id="tileTasks">—</span><span class="l">tâches dans le workflow, dont <span id="tileP0">—</span> critiques (P0)</span></div>
+      <div class="tile"><span class="v" id="tileDecisions">—</span><span class="l">décisions encore à prendre ensemble</span></div>
+    </div>
+  </div>
+
+  <div class="quick">
+    <a href="#maintenant"><b>Qu’est-ce qu’on doit faire maintenant ?</b><span>Les tâches de la phase en cours, par personne, avec ce qui bloque.</span></a>
+    <a href="#workflow"><b>Qui s’en occupe, et quand ?</b><span>Le workflow complet : responsable, période, dépendance, priorité, résultat, statut.</span></a>
+    <a href="#decisions"><b>Quelles décisions reste-t-il ?</b><span>Décidé · Proposition · À décider · À valider juridiquement · À mesurer.</span></a>
+    <a href="#prets"><b>Est-ce qu’on est prêts à lancer ?</b><span>La liste GO / NO-GO et la jauge de préparation.</span></a>
+  </div>
+
+  <div class="grid g2" style="margin-top:20px">
+    <div class="card">
+      <h3>Comment lire ce dossier</h3>
+      <p class="small">Chaque affirmation porte un des cinq états ci-dessous. Les dates sont une <b>proposition</b> construite à partir du calendrier du brief (préparation → semaines 1–2 → bêta de 4 semaines → dernière semaine → J-1 → fin décembre → Discord vers J+14) ; l’ancien planning des documents d’Ibrahim n’est pas repris. Les statuts des tâches et les cases cochées se mémorisent dans votre navigateur seulement.</p>
+      <div class="legend" style="margin-top:10px">
+        <span class="b decide">Décidé</span><span class="b prop">Proposition</span><span class="b adecider">À décider</span><span class="b juridique">À valider juridiquement</span><span class="b mesurer">À mesurer</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>L’identité du projet</h3>
+      <p class="small">Selio est un <b>écosystème</b> d’outils complémentaires pour les vendeurs et revendeurs Vinted : sourcer, analyser, acheter, créer les annonces, gérer le dressing, automatiser, suivre les performances, améliorer la rentabilité. Six modules (Manager, Studio, Track, Radar, Radar Auto, Cloud) sous une identité principale, Selio Global.</p>
+      <p class="small" style="margin-top:8px"><b>Mention à afficher partout</b> (site, stores, conditions) : « Selio est indépendant de Vinted et n’est ni affilié, ni approuvé, ni sponsorisé par Vinted. » <span class="b decide">Décidé</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================== MIND MAP -->
+<section class="view" id="v-mindmap">
+  <div class="head"><div><p class="eyebrow">Page 2</p><h2>Le projet en quelques secondes</h2></div><p class="lead">Six chantiers autour de Selio V4. Cliquer une bulle ouvre la vue correspondante.</p></div>
+  <div class="card map-wrap">
+    <svg id="mindmap" viewBox="0 0 1100 620" width="100%" style="min-width:760px; display:block" role="img" aria-label="Mind map : Selio V4 au centre, six chantiers autour">
+    </svg>
+  </div>
+  <div class="grid g3" style="margin-top:16px">
+    <div class="card"><h3>Trois horizons</h3><ul class="clean small"><li><b>Avant la bêta</b> (fin des semaines 1–2) : produit stable sur le parcours testé, testeurs recrutés, environnement bêta, feedback en place.</li><li><b>Avant le lancement</b> (J-7 → J0) : paiement réel, pages, offres, avis de l’avocat, support, tracking, monitoring.</li><li><b>Après le lancement</b> : contenu par phases, Discord public vers J+14, Cloud et Radar Auto si l’avocat valide, roadmap.</li></ul></div>
+    <div class="card"><h3>Deux personnes, un rythme</h3><ul class="clean small"><li>Elias ne code pas le produit ; Ibrahim ne pilote pas l’acquisition.</li><li>Un point commun par semaine (30 minutes), une session UX ensemble par semaine jusqu’à la bêta.</li><li>Toute décision de prix, d’offre, de quota ou de lancement se prend à deux.</li></ul></div>
+    <div class="card"><h3>Ce que la bêta doit prouver</h3><ul class="clean small"><li>Le produit fonctionne.</li><li>Les utilisateurs comprennent.</li><li>Ils le trouvent utile.</li><li>Ils sont prêts à payer.</li><li>Un prix leur paraît cohérent.</li></ul></div>
+  </div>
+</section>
+
+<!-- ====================================================== MAINTENANT -->
+<section class="view" id="v-maintenant">
+  <div class="head"><div><p class="eyebrow">Tableau de bord</p><h2>Qu’est-ce qu’on doit faire maintenant ?</h2></div><p class="lead" id="nowLead">—</p></div>
+  <div class="grid g2" style="margin-bottom:16px">
+    <div class="card accent"><h3>Phase en cours</h3><p id="nowPhase" class="small">—</p><div class="legend" style="margin-top:8px"><span class="small muted">Changer la date de référence :</span><input type="date" id="nowDate" style="font:inherit;font-size:13px;border:1px solid var(--line-strong);border-radius:8px;padding:4px 8px;background:var(--surface);color:var(--ink)"><button class="btn quiet" id="nowReset">Aujourd’hui</button></div></div>
+    <div class="card"><h3>Ce qui bloque</h3><div id="nowBlockers" class="small">—</div></div>
+  </div>
+  <div class="now-cols">
+    <div class="now-col"><h3>Elias</h3><div id="nowE"></div></div>
+    <div class="now-col"><h3>Ibrahim</h3><div id="nowI"></div></div>
+    <div class="now-col"><h3>Ensemble</h3><div id="nowEI"></div></div>
+  </div>
+  <hr class="sep">
+  <div class="grid g2">
+    <div class="card"><h3>Décisions à prendre dans cette phase</h3><ul class="clean small" id="nowDecisions"></ul></div>
+    <div class="card"><h3>En retard (phases passées, non faites)</h3><ul class="clean small" id="nowLate"></ul></div>
+  </div>
+</section>
+
+<!-- ====================================================== CALENDRIER -->
+<section class="view" id="v-calendrier">
+  <div class="head"><div><p class="eyebrow">Calendrier officiel du brief</p><h2>De maintenant au lancement</h2></div><p class="lead">Séquence <span class="b decide">Décidée</span> ; dates exactes <span class="b prop">Proposition</span> (à confirmer ensemble, tâche 1). Rien de l’ancien planning n’est repris.</p></div>
+  <div class="tl-wrap"><div class="phases" id="phases"></div></div>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Pourquoi ces dates</h3>
+      <ul class="clean small">
+        <li><b>Maintenant → 8 novembre : préparation.</b> Mesures de la machine, environnement bêta, liste de testeurs, validation de ce dossier.</li>
+        <li><b>9 → 22 novembre : semaines 1–2.</b> Ibrahim développe et stabilise ; Elias recrute et prépare la bêta ; tests UX ensemble.</li>
+        <li><b>23 novembre → 20 décembre : bêta fermée, 4 semaines.</b> 15 à 20 testeurs, groupe privé, rapport de fin de bêta la 4e semaine.</li>
+        <li><b>21 → 27 décembre : dernière semaine.</b> Tout est finalisé : vidéos, pages, offres, campagnes, publications planifiées, gel fonctionnel.</li>
+        <li><b>Dimanche 27 décembre, J-1 : la grande vague.</b> Le gros de la communication 24 heures avant l’ouverture, pas avant.</li>
+        <li><b>Lundi 28 décembre, J0 : lancement public.</b> Inscriptions, offres, paiement, support, tracking et monitoring actifs.</li>
+        <li><b>Vers le 11 janvier 2027, J+14 : Discord public.</b> Le support existe dès J0 ; le Discord n’ouvre pas vide.</li>
+      </ul>
+    </div>
+    <div class="card gold">
+      <h3>Points d’attention</h3>
+      <ul class="clean small">
+        <li>Le lancement tombe entre Noël et le Nouvel An : période de revente des cadeaux, donc d’activité sur Vinted, mais aussi de disponibilité réduite des partenaires et de l’avocat. À confirmer ensemble ; sinon J0 au lundi 4 janvier 2027 avec la même séquence décalée d’une semaine. <span class="b adecider">À décider</span></li>
+        <li>La consultation de l’avocat doit être <b>obtenue avant J-7</b> : les cabinets ferment souvent la dernière semaine de décembre. Prendre rendez-vous dès la préparation.</li>
+        <li>La bêta commence un lundi et finit un dimanche : le rapport de fin de bêta part le lundi 14 décembre pour être rendu avant le 20.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ====================================================== WORKFLOW -->
+<section class="view" id="v-workflow">
+  <div class="head"><div><p class="eyebrow">Plan opérationnel</p><h2>Le workflow, tâche par tâche</h2></div><p class="lead">P0 = critique, P1 = important, P2 = secondaire. Le statut se change dans la colonne de droite et se mémorise dans ce navigateur. Une tâche est « bloquée » quand une de ses dépendances n’est pas faite alors que sa période a commencé.</p></div>
+  <div class="filters" id="wfFilters">
+    <span class="small muted">Responsable</span>
+    <button class="chip" data-f="who" data-v="E" aria-pressed="false">Elias</button>
+    <button class="chip" data-f="who" data-v="I" aria-pressed="false">Ibrahim</button>
+    <button class="chip" data-f="who" data-v="EI" aria-pressed="false">Ensemble</button>
+    <span class="small muted" style="margin-left:6px">Priorité</span>
+    <button class="chip" data-f="prio" data-v="P0" aria-pressed="false">P0</button>
+    <button class="chip" data-f="prio" data-v="P1" aria-pressed="false">P1</button>
+    <button class="chip" data-f="prio" data-v="P2" aria-pressed="false">P2</button>
+    <span class="small muted" style="margin-left:6px">Jalon</span>
+    <button class="chip" data-f="ms" data-v="beta" aria-pressed="false">Avant la bêta</button>
+    <button class="chip" data-f="ms" data-v="launch" aria-pressed="false">Avant le lancement</button>
+    <button class="chip" data-f="ms" data-v="after" aria-pressed="false">Après</button>
+    <button class="chip" data-f="open" data-v="1" aria-pressed="false">Masquer les tâches faites</button>
+    <span class="sp"></span>
+    <input type="search" id="wfSearch" placeholder="Rechercher une tâche…" aria-label="Rechercher une tâche">
+  </div>
+  <div class="legend" style="margin-bottom:10px"><span id="wfCount"></span><span class="sp"></span><button class="btn quiet" id="copyState">Copier l’avancement</button><button class="btn quiet" id="resetState">Réinitialiser les statuts</button></div>
+  <div id="wfTables" class="stack"></div>
+</section>
+
+<!-- ====================================================== DÉCISIONS -->
+<section class="view" id="v-decisions">
+  <div class="head"><div><p class="eyebrow">La distinction obligatoire</p><h2>Décidé, proposé, à décider, à valider, à mesurer</h2></div><p class="lead">Aucune décision stratégique n’est présentée comme prise si elle doit encore être validée à deux.</p></div>
+  <div class="matrix" id="matrix"></div>
+  <hr class="sep">
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Décision à prendre ensemble</th><th>Options</th><th>Ce qu’il faut pour trancher</th><th>Avant</th><th>État</th></tr></thead>
+      <tbody id="decisionRows"></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ====================================================== PRODUITS -->
+<section class="view" id="v-produits">
+  <div class="head"><div><p class="eyebrow">Produit et technique</p><h2>Les modules Selio</h2></div><p class="lead">Les fonctions reprises des documents V3. La bêta teste un nombre limité de fonctions : priorité à la qualité de Manager et Studio.</p></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Module</th><th>Ce qu’il fait</th><th>Dans la bêta ?</th><th>Au lancement ?</th><th>État</th></tr></thead>
+      <tbody>
+        <tr><td class="k">Selio Manager</td><td>Stock, dressing intelligent (note sur 100, republication), messagerie et négociation par l’IA, commandes, marges, équipe (rôles administrateur, exécuteur, contributeur photos).</td><td>Oui</td><td>Oui</td><td><span class="b decide">Décidé</span></td></tr>
+        <tr><td class="k">Selio Studio</td><td>Annonces créées et préparées à partir des photos : tri, lecture des étiquettes, rédaction, prix conseillé ; copier-coller vers Vinted au début.</td><td>Oui</td><td>Oui</td><td><span class="b decide">Décidé</span></td></tr>
+        <tr><td class="k">Selio Track</td><td>Analyse du marché et comparables : filtres suivis, niches, tendances, recherche par photo. Statistiques seulement, jamais de republication d’annonces ni de pseudos.</td><td>Version simple (ventes du client, pages consultées) <span class="b adecider">À décider</span></td><td>Essentiel en Pro, complet en Agence <span class="b prop">Proposition</span></td><td><span class="b juridique">Collecte à valider</span></td></tr>
+        <tr><td class="k">Selio Radar</td><td>Recherche d’opportunités : filtres, note sur 100, estimation de prix et de marge, alertes, journal, limites d’achat, achat validé par l’utilisateur en un clic.</td><td>Alertes seulement <span class="b adecider">À décider</span></td><td>Alertes et achat validé par le client <span class="b prop">Proposition</span></td><td><span class="b juridique">Surveillance à valider</span></td></tr>
+        <tr><td class="k">Radar Auto</td><td>Achat automatique sous seuil de note, prix maximum et plafond par jour.</td><td>Non</td><td>Seulement après l’avis de l’avocat</td><td><span class="b juridique">À valider juridiquement</span></td></tr>
+        <tr><td class="k">Selio Cloud</td><td>Automatisation quand l’ordinateur du client est éteint : session chiffrée par compte, navigateur isolé, journal, pause en un clic. Toutes les actions partent de la même adresse IP.</td><td>Non</td><td>Prévu si l’avocat valide ; sinon après</td><td><span class="b juridique">À valider juridiquement</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card"><h3>Négociation par l’IA</h3><p class="small">Une règle de prix décide (accepter, contre-proposer, refuser, transmettre à l’utilisateur) ; l’IA rédige le message et le prix écrit est vérifié. « Dernier prix » n’est dit qu’au prix plancher. Les quotas de réponses des anciennes versions sont des <span class="b prop">propositions</span>.</p></div>
+    <div class="card"><h3>Ce que Radar doit respecter</h3><ul class="clean small"><li>Fonctionnement prudent : alertes avant tout achat.</li><li>Jamais de contournement de CAPTCHA, jamais d’adresse IP masquée, compte Achat séparé.</li><li>Journal de chaque action, plafonds par jour et par article.</li><li>Achat automatique : <span class="b juridique">mandat et responsabilité à valider</span>.</li></ul></div>
+    <div class="card"><h3>Idées produit (roadmap)</h3><p class="small">La liste des 29 idées de la V3 n’est pas dans les documents fournis pour cette V4 : <b>donnée non disponible</b>. Les pistes présentes dans le compte rendu de réunion restent en roadmap après le lancement : prix conseillé par les ventes réelles, marge de bout en bout, contrôle des photos et des mesures, lots intelligents, alerte avant les seuils de déclaration (30 ventes ou 2 000 €), relance après 24 h, situations personnalisées, migration assistée, photos portées, API Vinted Pro.</p></div>
+  </div>
+</section>
+
+<!-- ====================================================== BÊTA -->
+<section class="view" id="v-beta">
+  <div class="head"><div><p class="eyebrow">Bêta fermée · 23 novembre → 20 décembre</p><h2>Quatre semaines, 15 à 20 testeurs</h2></div><p class="lead">La bêta ne sert pas qu’à trouver des bugs : elle répond à cinq questions et prépare les décisions de prix.</p></div>
+  <div class="grid g3">
+    <div class="card"><h3>Recrutement (Elias)</h3><ul class="clean small"><li>Cibles : revendeurs actifs qui se plaignent de leur outil (Bleam, Clemz, V-Tools) et vendeurs réguliers sans outil.</li><li>15 à 20 maximum au départ ; mélanger 1 compte, 2–3 comptes et équipes.</li><li>Leur accord explicite : test sur leurs propres comptes, validation humaine des actions.</li><li>Chaque testeur reçoit le PDF d’instructions avant le début.</li></ul></div>
+    <div class="card"><h3>Avant le début</h3><ul class="clean small"><li>Expliquer le fonctionnement et que le produit est en bêta.</li><li>Dire que certaines choses peuvent changer.</li><li>Expliquer comment signaler un bug et comment donner son avis.</li><li>Groupe privé : outil <span class="b adecider">À décider</span> (WhatsApp, Telegram ou Discord privé).</li></ul></div>
+    <div class="card"><h3>Rythme</h3><ul class="clean small"><li><b>S1</b> (23–29 nov) : onboarding, tout le monde actif à J+3.</li><li><b>S2–S3</b> (30 nov–13 déc) : usage réel, corrections sous 48 h pour les bloquants, mesure de la charge.</li><li><b>S4</b> (14–20 déc) : rapport de fin de bêta, synthèse, décisions prix et GO / NO-GO.</li><li>Point hebdomadaire Elias + Ibrahim.</li></ul></div>
+  </div>
+  <hr class="sep">
+  <h3 style="margin-bottom:10px">Le rapport de fin de bêta (à remplir par chaque testeur)</h3>
+  <div class="grid g3">
+    <div class="card"><h3>Bugs</h3><ul class="clean small"><li>Quels bugs avez-vous rencontrés ?</li><li>Quelle fonctionnalité a posé problème ?</li><li>Quelle erreur était la plus gênante ?</li></ul></div>
+    <div class="card"><h3>UX</h3><ul class="clean small"><li>Est-ce facile à comprendre ?</li><li>Est-ce facile à utiliser ?</li><li>Où avez-vous hésité ?</li><li>Quelle partie doit être améliorée ?</li></ul></div>
+    <div class="card"><h3>Utilité</h3><ul class="clean small"><li>Selio vous fait-il réellement gagner du temps ?</li><li>Quelle fonctionnalité vous paraît la plus utile ?</li><li>Quelle fonctionnalité utilisez-vous le plus ?</li></ul></div>
+    <div class="card"><h3>Crédibilité</h3><ul class="clean small"><li>Le produit paraît-il professionnel ?</li><li>Feriez-vous confiance à Selio ?</li><li>Qu’est-ce qui vous ferait hésiter ?</li></ul></div>
+    <div class="card"><h3>Prix</h3><ul class="clean small"><li>Combien seriez-vous prêt à payer ?</li><li>Quel prix vous paraît trop élevé ?</li><li>Quel prix vous paraît cohérent ?</li></ul></div>
+    <div class="card"><h3>Conversion</h3><ul class="clean small"><li>Paieriez-vous pour continuer à utiliser Selio ?</li><li>Pourquoi ?</li><li>Quelle offre choisiriez-vous ?</li></ul></div>
+  </div>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card gold"><h3>Remise bêta</h3><p class="small">Proposition actuelle : <b>−20 % sur le premier mois</b> pour les bêta-testeurs. <span class="b prop">Proposition</span> à valider avec Ibrahim ; pas présentée comme décidée.</p></div>
+    <div class="card"><h3>Critères GO / NO-GO d’entrée en bêta (fin des semaines 1–2)</h3><div class="check" data-store="go-beta"><label><input type="checkbox"> Parcours inscription → comptes → stock → dressing → messagerie → Studio sans bug bloquant</label><label><input type="checkbox"> 15 testeurs confirmés, profils connus (nombre de comptes, outil actuel, volume)</label><label><input type="checkbox"> Document d’instructions prêt et groupe privé créé</label><label><input type="checkbox"> Environnement bêta en ligne, sauvegarde testée, supervision active</label><label><input type="checkbox"> Formulaire de retour et suivi des inscriptions en place</label><label><input type="checkbox"> Périmètre de la bêta arrêté (liste fermée de fonctions)</label></div></div>
+  </div>
+</section>
+
+<!-- ====================================================== CONTENU -->
+<section class="view" id="v-contenu">
+  <div class="head"><div><p class="eyebrow">Contenu et réseaux sociaux</p><h2>Des vidéos pensées comme une matière première</h2></div><p class="lead">Elias apporte idées, angles, hooks, sujets, messages et voix ; Ibrahim monte, produit et décline. Pas d’objectif de 30 vidéos : autant de contenu pertinent que nécessaire.</p></div>
+  <div class="grid g2">
+    <div class="card"><h3>Pendant la bêta</h3><p class="small">Produire environ <b>10 vidéos supplémentaires comme base</b>, non publiées avant J-1 (sauf décision contraire ensemble). Le nombre final peut être 10, 30, 50 ou 100+ selon les besoins et les performances. <span class="b decide">Décidé</span></p></div>
+    <div class="card"><h3>Réutilisation d’une vidéo</h3><p class="small">TikTok · Instagram Reel · YouTube Short · vidéo YouTube longue · Facebook · extrait · FAQ du site · tutoriel · documentation · contenu commercial. À adapter : titre, format, description, longueur, CTA, miniature.</p></div>
+  </div>
+  <div class="tablewrap" style="margin-top:16px">
+    <table>
+      <thead><tr><th>Phase</th><th>Quand (proposition)</th><th>Objectif</th><th>Exemples</th><th>Garde-fous</th></tr></thead>
+      <tbody>
+        <tr><td class="k">1 · Tutoriels</td><td>J0 → J+21 (2–3 premières semaines de contenu social)</td><td>Faire comprendre le produit</td><td>Utiliser Selio, créer une annonce, analyser une opportunité, utiliser Track, Radar, Studio, Manager, automatiser, gagner du temps</td><td>Démos réelles ; montrer ce que l’outil fait et ne fait pas</td></tr>
+        <tr><td class="k">2 · Fonctionnalités</td><td>J+21 → J+42</td><td>Pourquoi Selio existe, les problèmes résolus, chaque module, les cas d’usage, les différences avec les outils actuels</td><td>Une vidéo par module ; réutilisées dans la FAQ du site</td><td>Faits vérifiables</td></tr>
+        <tr><td class="k">3 · Migration</td><td>À partir de J+30</td><td>« Comment passer de votre outil actuel à Selio »</td><td>Bleam, V-Tools, Clemz : reconstituer réglages et habitudes</td><td>Pas d’import automatique promis s’il n’existe pas : copier-coller, captures, informations fournies par l’utilisateur, transformation assistée par l’IA, validation. Interdit : identifiants concurrents, connexion à leurs comptes, scraping de leurs serveurs, contournement</td></tr>
+        <tr><td class="k">4 · Comparatifs</td><td>À partir de J+45</td><td>Comparaisons honnêtes</td><td>Selio vs Bleam, vs V-Tools, vs Clemz</td><td>Jamais « meilleur outil du marché », « zéro risque », « 100 % légal », « partenaire Vinted » sans preuve et validation</td></tr>
+        <tr><td class="k">5 · IA</td><td>En continu dès J+21</td><td>Ce que fait l’IA, ce qu’elle ne fait pas, où l’utilisateur garde la main</td><td>Rédiger, analyser, négocier : exemples concrets et démonstratifs</td><td>Montrer la validation par l’utilisateur</td></tr>
+        <tr><td class="k">6 · Conversion</td><td>Dès J0, renforcée après J+30</td><td>Prix, valeur, temps gagné, résultats de la bêta, offres, essai, différences entre formules</td><td>Titres accrocheurs autorisés</td><td>Toujours honnêtes</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card"><h3>Réseaux : quoi activer d’abord</h3><p class="small">L’identité principale et les comptes principaux existent déjà en grande partie : ce n’est pas une tâche nouvelle. À déterminer ensemble <span class="b adecider">À décider</span> : comptes prioritaires actifs à J-1 (proposition : TikTok, Instagram, YouTube de Selio Global), comptes qui peuvent attendre (Facebook, comptes par filiale), filiales qui méritent vraiment un compte séparé. Priorité à l’efficacité, pas au nombre de comptes.</p></div>
+    <div class="card"><h3>Répartition</h3><ul class="clean small"><li><b>Elias :</b> idées, angles, hooks, sujets, messages, voix, éventuellement présence à l’écran.</li><li><b>Ibrahim :</b> montage, production, logiciels disponibles, IA et 3D quand c’est pertinent ; transforme la voix d’Elias en vidéo exploitable.</li><li><b>Pipeline existant :</b> la vidéo de 35 s « Et si une appli centralisait tout ? » et sa chaîne de production servent de base.</li></ul></div>
+  </div>
+</section>
+
+<!-- ====================================================== ACQUISITION -->
+<section class="view" id="v-acquisition">
+  <div class="head"><div><p class="eyebrow">Acquisition, SEO, publicité, partenariats</p><h2>Capter ceux qui cherchent déjà une solution</h2></div><p class="lead">Le budget publicitaire n’est pas fixé : rien n’est inventé ici. Les KPI, eux, sont décidés.</p></div>
+  <div class="grid g2">
+    <div class="card"><h3>SEO : les recherches visées</h3><p class="small">alternative à Bleam · alternative à V-Tools · alternative à Clemz · meilleur bot Vinted · outil achat-revente Vinted · outil pour revendeur Vinted · IA achat-revente · automatisation Vinted · logiciel Vinted · gestion Vinted.</p><p class="small" style="margin-top:8px">On parle de <b>visibilité, indexation, contenu, trafic, conversion</b>. Jamais de garantie de « première position Google ». <span class="b decide">Décidé</span></p><p class="small" style="margin-top:8px">Pages à préparer pendant la bêta, publiées à J-1 / J0 : une page par filiale, « Selio ou Bleam ? », « alternative à Bleam », FAQ alimentée par les vidéos.</p></div>
+    <div class="card"><h3>Publicité : à préparer, budget à décider</h3><ul class="clean small"><li>Campagnes, audiences, créatifs, landing pages, tracking, UTM.</li><li>Mesure : inscriptions → activation → paiement.</li><li>KPI <span class="b decide">Décidés</span> : inscriptions, activation, conversion payante, CAC, MRR généré, ROI, churn.</li><li>Budget <span class="b adecider">À décider</span> ; règle de gestion proposée : augmenter seulement si un client rapporte plus qu’il ne coûte. <span class="b prop">Proposition</span></li></ul></div>
+  </div>
+  <div class="tablewrap" style="margin-top:16px">
+    <table>
+      <thead><tr><th>KPI</th><th>Définition</th><th>Où on le lit</th><th>Repère de départ</th></tr></thead>
+      <tbody>
+        <tr><td class="k">Inscriptions</td><td>Comptes créés, par source (UTM, code créateur)</td><td>Admin Selio</td><td><span class="b mesurer">À mesurer</span></td></tr>
+        <tr><td class="k">Activation</td><td>Compte Vinted connecté + premier article ou première annonce Studio</td><td>Admin Selio</td><td><span class="b mesurer">À mesurer</span></td></tr>
+        <tr><td class="k">Conversion payante</td><td>Essais devenus payants / essais</td><td>Admin Selio, paiement</td><td>Repère externe : 25 à 35 % en médiane quand la carte est demandée (ChartMogul) ; à valider pendant la bêta</td></tr>
+        <tr><td class="k">CAC</td><td>Dépense d’acquisition / clients payants</td><td>Tableau KPI</td><td>Seuil de gestion proposé : moins de 100 € par client <span class="b prop">Proposition</span></td></tr>
+        <tr><td class="k">MRR, ROI</td><td>Revenu mensuel récurrent ; revenu / dépense</td><td>Paiement, tableau KPI</td><td><span class="b mesurer">À mesurer</span></td></tr>
+        <tr><td class="k">Churn</td><td>Clients perdus par mois / clients</td><td>Paiement</td><td>Repère externe : 3 à 7 % par mois pour les petits logiciels ; cible proposée ≤ 6 %</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card"><h3>Partenariats et influenceurs</h3><p class="small">Partenariats possibles : <b>Ilan Mbemba</b> (Instagram @ilan.mbemba, 13 000 abonnés, 811 publications au 26 octobre 2026), <b>Félix Beauregard</b> (TikTok @felixbrgd, achat-revente Vinted, et YouTube), autre créateur pertinent. <span class="b prop">Proposition</span> : rien n’est signé. À faire : contacter, négocier, définir l’affiliation et la rémunération, mesurer les résultats (code promo par créateur), respecter les mentions publicitaires (« collaboration commerciale »).</p></div>
+    <div class="card"><h3>Prospection</h3><ul class="clean small"><li>Elias : communautés et groupes de revendeurs, messages directs, partenaires.</li><li>Ibrahim : aide ponctuelle via quelques connaissances.</li><li>Parrainage dans l’application : un mois offert aux deux. <span class="b prop">Proposition</span></li></ul></div>
+  </div>
+</section>
+
+<!-- ====================================================== LANCEMENT -->
+<section class="view" id="v-lancement">
+  <div class="head"><div><p class="eyebrow">J-7 · J-1 · J0</p><h2>La semaine du lancement</h2></div><p class="lead">Tout est préparé à J-7, la communication part à J-1, le produit ouvre à J0. Les cases se mémorisent dans ce navigateur.</p></div>
+  <div class="grid g3">
+    <div class="card"><h3>J-7 · 21 → 27 décembre : tout est prêt</h3><div class="check" data-store="j7"><label><input type="checkbox"> Vidéos finalisées et déclinées par format</label><label><input type="checkbox"> Pages du site finalisées (filiales, comparatifs, FAQ, légal, mention d’indépendance)</label><label><input type="checkbox"> Textes et offres finalisés (grille décidée ensemble)</label><label><input type="checkbox"> Campagnes préparées (audiences, créatifs, UTM, landing pages)</label><label><input type="checkbox"> Publications planifiées (J-1, J0, J+1 → J+21)</label><label><input type="checkbox"> Emails et messages prêts (liste d’attente, testeurs, partenaires)</label><label><input type="checkbox"> CTA et supports prêts</label><label><input type="checkbox"> Partenaires et créateurs briefés, codes promo créés</label><label><input type="checkbox"> Gel fonctionnel, tests de charge, sauvegarde et restauration testées, bascule de secours testée</label><label><input type="checkbox"> Répétition générale de J0 faite à deux</label></div></div>
+    <div class="card accent"><h3>J-1 · dimanche 27 décembre : la grande vague</h3><p class="small">Le gros de la communication a lieu 24 heures avant l’ouverture, pour éviter que les gens voient Selio trop tôt, s’inscrivent trop tôt, oublient, ou arrivent avant l’ouverture réelle. <span class="b decide">Décidé</span></p><div class="check" data-store="j1" style="margin-top:8px"><label><input type="checkbox"> Publication simultanée sur les comptes prioritaires</label><label><input type="checkbox"> Emails à la liste d’attente et aux anciens testeurs</label><label><input type="checkbox"> Vidéos des créateurs partenaires (si accords)</label><label><input type="checkbox"> Site en « ouverture demain » avec inscription à la liste</label><label><input type="checkbox"> Veille technique : pics de trafic, formulaire, erreurs</label></div></div>
+    <div class="card"><h3>J0 · lundi 28 décembre : ouverture publique</h3><div class="check" data-store="j0"><label><input type="checkbox"> Inscriptions ouvertes, applications accessibles</label><label><input type="checkbox"> Offres disponibles, paiement fonctionnel (un vrai paiement testé)</label><label><input type="checkbox"> Support fonctionnel (canal, délais, réponses types)</label><label><input type="checkbox"> Tracking actif (UTM, entonnoir, KPI)</label><label><input type="checkbox"> Monitoring technique actif, alertes sur téléphone</label><label><input type="checkbox"> Elias : communication, acquisition, contenu, partenaires, support commercial, pilotage</label><label><input type="checkbox"> Ibrahim : infrastructure, surveillance, bugs, capacité, paiements, stabilité, surveillance Vinted</label></div></div>
+  </div>
+</section>
+
+<!-- ====================================================== SUPPORT -->
+<section class="view" id="v-support">
+  <div class="head"><div><p class="eyebrow">Support et communauté</p><h2>Le support dès J0, le Discord vers J+14</h2></div><p class="lead">Ne pas ouvrir trop tôt un Discord public vide. Le support client existe dès le premier jour.</p></div>
+  <div class="grid g2">
+    <div class="card"><h3>Support dès J0</h3><ul class="clean small"><li>Canal : email de support et formulaire dans l’application (le bouton « Copier le rapport d’erreur » existe déjà). <span class="b prop">Proposition</span></li><li>Délai de réponse annoncé : sous 24 h ouvrées. <span class="b prop">Proposition</span></li><li>Réponses types : installation de l’extension, premier compte, paiement, résiliation en trois clics, compte Vinted bloqué (aider le client à demander le motif à Vinted).</li><li>Site d’aide et FAQ (75 questions existantes) à jour avant J0.</li></ul></div>
+    <div class="card"><h3>Discord public vers J+14 (≈ 11 janvier 2027)</h3><p class="small">Avant l’ouverture, Ibrahim doit :</p><div class="check" data-store="discord"><label><input type="checkbox"> Apprendre Discord</label><label><input type="checkbox"> Préparer les salons (annonces, aide, bugs, idées, un salon par module)</label><label><input type="checkbox"> Préparer les rôles (équipe, bêta-testeurs, clients, visiteurs)</label><label><input type="checkbox"> Préparer la modération</label><label><input type="checkbox"> Préparer les règles</label><label><input type="checkbox"> Préparer la FAQ</label><label><input type="checkbox"> Préparer les annonces d’ouverture</label></div></div>
+  </div>
+</section>
+
+<!-- ====================================================== JURIDIQUE -->
+<section class="view" id="v-juridique">
+  <div class="head"><div><p class="eyebrow">Juridique</p><h2>Ce qu’on s’interdit, ce qu’on valide avec un avocat</h2></div><p class="lead">L’étude des pratiques des concurrents reste la base documentaire : personne n’a « légalisé » l’automatisation ; les concurrents reportent le risque sur l’utilisateur. Selio se protège d’abord par sa construction, puis par ses conditions, puis par la voie officielle (API Vinted Pro).</p></div>
+  <div class="grid g3">
+    <div class="card bad callout"><h3>Interdits (décidés)</h3><ul class="clean small"><li>Contournement de CAPTCHA ou de protections</li><li>Dissimulation d’adresse IP, proxy par compte</li><li>Conservation inutile de données personnelles (pseudos, profils, photos de personnes)</li><li>Scraping illégal, republication d’annonces</li><li>Promesses « zéro risque », « 100 % légal », « partenaire Vinted »</li><li>Identifiants concurrents, connexion à leurs comptes</li><li>Mot de passe Vinted stocké</li></ul></div>
+    <div class="card"><h3>Risques identifiés</h3><ul class="clean small"><li>Automatisation et conditions de Vinted : blocage des comptes clients, pas de procès connu</li><li>Extraction de données : affaire Leboncoin (base de données protégée)</li><li>RGPD : amende CNIL KASPR (extension qui aspirait des données)</li><li>Cloud : une adresse IP partagée → contagion possible d’un blocage</li><li>Bot d’achat : mandat, responsabilité en cas d’achat non voulu</li><li>Conditions consommateurs : clauses abusives, résiliation en trois clics</li></ul></div>
+    <div class="card gold"><h3>Mesures retenues</h3><ul class="clean small"><li>Mention d’indépendance : site, stores, conditions, pages concernées <span class="b decide">Décidé</span></li><li>Écran d’accord avant toute automatisation ou Cloud</li><li>Validation par le client des actions importantes, arrêt en un clic</li><li>Track en statistiques seulement</li><li>Demander l’accès à l’API Vinted Pro Integrations</li><li>Cloud : actions légères d’abord, pause au premier avertissement, 10 comptes par client</li><li>Contrats d’affiliation avec mention « collaboration commerciale »</li></ul></div>
+  </div>
+  <div class="tablewrap" style="margin-top:16px">
+    <table>
+      <thead><tr><th>Question pour l’avocat</th><th>Ce qu’on veut savoir</th><th>Bloque</th><th>État</th></tr></thead>
+      <tbody>
+        <tr><td class="k">Cloud</td><td>Garder la session Vinted d’un client, avec son accord et chiffrée, pour agir à sa place ; responsabilité si Vinted bloque</td><td>Cloud au lancement</td><td><span class="b juridique">À valider</span></td></tr>
+        <tr><td class="k">Bot d’achat et mandat</td><td>Quel mandat écrit pour acheter au nom du client ; achat non voulu</td><td>Radar Auto</td><td><span class="b juridique">À valider</span></td></tr>
+        <tr><td class="k">Responsabilité</td><td>Clause « le client répond de son compte » face à un consommateur</td><td>CGU / CGV</td><td><span class="b juridique">À valider</span></td></tr>
+        <tr><td class="k">Extraction et Track</td><td>Statistiques sans republication : sous le seuil de l’extraction substantielle ?</td><td>Track complet</td><td><span class="b juridique">À valider</span></td></tr>
+        <tr><td class="k">RGPD</td><td>Registre, durées, hébergement chez Ibrahim, sous-traitants (Revolut, Netlify), suppression des pseudos</td><td>Lancement</td><td><span class="b juridique">À valider</span></td></tr>
+        <tr><td class="k">API Vinted Pro</td><td>Ce qu’il faut préparer pour la demande d’accès</td><td>Voie officielle</td><td><span class="b juridique">À valider</span></td></tr>
+        <tr><td class="k">Comptes multiples et adresse IP</td><td>Agence à 10 comptes ; tous les comptes derrière la même adresse</td><td>Offre Agence, Cloud</td><td><span class="b juridique">À valider</span></td></tr>
+        <tr><td class="k">Conditions consommateurs</td><td>Résiliation en trois clics, renouvellement, essai, remboursements</td><td>CGV</td><td><span class="b juridique">À valider</span></td></tr>
+        <tr><td class="k">Import de réglages</td><td>Lire les captures et exports fournis par le client</td><td>Migration</td><td><span class="b juridique">À valider</span></td></tr>
+        <tr><td class="k">Influenceurs</td><td>Contrat d’affiliation, mentions obligatoires</td><td>Partenariats</td><td><span class="b juridique">À valider</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="small muted" style="margin-top:10px">Consultation prévue avant le lancement public, à prendre dès la phase de préparation. Le prix de la consultation est à demander avant et à valider ensemble.</p>
+</section>
+
+<!-- ====================================================== CAPACITÉ -->
+<section class="view" id="v-capacite">
+  <div class="head"><div><p class="eyebrow">Capacité technique</p><h2>Des hypothèses de travail, pas des certitudes</h2></div><p class="lead">Les chiffres de la V3 restent des hypothèses tant qu’Ibrahim ne les a pas confirmés par la mesure.</p></div>
+  <div class="grid g2">
+    <div class="card"><h3>Hypothèses issues de la V3</h3><ul class="clean small"><li>Machine achetée environ 400 €, chez Ibrahim à Marseille <span class="b decide">Décidé</span></li><li>Environ 32 Go de mémoire vive, environ 16 Go de VRAM <span class="b mesurer">À confirmer</span></li><li>Environ 50 places de navigateur au sens large, environ 10 traitements réellement actifs en même temps <span class="b mesurer">À mesurer</span></li><li>Repères IA : environ 15 réponses par minute, environ 3,6 s par photo Studio (calculés pour une carte de 16 Go lente) <span class="b mesurer">À mesurer</span></li><li>Trois modèles d’IA chargés ensemble dans les 16 Go <span class="b mesurer">À vérifier</span></li></ul></div>
+    <div class="card"><h3>Ce qu’Ibrahim mesure (préparation, puis bêta)</h3><div class="check" data-store="mesures"><label><input type="checkbox"> CPU : modèle, cœurs, charge en bêta</label><label><input type="checkbox"> GPU : modèle exact, VRAM, puissance à la prise</label><label><input type="checkbox"> RAM : occupation avec N navigateurs ouverts</label><label><input type="checkbox"> Temps de traitement : réponse, annonce Studio, embedding (pnpm ai:bench)</label><label><input type="checkbox"> Nombre de comptes simultanés tenus sans dégradation</label><label><input type="checkbox"> File d’attente : longueur et délai à l’heure de pointe</label><label><input type="checkbox"> Coût : électricité par requête, coût mensuel de la machine</label><label><input type="checkbox"> Capacité maximale avant saturation, et plan pour une deuxième machine</label></div></div>
+  </div>
+  <div class="callout warn" style="margin-top:16px"><b>Règle :</b> aucun quota, aucun prix de Studio et aucune promesse de capacité ne se fixe avant ces mesures. Les résultats remplacent les hypothèses de ce dossier (tableau « Mesures sur la machine » dans la documentation technique).</div>
+</section>
+
+<!-- ====================================================== PRIX -->
+<section class="view" id="v-prix">
+  <div class="head"><div><p class="eyebrow">Offres et prix</p><h2>Des propositions, pas des prix validés</h2></div><p class="lead">Les montants viennent des documents V3 (compte rendu de réunion). Ils se discutent ensemble après la bêta, avec les réponses des testeurs sur le prix.</p></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Offre</th><th>Proposition</th><th>Contenu proposé</th><th>État</th></tr></thead>
+      <tbody>
+        <tr><td class="k">Manager Starter</td><td>6,99 € / mois</td><td>1 compte, 300 réponses de l’IA par mois, pas de Track</td><td><span class="b prop">Proposition</span></td></tr>
+        <tr><td class="k">Manager Pro</td><td>24,99 € / mois</td><td>3 comptes, Track essentiel, relance après 24 h proposée, 20 annonces Studio et 10 photos portées par mois, 1 500 réponses</td><td><span class="b prop">Proposition</span></td></tr>
+        <tr><td class="k">Manager Agence</td><td>49,99 € / mois</td><td>10 comptes, Track complet, relance automatique, Cloud inclus (si validé), rôles d’équipe, 60 annonces Studio et 30 photos portées, 5 000 réponses</td><td><span class="b prop">Proposition</span></td></tr>
+        <tr><td class="k">Studio seul</td><td>40 annonces offertes, puis 9,99 € (80 photos) · 19,99 € (200) · 39,99 € (500) ; plancher 0,02 € la photo, 4,99 € minimum</td><td>Pour ceux qui ne veulent que les annonces</td><td><span class="b prop">Proposition</span> · coût réel <span class="b mesurer">À mesurer</span></td></tr>
+        <tr><td class="k">Track</td><td>Pas vendu seul</td><td>Inclus dans Pro (essentiel) et Agence (complet)</td><td><span class="b prop">Proposition</span></td></tr>
+        <tr><td class="k">Radar</td><td>14,99 € / mois</td><td>Alertes, note, achat validé par le client en un clic</td><td><span class="b prop">Proposition</span></td></tr>
+        <tr><td class="k">Radar Auto</td><td>29,99 € / mois</td><td>Achat automatique avec plafonds</td><td><span class="b juridique">Après l’avocat</span></td></tr>
+        <tr><td class="k">Cloud</td><td>Inclus dans l’Agence · 9,99 € en option pour Starter et Pro</td><td>Automatisation ordinateur éteint</td><td><span class="b juridique">Après l’avocat</span></td></tr>
+        <tr><td class="k">Compte en plus</td><td>Aucun compte à la carte : au-delà de 3 comptes, c’est l’Agence ; plus de 10, sur devis</td><td>—</td><td><span class="b decide">Décidé en réunion</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="grid g3" style="margin-top:16px">
+    <div class="card"><h3>Règles de prix à trancher</h3><ul class="clean small"><li>Remise multi-filiales : −10 % sur chaque filiale supplémentaire après la première <span class="b prop">Proposition</span></li><li>Annuel : 2 mois offerts <span class="b prop">Proposition</span></li><li>Offre fondateurs (50 premiers) : −30 % pendant 6 mois sur Pro et Agence, un mois offert sur Starter <span class="b prop">Proposition</span></li><li>Remise bêta : −20 % sur le premier mois <span class="b prop">Proposition</span></li><li>Offres combinées <span class="b adecider">À décider</span></li></ul></div>
+    <div class="card gold"><h3>Essai gratuit : avec ou sans carte ?</h3><p class="small">14 jours avec carte bancaire, ou 14 jours sans carte. Elias pense que l’absence de carte réduit la friction ; elle peut aussi augmenter les abus, réduire la qualité des inscrits et changer la conversion payante. À comparer : taux d’inscription, activation, usage, conversion payante, abus. Repère externe : essais avec carte, 25 à 35 % de conversion en médiane ; sans carte, souvent sous 10 %. <span class="b adecider">À décider ensemble</span></p></div>
+    <div class="card"><h3>Paiement</h3><p class="small">Revolut (cartes, Apple Pay, Google Pay, Revolut Pay ; 1 % + 0,20 € par carte européenne ; règlement sous 24 h) retenu en réunion à la place de Stripe ; Mollie en secours. <span class="b decide">Décidé</span> · Compte Revolut Business et compte marchand : démarches <span class="b adecider">à lancer</span>. Toutes les filiales affichent le prix TTC et la résiliation en trois clics.</p></div>
+  </div>
+</section>
+
+<!-- ====================================================== PRÊTS ? -->
+<section class="view" id="v-prets">
+  <div class="head"><div><p class="eyebrow">GO / NO-GO</p><h2>Est-ce qu’on est réellement prêts à lancer ?</h2></div><p class="lead">La jauge compte les tâches P0 « avant le lancement » marquées faites dans le workflow ; la liste ci-dessous est la décision GO / NO-GO à prendre à deux au plus tard le 20 décembre.</p></div>
+  <div class="grid g2">
+    <div class="card"><div class="gauge"><div class="ring" id="readyRing" style="--p:0"><span id="readyBig">0 %</span></div><div><h3>Préparation au lancement</h3><p class="small muted" id="readyText">—</p></div></div></div>
+    <div class="card"><h3>Avant la bêta</h3><div class="gauge"><div class="ring" id="betaRing" style="--p:0"><span id="betaBig">0 %</span></div><div><p class="small muted" id="betaText">—</p></div></div></div>
+  </div>
+  <div class="card" style="margin-top:16px"><h3>Critères GO / NO-GO du lancement</h3><div class="check" data-store="go-launch">
+    <label><input type="checkbox"> Les cinq questions de la bêta ont une réponse écrite (fonctionne, compris, utile, prêts à payer, prix cohérent)</label>
+    <label><input type="checkbox"> Zéro bug bloquant sur le parcours principal depuis au moins 7 jours</label>
+    <label><input type="checkbox"> Paiement réel testé (un vrai paiement et un remboursement), factures et résiliation en trois clics fonctionnelles</label>
+    <label><input type="checkbox"> Grille d’offres et de prix décidée ensemble, affichée TTC, essai (carte ou non) décidé</label>
+    <label><input type="checkbox"> Avis de l’avocat reçu ; Cloud et Radar Auto activés seulement s’il valide</label>
+    <label><input type="checkbox"> CGU, CGV, confidentialité, mention d’indépendance en ligne</label>
+    <label><input type="checkbox"> Capacité mesurée au-dessus du besoin des premiers mois, plan de deuxième machine écrit</label>
+    <label><input type="checkbox"> Sauvegarde et restauration testées, bascule de secours testée, monitoring avec alertes</label>
+    <label><input type="checkbox"> Support prêt (canal, délais, réponses types), FAQ à jour</label>
+    <label><input type="checkbox"> Tracking actif : UTM, entonnoir inscription → activation → paiement, tableau KPI</label>
+    <label><input type="checkbox"> Contenu : vidéos de la phase 1 prêtes, publications planifiées, grande vague J-1 préparée</label>
+    <label><input type="checkbox"> Partenaires briefés ou décision de lancer sans eux</label>
+  </div></div>
+</section>
+
+<!-- ====================================================== SOURCES -->
+<section class="view" id="v-sources">
+  <div class="head"><div><p class="eyebrow">Méthode</p><h2>Sources, limites, règle de non-invention</h2></div></div>
+  <div class="grid g2">
+    <div class="card"><h3>Documents utilisés</h3><ul class="clean small"><li>Le brief V4 Master d’Elias (calendrier, rôles, phases, règles) : <b>prime sur tout le reste</b> pour le workflow et les décisions actualisées.</li><li>Dossier de stratégie V3 « en attente du workflow » : partie 13 (questions à valider avec Ibrahim) et réponses d’Ibrahim (machine, Studio, Track, bot, négociation, V-Tools, import, Cloud, juridique, paiement).</li><li>Compte rendu de la réunion (tarifs proposés, trois modèles d’IA, lecture des photos façon Kavis, estimation des prix, Cloud, bot, paiement Revolut).</li><li>Étude juridique des concurrents (octobre 2026).</li><li>Analyses de marché (concurrents ; estimation des clients par canal, influenceurs).</li></ul></div>
+    <div class="card warn callout"><h3>Données non disponibles dans les documents fournis</h3><ul class="clean small"><li>Le dossier V3 complet (Selio_Dossier_Strategie_V3.pdf) : seule la partie 13 et ses réponses sont utilisées.</li><li>La liste détaillée des 29 idées produit (« idées détaillées / Cavis ») : mentionnée en roadmap sans détail.</li><li>Le budget publicitaire : non fixé, donc absent.</li><li>Les mesures réelles de la machine : marquées « à mesurer ».</li><li>Les chiffres d’audience de Félix Beauregard à jour : dernier relevé public non daté.</li></ul></div>
+  </div>
+  <div class="card" style="margin-top:16px"><h3>Comment ce dossier évolue</h3><p class="small">Les statuts, cases et filtres se mémorisent dans le navigateur de chacun (pas de synchronisation entre Elias et Ibrahim). Le bouton « Copier l’avancement » dans le workflow copie un résumé texte à coller dans votre groupe. Toute date confirmée, toute mesure et toute décision prise remplacent les propositions de ce document dans la version suivante.</p></div>
+  <footer>Selio · Dossier de stratégie V4 Master · Octobre 2026 · Document de travail interne. Selio est indépendant de Vinted et n’est ni affilié, ni approuvé, ni sponsorisé par Vinted.</footer>
+</section>
+
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  "use strict";
+  // ------------------------------------------------------------ Données
+  const PHASES = [
+    { id: "prep", t: "Préparation", d: "29 oct → 8 nov", from: "2026-10-29", to: "2026-11-08", note: "Mesures, environnement bêta, liste de testeurs, validation du dossier" },
+    { id: "s12", t: "Semaines 1–2", d: "9 → 22 nov", from: "2026-11-09", to: "2026-11-22", note: "Développement et stabilisation · recrutement bêta · tests UX" },
+    { id: "beta", t: "Bêta fermée", d: "23 nov → 20 déc", from: "2026-11-23", to: "2026-12-20", note: "4 semaines, 15 à 20 testeurs, rapport en S4" },
+    { id: "j7", t: "Dernière semaine", d: "21 → 26 déc", from: "2026-12-21", to: "2026-12-26", note: "Tout est finalisé, gel fonctionnel" },
+    { id: "j1", t: "J-1 · grande vague", d: "dim. 27 déc", from: "2026-12-27", to: "2026-12-27", note: "Le gros de la communication" },
+    { id: "j0", t: "J0 · lancement", d: "lun. 28 déc", from: "2026-12-28", to: "2026-12-28", note: "Ouverture publique" },
+    { id: "after", t: "Après", d: "29 déc → J+14 et au-delà", from: "2026-12-29", to: "2027-03-31", note: "Contenu par phases, Discord public vers le 11 janv." },
+  ];
+  // who : E = Elias, I = Ibrahim, EI = ensemble · ms : beta (avant la bêta), launch (avant le lancement), after
+  // tag : état décisionnel attaché à la tâche quand il y en a un (decide, prop, adecider, juridique, mesurer)
+  const TASKS = [
+    // --- Préparation
+    { id: 1, ph: "prep", who: "EI", p: "P0", ms: "beta", t: "Valider ce dossier V4 et fixer les dates exactes (début de bêta, J0)", per: "29 oct → 2 nov", dep: [], r: "Calendrier signé à deux, J0 confirmé (28 déc ou 4 janv)", tag: "adecider" },
+    { id: 2, ph: "prep", who: "I", p: "P0", ms: "beta", t: "Mesurer la machine : CPU, GPU, RAM, VRAM, réponses par minute, secondes par photo (pnpm ai:bench), comptes simultanés, file, coût", per: "29 oct → 8 nov", dep: [], r: "Tableau de mesures rempli ; hypothèses de la V3 confirmées ou corrigées", tag: "mesurer" },
+    { id: 3, ph: "prep", who: "I", p: "P0", ms: "beta", t: "Installer les trois modèles d’IA sur la machine et valider la santé (texte, photos, prix)", per: "2 → 8 nov", dep: [2], r: "Santé « healthy », diagnostic au vert" },
+    { id: 4, ph: "prep", who: "I", p: "P0", ms: "beta", t: "Déployer l’environnement bêta : conteneurs, tunnel chiffré, HTTPS, sauvegarde nocturne chiffrée avec copie hors machine, supervision des adresses de santé", per: "29 oct → 8 nov", dep: [], r: "URL de bêta accessible ; une restauration testée" },
+    { id: 5, ph: "prep", who: "I", p: "P1", ms: "beta", t: "Stabiliser le parcours bêta de Manager et Studio (inscription, comptes, stock, dressing, messagerie, Studio) et corriger les bloquants", per: "29 oct → 22 nov", dep: [], r: "Zéro bug bloquant sur le parcours" },
+    { id: 6, ph: "prep", who: "I", p: "P1", ms: "beta", t: "Suivi et feedback : source d’inscription, code par créateur, entonnoir inscription → essai → paiement, formulaire de retour dans l’application, canal bug", per: "2 → 15 nov", dep: [4], r: "Entonnoir lisible dans l’administration ; retours centralisés" },
+    { id: 7, ph: "prep", who: "E", p: "P0", ms: "beta", t: "Liste de 30 à 40 profils de bêta-testeurs (revendeurs actifs, utilisateurs de Bleam, Clemz ou V-Tools, vendeurs sans outil) et message de contact", per: "29 oct → 8 nov", dep: [], r: "Liste qualifiée et message prêt" },
+    { id: 8, ph: "prep", who: "E", p: "P1", ms: "beta", t: "Brouillon du document d’instructions bêta (fonctionnement, bêta, changements possibles, signaler un bug, donner son avis)", per: "3 → 8 nov", dep: [1], r: "Brouillon PDF" },
+    { id: 9, ph: "prep", who: "E", p: "P1", ms: "launch", t: "Plan de contenu : dix premières idées de tutoriels (hooks, angles, sujets)", per: "3 → 8 nov", dep: [], r: "Liste des dix vidéos de base" },
+    { id: 10, ph: "prep", who: "E", p: "P2", ms: "launch", t: "Inventaire des comptes sociaux existants : lesquels activer d’abord, lesquels attendre, quelles filiales méritent un compte séparé", per: "3 → 8 nov", dep: [], r: "Tableau des comptes et de leur rôle", tag: "adecider" },
+    { id: 11, ph: "prep", who: "EI", p: "P1", ms: "launch", t: "Prendre rendez-vous avec un avocat (consultation avant le lancement, onze questions prêtes, prix demandé avant)", per: "29 oct → 8 nov", dep: [], r: "Rendez-vous fixé avant le 15 décembre", tag: "juridique" },
+    { id: 12, ph: "prep", who: "EI", p: "P1", ms: "beta", t: "Première session UX ensemble : parcours complet, organisation des modules, vocabulaire", per: "6 → 8 nov", dep: [4], r: "Liste de corrections priorisée" },
+    { id: 13, ph: "prep", who: "E", p: "P1", ms: "launch", t: "Lancer les démarches Revolut Business et compte marchand (Ibrahim pour la partie technique)", per: "3 → 15 nov", dep: [], r: "Compte ouvert, accès au bac à sable", tag: "decide" },
+    // --- Semaines 1–2
+    { id: 14, ph: "s12", who: "I", p: "P0", ms: "beta", t: "Stockage des photos et emails (invitations, mot de passe oublié) en service sur l’environnement bêta", per: "9 → 13 nov", dep: [4], r: "Photos envoyées et relues, emails reçus" },
+    { id: 15, ph: "s12", who: "I", p: "P0", ms: "launch", t: "Paiement Revolut dans le code : carte enregistrée, débit mensuel, webhooks, relances à J+1, J+3, J+7, factures, résiliation en trois clics (bac à sable)", per: "9 → 22 nov", dep: [13], r: "Parcours de paiement testé en bac à sable" },
+    { id: 16, ph: "s12", who: "I", p: "P0", ms: "beta", t: "Corrections issues des sessions UX", per: "9 → 22 nov", dep: [12], r: "Corrections livrées avant la bêta" },
+    { id: 17, ph: "s12", who: "I", p: "P1", ms: "beta", t: "Track version simple si retenu pour la bêta : ventes du client, pages consultées par l’extension, comparables dans le panneau", per: "16 → 22 nov", dep: [36], r: "Disponible en bêta ou reporté", tag: "adecider" },
+    { id: 18, ph: "s12", who: "I", p: "P1", ms: "launch", t: "Radar : alertes sur les recherches enregistrées et note sur 100, sans aucun achat automatique", per: "16 → 22 nov", dep: [36], r: "Alertes testables", tag: "juridique" },
+    { id: 19, ph: "s12", who: "I", p: "P1", ms: "beta", t: "Site : page par filiale, mention d’indépendance (site et conditions), pages légales provisoires", per: "16 → 22 nov", dep: [27], r: "En ligne sur l’URL bêta" },
+    { id: 20, ph: "s12", who: "I", p: "P2", ms: "after", t: "Cloud : sessions chiffrées, navigateurs isolés, planificateur, journal (prototype interne, activation après l’avis de l’avocat)", per: "à partir du 16 nov, en continu", dep: [], r: "Prototype testé sur nos propres comptes", tag: "juridique" },
+    { id: 21, ph: "s12", who: "I", p: "P2", ms: "after", t: "Apprendre Discord ; maquette des salons et des rôles", per: "en continu jusqu’au 10 janv.", dep: [], r: "Maquette prête" },
+    { id: 22, ph: "s12", who: "E", p: "P0", ms: "beta", t: "Recruter et confirmer 15 à 20 bêta-testeurs (prise de contact, sélection, accord)", per: "9 → 20 nov", dep: [7], r: "Liste confirmée avec profils (comptes, outil actuel, volume)" },
+    { id: 23, ph: "s12", who: "E", p: "P0", ms: "beta", t: "Créer le groupe privé et fixer le fonctionnement de la bêta (règles, signalement, fréquence des points)", per: "16 → 20 nov", dep: [22], r: "Groupe prêt, règles publiées", tag: "adecider" },
+    { id: 24, ph: "s12", who: "E", p: "P0", ms: "beta", t: "Document d’instructions bêta finalisé (PDF) et envoyé la veille du début", per: "16 → 22 nov", dep: [8, 23], r: "PDF reçu par chaque testeur" },
+    { id: 25, ph: "s12", who: "E", p: "P1", ms: "beta", t: "Organisation des retours : tableau bugs / idées / UX, responsable du tri, rituel hebdomadaire", per: "9 → 15 nov", dep: [], r: "Tableau partagé opérationnel" },
+    { id: 26, ph: "s12", who: "E", p: "P1", ms: "launch", t: "Enregistrer la voix des trois premiers tutoriels et briefer Ibrahim (hooks, messages, CTA)", per: "9 → 22 nov", dep: [9], r: "Trois audios et scripts" },
+    { id: 27, ph: "s12", who: "E", p: "P0", ms: "beta", t: "Textes du site : page par filiale, FAQ, « Selio ou Bleam ? » et « alternative à Bleam » avec faits vérifiables", per: "9 → 15 nov", dep: [], r: "Textes livrés à Ibrahim" },
+    { id: 28, ph: "s12", who: "E", p: "P1", ms: "launch", t: "Premier contact Ilan Mbemba et Félix Beauregard : présentation, cadre d’affiliation, mentions publicitaires", per: "9 → 22 nov", dep: [], r: "Réponse obtenue (intérêt, conditions)", tag: "prop" },
+    { id: 29, ph: "s12", who: "E", p: "P2", ms: "launch", t: "Prospection : liste des communautés et groupes de revendeurs, messages prêts", per: "16 → 22 nov", dep: [], r: "Liste et messages" },
+    { id: 30, ph: "s12", who: "EI", p: "P0", ms: "beta", t: "Deux sessions UX (une par semaine) : compréhension, organisation des modules, vocabulaire", per: "13 nov et 20 nov", dep: [16], r: "Corrections priorisées, organisation validée" },
+    { id: 31, ph: "s12", who: "EI", p: "P0", ms: "beta", t: "GO / NO-GO bêta : parcours sans bloquant, 15 testeurs confirmés, document prêt, sauvegardes testées, feedback en place", per: "20 → 22 nov", dep: [5, 22, 24, 4, 6], r: "Décision écrite" },
+    { id: 32, ph: "s12", who: "EI", p: "P1", ms: "beta", t: "Prix de travail pour la bêta : afficher ou non les prix proposés ; place de la question prix dans le rapport final", per: "13 → 20 nov", dep: [], r: "Décision", tag: "adecider" },
+    { id: 36, ph: "s12", who: "EI", p: "P0", ms: "beta", t: "Périmètre de la bêta : liste fermée des fonctions testées (Manager et Studio ; Track simple et alertes Radar à décider)", per: "9 → 13 nov", dep: [], r: "Liste fermée", tag: "adecider" },
+    // --- Bêta
+    { id: 33, ph: "beta", who: "E", p: "P0", ms: "launch", t: "Onboarding des testeurs : envoi du PDF, accès, premier message collectif, relance individuelle", per: "S1 · 23 → 29 nov", dep: [24], r: "Tous actifs à J+3" },
+    { id: 34, ph: "beta", who: "I", p: "P0", ms: "launch", t: "Astreinte bugs : correction sous 48 h des bloquants, journal des incidents", per: "23 nov → 20 déc", dep: [], r: "Journal tenu, délai respecté" },
+    { id: 35, ph: "beta", who: "I", p: "P0", ms: "launch", t: "Mesure réelle de la charge avec 15 à 20 comptes (CPU, RAM, temps IA, file) et correction des réglages", per: "S1–S2 · 23 nov → 6 déc", dep: [2], r: "Tableau de mesures mis à jour", tag: "mesurer" },
+    { id: 37, ph: "beta", who: "EI", p: "P0", ms: "launch", t: "Point hebdomadaire bêta (30 min) : retours, décisions, priorités", per: "chaque semaine", dep: [], r: "Compte rendu et décisions" },
+    { id: 38, ph: "beta", who: "E", p: "P0", ms: "launch", t: "Collecte continue des retours, relance des testeurs silencieux", per: "S2–S3 · 30 nov → 13 déc", dep: [33], r: "Au moins 80 % de testeurs actifs" },
+    { id: 39, ph: "beta", who: "E", p: "P1", ms: "launch", t: "Idées, hooks et voix des dix vidéos de base (tutoriels d’abord)", per: "30 nov → 13 déc", dep: [26], r: "Dix audios et scripts" },
+    { id: 40, ph: "beta", who: "I", p: "P1", ms: "launch", t: "Montage et production des dix vidéos (IA et 3D si pertinent), déclinaisons par format, non publiées", per: "7 → 20 déc", dep: [39], r: "Dix vidéos prêtes avec leurs déclinaisons" },
+    { id: 41, ph: "beta", who: "I", p: "P0", ms: "launch", t: "Paiement Revolut réel : webhook créé, un vrai paiement puis un remboursement testés", per: "30 nov → 13 déc", dep: [13, 15], r: "Paiement validé en réel" },
+    { id: 42, ph: "beta", who: "I", p: "P1", ms: "launch", t: "Pages SEO : « alternative à Bleam / V-Tools / Clemz », « outil revendeur Vinted », « automatisation Vinted », sitemap, indexation préparée", per: "30 nov → 13 déc", dep: [27], r: "Pages prêtes, publiées à J-1" },
+    { id: 43, ph: "beta", who: "I", p: "P1", ms: "launch", t: "Préparer les campagnes : landing pages, UTM, mesure inscription → activation → paiement, tableau KPI", per: "7 → 20 déc", dep: [6], r: "Tableau KPI prêt ; budget à décider", tag: "adecider" },
+    { id: 44, ph: "beta", who: "EI", p: "P0", ms: "launch", t: "Consultation de l’avocat (Cloud, bot et mandat, responsabilité, Track, RGPD, API Vinted Pro, comptes multiples, IP, conditions consommateurs, import, influenceurs)", per: "avant le 15 déc", dep: [11], r: "Avis écrit", tag: "juridique" },
+    { id: 45, ph: "beta", who: "E", p: "P1", ms: "launch", t: "Négociation influenceurs : affiliation (part et durée), code promo par créateur, calendrier des vidéos, mentions", per: "30 nov → 13 déc", dep: [28], r: "Accords écrits, ou décision de lancer sans eux", tag: "prop" },
+    { id: 46, ph: "beta", who: "E", p: "P0", ms: "launch", t: "Rapport de fin de bêta : questionnaire (bugs, UX, utilité, crédibilité, prix, conversion) envoyé le 14 déc et collecté", per: "S4 · 14 → 20 déc", dep: [38], r: "Au moins 12 rapports reçus" },
+    { id: 47, ph: "beta", who: "EI", p: "P0", ms: "launch", t: "Synthèse de la bêta : réponse écrite aux cinq questions", per: "18 → 20 déc", dep: [46], r: "Synthèse partagée" },
+    { id: 48, ph: "beta", who: "EI", p: "P0", ms: "launch", t: "Décisions prix et offres : grille finale, remise bêta, règle multi-filiales, fondateurs, annuel, offres combinées", per: "18 → 20 déc", dep: [47, 35], r: "Grille décidée, TTC", tag: "adecider" },
+    { id: 49, ph: "beta", who: "EI", p: "P0", ms: "launch", t: "Décider l’essai : 14 jours avec ou sans carte", per: "au plus tard le 20 déc", dep: [47], r: "Décision et plan de mesure", tag: "adecider" },
+    { id: 50, ph: "beta", who: "I", p: "P0", ms: "launch", t: "Gel fonctionnel : plus de nouvelle fonction, corrections seulement", per: "à partir du 20 déc", dep: [], r: "Version candidate figée" },
+    { id: 51, ph: "beta", who: "EI", p: "P0", ms: "launch", t: "GO / NO-GO lancement (critères de la vue « Prêts ? »)", per: "20 déc", dep: [47, 48, 41, 44], r: "Décision écrite ; sinon J0 décalé au 4 janv." },
+    // --- Dernière semaine
+    { id: 52, ph: "j7", who: "E", p: "P0", ms: "launch", t: "Finaliser vidéos (versions par plateforme), textes, pages, offres", per: "21 → 24 déc", dep: [40, 48], r: "Tout validé à deux" },
+    { id: 53, ph: "j7", who: "E", p: "P0", ms: "launch", t: "Planifier les publications (J-1, J0, J+1 → J+21), emails et messages (liste d’attente, testeurs, partenaires), CTA, supports", per: "21 → 26 déc", dep: [52], r: "Calendrier de publication programmé" },
+    { id: 54, ph: "j7", who: "I", p: "P0", ms: "launch", t: "Mise en production : offres et prix en configuration, paiement réel actif, CGU / CGV / confidentialité finales, mention d’indépendance, résiliation en trois clics", per: "21 → 24 déc", dep: [48, 44, 41], r: "Production prête" },
+    { id: 55, ph: "j7", who: "I", p: "P0", ms: "launch", t: "Tests de charge finaux, sauvegarde et restauration testées, bascule de secours (ordinateur portable) testée, monitoring et alertes sur téléphone", per: "21 → 26 déc", dep: [50], r: "Rapport de test" },
+    { id: 56, ph: "j7", who: "I", p: "P0", ms: "launch", t: "Tracking actif (UTM, entonnoir, KPI) et support prêt (canal, délais, réponses types)", per: "21 → 26 déc", dep: [43], r: "Opérationnels" },
+    { id: 57, ph: "j7", who: "I", p: "P1", ms: "launch", t: "Comptes des bêta-testeurs convertis en comptes normaux, remise bêta appliquée si validée", per: "26 déc", dep: [48], r: "Migration faite, testeurs prévenus", tag: "prop" },
+    { id: 58, ph: "j7", who: "EI", p: "P0", ms: "launch", t: "Répétition générale de J0 (checklist complète) et plan d’incident", per: "26 déc", dep: [54, 55, 56], r: "Répétition OK" },
+    // --- J-1
+    { id: 59, ph: "j1", who: "E", p: "P0", ms: "launch", t: "Grande vague : publication simultanée sur les comptes prioritaires, emails à la liste d’attente, partenaires et créateurs", per: "dim. 27 déc", dep: [53], r: "Publié ; site en « ouverture demain »" },
+    { id: 60, ph: "j1", who: "I", p: "P0", ms: "launch", t: "Veille technique J-1 : trafic sur le site, liste d’attente, erreurs ; inscriptions ouvertes à J0 seulement", per: "dim. 27 déc", dep: [58], r: "Aucun incident" },
+    // --- J0
+    { id: 61, ph: "j0", who: "E", p: "P0", ms: "launch", t: "Ouverture publique : communication, acquisition, contenu, partenaires, support commercial, pilotage des KPI", per: "lun. 28 déc", dep: [59], r: "J0 tenu" },
+    { id: 62, ph: "j0", who: "I", p: "P0", ms: "launch", t: "Ouverture technique : inscriptions, paiement, support, tracking, monitoring, capacité, stabilité, surveillance Vinted", per: "lun. 28 déc", dep: [60], r: "Zéro incident bloquant" },
+    // --- Après
+    { id: 63, ph: "after", who: "E", p: "P0", ms: "after", t: "Contenu par phases : tutoriels (J0 → J+21), fonctionnalités, migration, comparatifs, IA, conversion", per: "28 déc → mars", dep: [61], r: "Calendrier tenu, FAQ alimentée" },
+    { id: 64, ph: "after", who: "I", p: "P0", ms: "after", t: "Stabilité quotidienne : bugs, capacité, paiements, surveillance des changements de Vinted", per: "en continu", dep: [62], r: "Journal d’incidents" },
+    { id: 65, ph: "after", who: "I", p: "P1", ms: "after", t: "Discord public vers J+14 : salons, rôles, modération, règles, FAQ, annonces", per: "≈ 11 janv. 2027", dep: [21], r: "Discord ouvert, pas vide" },
+    { id: 66, ph: "after", who: "EI", p: "P1", ms: "after", t: "Revues J+7 et J+30 : inscriptions, activation, conversion, CAC, MRR, churn ; décisions sur la publicité et les offres", per: "4 janv. et 27 janv.", dep: [56], r: "Compte rendu et décisions", tag: "mesurer" },
+    { id: 67, ph: "after", who: "I", p: "P2", ms: "after", t: "Cloud et Radar Auto : activation seulement après l’avis de l’avocat et les mesures", per: "après l’avis", dep: [44, 20], r: "Décision à deux", tag: "juridique" },
+    { id: 68, ph: "after", who: "EI", p: "P2", ms: "after", t: "Roadmap des idées produit (liste des 29 idées non fournie ici ; pistes du compte rendu) : priorisation trimestrielle", per: "janv. 2027", dep: [], r: "Roadmap priorisée" },
+  ];
+  const DECISIONS = [
+    { q: "Dates exactes du calendrier (début de bêta, J0 le 28 déc. ou le 4 janv.)", o: "28 déc. 2026 · 4 janv. 2027", n: "Disponibilité des deux, de l’avocat et des partenaires fin décembre", b: "2 nov.", s: "adecider" },
+    { q: "Essai gratuit : 14 jours avec ou sans carte", o: "Avec carte · Sans carte", n: "Comparer inscriptions, activation, usage, conversion payante, abus ; réponses prix de la bêta", b: "20 déc.", s: "adecider" },
+    { q: "Grille de prix et d’offres", o: "Propositions V3 · ajustées après la bêta", n: "Rapports de fin de bêta (prix cohérent, trop élevé), mesures de capacité", b: "20 déc.", s: "adecider" },
+    { q: "Remise bêta −20 % sur le premier mois", o: "Oui · autre montant · non", n: "Décision ensemble ; à annoncer aux testeurs avant la fin de la bêta", b: "20 déc.", s: "prop" },
+    { q: "Règle multi-filiales : −10 % par filiale supplémentaire", o: "Oui · autre règle · offres combinées", n: "Simulation de panier, simplicité d’affichage", b: "20 déc.", s: "prop" },
+    { q: "Offre fondateurs et annuel (2 mois offerts)", o: "Garder · modifier", n: "Impact sur le revenu des premiers mois", b: "20 déc.", s: "prop" },
+    { q: "Périmètre de la bêta", o: "Manager + Studio · + Track simple · + alertes Radar", n: "Stabilité à la fin des semaines 1–2 ; avis juridique pour la surveillance", b: "13 nov.", s: "adecider" },
+    { q: "Outil du groupe privé de bêta", o: "WhatsApp · Telegram · Discord privé", n: "Habitudes des testeurs ; réutilisation pour le Discord public", b: "16 nov.", s: "adecider" },
+    { q: "Comptes sociaux actifs à J-1", o: "Selio Global seul · + comptes par filiale", n: "Capacité de production, efficacité", b: "8 nov.", s: "adecider" },
+    { q: "Budget publicitaire", o: "Montant initial · règle de réinvestissement", n: "Résultats de la bêta, CAC mesuré", b: "après J+7", s: "adecider" },
+    { q: "Cloud au lancement", o: "Oui si l’avocat valide · après", n: "Avis écrit de l’avocat ; mesures de capacité", b: "20 déc.", s: "juridique" },
+    { q: "Radar Auto (achat automatique)", o: "Après l’avocat seulement", n: "Mandat d’achat, responsabilité", b: "après l’avis", s: "juridique" },
+    { q: "Partenariats influenceurs", o: "Affiliation · vidéo payée · sans eux", n: "Réponses d’Ilan Mbemba et de Félix Beauregard, coût, mentions", b: "13 déc.", s: "prop" },
+    { q: "Hébergement des clients payants", o: "Tout chez Ibrahim · site et base sur un petit serveur loué en France", n: "Mesures de fiabilité pendant la bêta, coût", b: "20 déc.", s: "adecider" },
+  ];
+  const MATRIX = {
+    decide: ["Lancement public fin décembre 2026", "Bêta fermée de 4 semaines, 15 à 20 testeurs", "Répartition des rôles Elias / Ibrahim", "Grande vague de communication à J-1, pas avant", "Support dès J0 ; Discord public vers J+14", "Mention d’indépendance vis-à-vis de Vinted partout", "Interdits : CAPTCHA, IP masquée, identifiants concurrents, scraping, promesses « zéro risque »", "Modules V3 : Manager, Studio, Track, Radar, Radar Auto, Cloud", "Vidéos pensées comme matière première ; pas d’objectif de 30", "Ordre des phases de contenu : tutoriels → fonctionnalités → migration → comparatifs → IA → conversion", "SEO sans garantie de position ; KPI publicitaires", "Paiement Revolut, Mollie en secours (réunion)", "Pas de compte Vinted à la carte (réunion)", "Machine à 400 € chez Ibrahim"],
+    prop: ["Dates exactes : 23 nov. → 20 déc. pour la bêta, J0 le 28 déc.", "Remise bêta −20 % premier mois", "−10 % par filiale supplémentaire", "Prix : 6,99 / 24,99 / 49,99 €, Studio, Radar 14,99 €, Radar Auto 29,99 €, Cloud 9,99 €", "Annuel = 2 mois offerts ; offre fondateurs", "Dix vidéos de base pendant la bêta", "Ilan Mbemba et Félix Beauregard en affiliation", "Parrainage : un mois offert aux deux", "Seuil de gestion : moins de 100 € par client acquis"],
+    adecider: ["Essai avec ou sans carte", "Grille finale de prix et d’offres", "Périmètre de la bêta", "Outil du groupe privé", "Comptes sociaux actifs d’abord", "Budget publicitaire", "Offres combinées", "Date J0 : 28 déc. ou 4 janv.", "Hébergement des clients payants"],
+    juridique: ["Cloud (sessions, IP partagée)", "Radar Auto et mandat d’achat", "Responsabilité face aux consommateurs", "Collecte de Track", "RGPD (registre, durées, sous-traitants)", "API Vinted Pro", "Comptes multiples", "Conditions de vente (résiliation, renouvellement)", "Import des réglages concurrents", "Contrats d’affiliation"],
+    mesurer: ["CPU, GPU, RAM, VRAM de la machine", "Réponses par minute, secondes par photo", "Comptes simultanés, file d’attente, capacité maximale", "Coût par requête et par mois", "Taux visite → essai, essai → payant, churn", "CAC par canal, vues et clics des créateurs", "Taux de blocage Vinted et vitesse de détection Radar", "Charge réelle avec 15 à 20 testeurs"],
+  };
+  const LABELS = { decide: "Décidé", prop: "Proposition", adecider: "À décider", juridique: "À valider juridiquement", mesurer: "À mesurer" };
+  const WHO = { E: "Elias", I: "Ibrahim", EI: "Ensemble" };
+  const MS = { beta: "Avant la bêta", launch: "Avant le lancement", after: "Après le lancement" };
+  const STATUSES = [["afaire", "À faire"], ["encours", "En cours"], ["fait", "Fait"], ["bloque", "Bloqué"]];
+
+  // ------------------------------------------------------------ Mémoire locale (par navigateur)
+  const KEY = "selio-v4-master";
+  let state = { tasks: {}, checks: {}, filters: {}, date: null };
+  try { const raw = localStorage.getItem(KEY); if (raw) state = Object.assign(state, JSON.parse(raw)); } catch (_) {}
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} };
+  const statusOf = (t) => state.tasks[t.id] || "afaire";
+  const byId = new Map(TASKS.map((t) => [t.id, t]));
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  // ------------------------------------------------------------ Dates
+  const parse = (s) => new Date(s + "T00:00:00");
+  const refDate = () => (state.date ? parse(state.date) : new Date(new Date().toISOString().slice(0, 10) + "T00:00:00"));
+  const phaseOf = (d) => PHASES.find((p) => d >= parse(p.from) && d <= parse(p.to)) || (d < parse(PHASES[0].from) ? PHASES[0] : PHASES[PHASES.length - 1]);
+  const phaseIndex = (id) => PHASES.findIndex((p) => p.id === id);
+  const fmt = (d) => d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const daysBetween = (a, b) => Math.round((b - a) / 86400000);
+
+  // ------------------------------------------------------------ Blocage : dépendance non faite alors que la phase a commencé
+  function blockers(t) {
+    const d = refDate();
+    const started = d >= parse(PHASES[phaseIndex(t.ph)].from);
+    if (!started || statusOf(t) === "fait") return [];
+    return t.dep.map((id) => byId.get(id)).filter((x) => x && statusOf(x) !== "fait");
+  }
+
+  // ------------------------------------------------------------ Rendu : badges
+  const badge = (k) => `<span class="b ${k}">${LABELS[k]}</span>`;
+  const who = (w) => `<span class="who ${w}">${WHO[w]}</span>`;
+  const prio = (p) => `<span class="p ${p}">${p}</span>`;
+
+  // ------------------------------------------------------------ Workflow
+  function wfRow(t) {
+    const st = statusOf(t);
+    const bl = blockers(t);
+    const cls = (st === "fait" ? "done" : "") + (bl.length ? " blocked" : "");
+    const deps = t.dep.length ? t.dep.map((id) => { const d = byId.get(id); const late = d && statusOf(d) !== "fait" && bl.includes(d); return `<span class="${late ? "late" : ""}">n° ${id}</span>`; }).join(", ") : "—";
+    const opts = STATUSES.map(([v, l]) => `<option value="${v}" ${v === st ? "selected" : ""}>${l}</option>`).join("");
+    return `<tr class="${cls}" data-id="${t.id}">
+      <td class="mono small muted">${t.id}</td>
+      <td class="task">${esc(t.t)}${t.tag ? " " + badge(t.tag) : ""}</td>
+      <td>${who(t.who)}</td>
+      <td class="small">${esc(t.per)}</td>
+      <td class="dep">${deps}</td>
+      <td>${prio(t.p)}</td>
+      <td class="small">${esc(t.r)}<div class="ms">${MS[t.ms]}</div></td>
+      <td><select class="st s-${st}" data-id="${t.id}" aria-label="Statut de la tâche ${t.id}">${opts}</select></td>
+    </tr>`;
+  }
+  function filterTasks() {
+    const f = state.filters || {};
+    const q = (f.q || "").trim().toLowerCase();
+    return TASKS.filter((t) => {
+      if (f.who && f.who.length && !f.who.includes(t.who)) return false;
+      if (f.prio && f.prio.length && !f.prio.includes(t.p)) return false;
+      if (f.ms && f.ms.length && !f.ms.includes(t.ms)) return false;
+      if (f.open && statusOf(t) === "fait") return false;
+      if (q && !(t.t + " " + t.r + " " + t.per + " " + WHO[t.who]).toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }
+  function renderWorkflow() {
+    const list = filterTasks();
+    const host = document.getElementById("wfTables");
+    host.innerHTML = PHASES.map((p) => {
+      const rows = list.filter((t) => t.ph === p.id);
+      if (!rows.length) return "";
+      const done = rows.filter((t) => statusOf(t) === "fait").length;
+      return `<div><h3 style="margin:6px 0 8px;font-size:1rem">${p.t} <span class="muted small" style="font-weight:400">· ${p.d} · ${done}/${rows.length} faites</span></h3>
+        <div class="tablewrap"><table><thead><tr><th>n°</th><th style="min-width:280px">Tâche</th><th>Responsable</th><th>Période</th><th>Dépendance</th><th>Priorité</th><th style="min-width:200px">Résultat attendu</th><th>Statut</th></tr></thead><tbody>${rows.map(wfRow).join("")}</tbody></table></div></div>`;
+    }).join("");
+    document.getElementById("wfCount").textContent = `${list.length} tâche(s) affichée(s) sur ${TASKS.length} · ${TASKS.filter((t) => statusOf(t) === "fait").length} faites · ${TASKS.filter((t) => blockers(t).length).length} bloquées`;
+    host.querySelectorAll("select.st").forEach((s) => s.addEventListener("change", (e) => { state.tasks[Number(e.target.dataset.id)] = e.target.value; save(); renderAll(); }));
+  }
+
+  // ------------------------------------------------------------ Phases / calendrier
+  function renderPhases() {
+    const d = refDate();
+    const cur = phaseOf(d);
+    document.getElementById("phases").innerHTML = PHASES.map((p) => {
+      const ts = TASKS.filter((t) => t.ph === p.id);
+      const done = ts.filter((t) => statusOf(t) === "fait").length;
+      const pct = ts.length ? Math.round((100 * done) / ts.length) : 0;
+      return `<div class="ph ${p.id === cur.id ? "now" : ""}">${p.id === cur.id ? '<span class="now-tag">EN COURS</span>' : ""}<div class="t">${p.t}</div><div class="d">${p.d}</div><div class="prog"><i style="width:${pct}%"></i></div><div class="n">${done}/${ts.length} tâches faites</div><div class="n">${p.note}</div></div>`;
+    }).join("");
+  }
+
+  // ------------------------------------------------------------ Maintenant
+  function renderNow() {
+    const d = refDate();
+    const cur = phaseOf(d);
+    const idx = phaseIndex(cur.id);
+    const j0 = parse("2026-12-28");
+    const days = daysBetween(d, j0);
+    document.getElementById("nowLead").textContent = `Date de référence : ${fmt(d)}. ${days > 0 ? `J-${days} avant le lancement proposé (lundi 28 décembre 2026).` : days === 0 ? "C’est J0." : `J+${-days} après le lancement.`}`;
+    document.getElementById("nowPhase").innerHTML = `<b>${cur.t}</b> · ${cur.d}<br><span class="muted">${cur.note}</span>`;
+    const open = TASKS.filter((t) => t.ph === cur.id && statusOf(t) !== "fait").sort((a, b) => a.p.localeCompare(b.p));
+    const col = (w) => open.filter((t) => t.who === w).map((t) => { const bl = blockers(t); return `<div class="now-item"><div>${esc(t.t)}</div><div class="m">${prio(t.p)}<span class="small muted">${esc(t.per)}</span>${t.tag ? badge(t.tag) : ""}${bl.length ? `<span class="small" style="color:var(--bad)">bloquée par n° ${bl.map((x) => x.id).join(", ")}</span>` : ""}</div></div>`; }).join("") || `<p class="small muted">Rien d’ouvert dans cette phase.</p>`;
+    document.getElementById("nowE").innerHTML = col("E");
+    document.getElementById("nowI").innerHTML = col("I");
+    document.getElementById("nowEI").innerHTML = col("EI");
+    const bl = TASKS.filter((t) => blockers(t).length);
+    document.getElementById("nowBlockers").innerHTML = bl.length ? `<ul class="clean">${bl.map((t) => `<li><b>n° ${t.id}</b> ${esc(t.t)} ← attend n° ${blockers(t).map((x) => x.id).join(", ")}</li>`).join("")}</ul>` : "Aucune tâche bloquée à cette date.";
+    const dec = open.filter((t) => t.tag === "adecider" || t.tag === "juridique");
+    document.getElementById("nowDecisions").innerHTML = dec.length ? dec.map((t) => `<li>${esc(t.t)} ${badge(t.tag)}</li>`).join("") : "<li>Aucune dans cette phase.</li>";
+    const late = TASKS.filter((t) => phaseIndex(t.ph) < idx && statusOf(t) !== "fait");
+    document.getElementById("nowLate").innerHTML = late.length ? late.map((t) => `<li><b>n° ${t.id}</b> ${esc(t.t)} ${who(t.who)} ${prio(t.p)}</li>`).join("") : "<li>Rien en retard.</li>";
+  }
+
+  // ------------------------------------------------------------ Décisions
+  function renderDecisions() {
+    document.getElementById("matrix").innerHTML = Object.keys(MATRIX).map((k) => `<div class="col"><h3>${badge(k)}</h3><ul>${MATRIX[k].map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`).join("");
+    document.getElementById("decisionRows").innerHTML = DECISIONS.map((x) => `<tr><td class="k">${esc(x.q)}</td><td class="small">${esc(x.o)}</td><td class="small">${esc(x.n)}</td><td class="small">${esc(x.b)}</td><td>${badge(x.s)}</td></tr>`).join("");
+    document.getElementById("tileDecisions").textContent = String(DECISIONS.length);
+  }
+
+  // ------------------------------------------------------------ Jauges
+  function renderGauges() {
+    const launch = TASKS.filter((t) => t.p === "P0" && t.ms !== "after");
+    const ld = launch.filter((t) => statusOf(t) === "fait").length;
+    const lp = Math.round((100 * ld) / launch.length);
+    const beta = TASKS.filter((t) => t.ms === "beta");
+    const bd = beta.filter((t) => statusOf(t) === "fait").length;
+    const bp = Math.round((100 * bd) / beta.length);
+    document.getElementById("readyBar").style.width = lp + "%";
+    document.getElementById("readyPct").textContent = lp + " %";
+    document.getElementById("readyRing").style.setProperty("--p", lp);
+    document.getElementById("readyBig").textContent = lp + " %";
+    document.getElementById("readyText").textContent = `${ld} tâche(s) P0 « avant le lancement » faite(s) sur ${launch.length}. Les critères GO / NO-GO ci-dessous se cochent à deux.`;
+    document.getElementById("betaRing").style.setProperty("--p", bp);
+    document.getElementById("betaBig").textContent = bp + " %";
+    document.getElementById("betaText").textContent = `${bd} tâche(s) « avant la bêta » faite(s) sur ${beta.length}. Entrée en bêta proposée le lundi 23 novembre.`;
+    document.getElementById("tileTasks").textContent = String(TASKS.length);
+    document.getElementById("tileP0").textContent = String(TASKS.filter((t) => t.p === "P0").length);
+  }
+
+  // ------------------------------------------------------------ Checklists mémorisées
+  function bindChecks() {
+    document.querySelectorAll(".check[data-store]").forEach((box) => {
+      const key = box.dataset.store;
+      box.querySelectorAll("input[type=checkbox]").forEach((cb, i) => {
+        cb.id = cb.id || `chk-${key}-${i}`;
+        cb.checked = !!(state.checks[key] && state.checks[key][i]);
+        cb.addEventListener("change", () => { state.checks[key] = state.checks[key] || []; state.checks[key][i] = cb.checked; save(); });
+      });
+    });
+  }
+
+  // ------------------------------------------------------------ Mind map (SVG)
+  function renderMindmap() {
+    const svg = document.getElementById("mindmap");
+    const cx = 550, cy = 310;
+    const branches = [
+      { t: "Produit / Tech", v: "produits", a: -90, leaves: ["Manager + Studio stables", "3 modèles d’IA sur la machine", "Paiement Revolut", "Cloud, Radar : après l’avocat"] },
+      { t: "Bêta 4 semaines", v: "beta", a: -30, leaves: ["15–20 testeurs, groupe privé", "PDF d’instructions", "Rapport de fin de bêta", "Remise −20 % (proposition)"] },
+      { t: "Contenu & Social", v: "contenu", a: 30, leaves: ["10 vidéos de base", "Elias : idées et voix", "Ibrahim : montage", "6 phases de contenu"] },
+      { t: "Acquisition / SEO", v: "acquisition", a: 90, leaves: ["Alternative à Bleam, V-Tools, Clemz", "KPI : inscriptions → paiement", "Budget pub à décider", "Influenceurs (proposition)"] },
+      { t: "Lancement", v: "lancement", a: 150, leaves: ["J-7 : tout prêt", "J-1 : grande vague", "J0 : fin déc. 2026", "GO / NO-GO à deux"] },
+      { t: "Support / Communauté", v: "support", a: 210, leaves: ["Support dès J0", "Discord public ≈ J+14", "FAQ et aide", "Juridique : avocat avant J0"] },
+    ];
+    const R = 190, RL = 150;
+    let out = `<defs><linearGradient id="gc" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#5232B5"/><stop offset="1" stop-color="#7C5CEB"/></linearGradient></defs>`;
+    const stroke = getComputedStyle(document.documentElement).getPropertyValue("--line-strong").trim() || "#D6D3DE";
+    const ink = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#1C1A24";
+    const muted = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim() || "#6E6A7B";
+    const surface = getComputedStyle(document.documentElement).getPropertyValue("--surface").trim() || "#fff";
+    const soft = getComputedStyle(document.documentElement).getPropertyValue("--accent-soft").trim() || "#ECE6FF";
+    branches.forEach((b) => {
+      const rad = (b.a * Math.PI) / 180;
+      const x = cx + Math.cos(rad) * R, y = cy + Math.sin(rad) * R;
+      out += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${stroke}" stroke-width="2"/>`;
+      b.leaves.forEach((l, i) => {
+        const spread = (i - (b.leaves.length - 1) / 2) * 24;
+        const r2 = (b.a + spread) * Math.PI / 180;
+        const lx = x + Math.cos(r2) * RL, ly = y + Math.sin(r2) * RL;
+        out += `<line x1="${x}" y1="${y}" x2="${lx}" y2="${ly}" stroke="${stroke}" stroke-width="1.5"/>`;
+        const w = Math.min(230, l.length * 6.4 + 24);
+        out += `<g class="map-node" data-view="${b.v}"><rect x="${lx - w / 2}" y="${ly - 13}" width="${w}" height="26" rx="13" fill="${surface}" stroke="${stroke}"/><text x="${lx}" y="${ly + 4}" text-anchor="middle" font-size="11" fill="${ink}">${esc(l)}</text></g>`;
+      });
+      const w = b.t.length * 7.6 + 28;
+      out += `<g class="map-node" data-view="${b.v}"><rect x="${x - w / 2}" y="${y - 17}" width="${w}" height="34" rx="17" fill="${soft}" stroke="${stroke}"/><text x="${x}" y="${y + 5}" text-anchor="middle" font-size="13" font-weight="600" fill="${ink}">${esc(b.t)}</text></g>`;
+    });
+    out += `<g class="map-node" data-view="couverture"><ellipse cx="${cx}" cy="${cy}" rx="78" ry="44" fill="url(#gc)"/><text x="${cx}" y="${cy - 2}" text-anchor="middle" font-size="18" font-weight="700" fill="#fff">SELIO V4</text><text x="${cx}" y="${cy + 17}" text-anchor="middle" font-size="10" fill="#E2C67C" letter-spacing="1.5">LANCEMENT FIN DÉC. 2026</text></g>`;
+    out += `<text x="20" y="605" font-size="11" fill="${muted}">Cliquer une bulle pour ouvrir la vue.</text>`;
+    svg.innerHTML = out;
+    svg.querySelectorAll(".map-node").forEach((n) => n.addEventListener("click", () => { location.hash = n.dataset.view; }));
+  }
+
+  // ------------------------------------------------------------ Filtres
+  function bindFilters() {
+    const f = state.filters = state.filters || {};
+    document.querySelectorAll("#wfFilters .chip").forEach((c) => {
+      const k = c.dataset.f, v = c.dataset.v;
+      const on = k === "open" ? !!f.open : (f[k] || []).includes(v);
+      c.setAttribute("aria-pressed", on ? "true" : "false");
+      c.addEventListener("click", () => {
+        if (k === "open") f.open = !f.open; else { f[k] = f[k] || []; const i = f[k].indexOf(v); if (i >= 0) f[k].splice(i, 1); else f[k].push(v); }
+        save(); bindFilters(); renderWorkflow();
+      }, { once: true });
+    });
+    const s = document.getElementById("wfSearch");
+    s.value = f.q || "";
+    s.oninput = () => { f.q = s.value; save(); renderWorkflow(); };
+  }
+
+  // ------------------------------------------------------------ Vues (hash)
+  const VIEWS = ["couverture", "mindmap", "maintenant", "calendrier", "workflow", "decisions", "produits", "beta", "contenu", "acquisition", "lancement", "support", "juridique", "capacite", "prix", "prets", "sources"];
+  function showView() {
+    const h = (location.hash || "#couverture").slice(1);
+    const v = VIEWS.includes(h) ? h : "couverture";
+    document.querySelectorAll("section.view").forEach((s) => s.classList.toggle("on", s.id === "v-" + v));
+    document.querySelectorAll("nav.views a").forEach((a) => { if (a.getAttribute("href") === "#" + v) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+    const cur = document.querySelector('nav.views a[aria-current="page"]');
+    if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest", inline: "center" });
+    window.scrollTo({ top: 0 });
+    if (v === "mindmap") renderMindmap();
+  }
+  window.addEventListener("hashchange", showView);
+
+  // ------------------------------------------------------------ Divers
+  const toast = (m) => { const t = document.getElementById("toast"); t.textContent = m; t.classList.add("on"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("on"), 1800); };
+  document.getElementById("copyState").addEventListener("click", () => {
+    const lines = PHASES.map((p) => { const ts = TASKS.filter((t) => t.ph === p.id); return `${p.t} (${p.d}) : ${ts.filter((t) => statusOf(t) === "fait").length}/${ts.length} faites\n` + ts.filter((t) => statusOf(t) !== "fait").map((t) => `  - [${t.p}] n° ${t.id} ${WHO[t.who]} · ${t.t}${statusOf(t) === "encours" ? " (en cours)" : ""}${statusOf(t) === "bloque" ? " (bloqué)" : ""}`).join("\n"); });
+    const txt = `Selio V4 Master · avancement au ${fmt(refDate())}\n\n` + lines.join("\n\n");
+    const done = () => toast("Avancement copié");
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done).catch(() => fallbackCopy(txt, done)); else fallbackCopy(txt, done);
+  });
+  function fallbackCopy(txt, done) { const ta = document.createElement("textarea"); ta.value = txt; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (_) { toast("Copie impossible : sélectionnez le texte à la main"); } document.body.removeChild(ta); }
+  document.getElementById("resetState").addEventListener("click", () => { state.tasks = {}; save(); renderAll(); toast("Statuts remis à « À faire »"); });
+  const nd = document.getElementById("nowDate");
+  nd.value = state.date || new Date().toISOString().slice(0, 10);
+  nd.addEventListener("change", () => { state.date = nd.value || null; save(); renderAll(); });
+  document.getElementById("nowReset").addEventListener("click", () => { state.date = null; nd.value = new Date().toISOString().slice(0, 10); save(); renderAll(); });
+
+  function renderAll() { renderWorkflow(); renderPhases(); renderNow(); renderGauges(); }
+  bindFilters(); bindChecks(); renderDecisions(); renderAll(); showView();
+})();
+</script>
+
+</body>
+</html>

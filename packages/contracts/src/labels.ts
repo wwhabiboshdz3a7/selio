@@ -1,0 +1,128 @@
+import type { ConnectorStatus, Capability, ConnectionUsage } from "./connections";
+import type { ItemCategory, ItemCondition, ItemStatus } from "./inventory";
+import type { MessageStatus } from "./messaging";
+import type { OrderStatus } from "./orders";
+import type { JobStatus, RuleKind } from "./automation";
+import type { Plan, SubscriptionStatus } from "./org";
+import type { Role } from "./common";
+
+/** Libellés français partagés (web, extension, exports). */
+export const ITEM_STATUS_LABELS: Record<ItemStatus, string> = {
+  in_stock: "En stock",
+  listed: "En vente",
+  reserved: "Réservé",
+  sold: "Vendu",
+  archived: "Archivé",
+};
+
+export const ITEM_CONDITION_LABELS: Record<ItemCondition, string> = {
+  new_with_tags: "Neuf avec étiquette",
+  new_without_tags: "Neuf sans étiquette",
+  very_good: "Très bon état",
+  good: "Bon état",
+  satisfactory: "Satisfaisant",
+};
+
+export const ITEM_CATEGORY_LABELS: Record<ItemCategory, string> = {
+  women: "Femmes",
+  men: "Hommes",
+  kids: "Enfants",
+  shoes: "Chaussures",
+  bags: "Sacs",
+  accessories: "Accessoires",
+  home: "Maison",
+  electronics: "Électronique",
+  other: "Autre",
+};
+
+export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  pending: "En attente",
+  paid: "Payée",
+  shipped: "Expédiée",
+  delivered: "Livrée",
+  completed: "Terminée",
+  cancelled: "Annulée",
+  refunded: "Remboursée",
+};
+
+export const MESSAGE_STATUS_LABELS: Record<MessageStatus, string> = {
+  received: "Reçu",
+  draft: "Brouillon",
+  pending: "En attente",
+  sent: "Envoyé",
+  failed: "Échec",
+};
+
+export const CONNECTOR_STATUS_LABELS: Record<ConnectorStatus, string> = {
+  not_configured: "Non configuré",
+  ready: "Prêt",
+  connected: "Connecté",
+  degraded: "Dégradé",
+  expired: "Expiré",
+  disconnected: "Déconnecté",
+  unsupported: "Non pris en charge",
+};
+
+export const CONNECTION_USAGE_LABELS: Record<ConnectionUsage, string> = {
+  sale: "Vente",
+  purchase: "Achat",
+  personal: "Perso",
+};
+
+/** Ce que Selio fait (et ne fait pas) avec un compte de chaque catégorie. */
+export const CONNECTION_USAGE_DESCRIPTIONS: Record<ConnectionUsage, string> = {
+  sale: "Annonces publiées et négociées par Selio : générateur, dressing, messagerie et automatisations.",
+  purchase: "Compte qui achète les bonnes affaires repérées par le radar (achats validés ou automatiques).",
+  personal: "Compte personnel : visible ici, mais jamais utilisé par les automatisations ni par l'achat auto.",
+};
+
+export const CAPABILITY_LABELS: Record<Capability, string> = {
+  read_items: "Lire les articles",
+  read_conversations: "Lire les conversations",
+  sync_orders: "Synchroniser les commandes",
+  prepare_message: "Préparer un message",
+  send_message: "Envoyer un message",
+  shipping_document: "Document d'expédition",
+};
+
+export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
+  queued: "En file",
+  running: "En cours",
+  succeeded: "Réussi",
+  failed: "Échec",
+  cancelled: "Annulé",
+  skipped: "Ignoré",
+  awaiting_approval: "À valider",
+};
+
+export const RULE_KIND_LABELS: Record<RuleKind, string> = {
+  reply_on_new_message: "Réponse à un nouveau message",
+  follow_up_no_reply: "Relance sans réponse",
+  auto_negotiate: "Négociation automatique",
+  post_sale_message: "Message après-vente",
+  relist_stale: "Remise en avant d'un article dormant",
+  price_drop_stale: "Baisse de prix d'un article dormant",
+};
+
+export const ROLE_LABELS: Record<Role, string> = {
+  owner: "Propriétaire",
+  admin: "Administrateur",
+  operator: "Opérateur",
+  viewer: "Lecture seule",
+};
+
+/**
+ * « free » est l'accès minimal sans abonnement (hors essai). L'essai gratuit de 14 jours
+ * (TRIAL_DAYS) donne les fonctions et limites du plan Pro ; il n'a pas de libellé de plan.
+ */
+export const PLAN_LABELS: Record<Plan, string> = { free: "Accès de base", starter: "Starter", pro: "Pro", agence: "Agence" };
+
+/** États d'un abonnement, en français (jamais le code brut à l'écran). */
+export const SUBSCRIPTION_STATUS_LABELS: Record<SubscriptionStatus, string> = {
+  none: "Sans abonnement",
+  trialing: "Essai en cours",
+  active: "Actif",
+  past_due: "Paiement en retard",
+  canceled: "Résilié",
+  incomplete: "Incomplet",
+};
