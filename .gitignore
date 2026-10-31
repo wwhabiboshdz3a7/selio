@@ -18,3 +18,4 @@ video/out/*_noaudio.mp4
 video/audio/*.log
 video/audio/*.wav
 video/audio45/
+video/out/qa*/
