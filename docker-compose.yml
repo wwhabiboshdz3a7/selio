@@ -30,42 +30,40 @@ services:
       timeout: 3s
       retries: 20
 
-  # --- Stockage des photos : MinIO, compatible S3 — POUR LE DÉVELOPPEMENT LOCAL UNIQUEMENT ---
-  # Identifiants de dev connus de tous ; en production MinIO tourne sur la machine de Marseille
-  # avec des identifiants longs, sans console exposée, derrière le tunnel (voir docs/STOCKAGE.md).
-  minio:
-    image: minio/minio
-    command: server /data --console-address ":9001"
+  # --- Stockage des photos : Garage, compatible S3 — POUR LE DÉVELOPPEMENT LOCAL UNIQUEMENT ---
+  # (MinIO a cessé de distribuer ses images Docker : Garage le remplace, en local comme en production.)
+  # Secrets de dev connus de tous ; en production, deploy/docker-compose.machine.yml avec deploy/.env
+  # (docs/STOCKAGE.md, docs/PC-WINDOWS-IA.md).
+  garage:
+    image: dxflrs/garage:v2.5.0
     environment:
-      MINIO_ROOT_USER: selio-minio
-      MINIO_ROOT_PASSWORD: selio-minio-secret
+      GARAGE_RPC_SECRET: 5e110de55e110de55e110de55e110de55e110de55e110de55e110de55e110de5
+      GARAGE_ADMIN_TOKEN: selio-garage-admin-dev
     ports:
-      - "9000:9000" # API S3 (STORAGE_ENDPOINT=http://127.0.0.1:9000)
-      - "9001:9001" # console web (http://127.0.0.1:9001)
+      - "127.0.0.1:3900:3900" # API S3 (STORAGE_ENDPOINT=http://127.0.0.1:3900)
     volumes:
-      - selio_minio:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
+      - ./deploy/garage/garage.toml:/etc/garage.toml:ro
+      - selio_garage_meta:/var/lib/garage/meta
+      - selio_garage_data:/var/lib/garage/data
 
-  # Crée le bucket « selio-photos » au démarrage (idempotent), sans aucun accès anonyme, puis s'arrête.
-  minio-init:
-    image: minio/mc
-    depends_on:
-      minio:
-        condition: service_healthy
+  # Prépare Garage (capacité, bucket « selio-photos », clé de dev, CORS pour le site local), puis s'arrête.
+  garage-init:
+    image: node:22-alpine
     restart: "no"
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 selio-minio selio-minio-secret &&
-      mc mb --ignore-existing local/selio-photos &&
-      mc anonymous set none local/selio-photos &&
-      echo 'bucket selio-photos prêt'
-      "
+    command: ["node", "/init/init.mjs"]
+    environment:
+      GARAGE_ADMIN_TOKEN: selio-garage-admin-dev
+      GARAGE_CAPACITY: 10G
+      STORAGE_ACCESS_KEY: GK5e110de5e110de5e110de5e1
+      STORAGE_SECRET_KEY: 0de5e1100de5e1100de5e1100de5e1100de5e1100de5e1100de5e1100de5e110
+      PUBLIC_WEB_URL: http://127.0.0.1:5173
+      CORS_EXTRA_ORIGINS: http://localhost:5173
+    volumes:
+      - ./deploy/garage/init.mjs:/init/init.mjs:ro
+    depends_on: [garage]
 
 volumes:
   selio_pg:
   selio_redis:
-  selio_minio:
+  selio_garage_meta:
+  selio_garage_data:

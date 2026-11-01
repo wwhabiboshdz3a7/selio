@@ -2,6 +2,18 @@
 
 _Version du 30 octobre 2026 · branche `claude/gracious-wright-rf41nt`_
 
+## Le fichier à remplir (production)
+
+Toutes les clés de la machine de production tiennent dans **un seul fichier**, `deploy/.env`, créé à partir du modèle commenté `deploy/cles-production.modele.env` :
+
+1. `Copy-Item deploy\cles-production.modele.env deploy\.env` (Windows) ou `cp deploy/cles-production.modele.env deploy/.env` (Linux) — `deploy/.env` est ignoré par Git.
+2. `node deploy/generer-secrets.mjs` : remplace chaque `A_GENERER` (mots de passe de la base, clé de chiffrement, jeton de supervision, secrets et clé de Garage, paire VAPID) par une valeur aléatoire, **sans rien afficher**.
+3. Remplacer à la main chaque `A_REMPLIR` (adresses publiques, e-mails des opérateurs, nom du modèle de texte, jeton du tunnel Cloudflare, contact des notifications, régime de TVA).
+4. `node deploy/verifier-cles.mjs` : rapport ✓ / ✗ / ! **sans aucune valeur secrète** (c'est ce rapport, et seulement lui, qu'on partage).
+5. Lancer : `docker compose -f docker-compose.prod.yml -f docker-compose.machine.yml up -d --build` depuis `deploy/`. Pas à pas complet sous Windows : docs/PC-WINDOWS-IA.md.
+
+Ne jamais coller une clé ni ce fichier rempli dans une conversation, un e-mail ou Git. Les tableaux ci-dessous détaillent chaque variable.
+
 ## En bref
 
 - **Démo sur Netlify : aucune clé.** Glissez le dossier de l'archive `livraison/selio-demo-netlify.zip` sur https://app.netlify.com/drop.
@@ -116,17 +128,20 @@ Même fichier .env que l'API. Sans rien, le fournisseur « noop » journalise ch
 | `SMTP_URL` | Obligatoire avec `smtp` | `smtp://utilisateur:motdepasse@smtp.exemple.fr:587` ou `smtps://…:465` | Serveur d'envoi (STARTTLS sur 587, TLS direct sur 465). Contient le mot de passe : jamais dans Git ni dans les journaux. |
 | `EMAIL_FROM` | Recommandé | `Selio <no-reply@votre-domaine.fr>` | Expéditeur affiché. Le domaine doit être autorisé par votre service d'email (SPF / DKIM), sinon les messages partent en indésirables. |
 
-## 8. Stockage des photos (S3 compatible, MinIO sur la machine)
+## 8. Stockage des photos (S3 compatible, Garage sur la machine)
 
-Les photos ne transitent jamais par l'API : le navigateur reçoit des URLs signées (envoi et lecture, courte durée) vers un stockage compatible S3 hébergé sur notre machine — les données restent en France. En local, `docker compose up -d minio` démarre MinIO avec le bucket `selio-photos`. Sans `STORAGE_ENDPOINT`, le stockage est désactivé (les routes `/api/uploads` répondent 503, signalé au démarrage). Détails et sécurité : docs/STOCKAGE.md.
+Les photos ne transitent jamais par l'API : le navigateur reçoit des URLs signées (envoi et lecture, courte durée) vers un stockage compatible S3 hébergé sur notre machine — les données restent en France. **Garage remplace MinIO** (MinIO ne distribue plus ses images Docker) ; en production, `deploy/docker-compose.machine.yml` le lance et `deploy/garage/init.mjs` crée le bucket, la clé de l'API et le CORS. En local, `docker compose up -d garage garage-init` démarre Garage avec le bucket `selio-photos`. Sans `STORAGE_ENDPOINT`, le stockage est désactivé (les routes `/api/uploads` répondent 503, signalé au démarrage). Détails et sécurité : docs/STOCKAGE.md.
 
 | Variable | Statut | Exemple / format | À quoi elle sert |
 |---|---|---|---|
-| `STORAGE_ENDPOINT` | Facultatif (vide = désactivé) | `http://127.0.0.1:9000` en local, `https://photos.votre-domaine.fr` en production | Adresse du service S3. Elle figure dans les URLs signées : le navigateur doit pouvoir la joindre (Caddy devant MinIO, CORS pour l'origine du site). |
+| `STORAGE_ENDPOINT` | Facultatif (vide = désactivé) | `http://127.0.0.1:3900` en local, `https://photos.votre-domaine.fr` en production | Adresse du service S3. Elle figure dans les URLs signées : le navigateur doit pouvoir la joindre (tunnel Cloudflare vers Garage, CORS posé par l'initialisation). |
 | `STORAGE_BUCKET` | Obligatoire si endpoint | `selio-photos` | Un seul bucket ; isolation par préfixe `org/<organisation>/`. |
-| `STORAGE_ACCESS_KEY / STORAGE_SECRET_KEY` | Obligatoires si endpoint | `identifiant / secret MinIO` | Compte dédié limité au bucket (pas le compte racine). Le secret ne sert qu'à signer côté API. |
-| `STORAGE_REGION` | Facultatif | `fr-mrs-1` | Région signée (MinIO accepte n'importe quelle valeur). |
-| `STORAGE_FORCE_PATH_STYLE` | Facultatif | `true` | `true` pour MinIO (`endpoint/bucket/clé`) ; `false` pour un S3 « virtual-hosted ». |
+| `STORAGE_ACCESS_KEY / STORAGE_SECRET_KEY` | Obligatoires si endpoint | `GK` + 24 hexadécimaux / 64 hexadécimaux | Clé Garage dédiée à l'API, lecture + écriture sur le bucket seulement (jamais propriétaire), générée par `deploy/generer-secrets.mjs`. Le secret ne sert qu'à signer côté API. |
+| `STORAGE_REGION` | Facultatif | `fr-mrs-1` | Région signée : doit être identique à `s3_region` dans `deploy/garage/garage.toml`. |
+| `GARAGE_CAPACITY` | Production | `200G` | Place réservée aux photos sur le disque (fixée au premier démarrage). |
+| `GARAGE_RPC_SECRET / GARAGE_ADMIN_TOKEN` | Production | générés | Secrets internes de Garage ; jamais transmis à l'API ni au worker (`docker-compose.machine.yml` les vide pour eux). |
+| `CLOUDFLARE_TUNNEL_TOKEN` | Production | jeton du tunnel | Publie l'API (`api.<domaine>`) et les photos (`photos.<domaine>`) en HTTPS sans ouvrir de port sur la box (docs/PC-WINDOWS-IA.md, partie 5). |
+| `STORAGE_FORCE_PATH_STYLE` | Facultatif | `true` | `true` pour Garage (`endpoint/bucket/clé`) ; `false` pour un S3 « virtual-hosted ». |
 | `STORAGE_PRESIGN_TTL_SECONDS` | Facultatif | `900` | Durée de vie des URLs signées (60 s à 7 jours ; viser court). |
 
 ## 9. Selio Cloud (navigateur sur la machine, quand l'ordinateur du client est éteint)
@@ -164,9 +179,9 @@ Fichier à part, **`/etc/selio/backup.env`** (`chmod 600`, propriétaire root), 
 | `BACKUP_KEEP_DAYS` / `BACKUP_KEEP_MIN` | Facultatif | `30` / `3` | Rotation (locale et hors machine), et nombre minimal de sauvegardes locales gardées. |
 | `BACKUP_AGE_RECIPIENT` | Obligatoire (ou la suivante) | `age1…,age1…` (sans espace) | **Clés publiques** age. La clé privée n'est jamais sur la machine (portable de secours, papier). |
 | `BACKUP_PASSPHRASE_FILE` | À défaut d'age | `/etc/selio/backup.pass` (0600) | Chiffrement gpg symétrique (AES-256). Plus faible : la phrase est sur la machine. |
-| `BACKUP_MINIO_SOURCE` | Recommandé | `selio-minio:selio-photos` | Source rclone des photos (clé MinIO en lecture seule). Vide = photos non sauvegardées, signalé. |
+| `BACKUP_MINIO_SOURCE` | Recommandé | `selio-garage:selio-photos` | Source rclone des photos (remote S3 « Other » vers Garage, clé en lecture seule ; le nom de la variable est resté celui de MinIO). Vide = photos non sauvegardées, signalé. |
 | `BACKUP_RCLONE_REMOTE` | Obligatoire | `selio-hors-machine:selio-sauvegardes` | Copie hors machine, destination à choisir avec Ibrahim. Vide = code de sortie 3. |
-| `BACKUP_RCLONE_CONFIG` | Facultatif | `/etc/selio/rclone.conf` (0600) | Configuration rclone (identifiants de MinIO et de la destination : **secrets**). |
+| `BACKUP_RCLONE_CONFIG` | Facultatif | `/etc/selio/rclone.conf` (0600) | Configuration rclone (identifiants de Garage et de la destination : **secrets**). |
 | `BACKUP_LOG_FILE` | Facultatif | vide | Journal ; par défaut `backup.log` et `restore-test.log` dans `BACKUP_DIR`. |
 | `BACKUP_PG_TIMEOUT_S` | Facultatif | `3600` | Attente maximale d'une réponse de PostgreSQL pendant le comptage des lignes. |
 | `RESTORE_DATABASE_URL` | Test de restauration | `postgres://selio@127.0.0.1:55432/postgres` | Connexion d'administration au serveur **de test** (superutilisateur). |
@@ -244,10 +259,10 @@ Fonctionnement, règles et procédure de test : docs/RADAR.md. **Radar Auto et l
 
 ### Mode connecté (vrais comptes, base de données)
 
-1. Louer un serveur Linux (VPS) et y installer Docker.
-2. Cloner le dépôt, copier apps/api/.env.example vers deploy/.env et remplir les sections 2, 3 et 4 (puis 5 pour le paiement Revolut, 7 et 8 quand le service d'email et MinIO sont choisis, 11 pour les clés des notifications).
-3. docker compose -f deploy/docker-compose.prod.yml up -d --build (migrations comprises, jusqu'à la 0012 : paiement et factures, Selio Cloud, Selio Radar).
-4. Mettre Caddy devant l'API (deploy/Caddyfile) pour le HTTPS, puis renseigner VITE_API_BASE_URL dans Netlify.
+1. Sur la machine de production (Windows avec Docker Desktop, ou Linux avec Docker) : cloner le dépôt.
+2. Remplir `deploy/.env` à partir de `deploy/cles-production.modele.env` (section « Le fichier à remplir » en haut de ce document), jusqu'à `node deploy/verifier-cles.mjs` sans ✗.
+3. `docker compose -f docker-compose.prod.yml -f docker-compose.machine.yml up -d --build` depuis `deploy/` (migrations comprises, jusqu'à la 0012 ; Garage pour les photos ; tunnel Cloudflare pour le HTTPS).
+4. Renseigner VITE_API_BASE_URL dans Netlify (= `API_PUBLIC_URL`). Pas à pas complet sous Windows : docs/PC-WINDOWS-IA.md. (Caddy, `deploy/Caddyfile`, reste possible sur un serveur Linux avec une adresse publique, à la place du tunnel.)
 5. Mettre en place la sauvegarde chiffrée de la nuit et le test de restauration mensuel (section 10, docs/SAUVEGARDE.md) avant d'accueillir de vrais clients.
 
 ### Brancher mon IA perso et ses deux modèles

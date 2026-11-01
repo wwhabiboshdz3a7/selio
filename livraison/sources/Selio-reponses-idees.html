@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Selio · Réponses aux 32 idées</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<section class="cover">
+  <div class="logo"><img src="../../brand/selio-logo-blanc.png" alt="Selio"></div>
+  <div class="eyebrow">Réponses à Elias · les 32 idées · novembre 2026</div>
+  <h1>Mes réponses aux 32 idées</h1>
+  <p class="lead">Elias, j'ai repris chaque idée en regardant ce qui existe vraiment dans le code aujourd'hui, et pas seulement dans la démo. Je garde cinq idées pour la bêta (trois sûres, deux si le calendrier tient), je corrige les durées, je te dis lesquelles attendent des données qu'on n'a pas encore, et je signale les risques. Avant tout ça, il y a cinq trous dans la version connectée à boucher : ils passent avant les nouvelles idées.</p>
+  <div class="tiles">
+    <div class="tile"><b>5</b><span>idées pour la bêta : 3 sûres, 2 si le calendrier tient</span></div>
+    <div class="tile"><b>≈ 7–10 j</b><span>pour les 3 sûres, +4 à 6 j pour les 2 autres</span></div>
+    <div class="tile"><b>10</b><span>idées qui attendent des données qu'on n'a pas encore</span></div>
+    <div class="tile"><b>5</b><span>trous de la version connectée à boucher d'abord</span></div>
+  </div>
+  <div class="foot">Réalisé par Ibrahim · réponses au document « Les idées pour Selio, expliquées une par une » du 30 octobre 2026 · à valider ensemble</div>
+</section>
+
+<h2><span class="n">01</span>En bref</h2>
+<table>
+  <thead><tr><th style="width:24%">Bloc</th><th>Ma réponse</th></tr></thead>
+  <tbody>
+    <tr><td><b>Avant les idées</b></td><td>La démo montre des choses que le serveur ne fait pas encore : l'onglet Automatisation n'est exécuté par rien, les vues et favoris ne sont relevés nulle part, l'envoi des photos vers le stockage n'est pas branché, la base de références est vide, l'extension n'a jamais été validée sur de vraies pages Vinted. Ça passe en premier (partie 02).</td></tr>
+    <tr><td><b>Mon choix pour la bêta</b></td><td>Sûres : <b>3 Annonce conforme</b>, <b>12 Capital dormant</b>, <b>21 Coût d'un lot</b>. Si le calendrier tient : <b>9 File de décisions</b> en version réduite, <b>19 Dossier fiscal</b>. Je retire <b>2 Garde-fou des défauts</b> : on ne connaît pas encore la précision du modèle des photos, la bêta servira à la mesurer.</td></tr>
+    <tr><td><b>Les durées</b></td><td>Tes estimations sont souvent justes pour le cœur de l'idée, mais chaque fonction traverse 9 à 10 couches du code : schéma, logique, base de données, service, API, écran, version démo, FAQ, tests. Je les corrige une par une (partie 04).</td></tr>
+    <tr><td><b>Base de références</b></td><td>Elle est vide : aujourd'hui les prix viennent des seules ventes du client (médiane si au moins 3 ventes de la même marque et catégorie), sinon 1,6 × le prix observé. 8 idées en dépendent entièrement, 2 autres attendent l'historique des vues (partie 05).</td></tr>
+    <tr><td><b>Risques</b></td><td>Machine : la voix (mémoire de la carte) et la vision (quotas). Données personnelles : étiquettes d'envoi, suivi de l'équipe, pseudos des vendeurs. Vinted : le bot acheteur (28) et toute lecture automatique par le Cloud (partie 06).</td></tr>
+    <tr><td><b>Tes questions</b></td><td>Une réponse courte à chacune des 32 questions « ce que je te demande de valider » (partie 07).</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="n">02</span>Avant les idées : ce qui ne tourne pas encore en version connectée</h2>
+<p>En relisant le code idée par idée, j'ai trouvé cinq écarts entre ce que la démo montre et ce que le serveur fait réellement. Les testeurs utiliseront la version connectée : il faut les régler ou les annoncer avant la bêta, sinon ils jugeront des écrans vides.</p>
+<table>
+  <thead><tr><th style="width:4%">#</th><th style="width:30%">Ce qu'on voit dans la démo</th><th style="width:36%">Ce qui se passe en vrai</th><th>Ce que je propose</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><b>Onglet Automatisation</b> : favoris, réponse automatique, négociation, après-vente, stock, tous « Activé ».</td><td>Les réglages sont enregistrés, mais aucun code du serveur ne les lit ni ne les exécute. (Les règles de la page « Automatisations », comme la baisse des invendus ou la remise en ligne, tournent bien, elles.)</td><td>Pendant la bêta : l'afficher « en démonstration » (½ j). Les exécuter vraiment passe par l'extension (le client garde la main) ou par le Cloud (avis de l'avocat). <b>La vidéo de 45 s dit « tout s'automatise » : à rendre vrai, ou à retirer, avant de la publier à J-1.</b></td></tr>
+    <tr><td>2</td><td><b>Dressing</b> : vues par jour, taux de favoris, note de visibilité.</td><td>Aucune vue ni aucun favori n'est relevé : l'extension ne les lit pas. En connecté, ces notes restent à 0.</td><td>Faire lire à l'extension les statistiques affichées sur la page dressing que le client ouvre (2–3 j, contact « lecture »). C'est la brique « historique des vues » de ton document.</td></tr>
+    <tr><td>3</td><td><b>Photos</b> dans Studio et les articles.</td><td>Le stockage est prêt et testé, mais l'application n'y envoie pas encore les photos : elles restent dans la fiche de l'article.</td><td>Brancher l'envoi depuis le navigateur (1–2 j). Indispensable avant la bêta.</td></tr>
+    <tr><td>4</td><td><b>Prix conseillés et Track</b>.</td><td>Les prix ne viennent que des ventes du client ; Track n'a encore aucune vente observée.</td><td>L'assumer à l'écran (« estimation à partir de tes ventes ») et repousser les idées qui en dépendent (partie 05).</td></tr>
+    <tr><td>5</td><td><b>Extension</b> : capture d'article, règles de prix, réponse préparée.</td><td>Les lecteurs de pages ont été construits sur des pages fictives et jamais vérifiés sur le vrai site de Vinted.</td><td>Les valider avec un compte Vinted de l'équipe (1–2 j), avant de les confier aux testeurs.</td></tr>
+  </tbody>
+</table>
+<div class="box accent"><h3>Ordre de travail que je propose d'ici le 23 novembre</h3>
+<ol>
+  <li>Machine en production (tuto Windows prêt) et mesures réelles de l'IA : 1 j.</li>
+  <li>Envoi des photos vers le stockage, puis validation de l'extension sur de vraies pages : 3–4 j.</li>
+  <li>Onglet Automatisation marqué « en démonstration » : ½ j.</li>
+  <li>Les 3 idées sûres : 7–10 j. Puis les 2 autres si on est dans les temps.</li>
+</ol>
+<p class="small muted">La brique « historique des vues » (point 2) n'est pas dans cette liste : elle débloque les idées 8 et 10, qui viennent après la bêta.</p></div>
+
+<h2><span class="n">03</span>Mon choix pour la bêta</h2>
+<p>J'applique ta règle : pas plus de cinq, aucune qui touche à Vinted, et des idées qui réutilisent ce qui existe. Je les classe en deux groupes pour qu'on puisse couper sans débat si le temps manque.</p>
+<table>
+  <thead><tr><th style="width:20%">Idée</th><th style="width:42%">Ce que je ferais pour la bêta</th><th style="width:22%">Ce qui existe déjà</th><th class="num">Ta durée → la mienne</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge v">Sûre</span><br><b>3. Annonce conforme</b></td><td>Une liste de règles simples (numéro de téléphone, e-mail, lien, WhatsApp ou Instagram, paiement hors Vinted, « réplique », « inspiré de », « style ») vérifiée dans Studio, dans le formulaire d'article et dans l'extension, avant publication. L'IA pour les cas flous viendra après la bêta.</td><td>Le contrôle des liens et du HTML sur les textes de l'IA. La même liste servira au Bouclier anti-arnaques (14).</td><td class="num">2–3 j → 2–3 j</td></tr>
+    <tr><td><span class="badge v">Sûre</span><br><b>12. Capital dormant</b></td><td>Une carte « 820 € dorment dans 41 articles de plus de 60 jours » et un plan : baisses par paliers, jamais sous le prix plancher, et lots suggérés (même marque, même taille), que le client applique lui-même.</td><td>Les tranches 61–90 j et +90 j avec leur coût d'achat, la règle de baisse qui s'arrête au plancher.</td><td class="num">2–3 j → 3–4 j</td></tr>
+    <tr><td><span class="badge v">Sûre</span><br><b>21. Coût d'un lot</b></td><td>Une action groupée : « ces 20 articles m'ont coûté 100 € ». Selio répartit au prorata du prix affiché (ou à parts égales), le client corrige, et un identifiant de lot permet de retrouver le groupe.</td><td>Les actions groupées, le prix d'achat figé sur la commande au moment de la vente.</td><td class="num">1–2 j → 2–3 j</td></tr>
+    <tr><td><span class="badge g">Si le temps le permet</span><br><b>9. File de décisions</b></td><td>Version réduite : une liste « à décider aujourd'hui » sur la vue d'ensemble, qui rassemble ce qui existe déjà (actions automatiques à valider, affaires du Radar, articles à republier, articles dormants, réponses préparées), avec accepter ou refuser. Sans notification du matin ni balayage pour l'instant.</td><td>Les actions « en attente de validation », les affaires notées 75 et plus, les conseils du dressing, les notifications sur le téléphone.</td><td class="num">3–5 j → 2–3 j<br><span class="small muted">(complète : 6–8 j)</span></td></tr>
+    <tr><td><span class="badge g">Si le temps le permet</span><br><b>19. Dossier fiscal</b></td><td>Le récapitulatif annuel (ventes, achats, frais, marges) exportable, et une alerte avant 30 ventes ou 2 000 € dans l'année, avec la mention « ce n'est pas un conseil comptable ».</td><td>L'export CSV des marges et la période « depuis le 1er janvier ». Pas de fichier Excel natif (le CSV s'ouvre dans Excel).</td><td class="num">2–3 j → 2–3 j</td></tr>
+    <tr><td><span class="badge r">Retirée</span><br><b>2. Garde-fou des défauts</b></td><td>Après la bêta. On ne connaît pas encore la précision du modèle des photos sur les trous et les taches. La bêta sert à réunir les 100 articles aux défauts connus qu'il faut pour la mesurer.</td><td>Les photos vont déjà au modèle de vision, mais rien ne compare photos et description.</td><td class="num">4–6 j → 7–10 j</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="n">04</span>Les 32 durées, corrigées</h2>
+<p class="small muted">En jours de développement, version démo, tests et FAQ compris, comme pour tout ce qui est déjà livré. « + données » : le code peut être écrit, mais l'idée ne sera utile qu'avec les données de la partie 05.</p>
+<table>
+  <thead><tr><th style="width:4%">N°</th><th style="width:20%">Idée</th><th class="num" style="width:9%">Ta durée</th><th class="num" style="width:13%">La mienne</th><th>Pourquoi</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Studio vocal</td><td class="num">3–5 j</td><td class="num">6–9 j</td><td>Rien n'existe pour la voix : Ollama ne fait pas la transcription, il faut un service à côté, un envoi de fichier audio et l'enregistrement sur le téléphone.</td></tr>
+    <tr><td>2</td><td>Garde-fou des défauts</td><td class="num">4–6 j</td><td class="num">7–10 j</td><td>Champ « défauts » à créer, comparaison photos/texte, et surtout un jeu de 100 articles pour régler les fausses alertes.</td></tr>
+    <tr><td>3</td><td>Annonce conforme</td><td class="num">2–3 j</td><td class="num">2–3 j</td><td>Règles simples ; le contrôle des liens et du HTML existe déjà pour les textes de l'IA.</td></tr>
+    <tr><td>4</td><td>Prix ajusté au défaut</td><td class="num">2 j</td><td class="num">2–3 j + données</td><td>Le coefficient par état existe ; il manque le champ défaut et des ventes étiquetées pour le calibrer.</td></tr>
+    <tr><td>5</td><td>Taille et mesures</td><td class="num">1–2 j</td><td class="num">3–5 j</td><td>Aucun champ de mesure et aucun guide de tailles (le convertisseur a été supprimé) : à créer, puis à saisir marque par marque.</td></tr>
+    <tr><td>6</td><td>Photos guidées</td><td class="num">4–6 j</td><td class="num">5–7 j</td><td>Caméra et compression existent dans Studio ; il manque le gabarit, la détection du flou et l'envoi vers le stockage.</td></tr>
+    <tr><td>7</td><td>Studio Réseaux</td><td class="num">3–5 j</td><td class="num">5–8 j</td><td>Aucun outil vidéo dans l'application (celui de nos pubs est hors produit) : tâche de nuit, FFmpeg dans le worker, stockage des vidéos.</td></tr>
+    <tr><td>8</td><td>Laboratoire d'annonces</td><td class="num">5–8 j</td><td class="num">8–12 j</td><td>Les 10 variantes existent, mais sans vues ni favoris relevés il n'y a rien à comparer : il faut d'abord l'historique des vues.</td></tr>
+    <tr><td>9</td><td>File de décisions</td><td class="num">3–5 j</td><td class="num">6–8 j (réduite 2–3 j)</td><td>Pas de table de suggestions commune, pas de passage quotidien, pas d'écran à balayer.</td></tr>
+    <tr><td>10</td><td>Médecin d'annonce</td><td class="num">2–3 j</td><td class="num">3–4 j + vues</td><td>Les conseils du dressing existent (prix, photos, titre) ; il manque les vues et favoris réels et le diagnostic rédigé.</td></tr>
+    <tr><td>11</td><td>Hausse intelligente</td><td class="num">1–2 j</td><td class="num">1–2 j + données</td><td>Facile à coder, mais sans évolution des prix comparables il n'y a rien à suivre.</td></tr>
+    <tr><td>12</td><td>Capital dormant</td><td class="num">2–3 j</td><td class="num">3–4 j</td><td>Tranches d'âge du stock et baisse plafonnée existent ; restent le plan et les lots.</td></tr>
+    <tr><td>13</td><td>Dossier de défense</td><td class="num">4–6 j</td><td class="num">6–9 j</td><td>Aucune copie figée de l'annonce (les photos ne sont même pas historisées), pas de photo d'emballage, pas de génération de PDF.</td></tr>
+    <tr><td>14</td><td>Bouclier anti-arnaques</td><td class="num">2–3 j</td><td class="num">2–3 j</td><td>Les messages sont déjà lus via l'extension ; même liste de signaux que l'idée 3.</td></tr>
+    <tr><td>15</td><td>Bordereaux groupés</td><td class="num">1–2 j</td><td class="num">2–3 j</td><td>Faisable entièrement dans le navigateur, mais aucune bibliothèque PDF aujourd'hui.</td></tr>
+    <tr><td>16</td><td>Où est mon article ?</td><td class="num">2–3 j</td><td class="num">3–4 j</td><td>La référence unique (ex. WOM-0001) existe ; manquent l'emplacement, les étiquettes et le scan (pas de lecteur intégré sur iPhone).</td></tr>
+    <tr><td>17</td><td>Suivi de l'équipe</td><td class="num">2–3 j</td><td class="num">4–6 j</td><td>Les rôles « exécuteur » et « contributeur photos » n'existent pas encore ; l'auteur d'un message n'est pas enregistré.</td></tr>
+    <tr><td>18</td><td>Demande à Selio</td><td class="num">4–6 j</td><td class="num">5–7 j</td><td>L'aide répond déjà depuis la FAQ, avec contrôle des chiffres ; à étendre aux mesures du client.</td></tr>
+    <tr><td>19</td><td>Dossier fiscal</td><td class="num">2–3 j</td><td class="num">2–3 j</td><td>L'export des marges existe ; manquent l'alerte des seuils et le récapitulatif annuel.</td></tr>
+    <tr><td>20</td><td>Rentabilité par source</td><td class="num">2 j</td><td class="num">2 j</td><td>Le découpage par catégorie, canal et marque existe ; ajouter le champ « source ».</td></tr>
+    <tr><td>21</td><td>Coût d'un lot</td><td class="num">1–2 j</td><td class="num">2–3 j</td><td>Pas de notion de lot ; les actions groupées existent.</td></tr>
+    <tr><td>22</td><td>Scanner d'achat</td><td class="num">3–5 j</td><td class="num">4–6 j + données</td><td>Lecture des photos, estimation et note existent ; il faut noter sans créer d'affaire, et une base de prix.</td></tr>
+    <tr><td>23</td><td>Indices d'authenticité</td><td class="num">2–3 j</td><td class="num">5 j et plus + données</td><td>Rien n'existe ; il faut des centaines d'articles vrais et faux par marque, et l'avis de l'avocat.</td></tr>
+    <tr><td>24</td><td>Estimateur de lots</td><td class="num">2–3 j</td><td class="num">3–5 j + données</td><td>L'estimation article par article existe ; une photo de plusieurs articles ne se découpe pas encore.</td></tr>
+    <tr><td>25</td><td>Objectif du mois</td><td class="num">3–4 j</td><td class="num">3–4 j</td><td>Un objectif existe mais il est calculé tout seul (mois précédent + 10 %) ; à rendre réglable et à transformer en plan d'achat.</td></tr>
+    <tr><td>26</td><td>Liste de chasse</td><td class="num">2–3 j</td><td class="num">3–4 j + Track</td><td>Il faut des ventes observées sur le marché, que Track n'a pas encore.</td></tr>
+    <tr><td>27</td><td>Calendrier saisonnier</td><td class="num">2–3 j</td><td class="num">2–3 j + données</td><td>Les ventes par mois existent pour le client seul ; il faut plusieurs mois de données du marché.</td></tr>
+    <tr><td>28</td><td>Négociation côté acheteur</td><td class="num">à estimer</td><td class="num">8–12 j après l'avocat</td><td>Aucune action « faire une offre » dans le Cloud ; Radar Auto reste fermé aux clients.</td></tr>
+    <tr><td>29</td><td>Note d'affaire en lecture seule</td><td class="num">1–2 j</td><td class="num">2–3 j</td><td>La note et la lecture de la page article par l'extension existent ; il faut une note sans créer d'article, et un compteur mensuel.</td></tr>
+    <tr><td>30</td><td>Contribue pour gagner</td><td class="num">2–3 j</td><td class="num">3–4 j + avis</td><td>Rien n'existe : crédits, consentement, contrôle des contributions.</td></tr>
+    <tr><td>31</td><td>Missions pour débutants</td><td class="num">3–4 j</td><td class="num">3–4 j</td><td>Les étapes d'accueil existent et se mémorisent déjà.</td></tr>
+    <tr><td>32</td><td>Import Bleam et Clemz</td><td class="num">3–5 j</td><td class="num">4–6 j</td><td>L'import CSV des articles existe ; aucune correspondance Bleam ou Clemz, et nos propres réglages d'automatisation ne sont pas encore exécutés.</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="n">05</span>Celles qui attendent des données</h2>
+<table>
+  <thead><tr><th style="width:26%">Données qui manquent</th><th style="width:22%">Idées concernées</th><th>Ce que je propose</th></tr></thead>
+  <tbody>
+    <tr><td><b>Base de références</b> (ventes du marché, guides de tailles, défauts, saisons)</td><td>4, 5, 11, 22, 23, 24, 26, 27</td><td>Les repousser après Track. Elles ne sont pas fausses, mais sans base elles afficheraient des chiffres peu fiables.</td></tr>
+    <tr><td><b>Historique des vues et favoris</b> (relevé nulle part)</td><td>8, 10</td><td>Construire d'abord la brique de lecture par l'extension (2–3 j), après la bêta.</td></tr>
+    <tr><td><b>En partie</b> : marchent avec les ventes du client, mais moins précises</td><td>21, 25, 29</td><td>21 : répartition au prorata du prix affiché en attendant. 25 : valeurs de départ prudentes pour un client sans historique. 29 : une fourchette plutôt qu'un prix.</td></tr>
+    <tr><td><b>Remplit la base</b></td><td>30</td><td>À garder pour quand la base existe, avec le consentement validé par l'avocat.</td></tr>
+  </tbody>
+</table>
+<div class="box"><h3>Commencer à collecter dès la bêta, sans rien promettre</h3>
+<p>Trois champs simples sur l'article, que les testeurs rempliront s'ils le veulent : <b>type de défaut</b> (liste fermée : trou, tache, bouloche, décoloration, accroc, autre), <b>source d'achat</b> (Emmaüs, vide-grenier, lot, Vinted, autre) et <b>mesures</b>. Environ 1 jour. Ils préparent les idées 2, 4, 5 et 20 sans les construire, et ils nous donnent le jeu de test qui manque au Garde-fou des défauts.</p></div>
+
+<h2><span class="n">06</span>Les risques</h2>
+<table>
+  <thead><tr><th style="width:18%">Type</th><th style="width:12%">Idées</th><th>Le risque et la parade</th></tr></thead>
+  <tbody>
+    <tr><td rowspan="3"><b>Machine</b></td><td>1</td><td>Avec les trois modèles chargés, il reste environ 3 Go sur la carte. La transcription doit tourner sur le processeur, ou avec un petit modèle : à mesurer avant de promettre.</td></tr>
+    <tr><td>2, 6, 22, 24</td><td>Chaque photo occupe le modèle de vision (≈ 3,6 s, à confirmer par la mesure). Le scanner d'achat et l'estimateur de lots consommeraient le quota Studio : à décompter.</td></tr>
+    <tr><td>7, 8</td><td>Montage vidéo : la nuit, sur le processeur, hors des heures du Cloud, ça passe. Lecture des statistiques par le Cloud : environ 350 Mo par navigateur, à compter dans les 50 comptes.</td></tr>
+    <tr><td rowspan="5"><b>Données personnelles</b></td><td>13</td><td>L'étiquette porte le nom et l'adresse de l'acheteur : 90 jours puis suppression automatique, disque chiffré, mention dans la politique de confidentialité.</td></tr>
+    <tr><td>14</td><td>On lit déjà les messages que le client ouvre ; ne rien garder de plus que le message et l'alerte.</td></tr>
+    <tr><td>17</td><td>Suivre ce que fait un membre de l'équipe, c'est suivre un salarié ou un prestataire : il doit en être informé. La rémunération à la tâche dépend de son statut, à vérifier.</td></tr>
+    <tr><td>26</td><td>Un classement par vendeur contredirait notre règle « aucun pseudo de vendeur tiers » : uniquement des groupes anonymes d'au moins 20 clients.</td></tr>
+    <tr><td>30</td><td>Consentement explicite, jamais de pseudos ni de photos de personnes : avis de l'avocat.</td></tr>
+    <tr><td rowspan="4"><b>Règles de Vinted</b></td><td>28</td><td>Selio agit à la place du client : avis de l'avocat obligatoire, et Radar Auto reste fermé aux clients tant que ce n'est pas tranché. Plan de repli : le client valide chaque offre d'un clic.</td></tr>
+    <tr><td>8</td><td>Par l'extension, sur la page que le client ouvre : simple lecture. Par le Cloud, automatiquement : avis de l'avocat.</td></tr>
+    <tr><td>29</td><td>Un lien collé obligerait notre serveur à aller lire Vinted lui-même, ce que nos règles interdisent. Seulement via l'extension, sur la page ouverte.</td></tr>
+    <tr><td>23, 32</td><td>23 : toujours « indices », jamais « faux » (dénigrement, droit des marques), avis de l'avocat. 32 : jamais de connexion au compte du concurrent ; uniquement ce que le client nous donne.</td></tr>
+  </tbody>
+</table>
+<p class="small muted">À l'inverse, 3 (Annonce conforme) et 14 (Bouclier anti-arnaques) réduisent le risque pour les comptes de nos clients.</p>
+
+<h2><span class="n">07</span>Mes réponses à tes questions, idée par idée</h2>
+<table>
+  <thead><tr><th style="width:4%">N°</th><th style="width:30%">Ta question</th><th>Ma réponse</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Le modèle de voix tient-il dans la mémoire libre, reconnaît-il les marques ?</td><td>Environ 3 Go restent libres : un petit modèle de transcription tient, ou il tourne sur le processeur. Les marques passent mal sans aide : on lui donne la liste des marques et « mon IA perso » corrige. À mesurer sur 50 dictées.</td></tr>
+    <tr><td>2</td><td>Quelle précision sur les trous et taches, quel taux de fausses alertes ?</td><td>Je ne peux pas promettre sans mesure. Cible proposée : au plus 1 fausse alerte pour 5 annonces, au moins 7 défauts visibles sur 10 repérés. Mesuré sur 100 articles de la bêta.</td></tr>
+    <tr><td>3</td><td>Quelle liste de règles de départ, où trouver des annonces refusées ?</td><td>Téléphone, e-mail, lien, WhatsApp ou Instagram, paiement hors Vinted (PayPal, Lydia, virement, espèces), « réplique », « inspiré de », « style », « type ». Exemples : les règles publiées par Vinted, plus les avertissements que les testeurs nous montrent avec leur accord.</td></tr>
+    <tr><td>4</td><td>Peut-on enregistrer le type de défaut dès le départ ?</td><td>Oui : c'est un des trois champs à collecter dès la bêta (partie 05).</td></tr>
+    <tr><td>5</td><td>Les guides de tailles seront-ils dans la base dès la bêta ?</td><td>Non, il n'y en a aucun aujourd'hui. Trois à cinq marques saisies à la main, c'est 1 à 2 jours : après le lancement, avec toi pour choisir les marques.</td></tr>
+    <tr><td>6</td><td>Page web ou application à part ?</td><td>Page web : l'application s'installe déjà sur le téléphone et Studio utilise déjà l'appareil photo. Une application native demande des comptes développeurs payants.</td></tr>
+    <tr><td>7</td><td>Le montage vidéo peut-il tourner la nuit sans gêner ?</td><td>Oui : il utilise le processeur, pas la carte, et la nuit est hors des heures du Cloud. Temps de montage à mesurer.</td></tr>
+    <tr><td>8</td><td>La page ouverte par le client suffit-elle, ou faut-il le Cloud ?</td><td>La page ouverte suffit, si l'extension apprend à lire les statistiques (elle ne le fait pas encore). C'est moins régulier qu'un relevé automatique, mais c'est de la simple lecture. Le Cloud passerait par l'avocat.</td></tr>
+    <tr><td>9</td><td>La table de suggestions peut-elle servir de base commune ?</td><td>Oui, et c'est la bonne idée : aujourd'hui chaque file est séparée (actions à valider, réponses préparées, affaires du Radar). Une table commune servirait aux idées 9, 10, 11, 12 et 25. Je la ferais avec la version complète de l'idée 9.</td></tr>
+    <tr><td>10</td><td>D'où viennent les vues et les favoris ?</td><td>De nulle part en version connectée aujourd'hui : seulement dans la démo. Voir partie 02, point 2.</td></tr>
+    <tr><td>11</td><td>A-t-on assez de ventes comparables ?</td><td>Non au départ : seulement les ventes du client. Fiable après Track.</td></tr>
+    <tr><td>12</td><td>Les règles de lots existent-elles dans le code ?</td><td>En partie : les remises de lot (2 articles, 3 et plus) existent dans les réglages de négociation, mais ne sont pas exécutées. La baisse des invendus, elle, existe et s'arrête au prix plancher.</td></tr>
+    <tr><td>13</td><td>Où stocker les photos, combien de temps, comment les chiffrer ?</td><td>Sur notre stockage, dans la machine, à part des photos d'articles ; 90 jours puis suppression ; disque chiffré (le stockage lui-même ne chiffre pas).</td></tr>
+    <tr><td>14</td><td>D'où viennent les messages, peut-on les lire sans agir ?</td><td>De l'extension (la conversation ouverte, jusqu'à 30 messages) et de la messagerie Selio. Oui : l'extension n'envoie jamais rien sans le clic du client.</td></tr>
+    <tr><td>15</td><td>Peut-on le faire entièrement dans le navigateur ?</td><td>Oui, avec une bibliothèque PDF libre ; aucune étiquette ne passe par notre serveur.</td></tr>
+    <tr><td>16</td><td>Le code à scanner peut-il servir à la preuve d'envoi ?</td><td>Oui : la référence unique de l'article existe déjà. Le même code pourra ouvrir la commande et la prise de photo du colis.</td></tr>
+    <tr><td>17</td><td>Le journal d'actions couvre-t-il les photos et les publications ?</td><td>En partie : on sait qui a modifié un article et qui a validé une action, mais pas qui a écrit un message, et les photos ne sont pas historisées.</td></tr>
+    <tr><td>18</td><td>Quelles trente mesures pour commencer ?</td><td>Celles que les écrans calculent déjà : chiffre d'affaires, marge brute, taux de marge, panier moyen, nombre de ventes, délai de vente, rotation, taux d'écoulement, valeur du stock, articles dormants, et leur découpage par marque, catégorie, canal, jour et heure. Je t'envoie la liste complète.</td></tr>
+    <tr><td>19</td><td>Qui vérifie les seuils chaque année ?</td><td>Moi, chaque 1er janvier. Je mettrai la valeur dans le code avec sa date, et un test échouera si elle n'a pas été revue dans l'année.</td></tr>
+    <tr><td>20</td><td>Le temps passé est-il saisi ou estimé ?</td><td>Estimé par défaut (des minutes par article, réglables par source), et corrigeable.</td></tr>
+    <tr><td>21</td><td>Le modèle de prix est-il disponible pour tous les articles d'un lot ?</td><td>Non : sans base, on répartit au prorata du prix affiché par le client, ou à parts égales.</td></tr>
+    <tr><td>22</td><td>Le modèle de prix est-il assez précis, que dit l'application quand elle ne sait pas ?</td><td>Pas avant la base. Elle affichera le nombre de ventes comparables et la confiance de l'estimation, comme le Radar le fait déjà, avec une fourchette plutôt qu'un prix.</td></tr>
+    <tr><td>23</td><td>Combien d'articles vrais et faux faut-il ?</td><td>Au moins 50 vrais et 50 faux par marque pour une première mesure, 200 pour être sérieux. Attention : acheter des contrefaçons pour tester pose un problème juridique en soi.</td></tr>
+    <tr><td>24</td><td>Comment saisit-on un lot : photo, liste, ou les deux ?</td><td>La liste d'abord. Découper une photo en plusieurs articles n'existe pas encore.</td></tr>
+    <tr><td>25</td><td>Que fait-on pour un client sans historique ?</td><td>Des valeurs de départ prudentes qu'il peut corriger, marquées « estimation de départ », recalculées après 20 ventes.</td></tr>
+    <tr><td>26</td><td>À partir de combien de clients la comparaison est-elle utile ?</td><td>D'accord avec tes 20 par groupe, et jamais de pseudos.</td></tr>
+    <tr><td>27</td><td>Quelles saisons connues met-on au départ ?</td><td>Une dizaine de règles que tu écris (doudounes, maillots, rentrée…) ; je les mets dans le code.</td></tr>
+    <tr><td>28</td><td>Combien d'offres Vinted permet-il, comment éviter un rythme automatique ?</td><td>On ne le sait pas. À mesurer seulement après l'avis de l'avocat, sur des comptes de l'équipe.</td></tr>
+    <tr><td>29</td><td>Est-ce bien de la lecture à la demande, sans surveillance ?</td><td>Oui, si c'est l'extension sur la page ouverte par le client. Pas avec un lien collé (partie 06).</td></tr>
+    <tr><td>30</td><td>Quelles contributions comptent, combien de crédits ?</td><td>Mesures et prix de vente final confirmés, sans pseudo ni photo de personne. Proposition : 1 annonce Studio offerte pour 5 contributions validées.</td></tr>
+    <tr><td>31</td><td>Quels événements existants peuvent déclencher une mission ?</td><td>Les étapes d'accueil (compte, préférences, extension, IA), la première annonce générée, le premier article créé, la première vente enregistrée.</td></tr>
+    <tr><td>32</td><td>Quels réglages peut-on reconstituer à partir de captures ?</td><td>Les modèles de messages, les paliers de négociation et les délais de relance. Mais nos propres réglages d'automatisation ne sont pas encore exécutés : il faut d'abord les faire tourner.</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="n">08</span>Ce qu'on décide ensemble</h2>
+<ol>
+  <li><b>Les cinq idées de la bêta</b> : 3, 12, 21, puis 9 (réduite) et 19 si on tient le calendrier ; 2 après la bêta.</li>
+  <li><b>L'onglet Automatisation pendant la bêta</b> : « en démonstration », ou on le branche par l'extension.</li>
+  <li><b>La phrase « tout s'automatise »</b> de la vidéo de 45 s : à rendre vraie avant J-1, ou à retirer.</li>
+  <li><b>Les trois champs à collecter dès la bêta</b> : type de défaut, source d'achat, mesures.</li>
+  <li><b>Le tunnel Cloudflare</b> pour publier la machine sans ouvrir de port : les échanges passent par Cloudflare, mais les données restent stockées chez nous.</li>
+  <li><b>Ta part</b> : les règles de départ de l'idée 3, les saisons (27) et les marques des guides de tailles (5).</li>
+</ol>
+<p>Dès que tu valides, je commence par la machine et l'envoi des photos, puis l'idée 3.</p>
+
+</body>
+</html>
