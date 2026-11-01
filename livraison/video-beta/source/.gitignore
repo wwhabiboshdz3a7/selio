@@ -1,0 +1,8 @@
+frames/
+stills/
+captures/
+*.wav
+scene.html
+timeline.json
+render.log
+encode.log

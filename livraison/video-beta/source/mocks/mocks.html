@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Maquettes d'écrans — vidéo bêta Selio</title>
+<style>
+/* Maquettes rendues à 393 px de large (@3x → 1179 px, comme les captures de la démo). Tokens de la charte v3, mode sombre. */
+@font-face { font-family: Inter; font-weight: 400; src: url("../../../../node_modules/.pnpm/@fontsource+inter@5.3.0/node_modules/@fontsource/inter/files/inter-latin-400-normal.woff2"); }
+@font-face { font-family: Inter; font-weight: 500; src: url("../../../../node_modules/.pnpm/@fontsource+inter@5.3.0/node_modules/@fontsource/inter/files/inter-latin-500-normal.woff2"); }
+@font-face { font-family: Inter; font-weight: 600; src: url("../../../../node_modules/.pnpm/@fontsource+inter@5.3.0/node_modules/@fontsource/inter/files/inter-latin-600-normal.woff2"); }
+:root { --bg:#1A1820; --surface:#23202A; --muted-s:#2D2A35; --border:#37333F; --border2:#48434F; --text:#EEEBF3; --muted:#B4AFC0; --subtle:#868193; --accent:#B5A3FF; --vivid:#9B80F7; --soft:rgba(155,128,247,.18); --gold:#E2C67C; --goldt:#E8CF8E; --golds:rgba(212,172,87,.16); --ok:#5CC896; --warn:#E5B259; --teal:#007782; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { width: 393px; background: #000; font-family: Inter, system-ui, sans-serif; color: var(--text); -webkit-font-smoothing: antialiased; }
+.page { width: 393px; min-height: 852px; background: var(--bg); position: relative; overflow: hidden; }
+.page.light { background: #fff; color: #111; }
+.status { height: 54px; display: flex; align-items: center; justify-content: space-between; padding: 6px 30px 0 42px; font: 600 17px/1 Inter; letter-spacing: -.2px; background: var(--surface); }
+.light .status { background: #fff; color: #000; }
+.status .ic { display: flex; align-items: center; gap: 7px; }
+.hd { height: 56px; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.hd .burger { width: 18px; height: 12px; border-top: 2px solid var(--muted); border-bottom: 2px solid var(--muted); position: relative; } .hd .burger::after { content: ""; position: absolute; left: 0; right: 0; top: 5px; border-top: 2px solid var(--muted); }
+.hd img { height: 20px; margin-left: 6px; }
+.hd .space { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 99px; background: var(--muted-s); font: 500 12px/1 Inter; color: var(--muted); }
+.hd .space i { width: 6px; height: 6px; border-radius: 50%; background: var(--vivid); }
+.hd .gen { margin-left: auto; width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, #5232B5, #7C5CEB); display: flex; align-items: center; justify-content: center; }
+.hd .sun { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--muted); margin-left: 6px; }
+main { padding: 20px 16px 28px; }
+.eyebrow { font: 500 12px/1 Inter; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+h1 { font: 600 24px/30px Inter; letter-spacing: -.02em; }
+h2 { font: 600 18px/24px Inter; letter-spacing: -.01em; }
+.sub { font: 400 14px/20px Inter; color: var(--muted); margin-top: 6px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-top: 16px; }
+.card h3 { font: 600 16px/24px Inter; }
+.row { display: flex; align-items: center; gap: 12px; }
+.num { font-variant-numeric: tabular-nums; }
+.big { font: 600 32px/38px Inter; letter-spacing: -.02em; }
+.k { font: 400 13px/18px Inter; color: var(--muted); }
+.strip { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); margin-top: 16px; overflow: hidden; }
+.strip > div { padding: 14px 16px; } .strip > div + div { border-left: 1px solid var(--border); }
+.btn { display: flex; align-items: center; justify-content: center; gap: 8px; height: 44px; border-radius: 8px; font: 600 15px/1 Inter; margin-top: 12px; }
+.btn.accent { background: #6442D6; color: #fff; } .btn.primary { background: var(--text); color: var(--bg); } .btn.secondary { border: 1px solid var(--border2); color: var(--text); } .btn.ghost { color: var(--muted); height: 36px; margin-top: 4px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 99px; font: 500 12px/1 Inter; background: var(--muted-s); color: var(--text); }
+.chip.on { background: var(--soft); color: var(--accent); } .chip.gold { background: var(--golds); color: var(--goldt); } .chip.ok { color: var(--ok); } .chip.ok i, .chip i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.lbl { font: 500 12px/16px Inter; color: var(--muted); margin: 14px 0 6px; }
+.field { min-height: 40px; border: 1px solid var(--border2); border-radius: 8px; padding: 10px 12px; font: 400 15px/20px Inter; background: var(--surface); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.toggle { margin-left: auto; width: 40px; height: 24px; border-radius: 99px; background: var(--vivid); position: relative; flex: none; } .toggle::after { content: ""; position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; }
+.toggle.off { background: var(--border2); } .toggle.off::after { right: auto; left: 3px; }
+.ring { width: 56px; height: 56px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font: 600 18px/1 Inter; letter-spacing: -.02em; background: conic-gradient(var(--vivid) calc(var(--v) * 1%), rgba(255,255,255,.12) 0); position: relative; }
+.ring::before { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--surface); } .ring span { position: relative; } .ring.gold { background: conic-gradient(var(--gold) calc(var(--v) * 1%), rgba(255,255,255,.12) 0); color: var(--goldt); }
+.tbl { font: 400 13px/18px Inter; } .tbl .r { display: flex; justify-content: space-between; padding: 6px 0; } .tbl .r + .r { border-top: 1px solid var(--border); } .tbl .r.tot { font-weight: 600; } .tbl .s { font: 500 11px/16px Inter; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 10px 0 4px; }
+.note { font: 400 12px/17px Inter; color: var(--subtle); margin-top: 10px; }
+.bars { display: flex; align-items: flex-end; gap: 6px; height: 72px; margin-top: 14px; } .bars i { flex: 1; background: var(--muted-s); border-radius: 4px 4px 0 0; display: block; } .bars i.hi { background: var(--vivid); }
+.axis { display: flex; gap: 6px; margin-top: 6px; } .axis span { flex: 1; text-align: center; font: 500 10px/1 Inter; color: var(--subtle); }
+.slider { position: relative; height: 24px; margin: 8px 0 2px; } .slider .track { position: absolute; left: 0; right: 0; top: 10px; height: 4px; border-radius: 2px; background: var(--border2); } .slider .fill { position: absolute; left: 0; width: 80%; top: 10px; height: 4px; border-radius: 2px; background: var(--vivid); } .slider .knob { position: absolute; left: calc(80% - 11px); top: 1px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.4); }
+.ticks { display: flex; justify-content: space-between; font: 500 10px/1 Inter; color: var(--subtle); }
+.photos2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; } .photos2 figure { border-radius: 10px; overflow: hidden; background: var(--muted-s); } .photos2 img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; } .photos2 figcaption { font: 500 12px/1 Inter; color: var(--muted); padding: 8px 10px; }
+.check { display: flex; gap: 12px; padding: 10px 0; align-items: flex-start; } .check + .check { border-top: 1px solid var(--border); } .check .c { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--border2); flex: none; margin-top: 1px; } .check b { font: 600 14px/19px Inter; display: block; } .check span { font: 400 13px/18px Inter; color: var(--muted); }
+.thumbs { display: flex; gap: 8px; margin-top: 12px; } .thumbs figure { position: relative; width: 50px; height: 50px; border-radius: 8px; overflow: hidden; } .thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; } .thumbs figcaption { position: absolute; left: 0; right: 0; bottom: 0; font: 600 8px/1 Inter; text-align: center; padding: 3px 0; background: rgba(0,0,0,.6); color: #fff; }
+.avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #5232B5, #9B80F7); display: flex; align-items: center; justify-content: center; font: 600 14px/1 Inter; color: #fff; flex: none; }
+.msg { max-width: 82%; padding: 10px 12px; border-radius: 14px; font: 400 14px/19px Inter; margin-top: 10px; } .msg.in { background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 4px; } .msg .t { display: block; font: 400 11px/1 Inter; color: var(--subtle); margin-top: 6px; }
+.anchor { min-height: 1px; }
+.composer { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 10px; padding: 12px 16px 24px; background: var(--bg); border-top: 1px solid var(--border); } .composer .in { flex: 1; height: 40px; border: 1px solid var(--border2); border-radius: 99px; padding: 0 14px; display: flex; align-items: center; font: 400 14px/1 Inter; color: var(--subtle); } .composer .send { width: 40px; height: 40px; border-radius: 50%; background: #6442D6; }
+/* Marketplace générique (maquette, sans logo) */
+.vtop { height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 14px; font: 600 16px/1 Inter; color: #111; border-bottom: 1px solid #eee; } .vtop .sp { flex: 1; } .vtop .o { width: 22px; height: 22px; border: 2px solid #333; border-radius: 50%; } .vtop .bk { font-size: 24px; line-height: 1; margin-top: -3px; }
+.vphoto { width: 393px; height: 393px; object-fit: cover; display: block; } .vdots { display: flex; gap: 5px; justify-content: center; padding: 10px 0; } .vdots i { width: 6px; height: 6px; border-radius: 50%; background: #ddd; } .vdots i.on { background: var(--teal); }
+.vbody { padding: 4px 16px 20px; } .vtitle { font: 600 18px/24px Inter; color: #111; } .vmeta { font: 400 13px/18px Inter; color: #666; margin-top: 4px; } .vprice { font: 600 24px/30px Inter; color: var(--teal); margin-top: 10px; } .vsub { font: 400 12px/16px Inter; color: #777; margin-top: 2px; }
+.vseller { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding: 12px 0; border-top: 1px solid #eee; border-bottom: 1px solid #eee; font: 500 14px/18px Inter; color: #111; } .vseller .av { width: 38px; height: 38px; border-radius: 50%; background: #e8e2d8; color: #6b5d4f; display: flex; align-items: center; justify-content: center; font: 600 13px/1 Inter; } .vseller small { display: block; font: 400 12px/16px Inter; color: #777; }
+.vbtn { height: 46px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font: 600 15px/1 Inter; margin-top: 10px; } .vbtn.fill { background: var(--teal); color: #fff; } .vbtn.line { border: 1.5px solid var(--teal); color: var(--teal); }
+.vdesc { font: 400 14px/20px Inter; color: #333; margin-top: 14px; }
+.vstate { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 99px; background: #e6f4f1; color: #0b6b5e; font: 600 12px/1 Inter; margin-top: 10px; } .vstate i { width: 7px; height: 7px; border-radius: 50%; background: #0b6b5e; }
+.vstats { font: 500 13px/18px Inter; color: #555; margin-top: 10px; }
+.sbar { height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 14px; background: linear-gradient(90deg, #5232B5, #7C5CEB); color: #fff; font: 500 12px/1 Inter; } .sbar img { height: 14px; } .sbar b { font-weight: 600; } .sbar .sp { flex: 1; }
+.vtabs { display: flex; gap: 18px; padding: 0 16px; border-bottom: 1px solid #eee; font: 600 14px/40px Inter; color: #777; } .vtabs .on { color: #111; border-bottom: 2px solid #111; }
+.vgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; padding: 14px 16px 24px; }
+.tile { position: relative; } .tile img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 8px; display: block; } .tile .tt { font: 400 13px/17px Inter; color: #333; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .tile .tp { font: 600 14px/18px Inter; color: var(--teal); } .tile .th { position: absolute; right: 8px; top: calc(100% * 3 / 4 * 1 - 0px); } .tile .fav { position: absolute; right: 8px; bottom: 54px; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 99px; background: rgba(255,255,255,.92); font: 600 12px/1 Inter; color: #333; } .tile .slot { position: absolute; left: 8px; top: 8px; width: 34px; height: 34px; }
+</style>
+</head>
+<body>
+<!-- ============================ TRACK ============================ -->
+<section class="page" id="track">
+  <div class="status"><span>9:41</span><span class="ic"><svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg><svg width="17" height="12" viewBox="0 0 17 12" fill="#fff"><path d="M8.5 2.2c2.6 0 5 1 6.8 2.7l1.2-1.3C14.4 1.6 11.6.4 8.5.4S2.6 1.6.5 3.6l1.2 1.3C3.5 3.2 5.9 2.2 8.5 2.2z"/><path d="M8.5 5.6c1.6 0 3.1.6 4.3 1.7l1.2-1.3C12.5 4.6 10.6 3.8 8.5 3.8S4.5 4.6 3 6l1.2 1.3c1.2-1.1 2.7-1.7 4.3-1.7z"/><path d="M8.5 9c.7 0 1.3.3 1.8.7l1.2-1.3c-.8-.7-1.9-1.2-3-1.2s-2.2.5-3 1.2l1.2 1.3c.5-.4 1.1-.7 1.8-.7z"/><circle cx="8.5" cy="11" r="1"/></svg><svg width="27" height="13" viewBox="0 0 27 13" fill="#fff"><rect x="0.5" y="0.5" width="23" height="12" rx="3.5" fill="none" stroke="#fff" stroke-opacity="0.4"/><rect x="2" y="2" width="20" height="9" rx="2"/><path d="M25 4.5v4c.8-.3 1.3-1.1 1.3-2s-.5-1.7-1.3-2z" fill-opacity="0.45"/></svg></span></div>
+  <header class="hd"><span class="burger"></span><img src="../../../../brand/selio-logo-blanc.png" alt=""><span class="space"><i></i>Track</span><span class="gen"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E2C67C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg></span><span class="sun"></span></header>
+  <main>
+    <div class="eyebrow">Selio Track · Mailles femme</div>
+    <h1>Pull Tommy Hilfiger</h1>
+    <p class="sub">Comparables des 30 derniers jours · chiffres d'exemple</p>
+    <div class="card">
+      <div class="row"><img src="../../../../apps/web/public/demo/photos/g-yw5b-1.webp" style="width:88px;height:88px;border-radius:8px;object-fit:cover" alt=""><div><div class="k">Revente moyenne</div><div class="big num" data-box="t-avg">13 – 14 €</div><div class="k">48 ventes observées</div></div></div>
+      <div class="bars"><i style="height:18%"></i><i style="height:30%"></i><i style="height:46%"></i><i style="height:62%"></i><i class="hi" style="height:100%"></i><i class="hi" style="height:88%"></i><i style="height:40%"></i><i style="height:16%"></i></div>
+      <div class="axis"><span>9 €</span><span>10</span><span>11</span><span>12</span><span>13</span><span>14</span><span>15</span><span>16</span></div>
+      <div class="note">Prix de vente observés sur les annonces vendues</div>
+    </div>
+    <div class="strip">
+      <div><div class="k">Achat le plus bas vu</div><div class="big num" data-box="t-low">3,00 €</div><div class="k">sur les annonces lues</div></div>
+      <div><div class="k">Achat max conseillé</div><div class="big num" data-box="t-max" style="color:var(--goldt)">5,00 €</div><div class="k">pour garder ta marge</div></div>
+    </div>
+    <div class="btn accent" data-box="t-cta">Créer une recherche Radar</div>
+    <div class="card"><h3>Comparables récents</h3>
+      <div class="tbl" style="margin-top:6px"><div class="r"><span>Pull col rond à pois · M</span><span class="num">14,00 € · 3 j</span></div><div class="r"><span>Pull fin coton · S</span><span class="num">13,50 € · 6 j</span></div><div class="r"><span>Pull rayé marine · M</span><span class="num">12,90 € · 11 j</span></div></div>
+      <div class="note">Statistiques seulement : aucun pseudo de vendeur n'est conservé.</div>
+    </div>
+  </main>
+</section>
+
+<!-- ============================ RADAR (réglages) ============================ -->
+<section class="page" id="radar">
+  <div class="status"><span>9:41</span><span class="ic"><svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg><svg width="27" height="13" viewBox="0 0 27 13" fill="#fff"><rect x="0.5" y="0.5" width="23" height="12" rx="3.5" fill="none" stroke="#fff" stroke-opacity="0.4"/><rect x="2" y="2" width="20" height="9" rx="2"/></svg></span></div>
+  <header class="hd"><span class="burger"></span><img src="../../../../brand/selio-logo-blanc.png" alt=""><span class="space"><i></i>Gestion</span><span class="gen"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E2C67C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg></span><span class="sun"></span></header>
+  <main>
+    <div class="eyebrow">Radar · Nouvelle recherche</div>
+    <h1>Pull Tommy Hilfiger femme</h1>
+    <p class="sub">Le radar lit ta recherche et note chaque annonce sur 100.</p>
+    <div class="card"><h3>Filtres</h3>
+      <div class="lbl">Marque</div><div><span class="chip on" data-box="r-brand">Tommy Hilfiger</span></div>
+      <div class="lbl">Catégorie</div><div><span class="chip on">Pulls et mailles</span> <span class="chip">Cardigans</span></div>
+      <div class="lbl">Genre et taille</div><div><span class="chip on">Femme</span> <span class="chip on">M</span> <span class="chip">S</span> <span class="chip">L</span></div>
+      <div class="lbl">État</div><div><span class="chip on">Très bon état</span> <span class="chip on">Neuf</span> <span class="chip">Bon état</span></div>
+      <div class="lbl">Prix d'achat maximum</div><div class="field num" data-box="r-price" style="display:flex;justify-content:space-between"><span>5,00 €</span><span class="k">conseillé par Track</span></div>
+    </div>
+    <div class="card"><h3>Alertes</h3>
+      <div class="row" style="justify-content:space-between;margin-top:8px"><span class="k">Alerte à partir de</span><span class="big num" data-box="r-score" style="font-size:26px;line-height:32px">80 <span class="k">/ 100</span></span></div>
+      <div class="slider"><div class="track"></div><div class="fill"></div><div class="knob"></div></div>
+      <div class="ticks"><span>0</span><span>60</span><span>75</span><span>80</span><span>90</span><span>100</span></div>
+      <div class="row" style="margin-top:16px"><div><b style="font:600 14px/19px Inter">Alertes sur le téléphone</b><div class="k">même quand Selio est fermé</div></div><span class="toggle" data-box="r-toggle"></span></div>
+      <div class="row" style="margin-top:12px"><div><b style="font:600 14px/19px Inter">Heures calmes</b><div class="k">23 h – 8 h</div></div><span class="toggle"></span></div>
+    </div>
+    <div class="btn accent" data-box="r-start">Lancer la recherche</div>
+    <div class="note">Le radar lit, note et t'alerte. L'achat se fait sur l'annonce, par toi.</div>
+  </main>
+</section>
+
+<!-- ============================ AFFAIRE (Radar) ============================ -->
+<section class="page" id="deal">
+  <div class="status"><span>9:41</span><span class="ic"><svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg><svg width="27" height="13" viewBox="0 0 27 13" fill="#fff"><rect x="0.5" y="0.5" width="23" height="12" rx="3.5" fill="none" stroke="#fff" stroke-opacity="0.4"/><rect x="2" y="2" width="20" height="9" rx="2"/></svg></span></div>
+  <header class="hd"><span class="burger"></span><img src="../../../../brand/selio-logo-blanc.png" alt=""><span class="space"><i></i>Gestion</span><span class="gen"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E2C67C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg></span><span class="sun"></span></header>
+  <main>
+    <div class="eyebrow">‹ Bonnes affaires · repérée il y a 1 min</div>
+    <div style="position:relative;border-radius:12px;overflow:hidden;margin-top:4px"><img src="../../../../apps/web/public/demo/photos/g-yw5b-1.webp" style="width:100%;height:280px;object-fit:cover;display:block" alt="">
+      <div class="ring" data-box="d-score" style="--v:82;position:absolute;left:12px;top:12px;background:conic-gradient(var(--vivid) 82%, rgba(255,255,255,.18) 0)"><span>82</span></div>
+      <span class="chip on" style="position:absolute;right:12px;top:14px;background:rgba(26,24,32,.85)">Bonne affaire</span></div>
+    <h2 style="margin-top:14px">Pull Tommy Hilfiger femme à pois</h2>
+    <p class="sub" style="margin-top:4px">Taille M · Très bon état · Tommy Hilfiger</p>
+    <p class="k" style="margin-top:4px">Vendeur noté 4,8 · 31 avis · annonce publiée il y a 3 min</p>
+    <div class="card tbl">
+      <div class="s">Achat (observé)</div>
+      <div class="r"><span>Prix</span><span class="num">4,00 €</span></div><div class="r"><span>+ Port</span><span class="num">2,90 €</span></div><div class="r"><span>+ Protection acheteurs</span><span class="num">0,90 €</span></div><div class="r tot"><span>= Total à payer</span><span class="num">7,80 €</span></div>
+      <div class="s">Vente (estimée)</div>
+      <div class="r"><span>Prix de revente</span><span class="num">13,50 €</span></div><div class="r"><span>− Frais vendeur</span><span class="num">0,00 €</span></div><div class="r"><span class="k">Confiance élevée · 48 ventes comparables</span><span></span></div>
+      <div class="s">Bénéfice</div>
+      <div class="big num" data-box="d-profit" style="color:var(--ok)">+5,70 €</div>
+      <div class="k">Marge 42 % du prix de vente · Rentabilité +73 % sur l'achat</div>
+    </div>
+    <div class="btn accent" data-box="d-open">Ouvrir l'annonce →</div>
+    <div class="btn ghost">Écarter</div>
+  </main>
+</section>
+
+<!-- ============================ ANNONCE (marketplace, achat) ============================ -->
+<section class="page light" id="vlisting">
+  <div class="status"><span>9:41</span><span class="ic"><svg width="18" height="12" viewBox="0 0 18 12" fill="#000"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg><svg width="27" height="13" viewBox="0 0 27 13" fill="#000"><rect x="0.5" y="0.5" width="23" height="12" rx="3.5" fill="none" stroke="#000" stroke-opacity="0.4"/><rect x="2" y="2" width="20" height="9" rx="2"/></svg></span></div>
+  <div class="vtop"><span class="bk">‹</span><span>Annonce</span><span class="sp"></span><span class="o"></span><span class="o" style="border-radius:4px"></span></div>
+  <img class="vphoto" src="../../../../apps/web/public/demo/photos/g-yw5b-1.webp" alt="">
+  <div class="vdots"><i class="on"></i><i></i><i></i><i></i></div>
+  <div class="vbody">
+    <div class="vtitle">Pull à pois Tommy Hilfiger</div>
+    <div class="vmeta">M · Très bon état · Tommy Hilfiger · Bleu</div>
+    <div class="vprice num" data-box="v-price">4,00 €</div>
+    <div class="vsub">7,80 € avec la protection acheteurs et le port</div>
+    <div class="vseller"><span class="av">C.</span><div>Vendeuse · ★ 4,8 (31 évaluations)<small>Répond en général en 1 h</small></div></div>
+    <div class="vbtn fill" data-box="v-buy">Acheter</div>
+    <div class="vbtn line">Faire une offre</div>
+    <p class="vdesc">Pull à pois marine, taille M, très bon état. Envoi rapide.</p>
+  </div>
+</section>
+
+<!-- ============================ CONTRÔLE À LA RÉCEPTION ============================ -->
+<section class="page" id="check">
+  <div class="status"><span>9:41</span><span class="ic"><svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg><svg width="27" height="13" viewBox="0 0 27 13" fill="#fff"><rect x="0.5" y="0.5" width="23" height="12" rx="3.5" fill="none" stroke="#fff" stroke-opacity="0.4"/><rect x="2" y="2" width="20" height="9" rx="2"/></svg></span></div>
+  <header class="hd"><span class="burger"></span><img src="../../../../brand/selio-logo-blanc.png" alt=""><span class="space"><i></i>Gestion</span><span class="gen"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E2C67C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg></span><span class="sun"></span></header>
+  <main>
+    <div class="eyebrow">Achat reçu</div>
+    <h1>Contrôle à la réception</h1>
+    <p class="sub">Pull Tommy Hilfiger femme à pois · acheté 4,00 € · reçu aujourd'hui</p>
+    <div class="photos2"><figure><img src="../../../../apps/web/public/demo/photos/g-yw5b-2.webp" alt=""><figcaption>Étiquette</figcaption></figure><figure><img src="../../../../apps/web/public/demo/photos/g-yw5b-7.webp" alt=""><figcaption>Coutures</figcaption></figure></div>
+    <div class="card"><h3>Indices d'authenticité</h3>
+      <div style="margin-top:6px">
+        <div class="check" data-box="c-1"><span class="c" data-box="c-dot1"></span><div><b>Étiquette intérieure</b><span>Police, composition et pays de fabrication cohérents avec la marque</span></div></div>
+        <div class="check" data-box="c-2"><span class="c" data-box="c-dot2"></span><div><b>Coutures et finitions</b><span>Points réguliers, surjet propre, aucun fil apparent</span></div></div>
+        <div class="check" data-box="c-3"><span class="c" data-box="c-dot3"></span><div><b>Logo brodé</b><span>Drapeau net, couleurs franches, relief régulier</span></div></div>
+      </div>
+      <div class="note">Des indices pour t'aider à décider, pas une garantie : c'est toi qui tranches.</div>
+    </div>
+    <div class="btn accent" data-box="c-validate">Valider mon achat · 4,00 €</div>
+    <div class="btn ghost">Signaler un doute</div>
+  </main>
+</section>
+
+<!-- ============================ STUDIO · ANNONCE PROPOSÉE ============================ -->
+<section class="page" id="studiolisting">
+  <div class="status"><span>9:41</span><span class="ic"><svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg><svg width="27" height="13" viewBox="0 0 27 13" fill="#fff"><rect x="0.5" y="0.5" width="23" height="12" rx="3.5" fill="none" stroke="#fff" stroke-opacity="0.4"/><rect x="2" y="2" width="20" height="9" rx="2"/></svg></span></div>
+  <header class="hd"><span class="burger"></span><img src="../../../../brand/selio-logo-blanc.png" alt=""><span class="space"><i></i>Studio</span><span class="gen"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E2C67C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg></span><span class="sun"></span></header>
+  <main>
+    <div class="eyebrow">Selio Studio · Annonce proposée</div>
+    <h1>Relis, ajuste, publie</h1>
+    <p class="sub">6 photos lues · prix conseillé d'après tes comparables</p>
+    <div class="thumbs">
+      <figure><img src="../../../../apps/web/public/demo/photos/g-yw5b-1.webp" alt=""><figcaption>Couverture</figcaption></figure><figure><img src="../../../../apps/web/public/demo/photos/g-yw5b-2.webp" alt=""></figure><figure><img src="../../../../apps/web/public/demo/photos/g-yw5b-3.webp" alt=""></figure><figure><img src="../../../../apps/web/public/demo/photos/g-yw5b-4.webp" alt=""></figure><figure><img src="../../../../apps/web/public/demo/photos/g-yw5b-5.webp" alt=""></figure><figure><img src="../../../../apps/web/public/demo/photos/g-yw5b-6.webp" alt=""></figure>
+    </div>
+    <div class="lbl">Titre <span style="float:right;font-weight:400">86 / 100</span></div>
+    <div class="field" data-box="s-title" style="min-height:62px"></div>
+    <div class="lbl">Description</div>
+    <div class="field" data-box="s-desc" style="min-height:118px"></div>
+    <div class="grid2" style="margin-top:4px">
+      <div><div class="lbl">Marque</div><div class="field" data-box="s-f1">Tommy Hilfiger</div></div>
+      <div><div class="lbl">Taille</div><div class="field" data-box="s-f2">M</div></div>
+      <div><div class="lbl">Catégorie</div><div class="field" data-box="s-f3">Femmes › Pulls</div></div>
+      <div><div class="lbl">État</div><div class="field" data-box="s-f4">Très bon état</div></div>
+      <div><div class="lbl">Couleur</div><div class="field" data-box="s-f5">Bleu marine</div></div>
+      <div><div class="lbl">Matière</div><div class="field" data-box="s-f6">Coton</div></div>
+    </div>
+    <div class="lbl">Prix de vente</div>
+    <div class="field num" data-box="s-price" style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:600">14,00 €</span><span class="k">conseillé : 13 – 14 € (Track)</span></div>
+    <div class="grid2" style="margin-top:4px"><div class="btn secondary">Brouillon</div><div class="btn accent" data-box="s-publish">Publier</div></div>
+    <div class="note">Rien n'est publié sans ton clic.</div>
+  </main>
+</section>
+
+<!-- ============================ ANNONCE PUBLIÉE (marketplace, côté vendeur) ============================ -->
+<section class="page light" id="vpublished">
+  <div class="status"><span>9:41</span><span class="ic"><svg width="18" height="12" viewBox="0 0 18 12" fill="#000"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg><svg width="27" height="13" viewBox="0 0 27 13" fill="#000"><rect x="0.5" y="0.5" width="23" height="12" rx="3.5" fill="none" stroke="#000" stroke-opacity="0.4"/><rect x="2" y="2" width="20" height="9" rx="2"/></svg></span></div>
+  <div class="vtop"><span class="bk">‹</span><span>Mon annonce</span><span class="sp"></span><span class="o" style="border-radius:4px"></span></div>
+  <img class="vphoto" src="../../../../apps/web/public/demo/photos/g-yw5b-1.webp" alt="">
+  <div class="vdots"><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div class="vbody">
+    <span class="vstate" data-box="p-online" style="margin-top:0"><i></i>En ligne</span>
+    <div class="vtitle" style="margin-top:10px">Pull Tommy Hilfiger femme col rond à pois · Bleu marine · M</div>
+    <div class="vmeta">M · Très bon état · Tommy Hilfiger · Coton</div>
+    <div class="vprice num">14,00 €</div>
+    <div class="vstats num" data-box="p-stats">0 vue · 0 favori</div>
+    <div class="vbtn line">Modifier l'annonce</div>
+    <p class="vdesc">Pull Tommy Hilfiger pour femme, bleu marine à pois blancs, col rond, maille fine en coton. Très bon état, porté deux fois, aucun défaut. Taille M, coupe droite, mesures sur les photos. Envoi rapide et soigné.</p>
+  </div>
+</section>
+
+<!-- ============================ DRESSING (marketplace + couche Selio) ============================ -->
+<section class="page light" id="vdressing">
+  <div class="status"><span>9:41</span><span class="ic"><svg width="18" height="12" viewBox="0 0 18 12" fill="#000"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg><svg width="27" height="13" viewBox="0 0 27 13" fill="#000"><rect x="0.5" y="0.5" width="23" height="12" rx="3.5" fill="none" stroke="#000" stroke-opacity="0.4"/><rect x="2" y="2" width="20" height="9" rx="2"/></svg></span></div>
+  <div class="sbar" data-box="w-bar"><img src="../../../../brand/selio-logo-blanc.png" alt=""><span><b>Dressing intelligent</b> · 6 annonces en ligne</span><span class="sp"></span><span>1 à republier</span></div>
+  <div class="vtop"><span>Mon dressing</span><span class="sp"></span><span class="o"></span></div>
+  <div class="vtabs"><span class="on">En vente · 6</span><span>Vendus · 13</span><span>Brouillons</span></div>
+  <div class="vgrid">
+    <div class="tile" data-box="w-pull"><img src="../../../../apps/web/public/demo/photos/g-yw5b-1.webp" alt=""><span class="slot" data-box="w-badge1"></span><span class="fav" data-box="w-fav1">♥ 0</span><div class="tt">Pull Tommy Hilfiger à pois</div><div class="tp num">14,00 €</div></div>
+    <div class="tile"><img src="../../../../apps/web/public/demo/photos/r-0r7c.webp" alt=""><span class="slot" data-box="w-badge2"></span><span class="fav">♥ 3</span><div class="tt">Cardigan laine beige</div><div class="tp num">19,00 €</div></div>
+    <div class="tile"><img src="../../../../apps/web/public/demo/photos/r-1kiv.webp" alt=""><span class="slot" data-box="w-badge3"></span><span class="fav">♥ 1</span><div class="tt">Sweat à capuche gris</div><div class="tp num">12,00 €</div></div>
+    <div class="tile"><img src="../../../../apps/web/public/demo/photos/r-291l.webp" alt=""><span class="slot" data-box="w-badge4"></span><span class="fav">♥ 5</span><div class="tt">Chemise rayée</div><div class="tp num">9,50 €</div></div>
+    <div class="tile"><img src="../../../../apps/web/public/demo/photos/r-2qi8.webp" alt=""><span class="slot" data-box="w-badge5"></span><span class="fav">♥ 2</span><div class="tt">Robe fleurie</div><div class="tp num">22,00 €</div></div>
+    <div class="tile"><img src="../../../../apps/web/public/demo/photos/r-3ylv.webp" alt=""><span class="slot" data-box="w-badge6"></span><span class="fav">♥ 0</span><div class="tt">Jean droit</div><div class="tp num">15,00 €</div></div>
+  </div>
+</section>
+
+<!-- ============================ MESSAGERIE (négociation) ============================ -->
+<section class="page" id="nego" style="min-height:852px">
+  <div class="status"><span>9:41</span><span class="ic"><svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg><svg width="27" height="13" viewBox="0 0 27 13" fill="#fff"><rect x="0.5" y="0.5" width="23" height="12" rx="3.5" fill="none" stroke="#fff" stroke-opacity="0.4"/><rect x="2" y="2" width="20" height="9" rx="2"/></svg></span></div>
+  <header class="hd"><span class="burger"></span><img src="../../../../brand/selio-logo-blanc.png" alt=""><span class="space"><i></i>Gestion</span><span class="gen"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E2C67C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg></span><span class="sun"></span></header>
+  <div class="row" style="padding:12px 16px;border-bottom:1px solid var(--border)"><span style="font-size:22px;color:var(--muted)">‹</span><span class="avatar">LM</span><div><b style="font:600 15px/19px Inter">Léa M.</b><div class="k">Lyon · acheteuse</div></div></div>
+  <div class="row" style="padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface)"><img src="../../../../apps/web/public/demo/photos/g-yw5b-1.webp" style="width:40px;height:40px;border-radius:8px;object-fit:cover" alt=""><div><b style="font:600 14px/18px Inter">Pull Tommy Hilfiger femme à pois</b><div class="k num">14,00 € · plancher 11,50 €</div></div></div>
+  <main style="padding-top:12px">
+    <div style="text-align:center"><span class="chip">Aujourd'hui</span></div>
+    <div class="msg in" data-box="n-msg1">Bonjour, est-ce que l'article est toujours disponible ? Je vous propose 10 € avec envoi rapide.<span class="t">20:04</span></div>
+    <div class="anchor" data-box="n-offer" style="height:30px;margin-top:10px"></div>
+    <div class="anchor" data-box="n-card" style="height:206px;margin-top:8px"></div>
+    <div class="anchor" data-box="n-sent" style="height:92px;margin-top:10px"></div>
+    <div class="anchor" data-box="n-reply" style="height:44px;margin-top:10px"></div>
+    <div class="anchor" data-box="n-sold" style="height:44px;margin-top:12px"></div>
+  </main>
+  <div class="composer"><span class="in">Écrire à Léa…</span><span class="send"></span></div>
+</section>
+</body>
+</html>
