@@ -1,6 +1,8 @@
 # Stockage des photos — compatible S3, sur notre machine
 
-Les photos (articles, générateur Studio, avatars) ne transitent pas par l'API : le navigateur les envoie **directement** à un stockage objet compatible S3 avec une URL signée que l'API lui a délivrée, puis les relit avec une autre URL signée, courte. En production ce stockage est **MinIO sur la machine de Marseille** : les données restent en France, sur un disque que nous contrôlons, sans service payant. Le code ne dépend que de l'API S3 : un autre fournisseur compatible S3 se branche en changeant quatre variables.
+> **Novembre 2026 : Garage remplace MinIO.** MinIO a cessé de distribuer ses images Docker (Docker Hub ne les a plus, quay.io refuse les téléchargements anonymes) : `docker compose up` ne démarrait plus. Le stockage tourne désormais sur [Garage](https://garagehq.deuxfleurs.fr/) (libre, AGPL, développé par le collectif français Deuxfleurs), compatible S3 : **le code de Selio n'a pas changé** (même SigV4, mêmes URLs signées, mêmes variables). Vérifié avec `packages/storage` : PUT et GET signés acceptés, fichier d'une autre taille ou d'un autre type refusé (403), lecture sans signature refusée (403), CORS limité à l'origine du site. Fichiers : `deploy/garage/garage.toml` (aucun secret) et `deploy/garage/init.mjs` (initialisation idempotente : capacité, bucket, clé de l'API en lecture + écriture seulement, CORS), utilisés par `docker-compose.yml` (développement) et `deploy/docker-compose.machine.yml` (production).
+
+Les photos (articles, générateur Studio, avatars) ne transitent pas par l'API : le navigateur les envoie **directement** à un stockage objet compatible S3 avec une URL signée que l'API lui a délivrée, puis les relit avec une autre URL signée, courte. En production ce stockage est **Garage sur la machine de Marseille** : les données restent en France, sur un disque que nous contrôlons, sans service payant. Le code ne dépend que de l'API S3 : un autre fournisseur compatible S3 (Garage aujourd'hui, ou un stockage objet en France) se branche en changeant quatre variables.
 
 Code : `packages/storage` (configuration, signature SigV4 écrite à la main avec `node:crypto`, politique, clés, client) et `apps/api/src/routes/uploads.ts` (routes).
 
@@ -9,8 +11,8 @@ Code : `packages/storage` (configuration, signature SigV4 écrite à la main ave
 ```
 navigateur ──POST /api/uploads/presign {kind, contentType, size}──▶ API Selio
            ◀── {key, uploadUrl (PUT signé), headers, readUrl (GET signé), expiresAt} ──
-navigateur ──PUT uploadUrl (Content-Type + Content-Length imposés) ──▶ MinIO
-navigateur ──GET readUrl (≤ 15 min) ───────────────────────────────▶ MinIO
+navigateur ──PUT uploadUrl (Content-Type + Content-Length imposés) ──▶ Garage
+navigateur ──GET readUrl (≤ 15 min) ───────────────────────────────▶ Garage
 ```
 
 1. **Validation côté API** (`validateUpload`) : kind ∈ `item-photo | studio-photo | avatar`, type ∈ `image/jpeg | image/png | image/webp`, taille ≤ **5 Mo**. Sinon 400 `upload_rejected` avec `details.reason` (`kind`, `content_type`, `size`).
@@ -46,41 +48,41 @@ Toutes facultatives. **Sans `STORAGE_ENDPOINT`, le stockage est désactivé** : 
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `STORAGE_ENDPOINT` | _(vide = désactivé)_ | URL du service S3, ex. `http://127.0.0.1:9000` (MinIO local) ou l'adresse privée de la machine via le tunnel. |
-| `STORAGE_REGION` | `fr-mrs-1` | Région signée. MinIO accepte n'importe quelle valeur ; on nomme la nôtre d'après la machine de Marseille. |
+| `STORAGE_ENDPOINT` | _(vide = désactivé)_ | URL du service S3 joignable par le navigateur : `http://127.0.0.1:3900` (Garage local) ou `https://photos.<domaine>` (production, via le tunnel). |
+| `STORAGE_REGION` | `fr-mrs-1` | Région signée. Garage exige la même valeur que `s3_region` dans `deploy/garage/garage.toml` (`fr-mrs-1`). |
 | `STORAGE_BUCKET` | — | Bucket des photos (`selio-photos`). Un seul bucket ; l'isolation se fait par préfixe `org/<orgId>/`. |
-| `STORAGE_ACCESS_KEY` | — | Identifiant d'accès. Placeholder dans `.env.example`, vraie valeur dans le `.env` du serveur seulement. |
-| `STORAGE_SECRET_KEY` | — | Secret associé. Jamais dans Git, les journaux ni le navigateur (il ne sert qu'à signer côté API). |
-| `STORAGE_FORCE_PATH_STYLE` | `true` | `true` : `endpoint/bucket/clé` (MinIO). `false` : `bucket.endpoint/clé` (S3 « virtual-hosted »). |
+| `STORAGE_ACCESS_KEY` | — | Identifiant d'accès, format Garage `GK` + 24 caractères hexadécimaux (généré par `node deploy/generer-secrets.mjs`). Vraie valeur dans le `.env` du serveur seulement. |
+| `STORAGE_SECRET_KEY` | — | Secret associé (64 caractères hexadécimaux). Jamais dans Git, les journaux ni le navigateur (il ne sert qu'à signer côté API). |
+| `STORAGE_FORCE_PATH_STYLE` | `true` | `true` : `endpoint/bucket/clé` (Garage). `false` : `bucket.endpoint/clé` (S3 « virtual-hosted »). |
 | `STORAGE_PRESIGN_TTL_SECONDS` | `900` | Durée de vie des URLs signées (60 s à 7 jours ; viser court). |
 
-Important : l'URL signée contient l'hôte de `STORAGE_ENDPOINT` et le navigateur l'appelle directement. L'endpoint doit donc être **joignable par le client** (en local `127.0.0.1:9000` ; en production un sous-domaine servi par Caddy devant MinIO, par exemple `https://photos.votre-domaine.fr`, avec CORS autorisant l'origine du site pour `PUT` et `GET`). Le serveur MinIO lui-même ne garde aucun port ouvert hors du reverse proxy.
+Important : l'URL signée contient l'hôte de `STORAGE_ENDPOINT` et le navigateur l'appelle directement. L'endpoint doit donc être **joignable par le client** (en local `127.0.0.1:3900` ; en production le sous-domaine publié par le tunnel Cloudflare, par exemple `https://photos.votre-domaine.fr`, avec l'en-tête « HTTP Host Header » réglé sur ce même nom et le cache désactivé : docs/PC-WINDOWS-IA.md, partie 5). Le CORS (`PUT` et `GET` pour l'origine du site) est posé par `deploy/garage/init.mjs`. Garage ne publie aucun port sur la machine en production : seul le tunnel le joint.
 
-## MinIO en local (développement)
+## Garage en local (développement)
 
-`docker-compose.yml` lance MinIO avec des identifiants de développement et crée le bucket au démarrage :
+`docker-compose.yml` lance Garage avec des secrets de développement, puis `garage-init` crée le bucket, la clé de dev et le CORS pour `http://127.0.0.1:5173` et `http://localhost:5173` :
 
 ```sh
-docker compose up -d minio minio-init     # API S3 sur :9000, console sur :9001
+docker compose up -d garage garage-init     # API S3 sur 127.0.0.1:3900 (pas de console web)
 ```
 
 Puis dans `apps/api/.env` :
 
 ```
-STORAGE_ENDPOINT=http://127.0.0.1:9000
+STORAGE_ENDPOINT=http://127.0.0.1:3900
 STORAGE_BUCKET=selio-photos
-STORAGE_ACCESS_KEY=selio-minio
-STORAGE_SECRET_KEY=selio-minio-secret
+STORAGE_ACCESS_KEY=GK5e110de5e110de5e110de5e1
+STORAGE_SECRET_KEY=0de5e1100de5e1100de5e1100de5e1100de5e1100de5e1100de5e1100de5e110
 ```
 
-Console web : http://127.0.0.1:9001 (mêmes identifiants) pour voir les objets. Ces identifiants ne servent **qu'en local** ; en production, créer un utilisateur MinIO dédié à l'API avec une politique limitée au bucket (`s3:PutObject`, `s3:GetObject` sur `selio-photos/*`), et non le compte racine.
+Ces identifiants ne servent **qu'en local**. En production, `deploy/docker-compose.machine.yml` importe la clé générée dans `deploy/.env`, avec les droits lecture + écriture sur le bucket seulement (jamais propriétaire) ; le jeton d'administration de Garage n'est transmis ni à l'API ni au worker.
 
 Vérification manuelle d'une URL signée produite par le code, sans passer par l'API :
 
 ```sh
 node --input-type=module -e "
 import { loadStorageConfig, StorageClient, objectKey } from '@selio/storage';
-const c = new StorageClient(loadStorageConfig({ STORAGE_ENDPOINT:'http://127.0.0.1:9000', STORAGE_BUCKET:'selio-photos', STORAGE_ACCESS_KEY:'selio-minio', STORAGE_SECRET_KEY:'selio-minio-secret' }));
+const c = new StorageClient(loadStorageConfig({ STORAGE_ENDPOINT:'http://127.0.0.1:3900', STORAGE_BUCKET:'selio-photos', STORAGE_ACCESS_KEY:'GK5e110de5e110de5e110de5e1', STORAGE_SECRET_KEY:'0de5e1100de5e1100de5e1100de5e1100de5e1100de5e1100de5e1100de5e110' }));
 console.log(c.presignUpload({ key: objectKey('11111111-1111-4111-8111-111111111111','item-photo','test','png'), contentType:'image/png', contentLength: 4 }));
 "
 # puis : curl -X PUT -H 'Content-Type: image/png' --data-binary 'abcd' '<uploadUrl>'
@@ -99,7 +101,7 @@ console.log(c.presignUpload({ key: objectKey('11111111-1111-4111-8111-1111111111
 - Le secret ne quitte jamais l'API ; le navigateur ne voit que des URLs signées, limitées dans le temps, à un objet, une méthode, un type et une taille.
 - Les clés n'embarquent ni nom de fichier ni donnée personnelle ; l'isolation par organisation est portée par le préfixe et vérifiée à chaque lecture.
 - Pas de listing de bucket exposé : l'API ne propose aucune route de liste ; les clés sont stockées sur les objets métier (article, annonce, profil).
-- Sauvegarde : le volume MinIO entre dans la sauvegarde chiffrée nocturne de la machine (prompt 5.7) ; `mc mirror` vers la machine de secours convient.
+- Sauvegarde : les photos (bucket `selio-photos` de Garage) entrent dans la sauvegarde chiffrée nocturne par rclone (remote S3 « Other » pointant sur Garage, avec une clé dédiée en lecture seule à créer une fois : `docker compose exec garage /garage key create selio-sauvegarde` puis `/garage bucket allow --read selio-photos --key selio-sauvegarde`) ; la variable s'appelle toujours `BACKUP_MINIO_SOURCE` (docs/SAUVEGARDE.md).
 - Reste à décider ou à faire : suppression des objets orphelins (tâche worker qui compare le bucket aux clés référencées), miniatures (génération côté navigateur avant l'envoi plutôt qu'un traitement serveur), quota de stockage par plan.
 
 ## Vérifier

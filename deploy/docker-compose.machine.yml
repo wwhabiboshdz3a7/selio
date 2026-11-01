@@ -1,0 +1,70 @@
+# Machine de production (Windows + Docker Desktop, ou Linux) : complète docker-compose.prod.yml avec
+#   - garage      : stockage des photos compatible S3 (remplace MinIO, dont les images ne sont plus distribuées)
+#   - garage-init : prépare Garage à chaque démarrage (capacité, bucket, clé de l'API, CORS), puis s'arrête
+#   - tunnel      : Cloudflare Tunnel, publie l'API et les photos en HTTPS sans ouvrir de port sur la box
+# et fait joindre Ollama (installé sur le PC lui-même) par l'API et le worker via host.docker.internal.
+#
+# Lancer depuis le dossier deploy/ (après avoir rempli deploy/.env, voir cles-production.modele.env) :
+#   docker compose -f docker-compose.prod.yml -f docker-compose.machine.yml up -d --build
+# Tuto complet : docs/PC-WINDOWS-IA.md
+services:
+  api:
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      # Ces secrets ne concernent que Garage et le tunnel : l'API et le worker ne les reçoivent jamais.
+      GARAGE_RPC_SECRET: ""
+      GARAGE_ADMIN_TOKEN: ""
+      CLOUDFLARE_TUNNEL_TOKEN: ""
+    depends_on:
+      garage-init: { condition: service_completed_successfully }
+
+  worker:
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      GARAGE_RPC_SECRET: ""
+      GARAGE_ADMIN_TOKEN: ""
+      CLOUDFLARE_TUNNEL_TOKEN: ""
+    depends_on:
+      garage-init: { condition: service_completed_successfully }
+
+  garage:
+    image: dxflrs/garage:v2.5.0
+    restart: unless-stopped
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?défini dans .env (node generer-secrets.mjs)}
+      GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN:?défini dans .env (node generer-secrets.mjs)}
+    volumes:
+      - ./garage/garage.toml:/etc/garage.toml:ro
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
+    # Aucun port publié : seuls le tunnel (photos.<domaine>) et l'initialisation joignent Garage.
+
+  garage-init:
+    image: node:22-alpine
+    restart: "no"
+    command: ["node", "/init/init.mjs"]
+    environment:
+      GARAGE_ADMIN_URL: http://garage:3903
+      GARAGE_S3_URL: http://garage:3900
+      GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN:?défini dans .env}
+      GARAGE_CAPACITY: ${GARAGE_CAPACITY:-200G}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-selio-photos}
+      STORAGE_REGION: ${STORAGE_REGION:-fr-mrs-1}
+      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY:?défini dans .env}
+      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY:?défini dans .env}
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:?défini dans .env}
+    volumes:
+      - ./garage/init.mjs:/init/init.mjs:ro
+    depends_on: [garage]
+
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.7
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?défini dans .env (Cloudflare Zero Trust › Networks › Tunnels)}
+    depends_on: [api, garage]
+
+volumes:
+  garage_meta:
+  garage_data:

@@ -1,0 +1,48 @@
+/* Mise en page commune des documents de livraison (A4), charte v3 : encre, améthyste, or, Inter. */
+@page { size: A4; margin: 16mm 15mm 16mm 15mm; }
+@page :first { margin: 0; }
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; font: 400 10pt/1.5 Inter, system-ui, sans-serif; color: #1C1A24; }
+.cover { height: 297mm; width: 210mm; padding: 26mm 20mm 18mm; color: #EEEBF3; position: relative; overflow: hidden; page-break-after: always;
+  background: radial-gradient(70% 45% at 70% 12%, rgba(124,92,235,.55), transparent 70%), radial-gradient(60% 40% at 15% 85%, rgba(59,42,143,.5), transparent 70%), radial-gradient(40% 25% at 85% 100%, rgba(193,147,59,.22), transparent 70%), #14121A; }
+.cover .logo { display: flex; align-items: center; gap: 10px; font: 600 22pt Inter; letter-spacing: -.02em; }
+.cover .logo img { height: 34px; }
+.cover .eyebrow { margin-top: 118mm; font: 600 8.5pt Inter; letter-spacing: .22em; text-transform: uppercase; color: #E2C67C; }
+.cover h1 { margin: 8px 0 0; font: 600 30pt/1.1 Inter; letter-spacing: -.03em; color: #fff; }
+.cover .lead { margin-top: 14px; max-width: 150mm; font-size: 11pt; color: #CFC9DB; }
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 18mm; }
+.tile { border: 1px solid rgba(255,255,255,.14); border-radius: 10px; padding: 10px 12px; background: rgba(255,255,255,.04); }
+.tile b { display: block; font: 600 17pt Inter; letter-spacing: -.02em; color: #fff; }
+.tile span { display: block; margin-top: 2px; font-size: 8pt; color: #B4AFC0; line-height: 1.35; }
+.cover .foot { position: absolute; left: 20mm; right: 20mm; bottom: 14mm; font-size: 8pt; color: #868193; }
+h2 { margin: 22px 0 8px; font: 600 14pt Inter; letter-spacing: -.02em; page-break-after: avoid; }
+h2 .n { color: #6442D6; margin-right: 8px; }
+h3 { margin: 16px 0 6px; font: 600 11pt Inter; page-break-after: avoid; }
+p { margin: 6px 0; }
+.muted { color: #6E6A7B; }
+.small { font-size: 8.5pt; }
+table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 8.6pt; line-height: 1.4; }
+thead { display: table-header-group; }
+tr { page-break-inside: avoid; }
+th { text-align: left; font: 500 7.5pt Inter; letter-spacing: .08em; text-transform: uppercase; color: #6E6A7B; background: #F5F5F7; padding: 6px 8px; border-bottom: 1px solid #E7E5EC; }
+td { padding: 6px 8px; border-bottom: 1px solid #E7E5EC; vertical-align: top; }
+td.num, th.num { white-space: nowrap; }
+td b { font-weight: 600; }
+.badge { display: inline-block; padding: 1px 7px; border-radius: 99px; font: 500 7.5pt Inter; white-space: nowrap; background: #F1F0F4; color: #3F3B4A; }
+.badge.v { background: #F5F2FF; color: #5232B5; }
+.badge.g { background: #FBF7EC; color: #7A591A; }
+.badge.r { background: #FDECEA; color: #B42318; }
+.box { border: 1px solid #E7E5EC; border-radius: 12px; padding: 12px 14px; margin: 10px 0; page-break-inside: avoid; }
+.box.accent { border-color: #CFC2FF; background: #FAF8FF; }
+.box.warn { border-color: #F2D7A6; background: #FFFBF3; }
+.box h3 { margin-top: 0; }
+ul, ol { margin: 6px 0; padding-left: 18px; }
+li { margin: 3px 0; }
+code, .mono { font-family: "DejaVu Sans Mono", ui-monospace, monospace; font-size: 8.4pt; background: #F1F0F4; border-radius: 4px; padding: 0 4px; }
+pre { font-family: "DejaVu Sans Mono", ui-monospace, monospace; font-size: 8.2pt; line-height: 1.45; background: #1C1A24; color: #EEEBF3; border-radius: 10px; padding: 10px 12px; white-space: pre-wrap; word-break: break-word; page-break-inside: avoid; margin: 8px 0 12px; }
+pre .c { color: #A3A0AE; }
+.step { display: grid; grid-template-columns: 26px 1fr; gap: 8px; margin: 10px 0; page-break-inside: avoid; }
+.step .k { width: 22px; height: 22px; border-radius: 50%; background: #6442D6; color: #fff; font: 600 9pt Inter; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+.check { list-style: none; padding-left: 0; } .check li::before { content: "☐ "; color: #6442D6; }
+.pagebreak { page-break-before: always; }

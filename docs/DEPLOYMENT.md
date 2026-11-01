@@ -43,6 +43,18 @@ La liste complète des clés et variables (Netlify, serveur, IA, paiement Revolu
 ## 2. Serveur métier (Linux)
 
 ### Option A — Docker Compose (recommandée)
+
+Sur la machine de production (Windows avec Docker Desktop, ou Linux), avec le fichier de clés unique et le complément `docker-compose.machine.yml` (Garage pour les photos, tunnel Cloudflare, Ollama joint par `host.docker.internal`) — pas à pas complet : [PC-WINDOWS-IA.md](PC-WINDOWS-IA.md).
+
+```bash
+cd deploy
+cp cles-production.modele.env .env && node generer-secrets.mjs     # puis remplir les A_REMPLIR
+node verifier-cles.mjs                                               # aucun ✗ avant de continuer
+docker compose -f docker-compose.prod.yml -f docker-compose.machine.yml up -d --build
+```
+
+Variante sans le complément (serveur Linux avec adresse publique et Caddy, stockage S3 externe) :
+
 ```bash
 git clone <dépôt> /opt/selio && cd /opt/selio/deploy
 cp ../apps/api/.env.example .env           # compléter : SECRETS_ENCRYPTION_KEY, POSTGRES_PASSWORD, APP_DB_PASSWORD,
@@ -72,8 +84,8 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ### Opérateurs
 `OPERATOR_EMAILS=admin@exemple.fr` : les comptes créés avec ces emails obtiennent l'accès `/admin`. Pour un compte existant : `update users set is_operator = true where email = '…'`.
 
-### Photos (MinIO) et emails (SMTP)
-- **Photos** : stockage objet compatible S3 sur la machine. En local, `docker compose up -d minio` (racine du dépôt) démarre MinIO (API `:9000`, console `:9001`) et crée le bucket `selio-photos` sans accès anonyme. Côté API : `STORAGE_ENDPOINT`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` (compte dédié au bucket, pas le compte racine). En production, publier MinIO derrière Caddy sur un sous-domaine (ex. `photos.votre-domaine.fr`) avec CORS `PUT`/`GET` pour l'origine du site : les URLs signées sont appelées directement par le navigateur. Le volume `selio_minio` entre dans la sauvegarde chiffrée nocturne. Sans `STORAGE_ENDPOINT`, l'API démarre, avertit, et `/api/uploads` répond 503. Détails : STOCKAGE.md.
+### Photos (Garage) et emails (SMTP)
+- **Photos** : stockage objet compatible S3 sur la machine, **Garage** (MinIO ne distribue plus ses images Docker). En local, `docker compose up -d garage garage-init` (racine du dépôt) démarre Garage (API S3 `127.0.0.1:3900`) et crée le bucket `selio-photos`, la clé de dev et le CORS ; en production, `deploy/docker-compose.machine.yml` fait de même avec les clés de `deploy/.env`. Côté API : `STORAGE_ENDPOINT`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` (compte dédié au bucket, pas le compte racine). En production, Garage est publié par le tunnel Cloudflare sur un sous-domaine (ex. `photos.votre-domaine.fr`, en-tête « HTTP Host Header » réglé sur ce nom, cache désactivé) ; le CORS `PUT`/`GET` pour l'origine du site est posé par `deploy/garage/init.mjs`. Le bucket entre dans la sauvegarde chiffrée nocturne (rclone). Sans `STORAGE_ENDPOINT`, l'API démarre, avertit, et `/api/uploads` répond 503. Détails : STOCKAGE.md.
 - **Emails** (invitations, mot de passe oublié, échec de paiement, alertes) : `EMAIL_PROVIDER=smtp` + `SMTP_URL=smtp://utilisateur:motdepasse@hôte:587` (ou `smtps://…:465`) + `EMAIL_FROM`. Par défaut `noop` : rien n'est envoyé, chaque envoi est journalisé avec l'adresse masquée ; accepté en production mais signalé au démarrage tant que le service d'email n'est pas choisi avec Ibrahim. Prévoir SPF/DKIM sur le domaine de `EMAIL_FROM`.
 
 ### Paiement (Revolut Merchant API)
@@ -132,7 +144,7 @@ Fonctionnement, règles et procédure de test : [RADAR.md](RADAR.md) ; variables
 `pnpm build:extension` → `apps/extension/dist`. Distribution : installation non empaquetée (équipe) ou archive `pnpm --filter @selio/extension zip`. Publication sur le Chrome Web Store non réalisée (compte développeur payant, non créé).
 
 ## 4. Sauvegardes
-Voir [SAUVEGARDE.md](SAUVEGARDE.md) et `scripts/sauvegarde/`. Chaque nuit à 03:30 : `pg_dump --format=custom` et photos MinIO, chiffrés avec age (clé publique seulement sur la machine), sommes SHA-256, copie hors machine avec rclone, rotation 30 jours. Le 1er du mois : test de restauration dans une base temporaire, comparé au manifeste, de préférence sur le portable de secours. Les `.env` et `SECRETS_ENCRYPTION_KEY` sont sauvegardés à part, à la main. La procédure de bascule sur le portable est au §7 de SAUVEGARDE.md. Avec Docker Compose, la sauvegarde passe par le conteneur PostgreSQL (`BACKUP_PG_DOCKER_CONTAINER`) : aucun port à publier.
+Voir [SAUVEGARDE.md](SAUVEGARDE.md) et `scripts/sauvegarde/`. Chaque nuit à 03:30 : `pg_dump --format=custom` et photos (Garage), chiffrés avec age (clé publique seulement sur la machine), sommes SHA-256, copie hors machine avec rclone, rotation 30 jours. Le 1er du mois : test de restauration dans une base temporaire, comparé au manifeste, de préférence sur le portable de secours. Les `.env` et `SECRETS_ENCRYPTION_KEY` sont sauvegardés à part, à la main. La procédure de bascule sur le portable est au §7 de SAUVEGARDE.md. Avec Docker Compose, la sauvegarde passe par le conteneur PostgreSQL (`BACKUP_PG_DOCKER_CONTAINER`) : aucun port à publier.
 
 ## 5. Mise à jour
 ```bash
