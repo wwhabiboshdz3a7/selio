@@ -24,10 +24,42 @@ test.describe("comptes Vinted", () => {
     await expect(page.getByRole("article", { name: "Compte @secondemain.vintage" })).toBeVisible();
     await tabs.getByRole("tab", { name: /Tous/ }).click();
 
-    // Ajout d'un compte : pseudo, nom interne, catégorie expliquée.
+    // Quota de l'offre (D18 : 3 comptes en Pro et pendant l'essai). La démo compte déjà 4 comptes
+    // Vinted (D19, à trancher) : l'ajout est refusé proprement et l'alerte dit comment s'en sortir.
+    const quotaLine = (used: number) => page.getByText(new RegExp(`^${used} comptes? Vinted sur 3 inclus dans votre abonnement`));
+    await expect(quotaLine(4)).toBeVisible();
     await page.getByRole("button", { name: "Ajouter un compte" }).first().click();
     const dialog = page.getByRole("dialog", { name: "Ajouter un compte Vinted" });
     await expect(dialog.getByText(/jamais utilisé par les automatisations/)).toBeVisible();
+    const quotaAlert = dialog.getByRole("alert").filter({ hasText: "Quota de comptes atteint" });
+    await expect(quotaAlert).toContainText("Votre abonnement inclut 3 compte(s) Vinted.");
+    await expect(quotaAlert.getByRole("link", { name: "Changer d'abonnement" })).toHaveAttribute("href", "/app/settings/billing");
+    await expect(dialog.getByRole("button", { name: "Ajouter le compte" })).toBeDisabled();
+    await dialog.getByRole("button", { name: "Annuler" }).click();
+    await expect(dialog).toBeHidden();
+
+    // Libérer une place en supprimant des comptes inutilisés : à 3 sur 3 l'ajout reste bloqué, à 2 il s'ouvre.
+    for (const [label, left] of [["Compte perso", 3], ["Boutique vintage", 2]] as const) {
+      await page.getByRole("button", { name: `Plus d'actions pour ${label}` }).click();
+      await page.getByRole("menuitem", { name: "Supprimer" }).click();
+      const confirm = page.getByRole("dialog", { name: new RegExp(`^Supprimer « ${label} »`) });
+      await confirm.getByRole("button", { name: "Supprimer" }).click();
+      await expect(confirm).toBeHidden();
+      await expect(quotaLine(left)).toBeVisible();
+      if (left === 3) {
+        await page.getByRole("button", { name: "Ajouter un compte" }).first().click();
+        await expect(quotaAlert).toBeVisible();
+        await expect(dialog.getByRole("button", { name: "Ajouter le compte" })).toBeDisabled();
+        await dialog.getByRole("button", { name: "Annuler" }).click();
+        await expect(dialog).toBeHidden();
+      }
+    }
+    await expect(page.getByRole("article", { name: "Compte @secondemain.vintage" })).toHaveCount(0);
+
+    // Ajout d'un compte : pseudo, nom interne, catégorie expliquée.
+    await page.getByRole("button", { name: "Ajouter un compte" }).first().click();
+    await expect(dialog.getByText(/jamais utilisé par les automatisations/)).toBeVisible();
+    await expect(quotaAlert).toHaveCount(0);
     await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
     await expect(dialog.getByText("Indiquez le pseudo du compte Vinted.")).toBeVisible();
     await dialog.getByLabel("Pseudo Vinted").fill("@nouvelle.boutique");
@@ -38,6 +70,7 @@ test.describe("comptes Vinted", () => {
     const added = page.getByRole("article", { name: "Compte @nouvelle.boutique" });
     await expect(added).toBeVisible();
     await expect(added.getByRole("radio", { name: "Achat" })).toBeChecked();
+    await expect(quotaLine(3)).toBeVisible();
 
     // Jetons d'extension : repliés par défaut, accessibles dans « Avancé ».
     await expect(page.getByRole("button", { name: "Créer un jeton" })).toBeHidden();

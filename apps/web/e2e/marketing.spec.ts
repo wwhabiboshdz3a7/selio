@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { isMobile } from "./helpers";
 
 test.describe("vitrine", () => {
   test("accueil : proposition de valeur, parcours, CTA et transparence", async ({ page }) => {
@@ -21,7 +22,8 @@ test.describe("vitrine", () => {
     await page.goto("/fonctionnalites");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await page.goto("/tarifs");
-    await expect(page.getByText("Montants indicatifs", { exact: true })).toBeVisible();
+    // Avertissement des tarifs, renommé « Montants non définitifs » avec les offres 1 / 3 / 10.
+    await expect(page.getByText("Montants non définitifs", { exact: true })).toBeVisible();
     await page.goto("/faq");
     await expect(page.getByText("Selio est-il affilié à Vinted ?")).toBeVisible();
     await page.goto("/mentions-legales");
@@ -56,7 +58,17 @@ test.describe("vitrine", () => {
     await expect(page.getByText("Selio Cloud en option", { exact: true })).toBeVisible();
     // Comparatif : l'essai et les trois offres, « — » pour ce qui n'est pas inclus.
     const table = page.getByRole("table");
-    await expect(table.getByRole("columnheader", { name: /Agence/ })).toBeVisible();
+    const columns = ["Essai 14 jours", "Starter", "Pro", "Agence"];
+    if (isMobile(page)) {
+      // Sur mobile, une offre à la fois (Pro par défaut) : l'offre affichée se choisit au-dessus du tableau.
+      await expect(table.getByRole("columnheader", { name: /^Pro\b/ })).toBeVisible();
+      await expect(table.getByRole("columnheader", { name: /^Agence\b/ })).toBeHidden();
+      await page.getByRole("radiogroup", { name: "Offre affichée" }).getByRole("radio", { name: "Agence" }).click();
+      await expect(table.getByRole("columnheader", { name: /^Agence\b/ })).toBeVisible();
+      for (const name of columns.filter((c) => c !== "Agence")) await expect(table.getByRole("columnheader", { name: new RegExp(`^${name}\\b`) })).toBeHidden();
+    } else {
+      for (const name of columns) await expect(table.getByRole("columnheader", { name: new RegExp(`^${name}\\b`) })).toBeVisible();
+    }
     await expect(table.getByRole("rowheader", { name: /Comptes Vinted connectés/ })).toBeVisible();
     await expect(table.getByRole("rowheader", { name: /Annonces rédigées/ })).toBeVisible();
     // L'inscription n'offre plus de choix de durée : 14 jours, carte enregistrée, rien débité.
