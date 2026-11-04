@@ -25,7 +25,11 @@ test.describe("Selio et ses filiales", () => {
     for (const name of ["Selio", "Selio Studio", "Selio Agents", "Selio Track", "Selio Cloud", "Générateur de compte Vinted"]) await expect(page.getByRole("article", { name, exact: true })).toBeVisible();
     await expect(page.getByRole("article", { name: "Selio Global" })).toHaveCount(0);
     await expect(page.getByRole("article", { name: "Selio Agents" }).getByText("Aperçu", { exact: true }).first()).toBeVisible();
-    await expect(page.getByRole("article", { name: "Selio Cloud" }).getByText("En développement", { exact: true })).toBeVisible();
+    // Selio Cloud est devenu un vrai espace (/cloud) en aperçu dans la démo : plus « En développement ».
+    const cloud = page.getByRole("article", { name: "Selio Cloud" });
+    await expect(cloud.getByText("Aperçu", { exact: true }).first()).toBeVisible();
+    await expect(cloud.getByText("En développement", { exact: true })).toHaveCount(0);
+    await expect(cloud.getByRole("link", { name: "Ouvrir Selio Cloud" })).toHaveAttribute("href", "/cloud");
     await expect(page.getByText("Comment les filiales s'enchaînent")).toBeVisible();
     // Chiffres de Selio calculés depuis les données de la démo (plus de tiret une fois chargés).
     await expect(page.getByRole("article", { name: "Selio", exact: true }).getByRole("definition").first()).not.toHaveText("—");
@@ -41,11 +45,18 @@ test.describe("Selio et ses filiales", () => {
 
     await switchSpace(page, /^Selio Track/);
     await expect(page).toHaveURL(/\/track$/);
-    await expect(page.getByText("Top revendeurs")).toBeVisible();
+    // Track remplace l'ancienne page Marché : tableau de bord des filtres suivis (simulateur signalé).
+    await expect(page.getByRole("heading", { level: 1, name: "Tableau de bord" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Filtres suivis" })).toBeVisible();
+    await expect(page.getByText("Scans de niche du mois")).toBeVisible();
+    await expect(page.getByText(/^Données de démonstration : le simulateur remplace la lecture des pages/)).toBeVisible();
 
     await switchSpace(page, /^Selio Cloud/);
     await expect(page).toHaveURL(/\/cloud$/);
-    await expect(page.getByRole("heading", { name: "Comment ça marchera" })).toBeVisible();
+    // Selio Cloud est un vrai espace : son tableau de bord (plafond de 10 comptes), plus la page « Comment ça marchera ».
+    await expect(page.getByRole("heading", { level: 1, name: "Tableau de bord" })).toBeVisible();
+    await expect(page.getByText("10 comptes maximum par organisation")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Comment ça marchera" })).toHaveCount(0);
 
     await switchSpace(page, /^Selio\b(?! Studio| Agents| Track| Cloud)/);
     await expect(page).toHaveURL(/\/app$/);

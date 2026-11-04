@@ -14,7 +14,8 @@ test.describe("aide de l'application", () => {
     await page.getByLabel("Votre question").fill("Puis-je connecter plusieurs comptes Vinted ?");
     await page.getByRole("button", { name: "Demander" }).click();
     await expect(page.getByTestId("help-origin")).toHaveText("Réponse tirée de la FAQ");
-    await expect(page.getByText(/jusqu'à\s5\savec Pro/).first()).toBeVisible();
+    // Offres 1 / 3 / 10 (D18) : la réponse reprend le nombre de comptes de chaque offre.
+    await expect(page.getByText(/1\scompte avec Starter, jusqu'à\s3\savec Pro .*jusqu'à\s10\savec Agence/).first()).toBeVisible();
     await page.getByRole("link", { name: /Puis-je connecter plusieurs comptes Vinted\s\?\s·\sComptes Vinted et extension/ }).click();
     await expect(page).toHaveURL(/\/app\/help#plusieurs-comptes$/);
     const entry = page.locator("details#plusieurs-comptes");
@@ -41,7 +42,9 @@ test.describe("aide de l'application", () => {
     await expect(page.getByRole("button", { name: "Choisir cette offre" })).toHaveCount(3);
     // La périodicité a été fixée avec la carte : pas de sélecteur, un rappel en toutes lettres.
     await expect(page.getByText(/Périodicité : mensuelle/)).toBeVisible();
-    await expect(page.getByText("Carte enregistrée")).toBeVisible();
+    // L'état de la carte (la phrase de périodicité mentionne aussi « la carte enregistrée »).
+    const card = page.getByRole("definition").filter({ has: page.getByRole("button", { name: "Changer de carte" }) });
+    await expect(card.getByText("Carte enregistrée", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Résilier" })).toBeVisible();
     await expect(page.getByRole("link", { name: /Voir mes factures/ })).toHaveAttribute("href", "/app/settings/invoices");
     await expect(page.getByText("Plus de 10 comptes Vinted")).toBeVisible();
