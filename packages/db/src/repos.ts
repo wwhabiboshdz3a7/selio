@@ -1,4 +1,6 @@
 import {
+  priceModelRecord as priceModelRecordSchema, priceReference as priceReferenceSchema, trackFilter as trackFilterSchema, trackPhotoSearch as trackPhotoSearchSchema, trackScan as trackScanSchema, trackSnapshot as trackSnapshotSchema,
+  type ItemCategory, type PriceModelMetrics, type PriceModelRecord, type PriceReference, type PriceReferenceInput, type PriceReferenceSource, type TrackCriteria, type TrackFilter, type TrackPhotoSearch, type TrackScan, type TrackSnapshot, type TrackSource,
   aiRequest, auditLog, cloudAccount as cloudAccountSchema, cloudAction as cloudActionSchema, cloudConsent as cloudConsentSchema, cloudLoginSession as cloudLoginSessionSchema, automationRule, conversation as conversationSchema, customer as customerSchema, extensionToken, inventoryEvent, inventoryItem, invoice as invoiceSchema, job as jobSchema, marketplaceConnection, membership as membershipSchema, message as messageSchema, opportunity as opportunitySchema, order as orderSchema, organization as organizationSchema, paymentOrder as paymentOrderSchema, purchaseRequest as purchaseSchema, radarSearch as radarSchema, radarRead as radarReadSchema, radarAlert as radarAlertSchema, pushSubscription as pushSubscriptionSchema, RADAR_BLOCK_OUTCOMES, shipment as shipmentSchema, subscription as subscriptionSchema, usageEvent, user as userSchema, quotasForPlan, isLegacyQuotas, resolveQuotas,
   type AiRequest, type AuditLog, type AutomationRule, type CloudAccount, type CloudAction, type CloudActionDetail, type CloudConsent, type CloudJournalQuery, type CloudLoginSession, type Conversation, type ConversationQuery, type Customer, type CustomerQuery, type ExtensionToken, type InventoryEvent, type InventoryItem, type InventoryQuery, type Invoice, type Job, type JobQuery, type MarketplaceConnection, type Membership, type Message, type Opportunity, type Order, type OrderQuery, type Organization, type Page, type PaymentOrder, type PurchaseRequest, type RadarSearch, type RadarRead, type RadarReadOutcome, type RadarSourceKind, type RadarAlert, type RadarAlertKind, type RadarAlertPayload, type PushSubscription, type Shipment, type Subscription, type UsageEvent, type User,
 } from "@selio/contracts";
@@ -835,8 +837,24 @@ export const aiRequests = {
 };
 
 export const usage = {
-  async record(tx: Tx, kind: UsageEvent["kind"], meta: Record<string, unknown> = {}, quantity = 1): Promise<void> {
-    await tx.insert("usage_events", { orgId: tx.orgId, kind, quantity, meta });
+  /**
+   * Enregistre un événement ; rend son identifiant (réservation d'une place de quota, retirée en cas
+   * d'échec). `at` : date de l'événement (horloge du service), sinon l'heure de la base.
+   */
+  async record(tx: Tx, kind: UsageEvent["kind"], meta: Record<string, unknown> = {}, quantity = 1, at?: string): Promise<string> {
+    const row = await tx.insert<{ id: string }>("usage_events", { orgId: tx.orgId, kind, quantity, meta, ...(at ? { createdAt: at } : {}) });
+    return String(row.id);
+  },
+  /** Retire un événement de l'organisation (place de quota réservée puis rendue après un échec). */
+  async remove(tx: Tx, id: string): Promise<boolean> {
+    return (await tx.query("delete from usage_events where org_id = $1 and id = $2 returning id", [tx.orgId, id])).length > 0;
+  },
+  /**
+   * Verrou de transaction propre à l'organisation et à un compteur : deux contrôles de quota simultanés
+   * de la même organisation passent l'un après l'autre (le second voit la réservation du premier).
+   */
+  async lock(tx: Tx, scope: string): Promise<void> {
+    await tx.query("select pg_advisory_xact_lock(hashtext($1))", [`${tx.orgId}:${scope}`]);
   },
   async list(tx: Tx, limit = 50): Promise<UsageEvent[]> {
     return (await tx.query("select * from usage_events where org_id = $1 order by created_at desc limit $2", [tx.orgId, limit])).map((r) => parse(usageEvent, r));
@@ -1424,6 +1442,448 @@ export const radarOrgs = {
    */
   async ids(tx: Tx): Promise<string[]> {
     return (await tx.query<{ orgId: string }>("select org_id from app_radar_org_ids()")).map((r) => r.orgId);
+  },
+};
+
+// ---------------------------------------------------------------- Selio Track et estimation des prix (0013)
+
+/** Filtres suivis par l'organisation (RLS). `lastReadAt` / `nextReadAt` viennent de `trackReads.state`. */
+export const trackFilters = {
+  async list(tx: Tx): Promise<TrackFilter[]> {
+    return (await tx.query("select * from track_filters where org_id = $1 order by created_at, id", [tx.orgId])).map((r) => parse(trackFilterSchema, r));
+  },
+  async byId(tx: Tx, id: string): Promise<TrackFilter> {
+    return parse(trackFilterSchema, await tx.one("select * from track_filters where org_id = $1 and id = $2", [tx.orgId, id], "Filtre Track"));
+  },
+  async byFingerprint(tx: Tx, fingerprint: string): Promise<TrackFilter | null> {
+    const r = await tx.maybeOne("select * from track_filters where org_id = $1 and fingerprint = $2", [tx.orgId, fingerprint]);
+    return r ? parse(trackFilterSchema, r) : null;
+  },
+  /** Filtres de l'organisation (actifs ou non) : base du quota « filtres suivis ». */
+  async count(tx: Tx): Promise<number> {
+    return tx.count("select count(*) from track_filters where org_id = $1", [tx.orgId]);
+  },
+  /** Filtres actifs de l'organisation, en dehors de `exceptId` (réactivation sous le quota). */
+  async countEnabled(tx: Tx, exceptId?: string): Promise<number> {
+    return tx.count("select count(*) from track_filters where org_id = $1 and enabled and ($2::text is null or id <> $2)", [tx.orgId, exceptId ?? null]);
+  },
+  async create(tx: Tx, input: { name: string; criteria: TrackCriteria; fingerprint: string; enabled: boolean }): Promise<TrackFilter> {
+    return parse(trackFilterSchema, await tx.insert("track_filters", { ...input, orgId: tx.orgId }));
+  },
+  async update(tx: Tx, id: string, patch: { name?: string; criteria?: TrackCriteria; fingerprint?: string; enabled?: boolean }): Promise<TrackFilter> {
+    const { columns, values } = objectToColumns({ ...patch, updatedAt: new Date().toISOString() });
+    const sets = columns.map((c, i) => `${c} = $${i + 3}`);
+    return parse(trackFilterSchema, await tx.one(`update track_filters set ${sets.join(", ")} where org_id = $1 and id = $2 returning *`, [tx.orgId, id, ...values], "Filtre Track"));
+  },
+  async delete(tx: Tx, id: string): Promise<boolean> {
+    return (await tx.query("delete from track_filters where org_id = $1 and id = $2 returning id", [tx.orgId, id])).length > 0;
+  },
+};
+
+/** État de lecture d'une empreinte suivie par l'organisation courante. */
+export interface TrackReadState {
+  fingerprint: string;
+  lastReadAt: string | null;
+  nextReadAt: string;
+  reads: number;
+  lastOutcome: string | null;
+  factor: number;
+}
+
+/** Empreinte due (passage du worker) : critères normalisés, sans aucune donnée d'organisation. */
+export interface TrackDueRead {
+  fingerprint: string;
+  criteria: unknown;
+  lastReadAt: string | null;
+  nextReadAt: string;
+  reads: number;
+  factor: number;
+}
+
+/** Lecture prise par un passage : critères et état précédent (annonces actives, empreintes salées). */
+export interface TrackClaimedRead {
+  criteria: unknown;
+  state: unknown;
+  stateSource: TrackSource | null;
+  lastReadAt: string | null;
+  reads: number;
+  consecutiveFailures: number;
+  factor: number;
+}
+
+/** Réglages partagés de Track : fenêtre glissante des lectures en direct, facteur, pause. */
+export interface TrackRuntime {
+  windowReads: number;
+  windowBlocks: number;
+  slowdownFactor: number;
+  lastBlockAt: string | null;
+  pausedUntil: string | null;
+  pauseReason: string | null;
+}
+
+const iso = (v: unknown): string | null => (v === null || v === undefined ? null : new Date(v as string).toISOString());
+
+/**
+ * Lectures partagées par empreinte (`track_filter_reads`, `track_runtime`) : le rôle applicatif n'a
+ * AUCUN droit direct sur ces tables, tout passe par des fonctions SECURITY DEFINER limitées.
+ */
+export const trackReads = {
+  /**
+   * Crée la ligne partagée de l'empreinte si l'organisation courante la suit, lue à `nextReadAt`. Avec
+   * `defer`, une ligne existante que personne d'autre ne suit est repoussée à `nextReadAt`.
+   */
+  async follow(tx: Tx, fingerprint: string, criteria: TrackCriteria, nextReadAt: string, defer = false): Promise<void> {
+    await tx.query("select app_track_follow($1, $2::jsonb, $3, $4)", [fingerprint, JSON.stringify(criteria), nextReadAt, defer]);
+  },
+  /** État des empreintes suivies par l'organisation courante (aucune autre n'est rendue). */
+  async state(tx: Tx, fingerprints: readonly string[]): Promise<Map<string, TrackReadState>> {
+    if (fingerprints.length === 0) return new Map();
+    const rows = await tx.query<Record<string, unknown>>("select * from app_track_state($1)", [[...fingerprints]]);
+    return new Map(rows.map((r) => [String(r.fingerprint), { fingerprint: String(r.fingerprint), lastReadAt: iso(r.lastReadAt), nextReadAt: iso(r.nextReadAt)!, reads: Number(r.reads ?? 0), lastOutcome: (r.lastOutcome as string | null) ?? null, factor: Number(r.factor ?? 1) }]));
+  },
+  async due(tx: Tx, now: string, limit = 50): Promise<TrackDueRead[]> {
+    const rows = await tx.query<Record<string, unknown>>("select * from app_track_due($1, $2)", [now, limit]);
+    return rows.map((r) => ({ fingerprint: String(r.fingerprint), criteria: r.criteria, lastReadAt: iso(r.lastReadAt), nextReadAt: iso(r.nextReadAt)!, reads: Number(r.reads ?? 0), factor: Number(r.factor ?? 1) }));
+  },
+  /** Prend la lecture (null : pas due, déjà prise par un autre passage ou plus suivie). */
+  async claim(tx: Tx, fingerprint: string, now: string, leaseUntil: string): Promise<TrackClaimedRead | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>("select * from app_track_claim($1, $2, $3)", [fingerprint, now, leaseUntil]);
+    if (!r) return null;
+    return { criteria: r.criteria, state: r.state, stateSource: (r.stateSource as TrackSource | null) ?? null, lastReadAt: iso(r.lastReadAt), reads: Number(r.reads ?? 0), consecutiveFailures: Number(r.consecutiveFailures ?? 0), factor: Number(r.factor ?? 1) };
+  },
+  async finish(tx: Tx, input: { fingerprint: string; readAt: string; nextReadAt: string; outcome: string | null; counted: boolean; blocked: boolean; anomaly: boolean; factor: number; state: unknown | null; stateSource: TrackSource | null }): Promise<void> {
+    await tx.query("select app_track_finish($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)", [
+      input.fingerprint, input.readAt, input.nextReadAt, input.outcome, input.counted, input.blocked, input.anomaly, Math.max(1, Math.round(input.factor)),
+      input.state === null ? null : JSON.stringify(input.state), input.stateSource,
+    ]);
+  },
+  /** Empreintes salées des références d'annonces (le sel reste dans la base). */
+  async refKeys(tx: Tx, refs: readonly string[]): Promise<Map<string, string>> {
+    if (refs.length === 0) return new Map();
+    const rows = await tx.query<{ ref: string; key: string }>("select * from app_track_ref_keys($1)", [[...new Set(refs)]]);
+    return new Map(rows.map((r) => [r.ref, r.key]));
+  },
+  /**
+   * Références de Track (vues ou disparues) écrites par la base : la clé de dédoublonnage est dérivée de la
+   * clé de l'état avec un AUTRE sel et n'est jamais rendue. Dates au jour, photos par tranches. Rend le
+   * nombre de lignes écrites (la dernière ligne d'une clé l'emporte).
+   */
+  async storeReferences(tx: Tx, source: "track" | "demo", rows: readonly TrackReferenceRow[]): Promise<number> {
+    if (rows.length === 0) return 0;
+    let n = 0;
+    for (let i = 0; i < rows.length; i += 500) {
+      const chunk = rows.slice(i, i + 500).map((r, j) => ({
+        k: r.key, status: r.status, brand: r.brand ?? null, category: r.category, size: r.size ?? null, condition: r.condition ?? null,
+        listed_price_cents: r.listedPriceCents ?? null, final_price_cents: r.finalPriceCents ?? null, final_price_estimated: r.finalPriceEstimated ?? false,
+        listed_at: r.listedAt ?? null, sold_at: r.soldAt ?? null, photo_count: r.photoCount ?? null, ord: i + j,
+      }));
+      const row = await tx.maybeOne<{ n: number | string }>("select app_track_store_references($1, $2::jsonb) as n", [source, JSON.stringify(chunk)]);
+      n += Number(row?.n ?? 0);
+    }
+    return n;
+  },
+  async runtime(tx: Tx): Promise<TrackRuntime> {
+    const r = await tx.maybeOne<Record<string, unknown>>("select * from app_track_runtime()");
+    return { windowReads: Number(r?.windowReads ?? 0), windowBlocks: Number(r?.windowBlocks ?? 0), slowdownFactor: Number(r?.slowdownFactor ?? 1), lastBlockAt: iso(r?.lastBlockAt), pausedUntil: iso(r?.pausedUntil), pauseReason: (r?.pauseReason as string | null) ?? null };
+  },
+  /**
+   * Mesure d'une lecture en direct dans la fenêtre partagée, facteur, pause éventuelle. `factor` null
+   * (lecture sans blocage) : facteur et dernier blocage gardés tels quels.
+   */
+  async recordRuntime(tx: Tx, input: { blocked: boolean; factor: number | null; blockAt: string | null; pauseUntil: string | null; pauseReason: string | null }): Promise<void> {
+    await tx.query("select app_track_runtime_record($1, $2, $3, $4, $5)", [input.blocked, input.factor === null ? null : Math.max(1, Math.round(input.factor)), input.blockAt, input.pauseUntil, input.pauseReason]);
+  },
+  /** Rétention des instantanés (historique du plan le plus long, 12 mois au plus) et des empreintes plus suivies. */
+  async purge(tx: Tx, now: string): Promise<{ snapshots: number; fingerprints: number }> {
+    const r = await tx.maybeOne<{ snapshots: number; fingerprints: number }>("select * from app_track_purge($1)", [now]);
+    return { snapshots: Number(r?.snapshots ?? 0), fingerprints: Number(r?.fingerprints ?? 0) };
+  },
+};
+
+export type TrackSnapshotInput = Omit<TrackSnapshot, "id" | "createdAt">;
+
+/** Référence de Track à écrire (`trackReads.storeReferences`) : clé de l'état, jamais d'identifiant d'annonce. */
+export interface TrackReferenceRow {
+  key: string;
+  status: "listed" | "gone";
+  brand?: string | null;
+  category: ItemCategory;
+  size?: string | null;
+  condition?: PriceReference["condition"];
+  listedPriceCents?: number | null;
+  finalPriceCents?: number | null;
+  finalPriceEstimated?: boolean;
+  listedAt?: string | null;
+  soldAt?: string | null;
+  photoCount?: number | null;
+}
+
+/** Instantanés par empreinte (partagés, sans donnée d'organisation ni de personne). */
+export const trackSnapshots = {
+  async add(tx: Tx, input: TrackSnapshotInput): Promise<TrackSnapshot | null> {
+    const { columns, values } = objectToColumns({ ...input });
+    const r = await tx.maybeOne(`insert into track_snapshots (${columns.join(", ")}) values (${values.map((_, i) => `$${i + 1}`).join(", ")}) on conflict (fingerprint, read_at, source) do nothing returning *`, values);
+    return r ? parse(trackSnapshotSchema, r) : null;
+  },
+  /** Instantanés d'une empreinte depuis `since`, du plus ancien au plus récent. */
+  async since(tx: Tx, fingerprint: string, since: string, limit = 2000): Promise<TrackSnapshot[]> {
+    return (await tx.query("select * from track_snapshots where fingerprint = $1 and read_at >= $2 order by read_at, id limit $3", [fingerprint, since, Math.max(1, limit)])).map((r) => parse(trackSnapshotSchema, r));
+  },
+  /**
+   * Dernier instantané (depuis `since`) de chaque empreinte limitée à CETTE seule catégorie, catégorie
+   * réellement appliquée à la page (`categoriesVerified`) : une page de toutes catégories, ou dont la
+   * catégorie n'a pas été vérifiée (lecture en direct), ne compte pour aucune catégorie.
+   */
+  async latestForCategory(tx: Tx, category: ItemCategory, since: string): Promise<TrackSnapshot[]> {
+    return (await tx.query(
+      `select distinct on (fingerprint) * from track_snapshots
+       where read_at >= $2 and coalesce(scope->'categories', '[]'::jsonb) = jsonb_build_array($1::text)
+         and coalesce((scope->>'categoriesVerified')::boolean, true)
+       order by fingerprint, read_at desc`,
+      [category, since],
+    )).map((r) => parse(trackSnapshotSchema, r));
+  },
+  async count(tx: Tx, fingerprint?: string): Promise<number> {
+    return tx.count("select count(*) from track_snapshots where ($1::text is null or fingerprint = $1)", [fingerprint ?? null]);
+  },
+};
+
+/** Scans de niche (RLS). */
+export const trackScans = {
+  async create(tx: Tx, input: Omit<TrackScan, "id" | "orgId" | "createdAt"> & { createdAt?: string }): Promise<TrackScan> {
+    return parse(trackScanSchema, await tx.insert("track_scans", { ...input, orgId: tx.orgId }));
+  },
+  async list(tx: Tx, limit = 50): Promise<TrackScan[]> {
+    return (await tx.query("select * from track_scans where org_id = $1 order by created_at desc, id limit $2", [tx.orgId, Math.min(500, Math.max(1, limit))])).map((r) => parse(trackScanSchema, r));
+  },
+  async purgeBefore(tx: Tx, before: string): Promise<number> {
+    return (await tx.query("delete from track_scans where org_id = $1 and created_at < $2 returning id", [tx.orgId, before])).length;
+  },
+  /** Scans d'un état donné depuis une date (limite des scans « données insuffisantes » par jour). */
+  async countSince(tx: Tx, status: TrackScan["status"], since: string): Promise<number> {
+    return tx.count("select count(*) from track_scans where org_id = $1 and status = $2 and created_at >= $3", [tx.orgId, status, since]);
+  },
+};
+
+/** Recherches par photo (RLS) : description et estimation seulement, jamais la photo. */
+export const trackPhotoSearches = {
+  async create(tx: Tx, input: Omit<TrackPhotoSearch, "id" | "orgId" | "createdAt"> & { createdAt?: string }): Promise<TrackPhotoSearch> {
+    return parse(trackPhotoSearchSchema, await tx.insert("track_photo_searches", { ...input, orgId: tx.orgId }));
+  },
+  async list(tx: Tx, limit = 50): Promise<TrackPhotoSearch[]> {
+    return (await tx.query("select * from track_photo_searches where org_id = $1 order by created_at desc, id limit $2", [tx.orgId, Math.min(500, Math.max(1, limit))])).map((r) => parse(trackPhotoSearchSchema, r));
+  },
+  async purgeBefore(tx: Tx, before: string): Promise<number> {
+    return (await tx.query("delete from track_photo_searches where org_id = $1 and created_at < $2 returning id", [tx.orgId, before])).length;
+  },
+};
+
+/** Colonnes rendues d'une référence : jamais l'organisation qui a fourni une vente. */
+const PRICE_REFERENCE_COLUMNS = "id, dedupe_key, source, status, brand, category, subcategory, size, material, color, condition, listed_price_cents, final_price_cents, final_price_estimated, listed_at, sold_at, photo_count, views, favorites, created_at, updated_at";
+const PRICE_REFERENCE_WRITE = ["dedupe_key", "source", "contributor_org_id", "status", "brand", "category", "subcategory", "size", "material", "color", "condition", "listed_price_cents", "final_price_cents", "final_price_estimated", "listed_at", "sold_at", "photo_count", "views", "favorites"] as const;
+
+export interface PriceReferenceQuery {
+  category?: ItemCategory;
+  brand?: string | null;
+  /** Vrai : seulement les références au prix final connu ou estimé (vendues, disparues). */
+  withFinalPrice?: boolean;
+  /** Faux par défaut : les références du simulateur ne servent jamais de comparables réels. */
+  includeDemo?: boolean;
+  /** Seulement ces sources (sinon toutes, hors démonstration selon `includeDemo`). */
+  sources?: readonly PriceReferenceSource[];
+  since?: string;
+  limit?: number;
+}
+
+/**
+ * Ventes versées par une organisation (`source = 'sale'`) : jamais rendues une à une à une AUTRE
+ * organisation. Condition SQL commune des agrégats lus par une organisation (`$n` : son identifiant).
+ */
+const OWN_SALES_ONLY = (param: string) => `(source <> 'sale' or contributor_org_id = ${param})`;
+
+/** Statistiques d'une niche (marque × catégorie) pour un scan. */
+export interface PriceNicheStats {
+  total: number;
+  sold: number;
+  active: number;
+  medianFinalCents: number | null;
+  medianListedCents: number | null;
+  p25ListedCents: number | null;
+  medianDaysToSell: number | null;
+}
+
+/** Base de références de prix (partagée, sans donnée personnelle). */
+export const priceReferences = {
+  /**
+   * Ajoute ou met à jour des références par clé de dédoublonnage (la dernière ligne d'une clé l'emporte).
+   * Les attributs déjà connus ne sont pas effacés par une valeur absente ; l'état et les prix suivent la
+   * dernière lecture (une annonce revenue redevient « listed »).
+   */
+  async upsertMany(tx: Tx, rows: readonly (PriceReferenceInput & { contributorOrgId?: string | null })[]): Promise<number> {
+    const byKey = new Map<string, PriceReferenceInput & { contributorOrgId?: string | null }>();
+    for (const r of rows) byKey.set(r.dedupeKey, r);
+    const list = [...byKey.values()];
+    let n = 0;
+    for (let i = 0; i < list.length; i += 200) {
+      const chunk = list.slice(i, i + 200);
+      const values: unknown[] = [];
+      const tuples = chunk.map((r) => {
+        const row: Record<(typeof PRICE_REFERENCE_WRITE)[number], unknown> = {
+          dedupe_key: r.dedupeKey, source: r.source, contributor_org_id: r.contributorOrgId ?? null, status: r.status ?? "listed", brand: r.brand ?? null, category: r.category,
+          subcategory: r.subcategory ?? null, size: r.size ?? null, material: r.material ?? null, color: r.color ?? null, condition: r.condition ?? null,
+          listed_price_cents: r.listedPriceCents ?? null, final_price_cents: r.finalPriceCents ?? null, final_price_estimated: r.finalPriceEstimated ?? false,
+          listed_at: r.listedAt ?? null, sold_at: r.soldAt ?? null, photo_count: r.photoCount ?? null, views: r.views ?? null, favorites: r.favorites ?? null,
+        };
+        const start = values.length;
+        for (const c of PRICE_REFERENCE_WRITE) values.push(row[c]);
+        return `(${PRICE_REFERENCE_WRITE.map((_, j) => `$${start + j + 1}`).join(", ")})`;
+      });
+      const res = await tx.query(
+        `insert into price_references (${PRICE_REFERENCE_WRITE.join(", ")}) values ${tuples.join(", ")}
+         on conflict (dedupe_key) do update set
+           status = excluded.status,
+           brand = coalesce(excluded.brand, price_references.brand),
+           category = excluded.category,
+           subcategory = coalesce(excluded.subcategory, price_references.subcategory),
+           size = coalesce(excluded.size, price_references.size),
+           material = coalesce(excluded.material, price_references.material),
+           color = coalesce(excluded.color, price_references.color),
+           condition = coalesce(excluded.condition, price_references.condition),
+           listed_price_cents = coalesce(excluded.listed_price_cents, price_references.listed_price_cents),
+           final_price_cents = excluded.final_price_cents,
+           final_price_estimated = excluded.final_price_estimated,
+           listed_at = coalesce(price_references.listed_at, excluded.listed_at),
+           sold_at = excluded.sold_at,
+           photo_count = coalesce(excluded.photo_count, price_references.photo_count),
+           views = coalesce(excluded.views, price_references.views),
+           favorites = coalesce(excluded.favorites, price_references.favorites),
+           updated_at = now()
+         returning id`,
+        values,
+      );
+      n += res.length;
+    }
+    return n;
+  },
+  async search(tx: Tx, q: PriceReferenceQuery = {}): Promise<PriceReference[]> {
+    const params: unknown[] = [];
+    const where: string[] = [];
+    const add = (sql: string, v: unknown) => { params.push(v); where.push(sql.replace("?", `$${params.length}`)); };
+    if (q.category) add("category = ?", q.category);
+    if (q.brand) add("lower(brand) = lower(?)", q.brand);
+    if (q.withFinalPrice) where.push("final_price_cents is not null");
+    if (q.sources && q.sources.length > 0) add("source = any(?)", [...q.sources]);
+    else if (!q.includeDemo) where.push("source <> 'demo'");
+    if (q.since) add("coalesce(sold_at, listed_at, created_at) >= ?", q.since);
+    params.push(Math.min(200_000, Math.max(1, q.limit ?? 500)));
+    const rows = await tx.query(`select ${PRICE_REFERENCE_COLUMNS} from price_references ${where.length ? `where ${where.join(" and ")}` : ""} order by coalesce(sold_at, listed_at, created_at) desc nulls last, id limit $${params.length}`, params);
+    return rows.map((r) => parse(priceReferenceSchema, r));
+  },
+  async countBySource(tx: Tx): Promise<Record<PriceReferenceSource, number>> {
+    const rows = await tx.query<{ source: PriceReferenceSource; n: number | string }>("select source, count(*) as n from price_references group by source");
+    const out: Record<PriceReferenceSource, number> = { track: 0, sale: 0, demo: 0, import: 0 };
+    for (const r of rows) out[r.source] = Number(r.n);
+    return out;
+  },
+  /**
+   * Ventes (prix final connu ou estimé) par source, dont celles au prix estimé : ce que l'entraîneur peut
+   * utiliser (les annonces encore en ligne ne servent pas au modèle de prix).
+   */
+  async soldBySource(tx: Tx): Promise<{ sold: Record<PriceReferenceSource, number>; estimated: Record<PriceReferenceSource, number> }> {
+    const rows = await tx.query<{ source: PriceReferenceSource; n: number | string; estimated: number | string }>(
+      "select source, count(*) as n, count(*) filter (where final_price_estimated) as estimated from price_references where final_price_cents is not null group by source",
+    );
+    const sold: Record<PriceReferenceSource, number> = { track: 0, sale: 0, demo: 0, import: 0 };
+    const estimated: Record<PriceReferenceSource, number> = { track: 0, sale: 0, demo: 0, import: 0 };
+    for (const r of rows) { sold[r.source] = Number(r.n); estimated[r.source] = Number(r.estimated); }
+    return { sold, estimated };
+  },
+  /**
+   * Retire les ventes versées par une organisation, sauf celles de `keep` (clés encore attendues) : vente
+   * remboursée, annulée ou supprimée, ou accord retiré (`keep` vide). Rend le nombre de lignes retirées.
+   */
+  async deleteContributed(tx: Tx, orgId: string, keep: readonly string[] = []): Promise<number> {
+    return (await tx.query("delete from price_references where contributor_org_id = $1 and not (dedupe_key = any($2::text[])) returning id", [orgId, [...keep]])).length;
+  },
+  /** Conservation : efface les références dont la vente (ou la mise en ligne) est antérieure à `before`. */
+  async purgeBefore(tx: Tx, before: string): Promise<number> {
+    return (await tx.query("delete from price_references where coalesce(sold_at, listed_at, created_at) < $1 returning id", [before])).length;
+  },
+  /** Statistiques d'une niche depuis `since` (scans de niche) ; ventes versées par d'autres organisations exclues. */
+  async nicheStats(tx: Tx, q: { category: ItemCategory; brand: string | null; since: string; includeDemo: boolean }): Promise<PriceNicheStats> {
+    const r = await tx.maybeOne<Record<string, unknown>>(
+      `select count(*) as total,
+        count(*) filter (where final_price_cents is not null) as sold,
+        count(*) filter (where status = 'listed') as active,
+        percentile_cont(0.5) within group (order by final_price_cents) filter (where final_price_cents is not null) as median_final_cents,
+        percentile_cont(0.5) within group (order by listed_price_cents) filter (where status = 'listed' and listed_price_cents is not null) as median_listed_cents,
+        percentile_cont(0.25) within group (order by listed_price_cents) filter (where listed_price_cents is not null) as p25_listed_cents,
+        percentile_cont(0.5) within group (order by extract(epoch from (sold_at - listed_at)) / 86400.0) filter (where sold_at is not null and listed_at is not null and sold_at >= listed_at) as median_days_to_sell
+       from price_references
+       where category = $1 and ($2::text is null or lower(brand) = lower($2)) and coalesce(sold_at, listed_at, created_at) >= $3 and (source <> 'demo' or $4)
+         and ${OWN_SALES_ONLY("$5")}`,
+      [q.category, q.brand, q.since, q.includeDemo, tx.orgId],
+    );
+    const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+    const cents = (v: unknown) => { const n = num(v); return n === null ? null : Math.round(n); };
+    return { total: Number(r?.total ?? 0), sold: Number(r?.sold ?? 0), active: Number(r?.active ?? 0), medianFinalCents: cents(r?.medianFinalCents), medianListedCents: cents(r?.medianListedCents), p25ListedCents: cents(r?.p25ListedCents), medianDaysToSell: num(r?.medianDaysToSell) };
+  },
+  /** Niches (marque × catégorie) vues depuis `since` : annonces en ligne, vendues ou disparues, prix médians (ventes des autres organisations exclues). */
+  async nicheSummary(tx: Tx, q: { since: string; includeDemo: boolean; category?: ItemCategory; limit?: number }): Promise<{ brand: string; category: ItemCategory; listed: number; sold: number; estimatedShare: number; medianFinalCents: number | null; medianListedCents: number | null }[]> {
+    const rows = await tx.query<Record<string, unknown>>(
+      `select coalesce(brand, 'Sans marque') as brand, category,
+        count(*) filter (where status = 'listed') as listed,
+        count(*) filter (where final_price_cents is not null) as sold,
+        coalesce(avg(case when final_price_estimated then 1.0 else 0.0 end) filter (where final_price_cents is not null), 0) as estimated_share,
+        percentile_cont(0.5) within group (order by final_price_cents) filter (where final_price_cents is not null) as median_final_cents,
+        percentile_cont(0.5) within group (order by listed_price_cents) filter (where listed_price_cents is not null) as median_listed_cents
+       from price_references
+       where coalesce(sold_at, listed_at, created_at) >= $1 and (source <> 'demo' or $2) and ($3::text is null or category = $3) and ${OWN_SALES_ONLY("$5")}
+       group by 1, 2 order by sold desc, listed desc, brand, category limit $4`,
+      [q.since, q.includeDemo, q.category ?? null, Math.min(200, Math.max(1, q.limit ?? 30)), tx.orgId],
+    );
+    const cents = (v: unknown) => (v === null || v === undefined ? null : Math.round(Number(v)));
+    return rows.map((r) => ({ brand: String(r.brand), category: r.category as ItemCategory, listed: Number(r.listed), sold: Number(r.sold), estimatedShare: Math.round(Number(r.estimatedShare ?? 0) * 100) / 100, medianFinalCents: cents(r.medianFinalCents), medianListedCents: cents(r.medianListedCents) }));
+  },
+  /** Ventes (et disparitions estimées) depuis `since`, agrégées par marque et catégorie : aucune annonce, aucune vente d'une autre organisation. */
+  async salesByNiche(tx: Tx, q: { since: string; includeDemo: boolean; limit?: number }): Promise<{ brand: string; category: ItemCategory; sold: number; estimatedShare: number; medianPriceCents: number | null; lastSoldAt: string | null }[]> {
+    const rows = await tx.query<Record<string, unknown>>(
+      `select coalesce(brand, 'Sans marque') as brand, category, count(*) as sold,
+        avg(case when final_price_estimated then 1.0 else 0.0 end) as estimated_share,
+        percentile_cont(0.5) within group (order by final_price_cents) as median_price_cents,
+        max(sold_at) as last_sold_at
+       from price_references
+       where final_price_cents is not null and sold_at >= $1 and (source <> 'demo' or $2) and ${OWN_SALES_ONLY("$4")}
+       group by 1, 2 order by sold desc, brand, category limit $3`,
+      [q.since, q.includeDemo, Math.min(200, Math.max(1, q.limit ?? 50)), tx.orgId],
+    );
+    return rows.map((r) => ({ brand: String(r.brand), category: r.category as ItemCategory, sold: Number(r.sold), estimatedShare: Math.round(Number(r.estimatedShare ?? 0) * 100) / 100, medianPriceCents: r.medianPriceCents === null ? null : Math.round(Number(r.medianPriceCents)), lastSoldAt: iso(r.lastSoldAt) }));
+  },
+};
+
+/** Organisations qui ont des données Track (fonction SECURITY DEFINER, sans aucune donnée) : rétention du worker. */
+export const trackOrgs = {
+  async ids(tx: Tx): Promise<string[]> {
+    return (await tx.query<{ orgId: string }>("select org_id from app_track_org_ids()")).map((r) => r.orgId);
+  },
+};
+
+/** Modèles de prix entraînés (partagés) : un seul « active » à la fois. */
+export const priceModels = {
+  async active(tx: Tx): Promise<(PriceModelRecord & { model: unknown }) | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>("select * from price_models where status = 'active' limit 1");
+    return r ? { ...parse(priceModelRecordSchema, r), model: r.model } : null;
+  },
+  async list(tx: Tx, limit = 20): Promise<PriceModelRecord[]> {
+    return (await tx.query("select id, version, trained_at, n_references, metrics, status, synthetic, created_at from price_models order by trained_at desc, id limit $1", [Math.min(200, Math.max(1, limit))])).map((r) => parse(priceModelRecordSchema, r));
+  },
+  /** Enregistre un nouveau modèle actif ; l'ancien est archivé dans la même transaction. */
+  async activate(tx: Tx, input: { version: string; trainedAt: string; nReferences: number; metrics: PriceModelMetrics; model: unknown; synthetic: boolean }): Promise<PriceModelRecord> {
+    await tx.query("update price_models set status = 'archived' where status = 'active'");
+    return parse(priceModelRecordSchema, await tx.one(
+      "insert into price_models (version, trained_at, n_references, metrics, model, status, synthetic) values ($1, $2, $3, $4::jsonb, $5::jsonb, 'active', $6) returning id, version, trained_at, n_references, metrics, status, synthetic, created_at",
+      [input.version, input.trainedAt, Math.max(0, Math.round(input.nReferences)), JSON.stringify(input.metrics ?? {}), JSON.stringify(input.model ?? null), input.synthetic],
+    ));
   },
 };
 

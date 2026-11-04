@@ -43,7 +43,7 @@ const GROUPS: NavGroup[] = [
     { to: "/app", label: "Vue d'ensemble", icon: <Gauge />, end: true },
   ] },
   { title: "Sourcing", items: [
-    { to: "/track", label: "Selio Track", icon: <TrendingUp />, hint: "Le sourcing des comptes Vinted (en développement)" },
+    { to: "/track", label: "Selio Track", icon: <TrendingUp />, hint: "Statistiques du marché Vinted et prix (Pro et Agence)" },
     { to: "/app/radar", label: "Bonnes affaires", icon: <Radar />, hint: "Radar : chaque affaire notée /100" },
   ] },
   { title: "Achat", items: [
@@ -100,7 +100,7 @@ export function useNavCounts() {
 /** Bandeau sous le sélecteur, pour les filiales qui ne sont pas encore ouvertes. */
 const SPACE_NOTES: Partial<Record<SpaceArea, { label: string; text: string }>> = {
   agents: { label: "Aperçu", text: "l'équipe et les accès sont réels ; les boutiques clientes sont des exemples fictifs." },
-  track: { label: "En développement", text: "première version, sur un marché simulé en démonstration." },
+  track: { label: "En développement", text: "statistiques seulement ; simulateur par défaut, lecture en direct à valider juridiquement." },
   cloud: { label: "Aperçu", text: "actions légères seulement (répondre, relancer), avec votre accord ; en démonstration, rien ne touche Vinted." },
   generateur: { label: "En développement", text: "ce qui arrive, et ce qui marche déjà dans Selio." },
 };

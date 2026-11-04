@@ -3,11 +3,16 @@ import IORedis from "ioredis";
 import type { WebSocket } from "ws";
 import { createPool, runMigrations, MIGRATIONS_DIR, SecretBox, hashSecret, repos as dbRepos } from "@selio/db";
 import { RevolutClient, computeRevolutSignature } from "@selio/connectors";
-import { CLOUD_CONSENT_VERSION, quotasForPlan } from "@selio/contracts";
-import { FakePushSender, auth as authService, cloud as cloudService, type OrgContext } from "@selio/core";
+import { CLOUD_CONSENT_VERSION, PRICE_MODEL_DEMO_DATA, TRACK_DEMO_NOTICE, TRACK_SALES_FEED_AGENCY_ONLY, TRACK_SELLER_ANALYSIS_NOTICE, TRACK_UNAVAILABLE_MESSAGE, quotasForPlan, type ItemCategory, type Plan, type PriceReferenceInput } from "@selio/contracts";
+import { FakePriceModel, FakePushSender, auth as authService, cloud as cloudService, track as trackService, type OrgContext } from "@selio/core";
 import { NoopEmailProvider, type EmailProvider } from "@selio/email";
+import { flatMetrics, trainPriceModel } from "@selio/pricing";
+import { generateSyntheticReferences } from "@selio/pricing/synthetic";
 import webpush from "web-push";
-import { loadEnv, radarServicesConfig } from "../src/config";
+import { loadEnv, radarServicesConfig, trackServicesConfig } from "../src/config";
+import { decodedPhotoBytes } from "../src/routes/track";
+import { pricePosition } from "../src/routes/ext";
+import { refreshPriceModel } from "../src/pricing";
 import { WebPushSender, isAllowedPushEndpoint, pushUrgency } from "../src/push";
 import { buildServer, type BuiltServer } from "../src/server";
 import { maskSecretsInUrl, wsClientMessageSchema } from "../src/cloud-relay";
@@ -1873,5 +1878,365 @@ describe("Selio Radar (API)", () => {
     expect(rowX.demoSearches).toBeGreaterThanOrEqual(1);
     // Ni pseudo, ni photo, ni titre, ni adresse d'annonce, ni session.
     for (const secret of ["vendeur_radar_secret", "radar-secret.jpg", "Pull exceptionnel", "vinted.fr/items", "SESSION-RADAR-X"]) expect(res.res.body).not.toContain(secret);
+  });
+});
+
+describe("Selio Track et estimation des prix (API)", () => {
+  const REDIS_URL = process.env.TEST_REDIS_URL ?? "redis://127.0.0.1:6379";
+  const jar: Record<string, string> = {};
+  const orgs: Record<string, string> = {};
+  /** Photo réduite factice (le simulateur d'IA ne la décode pas) : elle ne doit apparaître nulle part en base. */
+  const PHOTO_MARK = "UEhPVE8tVFJBQ0stU0VDUkVURS0wMTIzNDU2Nzg5";
+  const PHOTO = `data:image/jpeg;base64,${PHOTO_MARK}${"A".repeat(400)}`;
+  const criteria = { brands: ["Levi's"], categories: ["men"], keywords: ["jean 501"], maxPriceCents: 4000 };
+  let owner: ReturnType<typeof createPool> | null = null;
+
+  const as = async (who: string, method: "GET" | "POST" | "PATCH" | "DELETE", url: string, body?: unknown, server: BuiltServer = built, headers: Record<string, string> = {}) => {
+    // Adresse propre à ce bloc : le plafond global (300 requêtes par minute et par adresse) n'est pas partagé avec les autres tests.
+    const res = await server.app.inject({ method, url, payload: body as object | undefined, headers: { cookie: who === "none" ? "" : jar[who] ?? "", ...headers }, remoteAddress: "10.77.0.1" });
+    let json: unknown = null;
+    try { json = res.body ? JSON.parse(res.body) : null; } catch { json = res.body; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { status: res.statusCode, json: json as any, res };
+  };
+  const setPlan = (who: string, plan: Plan) => built.services.db.withOrg(orgs[who]!, (tx) => dbRepos.subscriptions.upsert(tx, { plan, status: "active", quotas: quotasForPlan(plan) }));
+  /** Références lues par Track (sans donnée personnelle) : 12 jeans Levi's, dont 6 disparus (prix final estimé). */
+  const references = (): PriceReferenceInput[] => Array.from({ length: 12 }, (_, i) => ({
+    dedupeKey: `track:${String(i).padStart(64, "a")}`, source: "track", status: i % 2 ? "gone" : "listed", brand: "Levi's", category: "men", size: "W32", condition: "very_good",
+    listedPriceCents: 2000 + i * 100, finalPriceCents: i % 2 ? 2000 + i * 100 : null, finalPriceEstimated: i % 2 === 1,
+    listedAt: new Date(Date.now() - (20 + i) * 86_400_000).toISOString(), soldAt: i % 2 ? new Date(Date.now() - (5 + i) * 86_400_000).toISOString() : null,
+  }));
+
+  beforeAll(async () => {
+    if (!available) return;
+    // Tables partagées de Track et des prix : propres à la base de test de l'API (aucune autre n'y est touchée).
+    owner = createPool(OWNER_URL, { max: 1 });
+    await owner.query("truncate track_filter_reads, track_snapshots, price_references, price_models");
+    await owner.query("update track_runtime set window_measures = '', slowdown_factor = 1, last_block_at = null, paused_until = null, pause_reason = null");
+    const meta = { ip: null, userAgent: null, operatorEmails: ["track-ops@test.local"] };
+    for (const [who, plan] of [["pro", "pro"], ["agence", "agence"], ["starter", "starter"], ["ops", "pro"]] as const) {
+      const r = await authService.register(built.services, { email: `track-${who}@test.local`, password: `motdepasse-T${who}1`, displayName: `Track ${who}`, orgName: `Track ${who}` }, meta);
+      jar[who] = `selio_session=${r.sessionId}`;
+      orgs[who] = r.orgId!;
+      await setPlan(who, plan);
+    }
+    await built.services.db.withGlobal((tx) => dbRepos.priceReferences.upsertMany(tx, references()));
+  });
+
+  afterAll(async () => {
+    await owner?.end();
+  });
+
+  it("configuration : lecture en direct et analyse d'un vendeur fermées par défaut", () => {
+    const env = loadEnv(baseEnv);
+    expect(trackServicesConfig(env)).toEqual({ trackLiveEnabled: false, trackSellerAnalysisEnabled: false });
+    expect(built.services.config).toMatchObject({ trackLiveEnabled: false, trackSellerAnalysisEnabled: false });
+    expect(trackServicesConfig(loadEnv({ ...baseEnv, TRACK_LIVE_ENABLED: "true", TRACK_SELLER_ANALYSIS_ENABLED: "true" }))).toEqual({ trackLiveEnabled: true, trackSellerAnalysisEnabled: true });
+    // Seuil d'entraînement affiché par GET /api/pricing/model : 500 par défaut, jamais en dessous.
+    expect(env.PRICING_MIN_REFERENCES).toBe(500);
+    expect(loadEnv({ ...baseEnv, PRICING_MIN_REFERENCES: "2000" }).PRICING_MIN_REFERENCES).toBe(2000);
+    expect(() => loadEnv({ ...baseEnv, PRICING_MIN_REFERENCES: "100" })).toThrow(/PRICING_MIN_REFERENCES/);
+    // Aucun navigateur dans l'API : le lecteur de Track n'existe que dans le worker.
+    expect(built.services.track).toBeUndefined();
+    expect(decodedPhotoBytes(`data:image/png;base64,${"A".repeat(400)}`)).toBe(300);
+    expect(decodedPhotoBytes("data:image/png;base64,QUJD")).toBe(3);
+    expect(pricePosition(1500, { p25: 2000, p75: 3000 })).toBe("below");
+    expect(pricePosition(2500, { p25: 2000, p75: 3000 })).toBe("within");
+    expect(pricePosition(3500, { p25: 2000, p75: 3000 })).toBe("above");
+    expect(pricePosition(null, { p25: 2000, p75: 3000 })).toBeNull();
+  });
+
+  it("Starter : 402 explicite (« Track est compris à partir de Pro ») sur chaque fonction de Track", async () => {
+    if (!available) return;
+    const checks: [method: "GET" | "POST", url: string, body?: unknown][] = [
+      ["POST", "/api/track/filters", { name: "Jeans", criteria }],
+      ["GET", "/api/track/usage"],
+      ["GET", "/api/track/scans"],
+      ["POST", "/api/track/scans", { brand: "Levi's", category: "men" }],
+      ["GET", "/api/track/photo-search"],
+      ["POST", "/api/track/photo-search", { photo: PHOTO }],
+      ["GET", "/api/track/sales-feed"],
+    ];
+    for (const [method, url, body] of checks) {
+      const res = await as("starter", method, url, body);
+      expect(res.status, `${method} ${url}`).toBe(402);
+      expect(res.json.error.message).toBe(TRACK_UNAVAILABLE_MESSAGE);
+    }
+    // La liste reste lisible (vide) : une organisation revenue à Starter peut retirer ses anciens filtres.
+    expect((await as("starter", "GET", "/api/track/filters")).json).toEqual([]);
+    expect((await as("none", "GET", "/api/track/filters")).status).toBe(401);
+  });
+
+  it("filtres : quota du plan (5 en Pro, 402 au 6e), même critères 409, tendances depuis l'empreinte lue une fois, isolement", async () => {
+    if (!available) return;
+    const created: { id: string; fingerprint: string }[] = [];
+    for (let i = 0; i < 5; i++) {
+      const r = await as("pro", "POST", "/api/track/filters", { name: `Jeans ${i}`, criteria: { ...criteria, maxPriceCents: 3000 + i * 100 } });
+      expect(r.status).toBe(201);
+      expect(r.json).toMatchObject({ name: `Jeans ${i}`, enabled: true, lastReadAt: null });
+      expect(r.json.fingerprint).toMatch(/^[a-f0-9]{64}$/);
+      created.push(r.json);
+    }
+    const sixth = await as("pro", "POST", "/api/track/filters", { name: "Sixième", criteria: { ...criteria, maxPriceCents: 9999 } });
+    expect(sixth.status).toBe(402);
+    expect(sixth.json.error.code).toBe("quota_exceeded");
+    // Mêmes critères à la casse près : déjà suivi.
+    const agence = await as("agence", "POST", "/api/track/filters", { name: "Mes jeans", criteria: { ...criteria, brands: ["LEVI'S"], maxPriceCents: 3000 } });
+    expect(agence.status).toBe(201);
+    // Même empreinte qu'un filtre d'une autre organisation : partagée (lue une seule fois).
+    expect(agence.json.fingerprint).toBe(created[0]!.fingerprint);
+    expect((await as("agence", "POST", "/api/track/filters", { name: "Doublon", criteria: { ...criteria, maxPriceCents: 3000 } })).status).toBe(409);
+    expect((await as("pro", "GET", "/api/track/filters")).json).toHaveLength(5);
+    // Renommer : permis ; un filtre d'une autre organisation : introuvable.
+    expect((await as("pro", "PATCH", `/api/track/filters/${created[1]!.id}`, { name: "Jeans renommé" })).json.name).toBe("Jeans renommé");
+    expect((await as("agence", "PATCH", `/api/track/filters/${created[1]!.id}`, { name: "pirate" })).status).toBe(404);
+    expect((await as("agence", "GET", `/api/track/filters/${created[1]!.id}/trends`)).status).toBe(404);
+
+    // Tendances : rien avant la première lecture, puis un point après une lecture (simulateur) de toutes les empreintes dues.
+    const before = await as("pro", "GET", `/api/track/filters/${created[0]!.id}/trends?days=30`);
+    expect(before.status).toBe(200);
+    expect(before.json).toMatchObject({ days: 30, points: [], snapshots: 0, source: null });
+    const tick = await trackService.runDueTrackReads(built.services);
+    expect(tick.source).toBe("demo");
+    expect(tick.read).toBe(5);
+    const trends = await as("pro", "GET", `/api/track/filters/${created[0]!.id}/trends?days=30`);
+    expect(trends.json).toMatchObject({ days: 30, snapshots: 1, source: "demo", demo: true });
+    expect(trends.json.points).toHaveLength(1);
+    expect(trends.json.notices).toContain(TRACK_DEMO_NOTICE);
+    // L'autre organisation voit la même lecture.
+    const [mine] = (await as("pro", "GET", "/api/track/filters")).json.filter((f: { id: string }) => f.id === created[0]!.id);
+    const [theirs] = (await as("agence", "GET", "/api/track/filters")).json;
+    expect(theirs.lastReadAt).toBe(mine.lastReadAt);
+    // Pro : 90 jours demandés, 3 mois d'historique → 90 jours ; valeur inconnue → 30 jours.
+    expect((await as("pro", "GET", `/api/track/filters/${created[0]!.id}/trends?days=7`)).json.days).toBe(7);
+    expect((await as("pro", "GET", `/api/track/filters/${created[0]!.id}/trends?days=1000`)).json.days).toBe(30);
+
+    // Offre réduite (Agence → Pro avec 6 filtres) : réactiver au-delà du quota est refusé, renommer reste permis.
+    for (let i = 1; i < 6; i++) expect((await as("agence", "POST", "/api/track/filters", { name: `A${i}`, criteria: { ...criteria, keywords: [`k${i}`] } })).status).toBe(201);
+    await setPlan("agence", "pro");
+    const reEnable = await as("agence", "PATCH", `/api/track/filters/${agence.json.id}`, { enabled: true });
+    expect(reEnable.status).toBe(402);
+    expect((await as("agence", "PATCH", `/api/track/filters/${agence.json.id}`, { name: "Renommé" })).status).toBe(200);
+    await setPlan("agence", "agence");
+    // Suppression : 204, puis 404.
+    expect((await as("pro", "DELETE", `/api/track/filters/${created[4]!.id}`)).status).toBe(204);
+    expect((await as("pro", "DELETE", `/api/track/filters/${created[4]!.id}`)).status).toBe(404);
+  });
+
+  it("scan de niche : noté et décompté du quota du mois ; « données insuffisantes » sans décompte", async () => {
+    if (!available) return;
+    const scan = await as("pro", "POST", "/api/track/scans", { brand: "Levi's", category: "men" });
+    expect(scan.status).toBe(201);
+    expect(scan.json).toMatchObject({ status: "ok", brand: "Levi's", category: "men", basedOn: { references: 12, sold: 6, demo: false } });
+    expect(scan.json.score).toBeGreaterThanOrEqual(0);
+    expect(scan.json.score).toBeLessThanOrEqual(100);
+    const empty = await as("pro", "POST", "/api/track/scans", { brand: "Marque inconnue", category: "home" });
+    expect(empty.json).toMatchObject({ status: "insufficient_data", score: null });
+    expect((await as("pro", "POST", "/api/track/scans", { brand: "Levi's" })).status).toBe(400);
+    const list = await as("pro", "GET", "/api/track/scans");
+    expect(list.json).toHaveLength(2);
+    const usage = await as("pro", "GET", "/api/track/usage");
+    expect(usage.status).toBe(200);
+    expect(usage.json.counters.scans).toMatchObject({ used: 1, quota: 10 });
+  });
+
+  it("recherche par photo : une photo réduite, décomptée, jamais conservée ni journalisée", async () => {
+    if (!available) return;
+    const res = await as("pro", "POST", "/api/track/photo-search", { photo: PHOTO, hints: { brand: "Levi's" } });
+    expect(res.status).toBe(201);
+    expect(res.json.description.title).toBeTruthy();
+    expect(res.json.estimate).toHaveProperty("method");
+    expect(res.json.simulated).toBe(true);
+    expect(res.res.body).not.toContain(PHOTO_MARK);
+    // Deux photos : refusé ; trop lourde (1,5 Mo au plus) : 413 ; mauvais format : 400.
+    expect((await as("pro", "POST", "/api/track/photo-search", { photo: PHOTO, photos: [PHOTO, PHOTO] })).status).toBe(400);
+    const heavy = await as("pro", "POST", "/api/track/photo-search", { photo: `data:image/jpeg;base64,${"A".repeat(2_133_336)}` });
+    expect(heavy.status).toBe(413);
+    expect(heavy.json.error.message).not.toContain("AAAA");
+    expect((await as("pro", "POST", "/api/track/photo-search", { photo: "https://exemple.invalid/photo.jpg" })).status).toBe(400);
+    const list = await as("pro", "GET", "/api/track/photo-search");
+    expect(list.json).toHaveLength(1);
+    const usage = await as("pro", "GET", "/api/track/usage");
+    expect(usage.json.counters.photoSearches).toMatchObject({ used: 1, quota: 30 });
+    // Nulle part en base : ni la recherche, ni les compteurs, ni la requête IA, ni le journal.
+    if (owner) {
+      for (const table of ["track_photo_searches", "usage_events", "ai_requests", "audit_logs"]) {
+        const rows = await owner.query(`select * from ${table}`);
+        expect(JSON.stringify(rows.rows), table).not.toContain(PHOTO_MARK);
+      }
+    }
+  });
+
+  it("utilisation : compteurs du mois, historique du plan, source « simulateur »", async () => {
+    if (!available) return;
+    const usage = await as("pro", "GET", "/api/track/usage");
+    expect(usage.json).toMatchObject({ plan: "pro", historyMonths: 3, source: "demo", counters: { filtersFollowed: { used: 4, quota: 5 }, scans: { used: 1, quota: 10 }, photoSearches: { used: 1, quota: 30 } } });
+    expect(usage.json.history).toHaveLength(3);
+    expect(usage.json.history[2]).toEqual({ month: new Date().toISOString().slice(0, 7), scans: 1, photoSearches: 1 });
+    expect(usage.json.notices).toContain(TRACK_DEMO_NOTICE);
+    const agence = await as("agence", "GET", "/api/track/usage");
+    expect(agence.json).toMatchObject({ plan: "agence", historyMonths: 12, counters: { filtersFollowed: { used: 6, quota: 25 }, scans: { used: 0, quota: 50 } } });
+    expect(agence.json.history).toHaveLength(12);
+    // Page « Mon utilisation » : mêmes compteurs (filtres suivis compris).
+    const billing = await as("pro", "GET", "/api/billing/usage");
+    expect(billing.json.track).toMatchObject({ filtersFollowed: { used: 4, quota: 5 }, scans: { used: 1, quota: 10 }, photoSearches: { used: 1, quota: 30 } });
+  });
+
+  it("Agence : flux des ventes ; analyse d'un vendeur refusée (409) tant qu'elle n'est pas validée juridiquement", async () => {
+    if (!available) return;
+    const feed = await as("agence", "GET", "/api/track/sales-feed");
+    expect(feed.status).toBe(200);
+    expect(feed.json.rows[0]).toMatchObject({ brand: "Levi's", category: "men", sold: 6 });
+    expect(feed.res.body).not.toMatch(/vinted\.fr\/items|seller/i);
+    const pro = await as("pro", "GET", "/api/track/sales-feed");
+    expect(pro.status).toBe(402);
+    expect(pro.json.error.message).toBe(TRACK_SALES_FEED_AGENCY_ONLY);
+    const seller = await as("agence", "GET", "/api/track/seller-analysis");
+    expect(seller.status).toBe(409);
+    expect(seller.json.error).toMatchObject({ code: "track_seller_analysis_legal_review", message: TRACK_SELLER_ANALYSIS_NOTICE });
+    expect((await as("agence", "POST", "/api/track/seller-analysis", { seller: "vendeuse_x" })).status).toBe(409);
+    // Même ouverte, seule l'explication existe : 501.
+    const config = built.services.config!;
+    config.trackSellerAnalysisEnabled = true;
+    try {
+      expect((await as("agence", "GET", "/api/track/seller-analysis")).status).toBe(501);
+    } finally {
+      config.trackSellerAnalysisEnabled = false;
+    }
+  });
+
+  it("estimation : modèle de prix injecté (FakePriceModel), trois stratégies ; état « modèle non entraîné » sans modèle", async () => {
+    if (!available) return;
+    const status = await as("pro", "GET", "/api/pricing/model");
+    expect(status.status).toBe(200);
+    // `real` compte les VENTES réelles (6 disparues sur 12 références, toutes au prix estimé), face au minimum de 500.
+    expect(status.json).toMatchObject({ trained: false, label: "Modèle non entraîné", metrics: null, loaded: null, references: { real: 6, estimated: 6, minimum: 500, bySource: { track: 12, sale: 0, import: 0 } } });
+    // Les lectures du simulateur ont ajouté des références de démonstration, jamais comptées comme réelles.
+    expect(status.json.references.bySource.demo).toBeGreaterThan(0);
+    const saved = built.services.pricing;
+    const model = new FakePriceModel({ p25: 2000, p50: 2600, p75: 3200, delayDays: 6, confidence: "medium" }, "fake-api-1");
+    built.services.pricing = { model };
+    try {
+      const est = await as("pro", "POST", "/api/pricing/estimate", { title: "Baskets Nike Air Max", brand: "Nike", category: "shoes", size: "42", condition: "very_good" });
+      expect(est.status).toBe(200);
+      expect(est.json).toMatchObject({ method: "model", p25: 2000, p50: 2600, p75: 3200, delayDays: 6, modelVersion: "fake-api-1", comparableCount: 0, strategies: { fast: 1990, standard: 2590, max: 3190 }, explanation: null });
+      expect(model.calls[0]).toMatchObject({ brand: "Nike", category: "shoes", condition: "very_good" });
+      expect((await as("pro", "GET", "/api/pricing/model")).json.loaded).toBe("fake-api-1");
+      // Caractéristiques invalides : 400 ; sans session : 401.
+      expect((await as("pro", "POST", "/api/pricing/estimate", { brand: "Nike" })).status).toBe(400);
+      expect((await as("none", "POST", "/api/pricing/estimate", { category: "shoes" })).status).toBe(401);
+    } finally {
+      built.services.pricing = saved;
+    }
+    // Sans modèle ni comparable : aucun prix inventé.
+    const none = await as("pro", "POST", "/api/pricing/estimate", { category: "electronics", brand: "Inconnue" });
+    expect(none.json).toMatchObject({ method: "none", p50: null, strategies: null });
+  });
+
+  it("extension : comparables du panneau avec le jeton (portée capture:items), sans explication ; 402 en Starter", async () => {
+    if (!available) return;
+    const tok = await as("pro", "POST", "/api/extension-tokens", { label: "Chrome Track" });
+    expect(tok.status).toBe(201);
+    const bearer = { authorization: `Bearer ${tok.json.secret}` };
+    const item = { title: "Jean Levi's 501 W32", brand: "Levi's", category: "men", size: "W32", condition: "very_good", priceCents: 1500 };
+    const res = await as("none", "POST", "/api/ext/comparables", item, built, bearer);
+    expect(res.status).toBe(200);
+    expect(res.json.comparableCount).toBeGreaterThanOrEqual(3);
+    expect(["comparables", "embeddings"]).toContain(res.json.method);
+    expect(res.json.explanation ?? null).toBeNull();
+    expect(res.json.priceCheck).toEqual({ priceCents: 1500, position: "below" });
+    // Catégorie absente de la page : comparables cherchés dans toutes les catégories.
+    const noCat = await as("none", "POST", "/api/ext/comparables", { title: "Jean Levi's 501", brand: "Levi's" }, built, bearer);
+    expect(noCat.status).toBe(200);
+    expect(noCat.json.comparableCount).toBeGreaterThanOrEqual(2);
+    expect((await as("none", "POST", "/api/ext/comparables", { brand: "Levi's" }, built, bearer)).status).toBe(400);
+    // Portée absente du jeton : 403.
+    await built.services.db.withOrg(orgs.pro!, (tx) => tx.query("update extension_tokens set scopes = $1::jsonb where id = $2", [JSON.stringify(["read:rules"]), tok.json.token.id]));
+    expect((await as("none", "POST", "/api/ext/comparables", item, built, bearer)).status).toBe(403);
+    // Starter : Track non compris.
+    const st = await as("starter", "POST", "/api/extension-tokens", { label: "Chrome Starter" });
+    const starter = await as("none", "POST", "/api/ext/comparables", item, built, { authorization: `Bearer ${st.json.secret}` });
+    expect(starter.status).toBe(402);
+    expect(starter.json.error.message).toBe(TRACK_UNAVAILABLE_MESSAGE);
+  });
+
+  it("opérateur : entraînement mis en file pour le worker (une seule fois), refusé aux clients, 503 sans Redis", async () => {
+    if (!available) return;
+    expect((await as("pro", "POST", "/api/admin/pricing/train")).status).toBe(403);
+    expect((await as("pro", "GET", "/api/admin/pricing")).status).toBe(403);
+    const overview = await as("ops", "GET", "/api/admin/pricing");
+    expect(overview.status).toBe(200);
+    expect(overview.json).toMatchObject({ models: [], loaded: null, references: { track: 12, sale: 0 } });
+    const noQueue = await as("ops", "POST", "/api/admin/pricing/train");
+    expect(noQueue.status).toBe(503);
+    expect(noQueue.json.error.code).toBe("pricing_trainer_unavailable");
+    const probe = new IORedis(REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1, connectTimeout: 1000, retryStrategy: () => null });
+    probe.on("error", () => {});
+    const redisOk = await probe.connect().then(() => probe.ping()).then(() => true, () => false);
+    probe.disconnect();
+    if (!redisOk) return;
+    const server = await buildServer(loadEnv({ ...baseEnv, REDIS_URL }), { email: flakyEmail, payments: null }, { priceModelRefreshMs: 0 });
+    try {
+      await server.app.ready();
+      const queue = server.queues.queues.get("selio-maintenance")!;
+      await queue.remove("pricing-train-manual").catch(() => 0);
+      expect((await as("ops", "POST", "/api/admin/pricing/train", undefined, server)).status).toBe(202);
+      expect((await as("ops", "POST", "/api/admin/pricing/train", undefined, server)).status).toBe(202);
+      const job = await queue.getJob("pricing-train-manual");
+      expect(job?.name).toBe("pricing.train");
+      expect(job?.data).toMatchObject({ requestedBy: expect.any(String) });
+      await job?.remove();
+    } finally {
+      await server.app.close();
+    }
+  });
+
+  it("modèle actif : chargé depuis price_models au démarrage, rechargé seulement s'il change, marqué « démonstration »", async () => {
+    if (!available) return;
+    // Petit modèle entraîné sur les références de démonstration de @selio/pricing (source « demo »).
+    const now = new Date();
+    const CATEGORY: Record<string, ItemCategory> = { Jupes: "women", Robes: "women", Baskets: "shoes", Bottes: "shoes", Sacs: "bags", "Vêtements enfant": "kids" };
+    const refs = generateSyntheticReferences({ n: 1500, seed: 11, now, dirtyShare: 0 }).map((r) => ({ ...r, subcategory: r.category, category: CATEGORY[r.category] ?? "men" }));
+    const { model, report } = trainPriceModel(refs, { now, seed: 42 });
+    expect(model).not.toBeNull();
+    const version = "gbm-test-api-demo";
+    const pricing = built.services.pricing!;
+    const saved = pricing.model;
+    try {
+      await built.services.db.withGlobal((tx) => dbRepos.priceModels.activate(tx, { version, trainedAt: now.toISOString(), nReferences: model!.nReferences, metrics: { ...flatMetrics(report), synthetic: true }, model, synthetic: true }));
+      // Démarrage d'une API : le modèle actif est lu dans price_models.
+      const server = await buildServer(loadEnv(baseEnv), { email: flakyEmail, payments: null }, { priceModelRefreshMs: 0 });
+      try {
+        expect(server.services.pricing?.model?.version).toBe(version);
+        expect(server.services.pricing?.model?.synthetic).toBe(true);
+      } finally {
+        await server.app.close();
+      }
+      // Rechargement horaire : chargé une fois, puis gardé tel quel tant que la version active ne change pas.
+      expect(await refreshPriceModel(built.services)).toBe(version);
+      const loaded = pricing.model;
+      expect(loaded?.version).toBe(version);
+      expect(await refreshPriceModel(built.services)).toBe(version);
+      expect(pricing.model).toBe(loaded);
+      // État : « données de démonstration », aucune mesure présentée comme réelle.
+      const status = await as("pro", "GET", "/api/pricing/model");
+      expect(status.json).toMatchObject({ trained: true, synthetic: true, label: PRICE_MODEL_DEMO_DATA, metrics: null, version, loaded: version });
+      // Sans comparable : le modèle seul, marqué « démonstration » ; P25 ≤ P50 ≤ P75.
+      const est = await as("pro", "POST", "/api/pricing/estimate", { category: "women", subcategory: "Robes", brand: "Zara", condition: "very_good", size: "M" });
+      expect(est.status).toBe(200);
+      expect(est.json).toMatchObject({ method: "model", modelVersion: version, demo: true, explanation: null });
+      expect(est.json.p25).toBeGreaterThan(0);
+      expect(est.json.p25).toBeLessThanOrEqual(est.json.p50);
+      expect(est.json.p50).toBeLessThanOrEqual(est.json.p75);
+      // Modèle actif illisible : le modèle déjà chargé est gardé (aucune erreur au démarrage ni à l'heure).
+      await owner!.query("update price_models set version = 'gbm-test-api-broken', model = '{\"broken\":true}'::jsonb where status = 'active'");
+      const warns: string[] = [];
+      expect(await refreshPriceModel(built.services, { info: () => {}, warn: (_o, m) => { warns.push(m); } })).toBe(version);
+      expect(pricing.model).toBe(loaded);
+      expect(warns).toHaveLength(1);
+    } finally {
+      await owner?.query("truncate price_models");
+      pricing.model = saved ?? null;
+    }
   });
 });

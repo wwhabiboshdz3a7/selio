@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Bot, Calculator, CircleUser, Cloud, FileCheck, Gauge, HandCoins, LayoutGrid, Lightbulb, FileStack, ListChecks, Palette, Radar, Settings, ShieldCheck, Shirt, SlidersHorizontal, Sparkles, Store, TrendingUp, UserPlus, Users, Workflow } from "lucide-react";
+import { Bot, Calculator, Camera, CircleUser, Cloud, FileCheck, Filter, Gauge, LineChart, Scale, HandCoins, LayoutGrid, Lightbulb, FileStack, ListChecks, Palette, Radar, Settings, ShieldCheck, Shirt, SlidersHorizontal, Sparkles, Store, TrendingUp, UserPlus, Users, Workflow } from "lucide-react";
 import type { NavGroup } from "../layout";
 
 /**
@@ -63,11 +63,11 @@ export const SPACES: readonly SpaceDef[] = [
     does: ["Administrateur, équipes et rôles", "Accès et journal d'audit", "Boutiques clientes et marque blanche (aperçu)"],
   },
   {
-    id: "track", name: "Selio Track", short: "Track", tagline: "Le sourcing des comptes Vinted, suivi pour vous",
-    description: "Suivez ce que vendent les autres comptes Vinted, à quel prix et à quel rythme, pour savoir quoi acheter. Très simple : on choisit, on regarde, on source.",
-    forWhom: "Pour sourcer au bon endroit",
+    id: "track", name: "Selio Track", short: "Track", tagline: "Les statistiques du marché Vinted, pour sourcer au bon endroit",
+    description: "Suivez des filtres Vinted (prix médian, annonces actives, ventes estimées), notez une niche sur 100 et estimez un prix à partir d'une photo. Statistiques seulement : aucune annonce, aucun pseudo.",
+    forWhom: "Pour sourcer et fixer ses prix (Pro et Agence)",
     home: "/track", icon: <TrendingUp />, state: "development",
-    does: ["Top revendeurs et leurs ventes", "Niches demandées et peu concurrencées", "Marques et tranches de prix qui partent"],
+    does: ["Filtres suivis, tendances sur 30 jours", "Scans de niche notés sur 100", "Recherche par photo : fourchette et délai"],
   },
   {
     id: "cloud", name: "Selio Cloud", short: "Cloud", tagline: "Vos automatisations, même ordinateur éteint",
@@ -125,7 +125,14 @@ export const SPACE_GROUPS: Record<Exclude<SpaceArea, "selio">, NavGroup[]> = {
   ],
   track: [
     { title: "Selio Track", items: [
-      { to: "/track", label: "Revendeurs et niches", icon: <TrendingUp />, end: true, hint: "Top vendeurs, niches, marques, prix" },
+      { to: "/track", label: "Tableau de bord", icon: <TrendingUp />, end: true, hint: "Filtres suivis, quotas, source des données" },
+      { to: "/track/filtres", label: "Filtres suivis", icon: <Filter />, hint: "Lus toutes les 2 h, partagés entre clients" },
+      { to: "/track/niches", label: "Scans de niche", icon: <Gauge />, hint: "Marque × catégorie notée sur 100" },
+      { to: "/track/photo", label: "Recherche par photo", icon: <Camera />, hint: "Fourchette, stratégies et délai" },
+    ] },
+    { title: "Agence", items: [
+      { to: "/track/ventes", label: "Flux des ventes", icon: <LineChart />, hint: "Par marque et catégorie" },
+      { to: "/track/vendeurs", label: "Vendeurs concurrents", icon: <Scale />, hint: "À valider juridiquement (RGPD)" },
     ] },
     { title: "Dans Selio", items: [
       { to: "/app/radar", label: "Bonnes affaires", icon: <Radar /> },

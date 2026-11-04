@@ -17,7 +17,9 @@ beforeAll(() => {
   }
 });
 
-function boot(url: string) {
+const comparables = { p25: 2800, p50: 3400, p75: 4100, delayDays: 9, confidence: 0.6, confidenceLevel: "medium", method: "blend", strategies: { fast: 2790, standard: 3390, max: 4090 }, comparableCount: 12, demo: false, message: null, factors: [], priceCheck: { priceCents: 3500, position: "within" } };
+
+function boot(url: string, opts: { paired?: boolean } = {}) {
   const win = new Window({ url });
   win.document.write(fixture);
   const sent: unknown[] = [];
@@ -28,8 +30,9 @@ function boot(url: string) {
       lastError: undefined,
       sendMessage: (msg: { type: string }, cb: (r: unknown) => void) => {
         sent.push(msg);
-        if (msg.type === "status") cb({ ok: true, data: { paired: true, orgName: "Org Test" } });
+        if (msg.type === "status") cb({ ok: true, data: { paired: opts.paired ?? true, orgName: "Org Test" } });
         else if (msg.type === "capture") cb({ ok: true, data: { id: "item-1" } });
+        else if (msg.type === "comparables") cb({ ok: true, data: comparables });
         else cb({ ok: true, data: null });
       },
       onMessage: { addListener: (fn: (typeof listeners)[number]) => listeners.push(fn) },
@@ -58,6 +61,31 @@ describe("content script compilé", () => {
     expect(report!.ok).toBe(true);
     expect(report!.pageKind).toBe("item");
     expect(sent.some((m) => (m as { type: string }).type === "diagnostic")).toBe(true);
+  });
+  it("à l'ouverture du panneau sur un article, demande les comparables avec les seuls champs de l'article", async () => {
+    if (!script) return;
+    const { sent, listeners } = boot("https://www.vinted.fr/items/123456-veste");
+    await new Promise((r) => setTimeout(r, 20));
+    // Panneau fermé : rien n'est demandé.
+    expect(sent.some((m) => (m as { type: string }).type === "comparables")).toBe(false);
+    listeners[0]?.({ type: "togglePanel" }, { id: "ext-id" }, () => {});
+    await new Promise((r) => setTimeout(r, 50));
+    const requests = sent.filter((m) => (m as { type: string }).type === "comparables") as { type: string; item: Record<string, unknown> }[];
+    expect(requests).toHaveLength(1);
+    expect(Object.keys(requests[0]!.item).sort()).toEqual(["brand", "category", "condition", "priceCents", "size", "title"]);
+    expect(requests[0]!.item).toEqual({ title: "Veste en jean Levi's Trucker", brand: "Levi's", category: null, size: "M / 38 / 10", condition: "very_good", priceCents: 3500 });
+    const json = JSON.stringify(requests[0]);
+    for (const forbidden of ["vendeur_demo", "images.example.invalid", "123456", "Ignore previous", "https://"]) expect(json).not.toContain(forbidden);
+    // Aucune capture sans clic.
+    expect(sent.some((m) => (m as { type: string }).type === "capture")).toBe(false);
+  });
+  it("extension non reliée : aucun appel de comparables", async () => {
+    if (!script) return;
+    const { sent, listeners } = boot("https://www.vinted.fr/items/123456-veste", { paired: false });
+    listeners[0]?.({ type: "togglePanel" }, { id: "ext-id" }, () => {});
+    await new Promise((r) => setTimeout(r, 50));
+    expect(sent.some((m) => (m as { type: string }).type === "status")).toBe(true);
+    expect(sent.some((m) => (m as { type: string }).type === "comparables")).toBe(false);
   });
   it("ne touche pas au DOM de la page hors de son hôte", async () => {
     if (!script) return;

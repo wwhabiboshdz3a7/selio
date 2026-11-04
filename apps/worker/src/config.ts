@@ -110,6 +110,36 @@ export const workerEnvSchema = z
     CLOUD_ACTION_TIMEOUT_MS: z.coerce.number().int().min(10_000).max(600_000).default(90_000),
     /** Cadence du planificateur du Cloud (UTC) : une action au plus par compte et par passage. */
     CRON_CLOUD: z.string().default("* * * * *"),
+    /**
+     * Selio Track (statistiques seulement). Passage toutes les 15 min : empreintes dues (une lecture par
+     * empreinte quel que soit le nombre de clients qui la suivent), relues toutes les
+     * TRACK_READ_INTERVAL_MINUTES × facteur de ralentissement partagé.
+     */
+    CRON_TRACK: z.string().default("*/15 * * * *"),
+    /**
+     * Lecture en direct des pages PUBLIQUES du catalogue (lecteur de Selio Cloud, sans session, mêmes
+     * garde-fous que Radar) : faux par défaut, la source est alors le simulateur (données de démonstration).
+     * Usage des données issues de Vinted à valider juridiquement. Même valeur que l'API.
+     */
+    TRACK_LIVE_ENABLED: bool,
+    /** Relecture d'une empreinte suivie, en minutes (2 h par défaut ; 60 au moins). */
+    TRACK_READ_INTERVAL_MINUTES: z.coerce.number().int().min(60).max(24 * 60).default(120),
+    /**
+     * Pages publiques lues par Track par minute (défaut prudent 10) ; elles comptent AUSSI dans le plafond de la
+     * machine partagé avec Radar (RADAR_MAX_PAGES_PER_MINUTE_GLOBAL), dans les mêmes créneaux de navigateurs.
+     */
+    TRACK_MAX_PAGES_PER_MINUTE: z.coerce.number().int().min(1).max(60).default(10),
+    /**
+     * Base de références de prix : ventes des organisations QUI L'ONT ACCEPTÉ (réglage désactivé par défaut)
+     * ajoutées sans donnée personnelle, ventes remboursées ou supprimées retirées, chaque nuit.
+     */
+    CRON_PRICING_REFERENCES: z.string().default("30 2 * * *"),
+    /** Entraînement hebdomadaire du modèle de prix (dimanche 04:00 UTC par défaut). */
+    PRICING_TRAIN_CRON: z.string().default("0 4 * * 0"),
+    /** Références nécessaires pour entraîner (500 au moins : l'entraîneur refuse en dessous). */
+    PRICING_MIN_REFERENCES: z.coerce.number().int().min(500).max(1_000_000).default(500),
+    /** Durée maximale d'un entraînement (fil séparé, arrêté au-delà ; l'ancien modèle reste actif). 10 min par défaut. */
+    PRICING_TRAIN_MAX_MS: z.coerce.number().int().min(10_000).max(6 * 3_600_000).default(600_000),
     /** Dossier des profils temporaires (un par exécution, supprimé à la fin). */
     CLOUD_PROFILE_DIR: z
       .string()
@@ -149,12 +179,22 @@ export function radarServicesConfig(cfg: Pick<WorkerEnv, "RADAR_AUTO_ENABLED" | 
   };
 }
 
+/**
+ * Réglages Track transmis au cœur (`services.config`) : lecture en direct fermée par défaut, intervalle de
+ * relecture (2 h). L'analyse d'un vendeur concurrent ne concerne que l'API.
+ */
+export function trackServicesConfig(cfg: Pick<WorkerEnv, "TRACK_LIVE_ENABLED" | "TRACK_READ_INTERVAL_MINUTES">): Pick<ServicesConfig, "trackLiveEnabled" | "trackReadIntervalMinutes"> {
+  return { trackLiveEnabled: cfg.TRACK_LIVE_ENABLED, trackReadIntervalMinutes: cfg.TRACK_READ_INTERVAL_MINUTES };
+}
+
 /** Plannings de la file « selio-maintenance » : cron (`pattern`) ou intervalle (`every`, en ms). */
 export type MaintenanceSchedule = { name: string; pattern: string } | { name: string; every: number };
 
 /**
  * Plannings du worker. « radar.tick » tourne toutes les 30 s, « alerts.send » chaque minute ;
  * « radar.auto » n'existe que si RADAR_AUTO_ENABLED (sinon son planning est retiré au démarrage).
+ * Track : « track.tick » toutes les 15 min ; prix : « pricing.references » chaque nuit, « pricing.train »
+ * chaque dimanche à 04:00 (UTC).
  */
 export function maintenanceSchedules(env: WorkerEnv): MaintenanceSchedule[] {
   return [
@@ -167,6 +207,9 @@ export function maintenanceSchedules(env: WorkerEnv): MaintenanceSchedule[] {
     { name: "retention.cleanup", pattern: env.CRON_RETENTION },
     { name: "billing.renew", pattern: env.CRON_BILLING_RENEW },
     { name: "cloud.tick", pattern: env.CRON_CLOUD },
+    { name: "track.tick", pattern: env.CRON_TRACK },
+    { name: "pricing.references", pattern: env.CRON_PRICING_REFERENCES },
+    { name: "pricing.train", pattern: env.PRICING_TRAIN_CRON },
   ];
 }
 

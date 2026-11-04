@@ -116,7 +116,7 @@ export default function Overview() {
         <FeatureTile to="/studio" icon={<Sparkles />} title="Générer une annonce" text="Vos photos → annonce rédigée par l'IA, en brouillon ou publiée." cta="Commencer" primary />
         <FeatureTile to="/app/dressing?filter=due" icon={<Shirt />} title="Dressing intelligent" text={q.data ? `Note moyenne ${q.data.dressing.averageScore}/100 · ${counts.data?.dressingDue ?? q.data.dressing.toRepublish} annonce(s) à republier` : "Notes et rendement de vos annonces"} cta="Republier" />
         <FeatureTile to="/app/purchase" icon={<Radar />} title="Bonnes affaires" text={counts.data ? `${counts.data.toReview} affaire(s) notée(s) 75/100 ou plus à valider` : "Le radar note chaque affaire sur 100"} cta="Valider" />
-        <FeatureTile to="/app/market" icon={<Store />} title="Analyse revendeurs" text={market.data?.opportunities[0] ? `Niche à saisir : ${market.data.opportunities[0].label} (demande ${market.data.opportunities[0].demand}/100)` : "Top vendeurs et niches en hausse"} cta="Explorer" />
+        <FeatureTile to="/track" icon={<Store />} title="Selio Track" text={market.data?.opportunities[0] ? `Niche à saisir : ${market.data.opportunities[0].label} (demande ${market.data.opportunities[0].demand}/100)` : "Niches, tendances et prix du marché"} cta="Explorer" />
       </nav>
 
       <QueryBoundary query={q}>

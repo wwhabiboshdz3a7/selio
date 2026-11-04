@@ -366,7 +366,9 @@ describe("utilisation du mois et vue administrateur (démonstration)", () => {
     expect(studioEvents).toBeGreaterThan(0);
     expect(u.studio.wornPhotos).toEqual({ used: 0, quota: 10, percent: 0, warning: false, exceeded: false });
     expect(u.track.scans.quota).toBe(10);
-    expect(u.track.filtersFollowed).toMatchObject({ used: 0, quota: 5 });
+    // Filtres Track suivis : les deux filtres de la démonstration (une limite de l'offre, pas une consommation du mois).
+    expect(u.track.filtersFollowed).toMatchObject({ used: (await client.trackFilters()).length, quota: 5 });
+    expect(u.track.filtersFollowed.used).toBe(2);
     expect(u.cloud).toMatchObject({ actions: { used: 0, quota: 500, percent: 0 }, included: false });
     for (const c of [u.counters.aiRequests, u.counters.items, u.counters.connections, u.counters.members, u.studio.listings, u.track.scans, u.track.photoSearches, u.cloud.actions]) {
       expect(c.percent).toBeGreaterThanOrEqual(0);

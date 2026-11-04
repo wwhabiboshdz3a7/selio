@@ -8,6 +8,8 @@ import type { BillingOptions } from "./types";
 import type { CloudExecutor } from "./services/cloud";
 import type { PushSender } from "./services/alerts";
 import type { PurchaseRunner, RadarReader } from "./services/radar-sources";
+import type { PricingServices } from "./services/pricing";
+import type { TrackReader } from "./services/track";
 
 export class AppError extends Error {
   constructor(public readonly code: string, message: string, public readonly status = 400, public readonly details?: unknown) {
@@ -54,7 +56,17 @@ export interface Services {
    * depuis le compte Achat et achat pas à pas (Radar Auto). Absent dans l'API : aucune page n'y est lue.
    */
   radar?: { reader?: RadarReader; purchaser?: PurchaseRunner };
-  /** Réglages serveur lus dans l'environnement (`cloudConfigFromEnv`, `radarConfigFromEnv`). Valeurs prudentes par défaut. */
+  /**
+   * Estimation des prix (§5.10) : modèle de prix actif chargé (null : non entraîné ou non chargé), entraîneur
+   * (worker, @selio/pricing) et chargeur d'un modèle enregistré. Absent : comparables seuls.
+   */
+  pricing?: PricingServices;
+  /**
+   * Selio Track : lecteur des pages publiques du catalogue (worker uniquement, `RadarReader` de @selio/cloud
+   * sans session), utilisé seulement si TRACK_LIVE_ENABLED. Absent : le simulateur.
+   */
+  track?: { reader?: TrackReader };
+  /** Réglages serveur lus dans l'environnement (`cloudConfigFromEnv`, `radarConfigFromEnv`, `trackConfigFromEnv`). Valeurs prudentes par défaut. */
   config?: ServicesConfig;
 }
 
@@ -84,6 +96,16 @@ export interface ServicesConfig {
    * le bouton de paiement (essai à blanc) et l'achat est enregistré « simulé ».
    */
   radarRealPurchase?: boolean;
+  /**
+   * TRACK_LIVE_ENABLED : lecture en direct des pages publiques du catalogue par Selio Track (lecteur du Cloud,
+   * mêmes garde-fous que Radar). Faux par défaut : la source est le simulateur. Usage des données de Vinted
+   * à valider juridiquement.
+   */
+  trackLiveEnabled?: boolean;
+  /** TRACK_SELLER_ANALYSIS_ENABLED : analyse d'un vendeur concurrent (Agence). Faux par défaut, à valider juridiquement (RGPD). */
+  trackSellerAnalysisEnabled?: boolean;
+  /** TRACK_READ_INTERVAL_MINUTES : relecture d'une empreinte suivie (120 min par défaut, 60 au moins), × facteur de ralentissement. */
+  trackReadIntervalMinutes?: number;
 }
 
 /** Contexte d'une requête authentifiée dans une organisation. */

@@ -3,6 +3,9 @@ import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Camera, Check, ClipboardCopy, ImagePlus, Info, Send, Sparkles, Star, Trash2, Upload, Wand2 } from "lucide-react";
 import { ITEM_CATEGORIES, ITEM_CATEGORY_LABELS, ITEM_CONDITIONS, ITEM_CONDITION_LABELS, type GeneratorPhoto, type InventoryItem, type ListingDraft, type MarketplaceConnection } from "@selio/contracts";
+import type { StudioDraft } from "../../lib/data/types";
+import { hasPrice } from "../../lib/track";
+import { PriceEstimateView } from "../components/pricing";
 import { listingAccounts, newId, suggestFloorPrice } from "@selio/domain";
 import { Alert, Button, Card, Field, IconButton, IconTile, Input, Money, PageHeader, Select, Tag, Textarea, cn, formatCents } from "@selio/ui";
 import { useClient, useData, useRequiredSession } from "../../lib/data/provider";
@@ -73,7 +76,9 @@ export default function Studio() {
   const [dragOver, setDragOver] = useState(false);
   const [connectionId, setConnectionId] = useState<string>("");
   const [hints, setHints] = useState({ brand: "", size: "", notes: "", purchasePriceCents: null as number | null });
-  const [draft, setDraft] = useState<ListingDraft | null>(null);
+  const [draft, setDraft] = useState<StudioDraft | null>(null);
+  // État du modèle de prix (« modèle non entraîné », « données de démonstration ») affiché avec l'estimation.
+  const priceModel = useQuery({ queryKey: ["pricing-model"], queryFn: () => client.pricingModelStatus(), staleTime: 60_000, enabled: draft !== null });
   const [form, setForm] = useState<DraftForm | null>(null);
   const [saved, setSaved] = useState<{ item: InventoryItem; published: boolean } | null>(null);
   // Selio Studio : les annonces créées à la suite pendant cette visite (la plus récente en tête).
@@ -146,7 +151,7 @@ export default function Studio() {
       />
 
       {mode === "demo" ? (
-        <Alert tone="info" className="mb-5" title="Démonstration : IA simulée">Le simulateur ne voit pas réellement vos photos : il s'appuie sur la marque, la taille, les notes et le nom des fichiers (ex. « ralph-lauren-pull-bleu-M.jpg »). Avec mon modèle perso branché (texte + vision), l'analyse des photos est réelle. Le prix conseillé vient toujours des ventes comparables, jamais de l'IA.</Alert>
+        <Alert tone="info" className="mb-5" title="Démonstration : IA simulée">Le simulateur ne voit pas réellement vos photos : il s'appuie sur la marque, la taille, les notes et le nom des fichiers (ex. « ralph-lauren-pull-bleu-M.jpg »). Avec mon modèle perso branché (texte + vision), l'analyse des photos est réelle. Le prix conseillé vient des ventes comparables et du modèle de prix (ici de démonstration) ; mon IA perso l'explique, elle ne le choisit jamais.</Alert>
       ) : null}
 
       <ol className="mb-8 grid gap-4 sm:grid-cols-3" aria-label="Étapes">
@@ -277,7 +282,7 @@ export default function Studio() {
             <Card className="flex h-full min-h-[420px] flex-col items-center justify-center gap-3 text-center">
               <IconTile icon={<Wand2 />} size={48} />
               <h2 className="text-md font-semibold">Votre annonce apparaîtra ici</h2>
-              <p className="max-w-md text-sm text-text-muted">Titre optimisé pour la recherche, description claire et honnête, attributs (marque, taille, état, couleurs), prix conseillé à partir des ventes comparables. Tout reste modifiable avant publication.</p>
+              <p className="max-w-md text-sm text-text-muted">Titre optimisé pour la recherche, description claire et honnête, attributs (marque, taille, état, couleurs), prix conseillé en trois stratégies (vente rapide, standard, marge maximale) expliquées en mots. Tout reste modifiable avant publication.</p>
               {generate.isPending ? <p className="text-sm font-medium text-accent">Analyse des photos en cours…</p> : null}
             </Card>
           ) : (
@@ -312,14 +317,34 @@ export default function Studio() {
                   {photos[0] ? <img src={photos[0].url} alt="Couverture" className="aspect-square w-full rounded-lg object-cover" /> : null}
                   <div className="rounded-lg bg-surface-muted p-3">
                     <Field label="Prix de vente">{(p) => <MoneyInput id={p.id} value={form.priceCents} onChange={(v) => setForm({ ...form, priceCents: v })} />}</Field>
-                    <p className="mt-2 text-xs text-text-muted">Conseillé : <button type="button" className="font-semibold text-text underline underline-offset-2" onClick={() => setForm({ ...form, priceCents: draft.suggestedPriceCents })}><Money cents={draft.suggestedPriceCents} /></button></p>
-                    <div className="mt-2 h-1.5 rounded-full" style={{ background: "linear-gradient(90deg, var(--violet-200), var(--accent-vivid), var(--violet-200))" }} aria-hidden />
-                    <p className="num mt-1 flex justify-between text-[11px] text-text-muted"><span>{formatCents(draft.priceLowCents)}</span><span>{formatCents(draft.priceHighCents)}</span></p>
-                    <p className="mt-1 text-[11px] text-text-muted">{draft.priceMethod} · {draft.comparableCount} vente(s) comparable(s)</p>
+                    <p className="mt-2 text-xs text-text-muted">Conseillé (standard) : <button type="button" className="font-semibold text-text underline underline-offset-2" onClick={() => setForm({ ...form, priceCents: draft.suggestedPriceCents })}><Money cents={draft.suggestedPriceCents} /></button></p>
+                    {hasPrice(draft.pricing) ? <p className="mt-1 text-[11px] text-text-muted">Trois stratégies et leur explication sous l'annonce.</p> : (
+                      <>
+                        <div className="mt-2 h-1.5 rounded-full" style={{ background: "linear-gradient(90deg, var(--violet-200), var(--accent-vivid), var(--violet-200))" }} aria-hidden />
+                        <p className="num mt-1 flex justify-between text-[11px] text-text-muted"><span>{formatCents(draft.priceLowCents)}</span><span>{formatCents(draft.priceHighCents)}</span></p>
+                        <p className="mt-1 text-[11px] text-text-muted">{draft.priceMethod} · {draft.comparableCount} vente(s) comparable(s)</p>
+                      </>
+                    )}
                     {hints.purchasePriceCents && form.priceCents ? <p className="num mt-2 text-sm">Marge : <span className={form.priceCents - hints.purchasePriceCents >= 0 ? "font-semibold text-success" : "font-semibold text-danger"}>{formatCents(form.priceCents - hints.purchasePriceCents)}</span></p> : null}
                   </div>
                 </div>
               </div>
+              {draft.pricing ? (
+                <section aria-label="Prix conseillé" className="mt-5 border-t border-border pt-4">
+                  <h3 className="mb-3 text-sm font-semibold">Prix conseillé : trois stratégies</h3>
+                  <PriceEstimateView
+                    estimate={draft.pricing}
+                    // Absent tant qu'il n'est pas lu : jamais « non entraîné » par défaut.
+                    modelStatus={priceModel.data}
+                    // Valeurs relevées au plancher (prix d'achat et marge minimale) par le serveur.
+                    strategies={{ fast: draft.priceLowCents, standard: draft.suggestedPriceCents, max: draft.priceHighCents }}
+                    current={form.priceCents}
+                    onApply={(cents) => setForm({ ...form, priceCents: cents })}
+                    disabled={!canWrite}
+                    simulated={draft.simulated}
+                  />
+                </section>
+              ) : null}
               <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="flex items-center gap-1.5 text-xs text-text-muted"><Info className="size-3.5" aria-hidden />{account ? `Compte : ${account.label}` : "Aucun compte sélectionné"}{account?.provider === "vinted" && mode === "connected" ? " · publication via l'extension Selio" : ""}</p>
                 <div className="flex flex-wrap gap-2">

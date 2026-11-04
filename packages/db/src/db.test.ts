@@ -463,6 +463,196 @@ describe("base de données", () => {
     });
   });
 
+  it("0013 : Selio Track et prix — RLS des tables d'organisation, lectures partagées par fonctions seulement, références sans donnée personnelle, un seul modèle actif", async () => {
+    if (!available) return;
+    const { PRICE_REFERENCE_KEYS, PLAN_QUOTAS } = await import("@selio/contracts");
+    await owner.pool.query("truncate track_filter_reads, track_snapshots, price_models");
+    await owner.pool.query("update track_runtime set window_measures = '', slowdown_factor = 1, last_block_at = null, paused_until = null, pause_reason = null");
+    const tables = await owner.withGlobal((tx) => tx.query<{ tablename: string; rowsecurity: boolean; forcerls: boolean }>("select c.relname as tablename, c.relrowsecurity as rowsecurity, c.relforcerowsecurity as forcerls from pg_class c where c.relname in ('track_filters', 'track_scans', 'track_photo_searches') and c.relkind = 'r' order by 1"));
+    expect(tables).toEqual([
+      { tablename: "track_filters", rowsecurity: true, forcerls: true },
+      { tablename: "track_photo_searches", rowsecurity: true, forcerls: true },
+      { tablename: "track_scans", rowsecurity: true, forcerls: true },
+    ]);
+    // Aucune colonne de photo, de pseudo ou de titre dans les tables de Track et de prix.
+    const cols = await owner.withGlobal((tx) => tx.query<{ tableName: string; columnName: string }>("select table_name, column_name from information_schema.columns where table_name in ('track_filters', 'track_filter_reads', 'track_snapshots', 'track_scans', 'track_photo_searches', 'price_references', 'price_models')"));
+    expect(cols.filter((c) => /photo_url|photo$|seller|handle|pseudo|title|url/.test(c.columnName))).toEqual([]);
+
+    const { orgA, orgB } = await owner.withGlobal(async (tx) => ({
+      orgA: await repos.orgs.create(tx, { name: "Track A", slug: "track-a", settings: {} }),
+      orgB: await repos.orgs.create(tx, { name: "Track B", slug: "track-b", settings: {} }),
+    }));
+    await owner.withGlobal(async (tx) => {
+      await tx.insert("subscriptions", { orgId: orgA.id, plan: "pro", status: "active", quotas: PLAN_QUOTAS.pro });
+      await tx.insert("subscriptions", { orgId: orgB.id, plan: "agence", status: "active", quotas: PLAN_QUOTAS.agence });
+    });
+    const fp = "a".repeat(64);
+    const other = "b".repeat(64);
+    const criteria = { brands: ["Levi's"], categories: ["men" as const], sizes: [], conditions: [], keywords: ["jean"], maxPriceCents: 4000 };
+    const now = "2026-10-30T10:00:00.000Z";
+
+    // Filtres : RLS, unicité (organisation, empreinte), aucun accès direct aux lectures partagées.
+    const fA = await app.withOrg(orgA.id, async (tx) => {
+      const f = await repos.trackFilters.create(tx, { name: "Jeans Levi's", criteria, fingerprint: fp, enabled: true });
+      await repos.trackReads.follow(tx, fp, criteria, now);
+      // Une empreinte que l'organisation ne suit pas n'est pas créée.
+      await repos.trackReads.follow(tx, other, criteria, now);
+      return f;
+    });
+    await expect(app.withOrg(orgA.id, (tx) => repos.trackFilters.create(tx, { name: "Doublon", criteria, fingerprint: fp, enabled: true }))).rejects.toMatchObject({ code: "conflict" });
+    await app.withOrg(orgB.id, async (tx) => {
+      expect(await repos.trackFilters.list(tx)).toHaveLength(0);
+      await repos.trackFilters.create(tx, { name: "Mêmes jeans", criteria, fingerprint: fp, enabled: true });
+      await repos.trackReads.follow(tx, fp, criteria, "2026-10-30T12:00:00.000Z");
+      // Report demandé par B : la ligne est suivie (filtre actif) par A, son rythme est gardé.
+      await repos.trackReads.follow(tx, fp, criteria, "2026-10-30T12:00:00.000Z", true);
+      // L'état d'une empreinte n'est rendu qu'aux organisations qui la suivent.
+      expect([...(await repos.trackReads.state(tx, [fp, other])).keys()]).toEqual([fp]);
+    });
+    await expect(app.withGlobal((tx) => tx.query("select * from track_filter_reads"))).rejects.toBeInstanceOf(Error);
+    await expect(app.withGlobal((tx) => tx.query("select ref_salt from track_runtime"))).rejects.toBeInstanceOf(Error);
+    await expect(app.withGlobal((tx) => tx.query("select ref_store_salt from track_runtime"))).rejects.toBeInstanceOf(Error);
+    await expect(app.withOrg(orgA.id, (tx) => tx.query("update track_filter_reads set next_read_at = now()"))).rejects.toBeInstanceOf(Error);
+    expect(await owner.withGlobal((tx) => tx.count("select count(*) from track_filter_reads"))).toBe(1);
+
+    // Une seule lecture par empreinte, quelle que soit la quantité de clients ; prise conditionnelle.
+    const due = await app.withGlobal((tx) => repos.trackReads.due(tx, now, 10));
+    expect(due.map((d) => d.fingerprint)).toEqual([fp]);
+    expect(due[0]!.criteria).toMatchObject({ brands: ["Levi's"], keywords: ["jean"] });
+    const claimed = await app.withGlobal((tx) => repos.trackReads.claim(tx, fp, now, "2026-10-30T10:10:00.000Z"));
+    expect(claimed).toMatchObject({ reads: 0, stateSource: null, consecutiveFailures: 0 });
+    expect(await app.withGlobal((tx) => repos.trackReads.claim(tx, fp, now, "2026-10-30T10:10:00.000Z"))).toBeNull();
+    expect(await app.withGlobal((tx) => repos.trackReads.due(tx, now, 10))).toHaveLength(0);
+    const keys = await app.withGlobal((tx) => repos.trackReads.refKeys(tx, ["12345", "12345", "67890"]));
+    expect(keys.size).toBe(2);
+    expect(keys.get("12345")).toMatch(/^[a-f0-9]{64}$/);
+    expect(keys.get("12345")).not.toContain("12345");
+    expect((await app.withGlobal((tx) => repos.trackReads.refKeys(tx, ["12345"]))).get("12345")).toBe(keys.get("12345"));
+    await app.withGlobal((tx) => repos.trackReads.finish(tx, { fingerprint: fp, readAt: now, nextReadAt: "2026-10-30T12:00:00.000Z", outcome: "ok", counted: true, blocked: false, anomaly: false, factor: 1, state: [{ k: keys.get("12345"), p: 2500, f: now, d: null }], stateSource: "demo" }));
+    await app.withOrg(orgA.id, async (tx) => {
+      expect((await repos.trackReads.state(tx, [fp])).get(fp)).toMatchObject({ lastReadAt: now, nextReadAt: "2026-10-30T12:00:00.000Z", reads: 1, lastOutcome: "ok", factor: 1 });
+    });
+    // Fenêtre partagée : une lettre par lecture en direct, 1 000 au plus ; pause jamais raccourcie ; une lecture
+    // sans blocage (facteur null) ne réécrit ni le facteur ni la date du dernier blocage.
+    await app.withGlobal(async (tx) => {
+      await repos.trackReads.recordRuntime(tx, { blocked: false, factor: null, blockAt: null, pauseUntil: null, pauseReason: null });
+      await repos.trackReads.recordRuntime(tx, { blocked: true, factor: 2, blockAt: now, pauseUntil: "2026-10-30T11:00:00.000Z", pauseReason: "captcha" });
+      await repos.trackReads.recordRuntime(tx, { blocked: true, factor: 4, blockAt: now, pauseUntil: "2026-10-30T10:30:00.000Z", pauseReason: "blocked" });
+      await repos.trackReads.recordRuntime(tx, { blocked: false, factor: null, blockAt: null, pauseUntil: null, pauseReason: null });
+      expect(await repos.trackReads.runtime(tx)).toMatchObject({ windowReads: 4, windowBlocks: 2, slowdownFactor: 4, lastBlockAt: now, pausedUntil: "2026-10-30T11:00:00.000Z" });
+    });
+
+    // Instantanés : partagés par empreinte, sans donnée d'organisation.
+    await app.withGlobal(async (tx) => {
+      const snap = { fingerprint: fp, source: "demo" as const, readAt: now, listedCount: 40, medianPriceCents: 2500, p25Cents: 1800, p75Cents: 3200, newCount: 4, goneCount: 3, medianDaysListed: 6.5, brandShares: [{ brand: "Levi's", count: 40, share: 1 }], scope: { categories: ["men" as const], brands: ["Levi's"], categoriesVerified: true } };
+      expect(await repos.trackSnapshots.add(tx, snap)).toMatchObject({ listedCount: 40, medianDaysListed: 6.5, brandShares: [{ brand: "Levi's", count: 40, share: 1 }] });
+      expect(await repos.trackSnapshots.add(tx, snap)).toBeNull();
+      await repos.trackSnapshots.add(tx, { ...snap, readAt: "2025-06-01T10:00:00.000Z" });
+      await repos.trackSnapshots.add(tx, { ...snap, fingerprint: other, readAt: "2026-10-29T10:00:00.000Z", scope: { categories: ["women"], brands: [], categoriesVerified: true } });
+      // Catégorie non appliquée à la page (lecture en direct) ou toutes catégories : ne compte pour aucune.
+      await repos.trackSnapshots.add(tx, { ...snap, fingerprint: "c".repeat(64), scope: { categories: ["men"], brands: [], categoriesVerified: false } });
+      await repos.trackSnapshots.add(tx, { ...snap, fingerprint: "d".repeat(64), scope: { categories: [], brands: [], categoriesVerified: true } });
+      expect((await repos.trackSnapshots.since(tx, fp, "2026-10-01T00:00:00.000Z")).map((s) => s.readAt)).toEqual([now]);
+      expect((await repos.trackSnapshots.latestForCategory(tx, "men", "2026-10-01T00:00:00.000Z")).map((s) => s.fingerprint)).toEqual([fp]);
+    });
+
+    // Scans et recherches par photo : RLS, aucune photo.
+    await app.withOrg(orgA.id, async (tx) => {
+      await repos.trackScans.create(tx, { brand: "Levi's", category: "men", status: "ok", score: 72, components: { demand: 80, speed: 60, competition: 70, margin: 75 }, basedOn: { references: 40, snapshots: 2, sold: 12, demo: true }, details: { medianDaysToSell: 6, activeListings: 28, medianResaleCents: 2500, medianBuyCents: 1200 }, message: null });
+      const est = { p25: 2000, p50: 2500, p75: 3000, delayDays: 7, confidence: 0.6, confidenceLevel: "medium" as const, method: "comparables" as const, strategies: { fast: 2000, standard: 2500, max: 3000 }, comparableCount: 8, factors: [], demo: false, message: null };
+      await repos.trackPhotoSearches.create(tx, { description: { title: "Jean Levi's bleu", brand: "Levi's", category: "men", subcategory: "Jean", material: "Denim", color: "Bleu", condition: "very_good", confidence: 0.6 }, estimate: est, simulated: true });
+    });
+    await app.withOrg(orgB.id, async (tx) => {
+      expect(await repos.trackScans.list(tx)).toHaveLength(0);
+      expect(await repos.trackPhotoSearches.list(tx)).toHaveLength(0);
+    });
+    await expect(app.withOrg(orgB.id, (tx) => tx.query("insert into track_scans (org_id, category) values ($1, 'men')", [orgA.id]))).rejects.toBeInstanceOf(Error);
+    expect(await app.withOrg(orgA.id, (tx) => repos.trackScans.purgeBefore(tx, "2026-11-30T00:00:00.000Z"))).toBe(1);
+
+    // Références : dédoublonnage, mise à jour (disparue → prix final estimé), aucune clé personnelle rendue.
+    await app.withGlobal(async (tx) => {
+      const base = { dedupeKey: `track:${keys.get("12345")}`, source: "track" as const, status: "listed" as const, brand: "Levi's", category: "men" as const, size: "W32", condition: "very_good" as const, listedPriceCents: 2500, listedAt: "2026-10-20T10:00:00.000Z", photoCount: 5 };
+      expect(await repos.priceReferences.upsertMany(tx, [base, { ...base, listedPriceCents: 2400 }, { ...base, dedupeKey: "demo:0000001", source: "demo", listedPriceCents: 900 }])).toBe(2);
+      await repos.priceReferences.upsertMany(tx, [{ ...base, status: "gone", size: null, finalPriceCents: 2400, finalPriceEstimated: true, soldAt: now, listedPriceCents: 2400, contributorOrgId: null }]);
+      await repos.priceReferences.upsertMany(tx, [{ dedupeKey: "sale:abcdef0123", source: "sale", status: "sold", brand: "Levi's", category: "men", listedPriceCents: 3000, finalPriceCents: 2800, listedAt: "2026-10-01T10:00:00.000Z", soldAt: "2026-10-15T10:00:00.000Z", contributorOrgId: orgA.id }]);
+      const refs = await repos.priceReferences.search(tx, { category: "men", brand: "levi's", withFinalPrice: true });
+      expect(refs.map((r) => r.source).sort()).toEqual(["sale", "track"]);
+      const gone = refs.find((r) => r.source === "track")!;
+      expect(gone).toMatchObject({ status: "gone", size: "W32", finalPriceCents: 2400, finalPriceEstimated: true, soldAt: now, listedAt: "2026-10-20T10:00:00.000Z" });
+      for (const r of refs) expect(Object.keys(r).sort()).toEqual([...PRICE_REFERENCE_KEYS].sort());
+      expect(await repos.priceReferences.search(tx, { category: "men", includeDemo: true })).toHaveLength(3);
+      expect(await repos.priceReferences.countBySource(tx)).toEqual({ track: 1, sale: 1, demo: 1, import: 0 });
+      expect(await repos.priceReferences.soldBySource(tx)).toEqual({ sold: { track: 1, sale: 1, demo: 0, import: 0 }, estimated: { track: 1, sale: 0, demo: 0, import: 0 } });
+    });
+    // La vente versée par A n'est rendue qu'à A (agrégats) ; jamais à B, ni sans organisation.
+    const since2026 = "2026-01-01T00:00:00.000Z";
+    await app.withOrg(orgA.id, async (tx) => {
+      expect(await repos.priceReferences.nicheStats(tx, { category: "men", brand: "LEVI'S", since: since2026, includeDemo: false })).toMatchObject({ total: 2, sold: 2, active: 0, medianFinalCents: 2600, medianDaysToSell: 12 });
+      expect(await repos.priceReferences.salesByNiche(tx, { since: "2026-10-01T00:00:00.000Z", includeDemo: false })).toEqual([{ brand: "Levi's", category: "men", sold: 2, estimatedShare: 0.5, medianPriceCents: 2600, lastSoldAt: now }]);
+    });
+    await app.withOrg(orgB.id, async (tx) => {
+      expect(await repos.priceReferences.nicheStats(tx, { category: "men", brand: "LEVI'S", since: since2026, includeDemo: false })).toMatchObject({ total: 1, sold: 1, medianFinalCents: 2400 });
+      expect(await repos.priceReferences.salesByNiche(tx, { since: "2026-10-01T00:00:00.000Z", includeDemo: false })).toEqual([{ brand: "Levi's", category: "men", sold: 1, estimatedShare: 1, medianPriceCents: 2400, lastSoldAt: now }]);
+      expect((await repos.priceReferences.nicheSummary(tx, { since: since2026, includeDemo: false })).map((r) => r.sold)).toEqual([1]);
+    });
+
+    // Références de Track écrites par la base : clé dérivée avec un autre sel (jamais la clé d'état), dates
+    // au jour, photos par tranches, dernière ligne d'une clé gagnante.
+    await app.withGlobal(async (tx) => {
+      const k = keys.get("67890")!;
+      expect(await repos.trackReads.storeReferences(tx, "track", [
+        { key: k, status: "listed", brand: " Nike ", category: "shoes", size: "42", condition: "good", listedPriceCents: 3000, listedAt: "2026-10-28T17:45:12.000Z", photoCount: 7 },
+        { key: k, status: "gone", category: "shoes", listedPriceCents: 2900, finalPriceCents: 2900, finalPriceEstimated: true, listedAt: "2026-10-28T17:45:12.000Z", soldAt: "2026-10-30T09:59:00.000Z", photoCount: 3 },
+        { key: "pas-une-cle", status: "listed", category: "shoes" },
+      ])).toBe(1);
+      const [nike] = await repos.priceReferences.search(tx, { category: "shoes" });
+      expect(nike).toMatchObject({ source: "track", status: "gone", brand: null, finalPriceCents: 2900, finalPriceEstimated: true, listedAt: "2026-10-28T00:00:00.000Z", soldAt: "2026-10-30T00:00:00.000Z", photoCount: 2 });
+      expect(nike!.dedupeKey).toMatch(/^track:[a-f0-9]{64}$/);
+      expect(nike!.dedupeKey).not.toBe(`track:${k}`);
+      // Retrait des ventes d'une organisation (remboursée, ou accord retiré), puis conservation (24 mois).
+      const sale = { dedupeKey: "sale:abcdef0123", source: "sale" as const, status: "sold" as const, brand: "Levi's", category: "men" as const, listedPriceCents: 3000, finalPriceCents: 2800, listedAt: "2026-10-01T10:00:00.000Z", soldAt: "2026-10-15T10:00:00.000Z", contributorOrgId: orgA.id };
+      expect(await repos.priceReferences.deleteContributed(tx, orgA.id, ["sale:abcdef0123"])).toBe(0);
+      expect(await repos.priceReferences.deleteContributed(tx, orgA.id)).toBe(1);
+      expect(await repos.priceReferences.countBySource(tx)).toMatchObject({ sale: 0, track: 2, demo: 1 });
+      await repos.priceReferences.upsertMany(tx, [sale]);
+      // Vendue le 15 octobre : effacée par une purge au 16 ; le reste (après le 16) est gardé.
+      expect(await repos.priceReferences.purgeBefore(tx, "2026-10-16T00:00:00.000Z")).toBe(1);
+      expect(await repos.priceReferences.countBySource(tx)).toMatchObject({ sale: 0, track: 2, demo: 1 });
+      await repos.priceReferences.upsertMany(tx, [sale]);
+    });
+
+    // Réservation d'une place de quota : enregistrée, puis rendue ; verrou par organisation et compteur.
+    await app.withOrg(orgA.id, async (tx) => {
+      await repos.usage.lock(tx, "track.photo_search");
+      const id = await repos.usage.record(tx, "track.photo_search", {}, 1, "2026-10-30T10:00:00.000Z");
+      expect(await repos.usage.sumKindSince(tx, "track.photo_search", "2026-10-01T00:00:00.000Z")).toBe(1);
+      expect(await repos.usage.remove(tx, id)).toBe(true);
+      expect(await repos.usage.sumKindSince(tx, "track.photo_search", "2026-10-01T00:00:00.000Z")).toBe(0);
+    });
+
+    // Modèles : un seul actif, l'ancien archivé.
+    await app.withGlobal(async (tx) => {
+      expect(await repos.priceModels.active(tx)).toBeNull();
+      await repos.priceModels.activate(tx, { version: "gb-2026-10-23", trainedAt: "2026-10-23T03:00:00.000Z", nReferences: 300, metrics: { maeCents: 410 }, model: { trees: [] }, synthetic: true });
+      await repos.priceModels.activate(tx, { version: "gb-2026-10-30", trainedAt: now, nReferences: 350, metrics: { maeCents: 380 }, model: { trees: [1] }, synthetic: false });
+      expect(await repos.priceModels.active(tx)).toMatchObject({ version: "gb-2026-10-30", status: "active", synthetic: false, model: { trees: [1] }, metrics: { maeCents: 380 } });
+      expect((await repos.priceModels.list(tx)).map((m) => `${m.version}:${m.status}`)).toEqual(["gb-2026-10-30:active", "gb-2026-10-23:archived"]);
+    });
+    await expect(owner.withGlobal((tx) => tx.query("insert into price_models (version, trained_at, model, status) values ('x', now(), '{}'::jsonb, 'active')"))).rejects.toMatchObject({ code: "conflict" });
+
+    // Rétention : historique du plan le plus long (Agence, 12 mois : juin 2025 part) ; les instantanés d'une
+    // empreinte que personne ne suit partent aussi.
+    expect(await app.withGlobal((tx) => repos.trackReads.purge(tx, now))).toEqual({ snapshots: 4, fingerprints: 0 });
+    await app.withOrg(orgB.id, async (tx) => { await tx.query("delete from track_filters"); });
+    // Suivie seulement par A (Pro, 3 mois) : l'instantané d'octobre reste.
+    expect(await app.withGlobal((tx) => repos.trackReads.purge(tx, now))).toEqual({ snapshots: 0, fingerprints: 0 });
+    await app.withOrg(orgA.id, (tx) => repos.trackFilters.delete(tx, fA.id));
+    expect(await app.withGlobal((tx) => repos.trackReads.purge(tx, now))).toEqual({ snapshots: 1, fingerprints: 1 });
+    // Une organisation supprimée emporte les références de ventes qu'elle avait fournies.
+    await owner.withGlobal((tx) => tx.query("delete from organizations where id = $1", [orgA.id]));
+    expect(await app.withGlobal((tx) => repos.priceReferences.countBySource(tx))).toMatchObject({ sale: 0, track: 2 });
+  });
+
   it("limite le débit par fenêtre", async () => {
     if (!available) return;
     const a = await app.withGlobal((tx) => repos.rateLimits.hit(tx, "test:ip", 60_000));

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { AI_STATUS, AiRequest, AiStatus } from "@selio/contracts";
+import { PRICE_SHARE_SALES_NOTICE, type AI_STATUS, type AiRequest, type AiStatus } from "@selio/contracts";
 import { aiOutcome, can } from "@selio/domain";
 import { Alert, Button, Card, DescriptionList, Field, Input, ProgressBar, Segmented, Select, StatusBadge, Table, TableWrap, Td, Th, Toggle, Tr, formatDateTime, formatNumber, formatTime, type StatusTone } from "@selio/ui";
 import { useClient, useData, useRequiredSession } from "../../../lib/data/provider";
@@ -8,6 +8,7 @@ import type { AiHealthData } from "../../../lib/data/types";
 import { Gauge, StackedBar } from "../../../components/charts";
 import { QueryBoundary } from "../../components/common";
 import { useAppMutation } from "../../components/hooks";
+import { PriceModelCard } from "../../components/pricing";
 
 const TONE: Record<(typeof AI_STATUS)[number], StatusTone> = { unconfigured: "muted", healthy: "success", degraded: "warning", unavailable: "danger", circuit_open: "danger", mock: "accent" };
 const LABEL: Record<(typeof AI_STATUS)[number], string> = { unconfigured: "Non configuré", healthy: "Opérationnel", degraded: "Dégradé", unavailable: "Indisponible", circuit_open: "En pause (disjoncteur)", mock: "Simulateur" };
@@ -77,6 +78,10 @@ export default function Ai() {
         )}
       </QueryBoundary>
 
+      <PriceModelCard />
+
+      <ShareSalesCard />
+
       <Card>
         <h2 className="text-md font-semibold">Règles de l'assistant</h2>
         <div className="mt-4 flex max-w-xl flex-col gap-4">
@@ -116,6 +121,34 @@ export default function Ai() {
 
       <TechnicalDetails status={status.data} health={health.data} />
     </div>
+  );
+}
+
+/**
+ * Accord au partage des ventes avec la base de références (désactivé par défaut) : seulement pour
+ * l'entraînement agrégé du modèle de prix, jamais montrées une à une à une autre organisation.
+ */
+function ShareSalesCard() {
+  const client = useClient();
+  const session = useRequiredSession();
+  const shared = session.org.settings.pricing?.shareSales ?? false;
+  const editable = can(session.role, "org.update");
+  const save = useAppMutation((v: boolean) => client.updateOrg({ settings: { pricing: { shareSales: v } } }), { invalidate: ["session", "pricing-model"], success: "Réglage enregistré" });
+  return (
+    <Card>
+      <h2 className="text-md font-semibold">Partage de vos ventes</h2>
+      <p className="mt-1 text-sm text-text-muted">{PRICE_SHARE_SALES_NOTICE}</p>
+      <div className="mt-4 max-w-xl">
+        <Toggle
+          label="Verser mes ventes dans la base de références"
+          description={shared ? "Activé : vos ventes payées servent à l'entraînement du modèle de prix." : "Désactivé (par défaut) : vos ventes ne servent qu'à vos propres estimations."}
+          checked={shared}
+          onChange={(v) => save.mutate(v)}
+          disabled={!editable || save.isPending}
+        />
+      </div>
+      {!editable ? <p className="mt-2 text-xs text-text-muted">Seul un administrateur de l'organisation peut changer ce réglage.</p> : null}
+    </Card>
   );
 }
 

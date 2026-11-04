@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient, type UseMutationOptions } from "@tanstack/react-query";
 import { useToast } from "@selio/ui";
 import { errorMessage } from "../../lib/errors";
@@ -18,4 +19,14 @@ export function useAppMutation<TData, TVars>(fn: (vars: TVars) => Promise<TData>
     onError: (e) => toast({ tone: "danger", title: "Action impossible", description: errorMessage(e) }),
     ...rest,
   });
+}
+
+/** Valeur recopiée après `ms` millisecondes sans changement (saisie au clavier → une seule requête). */
+export function useDebouncedValue<T>(value: T, ms = 400): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return debounced;
 }

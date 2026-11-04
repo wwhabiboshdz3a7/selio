@@ -5,7 +5,8 @@ const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url),
 const external = Object.keys(pkg.dependencies).filter((d) => !d.startsWith("@selio/")).concat(["pino-pretty"]);
 rmSync(new URL("../dist", import.meta.url), { recursive: true, force: true });
 await build({
-  entryPoints: { main: "src/main.ts" },
+  // Le fil d'entraînement du modèle de prix est un point d'entrée à part (worker_threads).
+  entryPoints: { main: "src/main.ts", "pricing-train-thread": "src/pricing-train-thread.ts" },
   bundle: true,
   platform: "node",
   format: "esm",

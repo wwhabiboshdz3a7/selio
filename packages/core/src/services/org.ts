@@ -34,10 +34,17 @@ export async function updateOrg(ctx: OrgContext, raw: unknown): Promise<Organiza
       automation: { ...org.settings.automation, ...(input.automation ?? {}) },
       retentionDays: { ...org.settings.retentionDays, ...(input.retentionDays ?? {}) },
       onboarding: { ...org.settings.onboarding, ...(input.onboarding ?? {}) },
+      pricing: { ...org.settings.pricing, ...(input.pricing ?? {}) },
     });
     const updated = await repos.orgs.update(tx, ctx.orgId, { name: parsed.data.name?.trim() || org.name, settings: merged });
+    // Accord retiré : les ventes déjà versées dans la base de références en sont retirées tout de suite.
+    if (org.settings.pricing.shareSales && !merged.pricing.shareSales) await repos.priceReferences.deleteContributed(tx, ctx.orgId);
     await tx.query("select set_config('app.org_id', $1, true)", [ctx.orgId]);
     await repos.audit.add(tx, { orgId: ctx.orgId, actorUserId: ctx.userId, action: "org.updated", targetType: "organization", targetId: ctx.orgId, meta: { fields: Object.keys(input) }, ip: ctx.ip });
+    // Trace de l'accord au partage des ventes (donné ou retiré, par qui et quand).
+    if (org.settings.pricing.shareSales !== merged.pricing.shareSales) {
+      await repos.audit.add(tx, { orgId: ctx.orgId, actorUserId: ctx.userId, action: merged.pricing.shareSales ? "pricing.share_sales_enabled" : "pricing.share_sales_disabled", targetType: "organization", targetId: ctx.orgId, ip: ctx.ip });
+    }
     return updated;
   });
 }

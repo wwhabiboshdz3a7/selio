@@ -236,6 +236,18 @@ export const notificationSettings = z.object({
   connectionExpired: z.boolean().default(true),
 });
 
+/**
+ * Estimation des prix : partage des ventes de l'organisation avec la base de références commune.
+ * DÉSACTIVÉ par défaut (accord explicite de l'organisation, à faire valider juridiquement, partie 7) :
+ * activé, les ventes payées sont versées chaque nuit dans la base SANS donnée personnelle et servent
+ * seulement à l'entraînement agrégé du modèle de prix (jamais montrées une à une à une autre
+ * organisation) ; désactivé, les ventes déjà versées sont retirées de la base.
+ */
+export const pricingSettings = z.object({
+  shareSales: z.boolean().default(false),
+});
+export type PricingSettings = z.infer<typeof pricingSettings>;
+
 export const orgSettings = z.object({
   currency: currency.default("EUR"),
   timezone: z.string().min(1).max(64).default("Europe/Paris"),
@@ -248,6 +260,7 @@ export const orgSettings = z.object({
   radar: radarSettings.default({}),
   dressing: dressingSettings.default({}),
   automation: automationSettings.default({}),
+  pricing: pricingSettings.default({}),
   retentionDays: z.object({
     messages: z.number().int().min(30).max(3650).default(730),
     auditLogs: z.number().int().min(90).max(3650).default(365),
@@ -453,6 +466,11 @@ export const USAGE_EVENT_KINDS = [
   "studio.worn_photo",
   "track.scan",
   "track.photo_search",
+  /**
+   * Empreinte de filtre Track retirée (filtre supprimé, ou critères changés) : sert au rythme des
+   * lectures (une empreinte retirée garde sa place 2 h), jamais facturé.
+   */
+  "track.filter_change",
   "cloud.action",
 ] as const;
 export const usageEventKind = z.enum(USAGE_EVENT_KINDS);

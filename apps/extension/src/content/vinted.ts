@@ -1,6 +1,9 @@
 import { COMPOSER_SELECTORS, detectPage, parseConversationPage, parseItemPage, ADAPTER_VERSION, type MinimalDocument } from "@selio/connectors/vinted-adapter";
 import { escapeHtml } from "@selio/domain";
 import { toContent, type BackgroundResponse, type CapturedConversation, type CapturedItem, type ToBackground } from "../shared/messages";
+import { COMPARABLES_MESSAGES, ITEM_CONDITION_LABELS, buildComparablesRequest, comparablesView, formatEuros, type ComparablesView } from "../shared/comparables";
+import { renderComparables } from "./comparables-panel";
+import { PANEL_CSS } from "./panel-css";
 
 /**
  * Content script Selio (monde isolé). Lit la page visible via les adaptateurs
@@ -24,39 +27,6 @@ function send(msg: ToBackground): Promise<BackgroundResponse> {
   });
 }
 
-const css = `
-:host { all: initial; }
-* { box-sizing: border-box; font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-.wrap { position: fixed; right: 16px; bottom: 16px; z-index: 2147483000; width: 340px; max-width: calc(100vw - 32px); color: #0B0B0C; }
-.card { background: #FFFFFF; border: 1px solid #E4E4E7; border-radius: 12px; box-shadow: 0 12px 40px rgba(11,11,12,0.10); overflow: hidden; }
-.head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #E4E4E7; }
-.title { font-size: 13px; font-weight: 600; }
-.badge { font-size: 11px; font-weight: 500; color: #71717A; background: #F4F4F5; border-radius: 6px; padding: 2px 6px; }
-.body { padding: 12px; font-size: 13px; line-height: 18px; max-height: 60vh; overflow: auto; }
-.row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid #F4F4F5; }
-.row span:first-child { color: #71717A; }
-.num { font-variant-numeric: tabular-nums; font-weight: 500; }
-.btn { appearance: none; border: 1px solid #E4E4E7; background: #FFFFFF; color: #0B0B0C; border-radius: 8px; height: 32px; padding: 0 12px; font-size: 13px; font-weight: 500; cursor: pointer; }
-.btn:hover { background: #F4F4F5; }
-.btn.primary { background: #0B0B0C; color: #FFFFFF; border-color: #0B0B0C; }
-.btn.accent { background: #C4501B; color: #FFFFFF; border-color: #C4501B; }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
-.actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.msg { margin-top: 8px; font-size: 12px; color: #71717A; }
-.msg.err { color: #B91C1C; }
-.msg.ok { color: #15803D; }
-.draft { margin-top: 8px; border: 1px dashed #C4501B; border-radius: 8px; padding: 8px; white-space: pre-wrap; }
-.toggle { position: fixed; right: 16px; bottom: 16px; z-index: 2147483000; height: 36px; padding: 0 12px; border-radius: 999px; background: #0B0B0C; color: #fff; border: 0; font-size: 13px; font-weight: 600; cursor: pointer; }
-input { height: 32px; border: 1px solid #D4D4D8; border-radius: 8px; padding: 0 8px; font-size: 13px; width: 110px; }
-label { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: #71717A; font-size: 12px; }
-ul { margin: 6px 0 0; padding-left: 16px; color: #71717A; font-size: 12px; }
-@media (prefers-color-scheme: dark) {
-  .wrap { color: #FAFAFA; } .card { background: #18181B; border-color: #27272A; } .head { border-color: #27272A; } .badge { background: #27272A; color: #A1A1AA; }
-  .row { border-color: #27272A; } .row span:first-child { color: #A1A1AA; } .btn { background: #18181B; color: #FAFAFA; border-color: #27272A; } .btn:hover { background: #27272A; }
-  .btn.primary { background: #FAFAFA; color: #0B0B0C; border-color: #FAFAFA; } input { background: #18181B; color: #FAFAFA; border-color: #3F3F46; } .toggle { background: #FAFAFA; color: #0B0B0C; }
-}
-`;
-
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: { className?: string; text?: string; title?: string } = {}, children: (Node | string)[] = []): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
   if (props.className) node.className = props.className;
@@ -66,7 +36,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: { className?: 
   return node;
 }
 
-const eur = (c: number | null) => (c === null ? "—" : (c / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" }));
+const eur = (c: number | null) => formatEuros(c);
 
 function mount(): ShadowRoot {
   let host = document.getElementById(PANEL_ID);
@@ -76,7 +46,7 @@ function mount(): ShadowRoot {
     document.documentElement.appendChild(host);
     const shadow = host.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
-    style.textContent = css;
+    style.textContent = PANEL_CSS;
     shadow.appendChild(style);
     shadowRef = shadow;
   }
@@ -116,6 +86,8 @@ async function render() {
   if (!paired) {
     body.append(el("p", { text: "Extension non associée. Ouvrez les options de l'extension et collez un jeton créé dans Selio › Comptes Vinted (section « Avancé »)." }));
     body.append(el("p", { className: "msg", text: status.ok ? "" : (status as { message: string }).message }));
+    // Page article : la section des comparables dit pourquoi elle est vide (rien n'est envoyé).
+    if (kind === "item") body.append(renderComparables(document, { state: "unpaired", message: COMPARABLES_MESSAGES.unpaired }));
     return;
   }
   body.append(el("p", { className: "msg", text: `Compte : ${(status.data as { orgName: string | null }).orgName ?? "?"}` }));
@@ -133,9 +105,12 @@ function renderItem(body: HTMLElement, url: string) {
     return;
   }
   const d = result.data;
-  const rows: [string, string][] = [["Titre", d.title], ["Marque", d.brand ?? "—"], ["Taille", d.size ?? "—"], ["État", d.condition ?? "non reconnu"], ["Prix affiché", eur(d.priceCents)], ["Photos", String(d.photoUrls.length)], ["Référence", d.externalRef ?? "—"]];
+  const rows: [string, string][] = [["Titre", d.title], ["Marque", d.brand ?? "—"], ["Taille", d.size ?? "—"], ["État", d.condition ? ITEM_CONDITION_LABELS[d.condition] : "non reconnu"], ["Prix affiché", eur(d.priceCents)], ["Photos", String(d.photoUrls.length)], ["Référence", d.externalRef ?? "—"]];
   for (const [k, v] of rows) body.append(el("div", { className: "row" }, [el("span", { text: k }), el("span", { className: "num", text: v })]));
   if (result.warnings.length) body.append(el("ul", {}, result.warnings.map((w) => el("li", { text: w }))));
+  const comparablesBox = el("div");
+  body.append(comparablesBox);
+  void loadComparables(comparablesBox, { title: d.title, brand: d.brand, size: d.size, condition: d.condition, priceCents: d.priceCents });
   const price = el("input");
   price.placeholder = "Prix d'achat (€)";
   price.inputMode = "decimal";
@@ -155,6 +130,21 @@ function renderItem(body: HTMLElement, url: string) {
   });
   actions.append(capture);
   body.append(actions, msg);
+}
+
+/**
+ * Comparables Selio (Track) : demande en lecture seule au service worker, avec les six champs de l'article
+ * (titre, marque, catégorie — non lue par l'adaptateur v1, donc null —, taille, état, prix), rien d'autre.
+ */
+async function loadComparables(box: HTMLElement, item: Pick<CapturedItem, "title" | "brand" | "size" | "condition" | "priceCents">) {
+  const show = (view: ComparablesView) => box.replaceChildren(renderComparables(document, view, { onRetry: () => void loadComparables(box, item) }));
+  if (navigator.onLine === false) {
+    show({ state: "offline", message: COMPARABLES_MESSAGES.offline });
+    return;
+  }
+  show({ state: "loading" });
+  const res = await send({ type: "comparables", item: buildComparablesRequest(item) });
+  show(comparablesView(res));
 }
 
 function renderConversation(body: HTMLElement, url: string) {

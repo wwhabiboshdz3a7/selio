@@ -18,6 +18,8 @@ describe("facturation : compteurs par filiale (fonctions pures)", () => {
     expect(u.track.scans).toEqual({ used: 10, quota: 10, percent: 100, warning: true, exceeded: true });
     expect(u.track.photoSearches).toMatchObject({ used: 3, quota: 30, percent: 10, warning: false });
     expect(u.track.filtersFollowed).toMatchObject({ used: 0, quota: 5 });
+    // Filtres Track suivis : nombre de filtres de l'organisation, face au quota du plan.
+    expect(subsidiaryUsageFrom({}, quotasForPlan("pro"), 0, 4).track.filtersFollowed).toEqual({ used: 4, quota: 5, percent: 80, warning: true, exceeded: false });
     expect(u.cloud).toEqual({ actions: { used: 400, quota: 500, percent: 80, warning: true, exceeded: false }, included: false });
   });
 

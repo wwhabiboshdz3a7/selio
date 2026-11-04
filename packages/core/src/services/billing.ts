@@ -42,13 +42,13 @@ export function usageDayStart(now: Date): string {
 /**
  * Compteurs par filiale (fonction pure) : totaux du mois par type d'événement, quotas du plan,
  * et actions Cloud du jour (rapportées au plafond journalier d'automatisations du plan).
- * Les filtres Track suivis n'ont pas encore de stockage : 0 utilisé, quota du plan affiché.
+ * Filtres Track suivis : nombre de filtres de l'organisation (même décompte que le refus à la création).
  */
-export function subsidiaryUsageFrom(sums: Record<string, number>, quotas: PlanQuotas, cloudActionsToday = 0): SubsidiaryUsage {
+export function subsidiaryUsageFrom(sums: Record<string, number>, quotas: PlanQuotas, cloudActionsToday = 0, trackFiltersFollowed = 0): SubsidiaryUsage {
   const n = (kind: string) => sums[kind] ?? 0;
   return {
     studio: { listings: buildUsageCounter(n("studio.listing"), quotas.studioListingsPerMonth), wornPhotos: buildUsageCounter(n("studio.worn_photo"), quotas.wornPhotosPerMonth) },
-    track: { scans: buildUsageCounter(n("track.scan"), quotas.trackScansPerMonth), photoSearches: buildUsageCounter(n("track.photo_search"), quotas.trackPhotoSearchesPerMonth), filtersFollowed: buildUsageCounter(0, quotas.trackFiltersFollowed) },
+    track: { scans: buildUsageCounter(n("track.scan"), quotas.trackScansPerMonth), photoSearches: buildUsageCounter(n("track.photo_search"), quotas.trackPhotoSearchesPerMonth), filtersFollowed: buildUsageCounter(trackFiltersFollowed, quotas.trackFiltersFollowed) },
     cloud: { actions: buildUsageCounter(cloudActionsToday, quotas.automationActionsPerDay), included: quotas.cloudIncluded },
   };
 }
@@ -71,7 +71,7 @@ export function getUsage(ctx: OrgContext): Promise<UsageReport> {
     const connectionsCount = await repos.connections.count(tx);
     const membersCount = await ctx.services.db.withGlobal((g) => repos.memberships.countOrg(g, ctx.orgId));
     const counters = { aiRequests: buildUsageCounter(aiRequests, aiQuota), items: buildUsageCounter(itemsCount, quotas.items), connections: buildUsageCounter(connectionsCount, quotas.connections), members: buildUsageCounter(membersCount, quotas.members) };
-    const subsidiaries = subsidiaryUsageFrom(sums, quotas, await repos.usage.sumKindSince(tx, "cloud.action", usageDayStart(now)));
+    const subsidiaries = subsidiaryUsageFrom(sums, quotas, await repos.usage.sumKindSince(tx, "cloud.action", usageDayStart(now)), await repos.trackFilters.count(tx));
     const warning = [...Object.values(counters), subsidiaries.studio.listings, subsidiaries.studio.wornPhotos, subsidiaries.track.scans, subsidiaries.track.photoSearches, subsidiaries.cloud.actions].some((c) => c.warning);
     return {
       period: { from, to: now.toISOString() },

@@ -65,6 +65,18 @@
 - [ ] Purge des données des vendeurs vérifiée après une tâche de rétention (affaires écartées supprimées après 30 jours ; pseudo, note et photo effacés des autres après 30 jours).
 - [ ] Achat réel : `RADAR_REAL_PURCHASE=true` seulement le temps d'un test d'achat sur un compte de l'équipe, décidé par écrit par Ibrahim, puis retour à `false`.
 
+## Selio Track et estimation des prix (TRACK.md, PRIX.md)
+- [ ] **`TRACK_LIVE_ENABLED=false`** côté API **et** worker (défaut) : Track lit le simulateur, données marquées « démonstration ». Le journal de démarrage ne contient pas « lecture en direct des pages publiques OUVERTE ».
+- [ ] **`TRACK_SELLER_ANALYSIS_ENABLED=false`** (défaut) : analyse d'un vendeur concurrent non construite, à valider juridiquement (RGPD).
+- [ ] **Avis écrit de l'avocat** sur la collecte de Track (pages publiques du catalogue) et sur l'usage des données issues de Vinted (statistiques, base de références, entraînement du modèle de prix), avant toute ouverture de la lecture en direct ; puis la procédure de TRACK.md §7 (adaptateur vérifié à la main sur une vraie page publique, plafonds bas, une semaine de surveillance, arrêt au premier signal).
+- [ ] **Modèle de prix entraîné sur la vraie base et mesures relevées avant d'afficher des prix « conseillés » en production** : au moins `PRICING_MIN_REFERENCES` (500) ventes réelles avant le dernier mois, et au moins 30 dans le dernier mois ; MdAPE, part à ±20 %, couverture P25–P75 et erreur de référence (médiane marque × catégorie) relevées dans le journal du worker ou sur `GET /api/admin/pricing`, reportées dans BUILD_STATUS.md, et jugées acceptables par Ibrahim. Le modèle doit faire mieux que la médiane marque × catégorie. Tant que ce n'est pas le cas, l'interface dit « Modèle non entraîné » ou « Données de démonstration » et ne présente aucun prix comme mesuré.
+- [ ] Base fournie par Ibrahim évaluée avec `pnpm prix:eval <fichier> --backtest` (aucune colonne personnelle ; fichier gardé hors du dépôt) et rapport archivé ; chargement en base (source `import`) écrit et testé s'il doit servir en production.
+- [ ] Mesures de vitesse refaites sur la machine de Marseille (`pnpm prix:eval --synthetic 20000` : durée d'entraînement, mémoire) ; aucune carte graphique ni service payant requis.
+- [ ] Entraînement du dimanche observé une fois de bout en bout (journal « prix : modèle entraîné, testé sur le dernier mois et chargé », version chargée par l'API dans l'heure) ; `PRICING_MIN_REFERENCES` identique côté API et worker.
+- [ ] Mention « à valider juridiquement » visible sur les écrans Track tant que l'avis n'est pas rendu ; « estimation » sur les annonces disparues ; « Track est compris à partir de Pro » pour les autres offres.
+- [ ] Vérifié en base : aucune colonne de pseudo, de photo, de titre ni d'identifiant d'annonce dans `track_*` et `price_references` ; aucune photo de recherche conservée ; références d'une organisation supprimées avec elle.
+- [ ] Panneau « Comparables Selio » de l'extension essayé sur un compte de l'équipe (Pro) : fourchette affichée, « Track est compris à partir de Pro » sur un compte Starter, « hors ligne » API coupée ; aucune autre donnée de la page envoyée (vérifié dans l'onglet réseau du service worker).
+
 ## Qualité
 - [ ] `pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e && pnpm build` verts sur la branche de release.
 - [ ] Revue de sécurité des dépendances (`pnpm audit`) et mise à jour des versions épinglées.

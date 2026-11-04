@@ -36,10 +36,20 @@ import {
   pushSubscriptionInput as pushSubscriptionInputSchema, radarSettings as radarSettingsSchema, radarSettingsUpdate as radarSettingsUpdateSchema,
   type PushSubscriptionInput, type PushSubscriptionView, type RadarSettings, type RadarSettingsUpdate,
 } from "@selio/contracts";
-import { isActiveAccount } from "@selio/domain";
+import { isActiveAccount, suggestFloorPrice } from "@selio/domain";
 import type { AutoBuyStatus, OpportunityDetail, PushConfig, PushTestResult, RadarAutoLock, RadarMetricsView, RadarRunResult, RadarSettingsResult, ResumeResult } from "../data/types";
 import { RADAR_AUTO_LOCK_LABELS, canAddPriority, formatDuration, liveReadiness, searchIntervalSeconds, vintedListingUrl } from "../radar";
 import { demoRadarMetrics, recordDemoRead, seedDemoRadar, withSearchDefaults, type DemoRadarState } from "./radar";
+import {
+  PRICE_METHOD_LABELS, PRICE_MODEL_MIN_REFERENCES, TRACK_DEMO_NOTICE, TRACK_LEGAL_NOTICE, TRACK_SALES_FEED_AGENCY_ONLY, TRACK_SOURCE_LABELS, TRACK_UNAVAILABLE_MESSAGE, priceEstimateInput as priceEstimateInputSchema, trackFilterCreate as trackFilterCreateSchema, trackFilterUpdate as trackFilterUpdateSchema,
+  trackPhotoSearchInput as trackPhotoSearchInputSchema, trackScanInput as trackScanInputSchema,
+  type PriceEstimate, type PriceEstimateInput, type TrackFilter, type TrackFilterCreate, type TrackFilterUpdate, type TrackPhotoSearch, type TrackPhotoSearchInput, type TrackSalesFeed, type TrackScan, type TrackScanInput,
+} from "@selio/contracts";
+import { MockAIProvider as PhotoReader, buildPhotoDescriptionRequest, validatePhotoDescription } from "@selio/ai";
+import type { PricingModelView, StudioDraft, TrackTrendsView, TrackUsageView } from "../data/types";
+import { buildTrackUsage } from "../track";
+import { demoEstimate, demoModelStatus, demoPricingPool, explainDemoEstimate } from "./pricing";
+import { completeCriteria, demoFingerprint, demoNicheScan, demoSalesFeed, demoTrends, seedDemoTrack, withReadTimes, type DemoTrackState } from "./track";
 
 function paginate<T>(items: T[], page = 1, pageSize = 25): Page<T> {
   const total = items.length;
@@ -64,6 +74,8 @@ type DemoBillingState = DemoState & { invoices?: Invoice[] };
 type DemoCloudHolder = DemoState & { cloud?: DemoCloudState };
 /** Selio Radar de la démonstration (recherche « en direct » simulée, mesures fictives, abonnements) : voir ./radar.ts. */
 type DemoRadarHolder = DemoState & { radar?: DemoRadarState };
+/** Selio Track de la démonstration (filtres, scans, recherches par photo ; simulateur) : voir ./track.ts. */
+type DemoTrackHolder = DemoState & { track?: DemoTrackState };
 
 export interface DemoClientOptions {
   /**
@@ -79,17 +91,17 @@ const DEMO_CUSTOMER_ID = "cust_demo";
 const DEMO_PAYMENT_METHOD_ID = "pm_demo_carte_enregistree";
 const formatEurosFr = (cents: number): string => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(cents / 100);
 
-/** Compteurs par filiale (même règle que `subsidiaryUsageFrom` côté serveur) ; les filtres Track suivis n'ont pas encore de stockage. */
-function subsidiaryUsage(month: Record<string, number>, quotas: PlanQuotas, cloudToday: number): Subsidiaries {
+/** Compteurs par filiale (même règle que `subsidiaryUsageFrom` côté serveur), filtres Track suivis compris. */
+function subsidiaryUsage(month: Record<string, number>, quotas: PlanQuotas, cloudToday: number, trackFilters = 0): Subsidiaries {
   const n = (k: string) => month[k] ?? 0;
   return {
     studio: { listings: buildUsageCounter(n("studio.listing"), quotas.studioListingsPerMonth), wornPhotos: buildUsageCounter(n("studio.worn_photo"), quotas.wornPhotosPerMonth) },
-    track: { scans: buildUsageCounter(n("track.scan"), quotas.trackScansPerMonth), photoSearches: buildUsageCounter(n("track.photo_search"), quotas.trackPhotoSearchesPerMonth), filtersFollowed: buildUsageCounter(0, quotas.trackFiltersFollowed) },
+    track: { scans: buildUsageCounter(n("track.scan"), quotas.trackScansPerMonth), photoSearches: buildUsageCounter(n("track.photo_search"), quotas.trackPhotoSearchesPerMonth), filtersFollowed: buildUsageCounter(trackFilters, quotas.trackFiltersFollowed) },
     cloud: { actions: buildUsageCounter(cloudToday, quotas.automationActionsPerDay), included: quotas.cloudIncluded },
   };
 }
 
-/** Compteurs surveillés pour l'alerte globale (les filtres Track, toujours à 0, n'y entrent pas). */
+/** Compteurs surveillés pour l'alerte globale (les filtres Track suivis : une limite, pas une consommation du mois). */
 function usageWatchList(counters: UsageSummary["counters"], s: Subsidiaries): UsageCounter[] {
   return [...Object.values(counters), s.studio.listings, s.studio.wornPhotos, s.track.scans, s.track.photoSearches, s.cloud.actions];
 }
@@ -287,6 +299,8 @@ export class DemoClient implements DataClient {
       automation: { ...st.org.settings.automation, ...(input.settings?.automation ?? {}) },
       retentionDays: { ...st.org.settings.retentionDays, ...(input.settings?.retentionDays ?? {}) },
       onboarding: { ...st.org.settings.onboarding, ...(input.settings?.onboarding ?? {}) },
+      // Anciennes démos enregistrées sans réglage « pricing » : valeur par défaut (partage désactivé).
+      pricing: { ...(st.org.settings.pricing ?? {}), ...(input.settings?.pricing ?? {}) },
     });
     st.org = { ...st.org, name: input.name?.trim() || st.org.name, settings: merged, updatedAt: this.now() };
     this.audit("org.updated", "organization", st.org.id, { fields: Object.keys(input.settings ?? {}) });
@@ -1516,7 +1530,7 @@ export class DemoClient implements DataClient {
   }
 
   // ---------- générateur d'annonces ----------
-  async generateListing(input: ListingGenerationInput): Promise<ListingDraft> {
+  async generateListing(input: ListingGenerationInput): Promise<StudioDraft> {
     const st = this.s;
     const parsed = listingGenerationInputSchema.safeParse(input);
     if (!parsed.success) throw new DataError("validation", parsed.error.issues[0]?.message ?? "Demande invalide", 400, parsed.error.flatten());
@@ -1545,7 +1559,25 @@ export class DemoClient implements DataClient {
     // Chaque annonce rédigée compte aussi dans le quota mensuel de Studio (page « Mon utilisation »).
     this.usage("studio.listing", { requestId: req.id });
     this.persist();
-    return this.priceDraft(res.data, { source: res.source, provider: res.provider, model: res.model, latencyMs: res.latencyMs, warnings: res.warnings, purchasePriceCents: hints.purchasePriceCents ?? null, simulated: true });
+    const draft = this.priceDraft(res.data, { source: res.source, provider: res.provider, model: res.model, latencyMs: res.latencyMs, warnings: res.warnings, purchasePriceCents: hints.purchasePriceCents ?? null, simulated: true });
+    // Prix (§5.10) : comparables et modèle de démonstration, trois stratégies, explication par mon IA perso (simulée).
+    const features = { title: res.data.title, brand: res.data.brand, category: res.data.category, size: res.data.size, material: res.data.material, color: res.data.colors[0] ?? null, condition: res.data.condition, photoCount: photos.length };
+    const pricing = await explainDemoEstimate(features, demoEstimate(features, this.pricingPool()));
+    if (pricing.method === "none" || !pricing.strategies) return { ...draft, pricing };
+    // Plancher : prix d'achat + marge minimale quand il est connu, 1 € sinon (même règle que le serveur).
+    const purchase = hints.purchasePriceCents ?? null;
+    const floor = purchase && purchase > 0 ? suggestFloorPrice({ purchasePriceCents: purchase, purchaseFeesCents: 0 }, this.margin()) : 100;
+    const lift = (c: number) => Math.max(floor, c);
+    const s = pricing.strategies;
+    const warnings = draft.warnings.filter((w) => !w.startsWith("Peu de ventes comparables"));
+    if (s.fast < floor || s.standard < floor) warnings.push(`Prix relevé au plancher (${formatEurosFr(floor)} : prix d'achat et marge minimale).`);
+    if (pricing.confidenceLevel === "low") warnings.push("Peu de ventes comparables : le prix conseillé est une estimation prudente, ajustez-le.");
+    warnings.push("Le modèle de prix repose sur des données de démonstration.");
+    return { ...draft, suggestedPriceCents: lift(s.standard), priceLowCents: lift(s.fast), priceHighCents: lift(s.max), priceMethod: PRICE_METHOD_LABELS[pricing.method], comparableCount: pricing.comparableCount, warnings, pricing };
+  }
+  /** Comparables de l'estimation des prix (ventes de la démonstration et marché simulé, sans vendeur). */
+  private pricingPool() {
+    return demoPricingPool(this.s.orders, this.s.items, this.market());
   }
   /** Prix conseillé : ventes comparables (jamais inventé par l'IA). */
   private priceDraft(data: ListingGenerationOutput, meta: { source: "ai" | "fallback"; provider: string; model: string; latencyMs: number; warnings: string[]; purchasePriceCents: number | null; simulated: boolean }): ListingDraft {
@@ -1583,6 +1615,190 @@ export class DemoClient implements DataClient {
     if (query.category) obs = obs.filter((o) => o.category === query.category);
     const windowDays = [7, 30, 90].includes(query.windowDays ?? 30) ? (query.windowDays ?? 30) : 30;
     return { ...analyzeMarket(obs, this.clock(), windowDays), source: "demo_simulator", observedCount: obs.length, generatedAt: this.now() };
+  }
+
+  // ---------- Selio Track (Pro et Agence) : simulateur, statistiques seulement ----------
+  /**
+   * État Track de la démonstration, créé au premier accès : deux filtres suivis, un scan de niche
+   * (voir ./track.ts). Enregistré sans réveiller l'interface, comme Radar.
+   */
+  private track(): DemoTrackState {
+    const st = this.s as DemoTrackHolder;
+    if (!st.track || st.track.version !== 1) {
+      st.track = seedDemoTrack(st.org.id, this.market(), st.items, this.clock());
+      this.storage.save(st);
+    }
+    return st.track;
+  }
+  /** Mêmes refus que le serveur : Track est compris à partir de Pro (402). */
+  private requireTrack(): void {
+    if (this.s.subscription.quotas.trackFiltersFollowed <= 0) throw new DataError("track_unavailable", TRACK_UNAVAILABLE_MESSAGE, 402);
+  }
+  private requireTrackWrite(): void {
+    this.requireTrack();
+    if (!can(this.session().role, "radar.write")) throw new DataError("forbidden", "Votre rôle ne permet pas de modifier Track.", 403);
+  }
+  private monthCount(kind: UsageEvent["kind"]): number {
+    const monthKey = this.now().slice(0, 7);
+    return this.s.usage.filter((u) => u.kind === kind && u.createdAt.startsWith(monthKey)).reduce((n, u) => n + u.quantity, 0);
+  }
+  private trackFilterById(id: string): TrackFilter {
+    const f = this.track().filters.find((x) => x.id === id);
+    if (!f) throw new DataError("not_found", "Filtre Track introuvable.", 404);
+    return f;
+  }
+  async trackFilters(): Promise<TrackFilter[]> {
+    this.requireTrack();
+    return this.track().filters.map((f) => withReadTimes(f, this.clock()));
+  }
+  async createTrackFilter(input: TrackFilterCreate): Promise<TrackFilter> {
+    this.requireTrackWrite();
+    const parsed = trackFilterCreateSchema.safeParse(input);
+    if (!parsed.success) throw new DataError("validation", parsed.error.issues[0]?.message ?? "Filtre invalide", 400, parsed.error.flatten());
+    const track = this.track();
+    const quota = this.s.subscription.quotas.trackFiltersFollowed;
+    if (track.filters.length >= quota) throw new DataError("quota_exceeded", `Quota de filtres suivis atteint (${quota}) : retirez un filtre pour en suivre un autre.`, 402);
+    const fingerprint = demoFingerprint(parsed.data.criteria);
+    if (track.filters.some((f) => f.fingerprint === fingerprint)) throw new DataError("conflict", "Un filtre avec les mêmes critères est déjà suivi.", 409);
+    const now = this.now();
+    const created: TrackFilter = { id: newId(), orgId: this.s.org.id, name: parsed.data.name, criteria: completeCriteria(parsed.data.criteria), fingerprint, enabled: parsed.data.enabled, lastReadAt: null, nextReadAt: null, createdAt: now, updatedAt: now };
+    track.filters.push(created);
+    this.audit("track.filter_created", "track_filter", created.id, {});
+    this.persist();
+    return withReadTimes(created, this.clock());
+  }
+  async updateTrackFilter(id: string, input: TrackFilterUpdate): Promise<TrackFilter> {
+    this.requireTrackWrite();
+    const parsed = trackFilterUpdateSchema.safeParse(input);
+    if (!parsed.success) throw new DataError("validation", parsed.error.issues[0]?.message ?? "Filtre invalide", 400, parsed.error.flatten());
+    const f = this.trackFilterById(id);
+    if (parsed.data.criteria !== undefined) {
+      const fingerprint = demoFingerprint(parsed.data.criteria);
+      if (fingerprint !== f.fingerprint && this.track().filters.some((x) => x.fingerprint === fingerprint)) throw new DataError("conflict", "Un filtre avec les mêmes critères est déjà suivi.", 409);
+      f.criteria = completeCriteria(parsed.data.criteria);
+      f.fingerprint = fingerprint;
+    }
+    if (parsed.data.name !== undefined) f.name = parsed.data.name;
+    if (parsed.data.enabled !== undefined) f.enabled = parsed.data.enabled;
+    f.updatedAt = this.now();
+    this.audit("track.filter_updated", "track_filter", id, { fields: Object.keys(parsed.data) });
+    this.persist();
+    return withReadTimes(f, this.clock());
+  }
+  async deleteTrackFilter(id: string): Promise<void> {
+    this.requireTrackWrite();
+    this.trackFilterById(id);
+    const track = this.track();
+    track.filters = track.filters.filter((f) => f.id !== id);
+    this.audit("track.filter_deleted", "track_filter", id, {});
+    this.persist();
+  }
+  async trackTrends(filterId: string, days?: number): Promise<TrackTrendsView> {
+    this.requireTrack();
+    return demoTrends(this.trackFilterById(filterId), days, this.s.subscription.quotas.trackHistoryMonths, this.clock());
+  }
+  async trackScans(): Promise<TrackScan[]> {
+    this.requireTrack();
+    return [...this.track().scans].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  async runNicheScan(input: TrackScanInput): Promise<TrackScan> {
+    this.requireTrackWrite();
+    const parsed = trackScanInputSchema.safeParse(input);
+    if (!parsed.success) throw new DataError("validation", parsed.error.issues[0]?.message ?? "Niche invalide", 400, parsed.error.flatten());
+    const quota = this.s.subscription.quotas.trackScansPerMonth;
+    if (this.monthCount("track.scan") >= quota) throw new DataError("quota_exceeded", `Quota de scans de niche du mois atteint (${quota}).`, 402);
+    await this.delay(250);
+    const scan = demoNicheScan(this.s.org.id, parsed.data, this.market(), this.s.items, this.clock());
+    this.track().scans.unshift(scan);
+    // « Données insuffisantes » : aucune note, rien n'est décompté (même règle que le serveur).
+    if (scan.status === "ok") this.usage("track.scan", { scanId: scan.id, demo: true });
+    this.persist();
+    return scan;
+  }
+  async trackPhotoSearches(): Promise<TrackPhotoSearch[]> {
+    this.requireTrack();
+    return [...this.track().photoSearches].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  /**
+   * Recherche par photo : la description est lue par le simulateur (modèle 1 simulé), puis estimée. LA PHOTO
+   * N'EST PAS CONSERVÉE : seules la description et l'estimation sont enregistrées.
+   */
+  async trackPhotoSearch(input: TrackPhotoSearchInput): Promise<TrackPhotoSearch> {
+    this.requireTrack();
+    if (!can(this.session().role, "ai.use")) throw new DataError("forbidden", "Votre rôle ne permet pas d'utiliser l'IA.", 403);
+    const parsed = trackPhotoSearchInputSchema.safeParse(input);
+    if (!parsed.success) throw new DataError("validation", parsed.error.issues[0]?.message ?? "Photo invalide", 400);
+    const st = this.s;
+    const quota = st.subscription.quotas.trackPhotoSearchesPerMonth;
+    if (this.monthCount("track.photo_search") >= quota) throw new DataError("quota_exceeded", `Quota de recherches par photo du mois atteint (${quota}).`, 402);
+    if (!st.org.settings.ai.enabled) throw new DataError("ai_unavailable", "L'assistant IA est désactivé dans les paramètres.", 409);
+    const ai = this.aiMonth();
+    if (ai.used >= ai.quota) throw new DataError("quota_exceeded", `Quota IA mensuel atteint (${ai.quota}).`, 402);
+    const image = parsed.data.photo.slice(parsed.data.photo.indexOf(",") + 1);
+    const req: AiRequest = { id: newId(), orgId: st.org.id, kind: "listing_generation", provider: "mock", model: "selio-mock-v1", status: "running", conversationId: null, itemId: null, promptTokens: 0, outputTokens: 0, latencyMs: 0, validated: false, rejectionReason: null, error: null, createdAt: this.now(), finishedAt: null };
+    st.aiRequests.unshift(req);
+    const res = await new PhotoReader({ latencyMs: 300 }).generateStructured(buildPhotoDescriptionRequest({ images: [image], hints: parsed.data.hints }));
+    const v = validatePhotoDescription(res.data);
+    if (!v.ok) {
+      req.status = "rejected";
+      req.finishedAt = this.now();
+      this.persist();
+      throw new DataError("ai_invalid_output", "La description de la photo a été écartée : réessayez avec une autre photo.", 422);
+    }
+    const d = v.description;
+    const features = { title: d.title, brand: d.brand, category: d.category, subcategory: d.subcategory, material: d.material, color: d.color, condition: d.condition };
+    const estimate = await explainDemoEstimate(features, demoEstimate(features, this.pricingPool()));
+    Object.assign(req, { status: "succeeded", validated: true, promptTokens: res.usage.promptTokens, outputTokens: res.usage.outputTokens, latencyMs: res.latencyMs, finishedAt: this.now() });
+    this.usage("ai.request", { requestId: req.id, kind: "photo_description" });
+    this.usage("track.photo_search", { requestId: req.id, method: estimate.method });
+    const search: TrackPhotoSearch = { id: newId(), orgId: st.org.id, description: d, estimate, simulated: true, createdAt: this.now() };
+    this.track().photoSearches.unshift(search);
+    this.persist();
+    return search;
+  }
+  async trackSalesFeed(): Promise<TrackSalesFeed> {
+    this.requireTrack();
+    if (this.s.subscription.plan !== "agence") throw new DataError("plan_required", TRACK_SALES_FEED_AGENCY_ONLY, 402);
+    return demoSalesFeed(this.market(), this.clock());
+  }
+  /** Même forme que GET /api/track/usage : compteurs du mois, historique mensuel, source « simulateur ». */
+  async trackUsage(): Promise<TrackUsageView> {
+    const sub = await this.getSubscription();
+    const base = buildTrackUsage(await this.getUsage(), sub, sub.quotas.trackFiltersFollowed > 0 ? this.track().filters.length : 0);
+    if (!base.available) return base;
+    const now = this.clock();
+    const months = Math.max(1, Math.min(12, sub.quotas.trackHistoryMonths));
+    const history = Array.from({ length: months }, (_, i) => {
+      const month = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (months - 1 - i), 1)).toISOString().slice(0, 7);
+      const n = (kind: UsageEvent["kind"]) => this.s.usage.filter((u) => u.kind === kind && u.createdAt.startsWith(month)).reduce((t, u) => t + u.quantity, 0);
+      return { month, scans: n("track.scan"), photoSearches: n("track.photo_search") };
+    });
+    return { ...base, source: "demo", sourceLabel: TRACK_SOURCE_LABELS.demo, notices: [TRACK_LEGAL_NOTICE, TRACK_DEMO_NOTICE], history };
+  }
+
+  // ---------- estimation des prix ----------
+  /** Comparables et modèle de démonstration ; explication par mon IA perso (simulée) si demandée. */
+  async estimatePrice(input: PriceEstimateInput): Promise<PriceEstimate> {
+    const parsed = priceEstimateInputSchema.safeParse(input);
+    if (!parsed.success) throw new DataError("validation", parsed.error.issues[0]?.message ?? "Caractéristiques invalides", 400, parsed.error.flatten());
+    const { explain, ...features } = parsed.data;
+    const est = demoEstimate(features, this.pricingPool());
+    if (!explain) return est;
+    if (!can(this.session().role, "ai.use")) throw new DataError("forbidden", "Votre rôle ne permet pas d'utiliser l'IA.", 403);
+    const ai = this.aiMonth();
+    if (!this.s.org.settings.ai.enabled || ai.used >= ai.quota) return est;
+    const out = await explainDemoEstimate(features, est);
+    if (out.explanation) {
+      this.s.aiRequests.unshift({ id: newId(), orgId: this.s.org.id, kind: "summary", provider: "mock", model: "selio-mock-v1", status: "succeeded", conversationId: null, itemId: null, promptTokens: 0, outputTokens: 0, latencyMs: 120, validated: true, rejectionReason: null, error: null, createdAt: this.now(), finishedAt: this.now() });
+      this.usage("ai.request", { kind: "price_explanation" });
+      this.persist();
+    }
+    return out;
+  }
+  /** Modèle « démo » : entraîné sur le simulateur, aucune erreur mesurée. */
+  async pricingModelStatus(): Promise<PricingModelView> {
+    const status = demoModelStatus(this.s.seededAt, this.market().length);
+    return { ...status, loaded: status.version, references: { real: 0, demo: status.nReferences, minimum: PRICE_MODEL_MIN_REFERENCES } };
   }
 
   // ---------- connexions ----------
@@ -1846,7 +2062,7 @@ export class DemoClient implements DataClient {
     const connectionsCount = this.s.connections.filter(countsTowardQuota).length;
     const membersCount = this.s.memberships.length;
     const counters = { aiRequests: buildUsageCounter(aiRequests, ai.quota), items: buildUsageCounter(itemsCount, quotas.items), connections: buildUsageCounter(connectionsCount, quotas.connections), members: buildUsageCounter(membersCount, quotas.members) };
-    const subsidiaries = subsidiaryUsage({ "studio.listing": count("studio.listing"), "studio.worn_photo": count("studio.worn_photo"), "track.scan": count("track.scan"), "track.photo_search": count("track.photo_search") }, quotas, cloudToday);
+    const subsidiaries = subsidiaryUsage({ "studio.listing": count("studio.listing"), "studio.worn_photo": count("studio.worn_photo"), "track.scan": count("track.scan"), "track.photo_search": count("track.photo_search") }, quotas, cloudToday, quotas.trackFiltersFollowed > 0 ? this.track().filters.length : 0);
     return {
       period: { from: from.toISOString(), to: now.toISOString() },
       aiRequests,

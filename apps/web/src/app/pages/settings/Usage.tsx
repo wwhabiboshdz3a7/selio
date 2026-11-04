@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
-import { PLAN_LABELS, buildUsageCounter } from "@selio/contracts";
+import { PLAN_LABELS, buildUsageCounter, type UsageCounter } from "@selio/contracts";
 import { Alert, Card, DescriptionList, Tag, formatDate, formatNumber } from "@selio/ui";
 import { useClient } from "../../../lib/data/provider";
 import type { UsageSummary } from "../../../lib/data/types";
@@ -24,9 +24,11 @@ export default function Usage() {
   const usage = useQuery({ queryKey: ["usage"], queryFn: () => client.getUsage() });
   const automation = useQuery({ queryKey: ["automation-state"], queryFn: () => client.getAutomationState() });
   const sub = useQuery({ queryKey: ["subscription"], queryFn: () => client.getSubscription() });
+  // Filtres Track suivis : comptés par Track (le compteur général ne les compte pas sur tous les serveurs).
+  const track = useQuery({ queryKey: ["track-usage"], queryFn: () => client.trackUsage(), staleTime: 15_000 });
   return (
     <QueryBoundary query={usage} skeleton="spinner">
-      {(u) => <UsageReport u={u} actionsToday={automation.data?.actionsToday ?? null} planLabel={sub.data ? PLAN_LABELS[sub.data.plan] : null} />}
+      {(u) => <UsageReport u={u} actionsToday={automation.data?.actionsToday ?? null} planLabel={sub.data ? PLAN_LABELS[sub.data.plan] : null} trackFilters={track.data?.available ? track.data.filters : null} />}
     </QueryBoundary>
   );
 }
@@ -44,7 +46,7 @@ function Section({ title, tag, description, children }: { title: string; tag?: R
   );
 }
 
-function UsageReport({ u, actionsToday, planLabel }: { u: UsageSummary; actionsToday: number | null; planLabel: string | null }) {
+function UsageReport({ u, actionsToday, planLabel, trackFilters }: { u: UsageSummary; actionsToday: number | null; planLabel: string | null; trackFilters: UsageCounter | null }) {
   const reset = nextResetDate(u.period.from);
   const automationToday = buildUsageCounter(actionsToday ?? 0, u.quotas.automationActionsPerDay);
   const warning = u.warning || automationToday.warning;
@@ -81,7 +83,7 @@ function UsageReport({ u, actionsToday, planLabel }: { u: UsageSummary; actionsT
       <Section title="Selio Track" tag={<Tag>En développement</Tag>} description="Statistiques de marché seulement : Track ne republie jamais d'annonce. Inclus dans Pro (essentiel) et Agence (complet).">
         <UsageMeter label="Scans de niche" counter={u.track.scans} hint="Par mois." />
         <UsageMeter label="Recherches par photo" counter={u.track.photoSearches} hint="Par mois." />
-        <UsageMeter label="Filtres suivis" counter={u.track.filtersFollowed} hint="Relus toutes les 2 h." planned />
+        <UsageMeter label="Filtres suivis" counter={trackFilters ?? u.track.filtersFollowed} hint={<>Relus toutes les 2 h · <Link to="/track/filtres" className="font-medium text-accent hover:underline">Gérer</Link></>} />
       </Section>
 
       <Section title="Selio Cloud" tag={<Tag>Aperçu</Tag>} description={u.cloud.included ? "Inclus dans votre offre : vos réponses et relances continuent quand votre ordinateur est éteint." : "Inclus dans Agence ; en option avec Pro, prix à décider."}>

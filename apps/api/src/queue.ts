@@ -9,6 +9,13 @@ import type { QueueStats } from "@selio/core";
  */
 export const QUEUE_NAMES = ["selio-automation", "selio-sync", "selio-maintenance", "selio-cloud-login", "selio-radar"] as const;
 
+/**
+ * File de maintenance du worker et entraînement du modèle de prix demandé par un opérateur (même nom que le
+ * planning hebdomadaire dans apps/worker/src/config.ts, à garder aligné).
+ */
+export const MAINTENANCE_QUEUE = "selio-maintenance";
+export const PRICING_TRAIN_JOB = "pricing.train";
+
 /** File et job de reprise 3-D Secure (mêmes noms dans apps/worker/src/radar.ts, à garder alignés). */
 export const RADAR_QUEUE = "selio-radar";
 export const RADAR_RESUME_JOB = "radar.resume";

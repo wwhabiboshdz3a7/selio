@@ -1,7 +1,8 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
+import { ITEM_CATEGORIES, TRACK_UNAVAILABLE_MESSAGE, itemCondition, quotasForPlan, type PriceEstimate } from "@selio/contracts";
 import { repos } from "@selio/db";
-import { AppError, connections, items, messaging, withOrg } from "@selio/core";
+import { AppError, connections, items, messaging, pricing, requireAction, withOrg } from "@selio/core";
 import { checkPrice, suggestFloorPrice } from "@selio/domain";
 
 /**
@@ -13,7 +14,7 @@ const capturedItem = z.object({
   title: z.string().trim().min(1).max(200),
   brand: z.string().max(80).nullable().optional(),
   size: z.string().max(40).nullable().optional(),
-  condition: z.enum(["new_with_tags", "new_without_tags", "very_good", "good", "satisfactory"]).nullable().optional(),
+  condition: itemCondition.nullable().optional(),
   priceCents: z.number().int().min(0).nullable().optional(),
   description: z.string().max(2000).optional(),
   photoUrls: z.array(z.string().url().max(500)).max(12).optional(),
@@ -32,6 +33,26 @@ const capturedConversation = z.object({
   url: z.string().url().max(500),
   adapterVersion: z.string().max(40),
 });
+
+/**
+ * Article vu par l'extension sur une page d'annonce (panneau « comparables ») : caractéristiques seulement,
+ * jamais de pseudo, de photo ni d'adresse ; rien n'est enregistré.
+ */
+const comparablesInput = z.object({
+  title: z.string().trim().min(1).max(200),
+  brand: z.string().trim().min(1).max(80).nullable().optional(),
+  // Catégorie souvent absente de la page : sans elle, les comparables sont cherchés dans toutes les catégories.
+  category: z.enum(ITEM_CATEGORIES).nullable().optional(),
+  size: z.string().trim().min(1).max(40).nullable().optional(),
+  condition: itemCondition.nullable().optional(),
+  priceCents: z.number().int().min(0).max(10_000_000).nullable().optional(),
+});
+
+/** Prix affiché face à la fourchette estimée : sous P25, dans P25–P75, au-dessus de P75. */
+export function pricePosition(priceCents: number | null | undefined, est: Pick<PriceEstimate, "p25" | "p75">): "below" | "within" | "above" | null {
+  if (priceCents === null || priceCents === undefined || est.p25 === null || est.p75 === null) return null;
+  return priceCents < est.p25 ? "below" : priceCents > est.p75 ? "above" : "within";
+}
 
 function requireScope(req: { extScopes: string[] | null }, scope: string) {
   if (!req.extScopes?.includes(scope)) throw new AppError("forbidden", `Portée « ${scope} » absente du jeton.`, 403);
@@ -100,6 +121,34 @@ export default async function extRoutes(app: FastifyInstance) {
     if (!conv) throw new AppError("validation", "Aucun message acheteur dans la conversation.", 400);
     const suggestion = await messaging.suggestReply(ctx, conv.id);
     return { conversationId: conv.id, draftId: suggestion.draft.id, body: suggestion.suggestion.reply, evaluation: suggestion.evaluation, source: suggestion.source, validated: suggestion.validated, rejectionReason: suggestion.rejectionReason, requiresApproval: true };
+  });
+
+  /**
+   * Comparables du panneau de l'extension (Selio Track, Pro et Agence) : estimation SANS explication par mon
+   * IA perso (comparables et modèle de prix), et position du prix affiché. Jeton « capture:items ».
+   */
+  // 30 par minute et par membre (le panneau s'ouvre à chaque annonce consultée), quelle que soit l'adresse.
+  const comparablesLimit = { max: 30, timeWindow: "1 minute", keyGenerator: (req: FastifyRequest) => (req.orgCtx ? `ext-comparables:${req.orgCtx.userId}` : `ext-comparables-ip:${req.ip}`) };
+  app.post("/api/ext/comparables", { config: { rateLimit: comparablesLimit } }, async (req) => {
+    const ctx = app.requireCtx(req);
+    requireScope(req, "capture:items");
+    requireAction(ctx, "items.read");
+    const parsed = comparablesInput.safeParse(req.body ?? {});
+    if (!parsed.success) throw new AppError("validation", "Article invalide", 400, parsed.error.flatten());
+    const c = parsed.data;
+    const quotas = await withOrg(ctx, async (tx) => (await repos.subscriptions.get(tx))?.quotas ?? quotasForPlan("free"));
+    if (quotas.trackFiltersFollowed <= 0) throw new AppError("track_unavailable", TRACK_UNAVAILABLE_MESSAGE, 402);
+    const features = { title: c.title, brand: c.brand ?? null, size: c.size ?? null, condition: c.condition ?? null };
+    let estimate: PriceEstimate;
+    if (c.category) {
+      estimate = await pricing.estimate(ctx, { ...features, category: c.category }, { explain: false });
+    } else {
+      const target = { ...features, category: null };
+      const pools = await withOrg(ctx, (tx) => pricing.loadPoolsTx(tx, [target]));
+      const [est] = await pricing.estimateMany(ctx, [target], pools);
+      estimate = pricing.publicEstimate(est!);
+    }
+    return { ...estimate, priceCheck: { priceCents: c.priceCents ?? null, position: pricePosition(c.priceCents, estimate) } };
   });
 
   /** Tâches « navigateur » en attente pour cette organisation (exécution par l'extension, expérimental). */

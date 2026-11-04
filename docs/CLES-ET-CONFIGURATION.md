@@ -1,6 +1,6 @@
 # Selio — clés et configuration
 
-_Version du 30 octobre 2026 · branche `claude/gracious-wright-rf41nt`_
+_Version du 4 novembre 2026 · branche `claude/gracious-wright-rf41nt`_
 
 ## En bref
 
@@ -209,9 +209,28 @@ Fonctionnement, règles et procédure de test : docs/RADAR.md. **Radar Auto et l
 4. Dans l'application : Paramètres › Notifications › activer sur le téléphone, puis « notification de test ». Sur iPhone, ajouter d'abord Selio à l'écran d'accueil et l'ouvrir depuis son icône.
 5. Ranger les clés avec la copie chiffrée des `.env` (docs/SAUVEGARDE.md §1.1). Ne les changer qu'en cas de fuite : chaque appareil devrait se réabonner.
 
+## 12. Selio Track et estimation des prix
+
+Fonctionnement et règles : [docs/TRACK.md](TRACK.md) et [docs/PRIX.md](PRIX.md). **Track est en statistiques seulement** (aucune annonce republiée, aucune photo ni aucun pseudo gardé), et sa lecture en direct est **fermée par défaut** : le simulateur fournit alors des données marquées « démonstration ». L'usage des données issues de Vinted est **à valider juridiquement** : `TRACK_LIVE_ENABLED` reste à `false` tant que l'avocat n'a pas donné son avis (procédure : TRACK.md §7). Le modèle de prix tourne **sur le processeur**, sans service extérieur ni clé. Ces variables sont lues par l'API et le worker, livrés en parallèle de TRACK.md et PRIX.md (état dans docs/BUILD_STATUS.md) ; leurs valeurs factices sont dans `apps/api/.env.example` et `apps/worker/.env.example`.
+
+| Variable | Où | Statut | Exemple / format | À quoi elle sert |
+|---|---|---|---|---|
+| `TRACK_LIVE_ENABLED` | API et worker | Facultatif | `false` (défaut) | `false` : Track lit le simulateur (données de démonstration). `true` : pages **publiques** du catalogue lues par le worker avec le lecteur de Selio Cloud (sans session), mêmes créneaux de navigateurs, arrêt au premier CAPTCHA ou blocage, pause de Track, ralentissement, coupe-circuit de la machine ; exige aussi `CLOUD_ENABLED=true` et Chromium dans le worker (section 9). **À laisser à `false` tant que l'avocat n'a pas rendu son avis.** Même valeur des deux côtés ; le démarrage le signale. |
+| `TRACK_SELLER_ANALYSIS_ENABLED` | API | Facultatif | `false` (défaut) | Analyse d'un vendeur concurrent (Agence), **à valider juridiquement (RGPD)**. `false` : refus avec l'explication. `true` : seul l'écran d'explication existe (rien n'est construit au-delà). |
+| `TRACK_READ_INTERVAL_MINUTES` | Worker | Facultatif | `120` (60 à 1440) | Relecture d'une empreinte suivie (2 h), plus un écart de ± 10 min, multipliée par le facteur de ralentissement (×8 au plus). |
+| `TRACK_MAX_PAGES_PER_MINUTE` | Worker | Facultatif | `10` (1 à 60) | Pages publiques lues par Track par minute ; elles comptent **aussi** dans `RADAR_MAX_PAGES_PER_MINUTE_GLOBAL` (machine), Radar restant prioritaire. Commencer bas (2) à l'ouverture. |
+| `CRON_TRACK` | Worker | Facultatif | `*/15 * * * *` | Passage de Track (UTC) : empreintes dues, une lecture par empreinte quel que soit le nombre de clients qui la suivent. |
+| `CRON_PRICING_REFERENCES` | Worker | Facultatif | `30 2 * * *` | Chaque nuit : ventes des organisations **qui l'ont accepté** (Paramètres › IA, désactivé par défaut) ajoutées à la base de références, sans donnée personnelle (ni client, ni titre, ni identifiant, ni photo, dates au jour) ; ventes remboursées, annulées ou supprimées et ventes des organisations sans accord retirées. |
+| `PRICING_TRAIN_CRON` | Worker | Facultatif | `0 4 * * 0` | Entraînement hebdomadaire du modèle de prix (dimanche 04:00 UTC) : P25 / P50 / P75 et délai, test sur le dernier mois jamais vu, modèle chargé ensuite par le worker, puis par l'API (rechargement horaire). |
+| `PRICING_MIN_REFERENCES` | API et worker | Facultatif | `500` (500 au moins) | **Ventes** réelles (prix final connu ou estimé) nécessaires pour entraîner sur la vraie base ; en dessous, le modèle est entraîné sur les données de démonstration et affiché comme tel (« Données de démonstration »), ou n'existe pas (« Modèle non entraîné »). Même valeur des deux côtés. |
+| `PRICING_TRAIN_MAX_MS` | Worker | Facultatif | `600000` (10 min ; de 10 s à 6 h) | Durée maximale d'un entraînement, qui tourne dans un fil séparé du worker : au-delà, le fil est arrêté (« entraînement interrompu ») et l'ancien modèle reste actif. |
+
+Aucune variable `VITE_` : le site ne parle qu'à l'API. Aucune clé pour l'extension : ses comparables passent par l'API avec le jeton d'extension (section « Réglages faits dans l'application »). L'évaluation d'une base (`pnpm prix:eval`) se lance à la main, sans variable (PRIX.md §11).
+
 ## Réglages faits dans l'application (pas des clés)
 
 - **Extension navigateur** : Pas de variable : dans Selio › Comptes Vinted › « Avancé — relier l'extension Selio », créez un jeton d'extension, puis collez l'adresse de l'API et le jeton dans les options de l'extension.
+- **Selio Track (Pro et Agence)** : filtres suivis (5 en Pro, 25 en Agence), scans de niche, recherches par photo, dans l'espace Track. Le panneau « Comparables Selio » de l'extension utilise le même jeton d'extension (portée `capture:items`, présente par défaut), sans réglage de plus.
 - **Radar Auto (achat auto)** : Page « Achat auto » : seuil de note (85 conseillé), plafond par jour, prix maximal par article, délai d'annulation, compte Achat. Désactivé par défaut ; l'activation est refusée tant que `RADAR_AUTO_ENABLED=false` (section 11), et elle est réservée aux comptes de l'équipe (docs/RADAR.md §6).
 - **Selio Radar** : sur chaque recherche, source (simulateur ou en direct depuis le compte Achat relié à Selio Cloud) et priorité (3 recherches au plus) ; réglages des alertes (note minimale, 75 par défaut ; heures calmes) et pages lues par minute (10 par défaut).
 - **Notifications sur le téléphone** : Paramètres › Notifications, appareil par appareil (sur iPhone, Selio ajouté à l'écran d'accueil). Exige les clés VAPID (section 11).
@@ -245,8 +264,8 @@ Fonctionnement, règles et procédure de test : docs/RADAR.md. **Radar Auto et l
 ### Mode connecté (vrais comptes, base de données)
 
 1. Louer un serveur Linux (VPS) et y installer Docker.
-2. Cloner le dépôt, copier apps/api/.env.example vers deploy/.env et remplir les sections 2, 3 et 4 (puis 5 pour le paiement Revolut, 7 et 8 quand le service d'email et MinIO sont choisis, 11 pour les clés des notifications).
-3. docker compose -f deploy/docker-compose.prod.yml up -d --build (migrations comprises, jusqu'à la 0012 : paiement et factures, Selio Cloud, Selio Radar).
+2. Cloner le dépôt, copier apps/api/.env.example vers deploy/.env et remplir les sections 2, 3 et 4 (puis 5 pour le paiement Revolut, 7 et 8 quand le service d'email et MinIO sont choisis, 11 pour les clés des notifications ; section 12 : rien à changer, Track reste sur le simulateur).
+3. docker compose -f deploy/docker-compose.prod.yml up -d --build (migrations comprises, jusqu'à la 0013 : paiement et factures, Selio Cloud, Selio Radar, Selio Track et estimation des prix).
 4. Mettre Caddy devant l'API (deploy/Caddyfile) pour le HTTPS, puis renseigner VITE_API_BASE_URL dans Netlify.
 5. Mettre en place la sauvegarde chiffrée de la nuit et le test de restauration mensuel (section 10, docs/SAUVEGARDE.md) avant d'accueillir de vrais clients.
 
@@ -265,5 +284,6 @@ Fonctionnement, règles et procédure de test : docs/RADAR.md. **Radar Auto et l
 - `SMTP_URL`, `STORAGE_SECRET_KEY`, `REVOLUT_SECRET_KEY`, `REVOLUT_WEBHOOK_SECRET` et `VAPID_PRIVATE_KEY` sont des secrets au même titre que `SECRETS_ENCRYPTION_KEY` : fichier `.env` du serveur seulement, jamais dans Netlify ni dans le navigateur. `VAPID_PUBLIC_KEY` n'est pas secrète (le navigateur la reçoit), mais elle va avec la clé privée.
 - Sauvegarde : `/etc/selio/backup.env`, `rclone.conf` et le fichier de phrase de passe gpg sont des secrets (`chmod 600`). La clé **privée** age n'est jamais sur la machine. Les `.env` ne sont pas dans la sauvegarde automatique : copie chiffrée à part (docs/SAUVEGARDE.md §1.1).
 - Selio Cloud : `CLOUD_ENABLED=false` tant que l'avocat n'a pas donné son avis ; `CLOUD_HEAVY_ACTIONS=false` tant qu'Ibrahim n'a pas décidé.
+- Selio Track : `TRACK_LIVE_ENABLED=false` et `TRACK_SELLER_ANALYSIS_ENABLED=false` tant que l'avocat n'a pas donné son avis (collecte de Track, usage des données issues de Vinted, RGPD). Aucun secret propre à Track ni au modèle de prix.
 - Selio Radar : `RADAR_AUTO_ENABLED=false` et `RADAR_REAL_PURCHASE=false` (D11) ; Radar Auto n'est pas activable pour les clients sur l'adresse partagée tant qu'Ibrahim n'a pas tranché. Pour un test de l'équipe, `RADAR_AUTO_ORG_IDS` limite Radar Auto à ses organisations (obligatoire en production), puis tout revient à `false`.
 - `REVOLUT_MODE=live` sans `REVOLUT_LIVE_ALLOWED=true` arrête le démarrage : impossible d'encaisser de l'argent réel par inadvertance.

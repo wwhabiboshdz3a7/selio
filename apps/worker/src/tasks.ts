@@ -1,6 +1,7 @@
 import { repos, type Db } from "@selio/db";
 import { getConnector } from "@selio/connectors";
-import { admin, automation, billing, cloud, connections as connectionsService, radar, type OrgContext, type Services } from "@selio/core";
+import { quotasForPlan } from "@selio/contracts";
+import { admin, automation, billing, cloud, connections as connectionsService, pricing, radar, track, type OrgContext, type Services } from "@selio/core";
 
 /** Contexte « système » : actions du worker, journalisées avec l'acteur `system`. */
 export function systemContext(services: Services, orgId: string): OrgContext {
@@ -75,6 +76,9 @@ export async function connectorSyncTick(services: Services, log: TaskLogger): Pr
  * Cloud arrêtés (session effacée) quand l'offre ne comprend plus le Cloud. Selio Radar : mesures de
  * lecture (`radar_reads`) gardées 90 jours, affaires écartées supprimées après 30 jours, pseudo, note et
  * photo du vendeur effacés des autres affaires après 30 jours, alertes traitées gardées 90 jours.
+ * Selio Track : historique selon le plan (3 mois en Pro, 12 en Agence, rien sans Track), instantanés
+ * partagés selon le plan le plus long des organisations qui suivent l'empreinte, filtres au-delà du
+ * quota coupés.
  */
 export async function retentionTick(services: Services, log?: TaskLogger) {
   const base = await admin.retentionCleanup(services);
@@ -93,7 +97,8 @@ export async function retentionTick(services: Services, log?: TaskLogger) {
       log?.error({ orgId, error: err instanceof Error ? err.name : "Error" }, "rétention radar : échec pour une organisation");
     }
   }
-  return { ...base, cloud: cloudResult, radar: radarResult };
+  const trackResult = await trackRetention(services, log);
+  return { ...base, cloud: cloudResult, radar: radarResult, track: trackResult };
 }
 
 export interface RenewalSummary {
@@ -132,5 +137,72 @@ export async function renewSubscriptions(services: Services, log: TaskLogger): P
       log.error({ err, orgId }, "échéance d'abonnement : échec pour une organisation");
     }
   }
+  return summary;
+}
+
+// ---------------------------------------------------------------- rétention
+
+/**
+ * Filtres au-delà du quota du plan (offre réduite, Track plus compris) : coupés, les plus récents d'abord,
+ * pour que plus aucune page ne soit lue pour eux. Le client peut les retirer ou en réactiver dans le quota.
+ */
+export async function enforceTrackFilterQuota(services: Services, orgId: string): Promise<number> {
+  return services.db.withOrg(orgId, async (tx) => {
+    const quota = Math.max(0, ((await repos.subscriptions.get(tx))?.quotas ?? quotasForPlan("free")).trackFiltersFollowed);
+    const enabled = (await repos.trackFilters.list(tx)).filter((f) => f.enabled).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    const over = enabled.slice(quota);
+    for (const f of over) await repos.trackFilters.update(tx, f.id, { enabled: false });
+    if (over.length > 0) await repos.audit.add(tx, { actorUserId: null, action: "track.filters_disabled_by_plan", targetType: "track_filter", meta: { count: over.length, quota } });
+    return over.length;
+  });
+}
+
+export interface TrackRetentionSummary {
+  orgs: number;
+  scans: number;
+  photoSearches: number;
+  filtersDisabled: number;
+  snapshots: number;
+  fingerprints: number;
+  /** Références de prix effacées (plus de 24 mois). */
+  references: number;
+  errors: number;
+}
+
+/**
+ * Rétention de Track selon le plan : filtres au-delà du quota coupés, scans et recherches par photo plus
+ * anciens que l'historique du plan supprimés (tout, sans Track), puis instantanés partagés gardés selon le
+ * plan le plus long parmi les organisations qui suivent l'empreinte (12 mois au plus), empreintes plus
+ * suivies oubliées, et base de références de prix gardée 24 mois.
+ */
+export async function trackRetention(services: Services, log?: TaskLogger, now: Date = services.now()): Promise<TrackRetentionSummary> {
+  const summary: TrackRetentionSummary = { orgs: 0, scans: 0, photoSearches: 0, filtersDisabled: 0, snapshots: 0, fingerprints: 0, references: 0, errors: 0 };
+  for (const orgId of await track.trackOrgIds(services)) {
+    try {
+      summary.filtersDisabled += await enforceTrackFilterQuota(services, orgId);
+      const r = await track.purgeTrackHistory(services, orgId, now);
+      summary.orgs++;
+      summary.scans += r.scans;
+      summary.photoSearches += r.photoSearches;
+    } catch (err) {
+      summary.errors++;
+      log?.error({ orgId, error: err instanceof Error ? err.name : "Error" }, "rétention track : échec pour une organisation");
+    }
+  }
+  try {
+    const s = await track.purgeTrackSnapshots(services, now);
+    summary.snapshots = s.snapshots;
+    summary.fingerprints = s.fingerprints;
+  } catch (err) {
+    summary.errors++;
+    log?.error({ error: err instanceof Error ? err.name : "Error" }, "rétention track : instantanés partagés en échec");
+  }
+  try {
+    summary.references = await pricing.purgeReferences(services, now);
+  } catch (err) {
+    summary.errors++;
+    log?.error({ error: err instanceof Error ? err.name : "Error" }, "rétention : base de références de prix en échec");
+  }
+  if (summary.filtersDisabled > 0) log?.info({ filtersDisabled: summary.filtersDisabled }, "rétention track : filtres au-delà du quota du plan coupés");
   return summary;
 }
