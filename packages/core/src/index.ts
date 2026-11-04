@@ -30,3 +30,10 @@ export type { PurchaseRunInput, PurchaseRunOutcome, PurchaseRunner, RadarReader,
 export { FakePurchaseRunner, FakeRadarReader } from "./services/radar-sources";
 export type { AutoBuyRunResult, PlannedRead, RadarSkipReason, RadarTickSummary, RunSearchOptions, RunSearchResult } from "./services/radar";
 export { planReads, radarConfigFromEnv } from "./services/radar";
+export * as pricing from "./services/pricing";
+export * as track from "./services/track";
+export type { ComparableSelection, EngineEstimate, PriceModelLike, PricePredictionLike, PriceTrainOutcome, PriceTrainerLike, PriceTrainingRow, PricingComparable, PricingPools, PricingServices, PricingTarget, TrainModelResult } from "./services/pricing";
+export { FakePriceModel, FakePriceTrainer } from "./services/pricing";
+export type { PlannedTrackRead, TrackListingState, TrackReadResult, TrackReader, TrackReaderInput, TrackReaderOutcome, TrackSkipReason, TrackTickSummary } from "./services/track";
+export { FakeTrackReader, fingerprintOf, planTrackReads, trackConfigFromEnv } from "./services/track";
+export type { TrackMarketSection, TrackNiche } from "./services/market";

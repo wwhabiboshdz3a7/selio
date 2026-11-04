@@ -1,5 +1,5 @@
 import type {
-  AiRequest, AiStatus, AuditLog, ListingDraft, ListingGenerationInput, AutomationRule, AutomationRuleCreate, BulkItemAction, ConnectionCreate, ConnectionTestResult, ConnectionUpdate, Conversation, ConversationQuery, Customer, CustomerCreate, CustomerQuery, CustomerUpdate, ExtensionToken, InventoryEvent, InventoryItem, InventoryItemCreate, InventoryItemUpdate, InventoryQuery, Job, JobQuery, MarketplaceConnection, Membership, Message, Opportunity, Order, OrderCreate, OrderQuery, OrderStatus, Organization, OrgSettings, Page, Plan, PurchaseRequest, RadarSearch, RadarSearchCreate, Role, Shipment, Subscription, UsageEvent, User,
+  AiRequest, AiStatus, AuditLog, ListingGenerationInput, AutomationRule, AutomationRuleCreate, BulkItemAction, ConnectionCreate, ConnectionTestResult, ConnectionUpdate, Conversation, ConversationQuery, Customer, CustomerCreate, CustomerQuery, CustomerUpdate, ExtensionToken, InventoryEvent, InventoryItem, InventoryItemCreate, InventoryItemUpdate, InventoryQuery, Job, JobQuery, MarketplaceConnection, Membership, Message, Opportunity, Order, OrderCreate, OrderQuery, OrderStatus, Organization, OrgSettings, Page, Plan, PurchaseRequest, RadarSearch, RadarSearchCreate, Role, Shipment, Subscription, UsageEvent, User,
 } from "@selio/contracts";
 import type { ConnectorDescriptor } from "@selio/connectors";
 import type { HelpAnswer } from "@selio/contracts";
@@ -9,12 +9,27 @@ import type { AutoBuyStatus, OpportunityDetail, PushConfig, PushTestResult, Rada
 import { autoBuySettings, type PushSubscriptionInput, type PushSubscriptionView, type RadarSettingsUpdate } from "@selio/contracts";
 import { normalizeAutoBuyStatus, normalizePushConfig } from "../radar";
 import type { AiHealthData } from "../data/types";
-import type { BillingCycle, Invoice, InvoiceView, PaidPlan, WhiteLabel, WhiteLabelInput } from "@selio/contracts";
+import type { BillingCycle, Invoice, InvoiceView, PaidPlan, TrackSource, UsageCounter, WhiteLabel, WhiteLabelInput } from "@selio/contracts";
 import type { CheckoutOutcome, CloudAccountView, CloudAvailabilityView, CloudJournalFilters, CloudLoginStart } from "../data/types";
 import type { CloudAccount, CloudAction, CloudActionLevel, CloudConsentView, CloudLoginTicket } from "@selio/contracts";
 import { loginSocketUrl } from "../cloud/login-protocol";
+import type { PriceEstimate, PriceEstimateInput, TrackFilter, TrackFilterCreate, TrackFilterUpdate, TrackPhotoSearch, TrackPhotoSearchInput, TrackSalesFeed, TrackScan, TrackScanInput } from "@selio/contracts";
+import type { PricingModelView, StudioDraft, TrackTrendsView, TrackUsageView } from "../data/types";
+import { buildTrackUsage } from "../track";
 
 type Query = Record<string, string | number | boolean | undefined | null>;
+
+/** Réponse de GET /api/track/usage (apps/api/src/routes/track.ts). */
+interface ApiTrackUsage {
+  plan: string;
+  period: { from: string; to: string };
+  counters: { filtersFollowed: UsageCounter; scans: UsageCounter; photoSearches: UsageCounter };
+  historyMonths: number;
+  history?: { month: string; scans: number; photoSearches: number }[];
+  source?: TrackSource;
+  sourceLabel?: string;
+  notices?: string[];
+}
 
 function qs(q: Query | undefined): string {
   if (!q) return "";
@@ -173,10 +188,42 @@ export class ApiClient implements DataClient {
   unsubscribePush(endpoint: string) { return this.request<{ removed: boolean }>("DELETE", "/api/push/subscriptions", { endpoint }); }
   removePushSubscription(id: string) { return this.request<{ removed: boolean }>("DELETE", `/api/push/subscriptions/${encodeURIComponent(id)}`); }
   testPush() { return this.post<PushTestResult>("/api/push/test"); }
-  generateListing(input: ListingGenerationInput) { return this.post<ListingDraft>("/api/studio/generate", input); }
+  generateListing(input: ListingGenerationInput) { return this.post<StudioDraft>("/api/studio/generate", input); }
   getDressing(query: DressingQuery) { return this.get<DressingData>("/api/dressing", query as Query); }
   republishItem(id: string, variantId: string) { return this.post<InventoryItem>(`/api/items/${id}/republish`, { variantId }); }
   getMarketInsights(query: MarketQuery) { return this.get<MarketData>("/api/market/insights", query as Query); }
+  // Selio Track (/api/track/*) : statistiques seulement ; la photo d'une recherche n'est jamais conservée.
+  trackFilters() { return this.get<TrackFilter[]>("/api/track/filters"); }
+  createTrackFilter(input: TrackFilterCreate) { return this.post<TrackFilter>("/api/track/filters", input); }
+  updateTrackFilter(id: string, input: TrackFilterUpdate) { return this.patch<TrackFilter>(`/api/track/filters/${encodeURIComponent(id)}`, input); }
+  deleteTrackFilter(id: string) { return this.del<void>(`/api/track/filters/${encodeURIComponent(id)}`); }
+  trackTrends(filterId: string, days?: number) { return this.get<TrackTrendsView>(`/api/track/filters/${encodeURIComponent(filterId)}/trends`, { days }); }
+  trackScans() { return this.get<TrackScan[]>("/api/track/scans"); }
+  runNicheScan(input: TrackScanInput) { return this.post<TrackScan>("/api/track/scans", input); }
+  trackPhotoSearches() { return this.get<TrackPhotoSearch[]>("/api/track/photo-search"); }
+  trackPhotoSearch(input: TrackPhotoSearchInput) { return this.post<TrackPhotoSearch>("/api/track/photo-search", input); }
+  trackSalesFeed() { return this.get<TrackSalesFeed>("/api/track/sales-feed"); }
+  /**
+   * Utilisation de Track (GET /api/track/usage) : compteurs du mois, historique, source des lectures. Sans
+   * Track dans l'offre, l'API répond 402 : la vue « indisponible » est construite depuis l'abonnement.
+   */
+  async trackUsage(): Promise<TrackUsageView> {
+    try {
+      const u = await this.get<ApiTrackUsage>("/api/track/usage");
+      const sub = await this.getSubscription();
+      return {
+        ...buildTrackUsage({ period: u.period, track: { filtersFollowed: u.counters.filtersFollowed, scans: u.counters.scans, photoSearches: u.counters.photoSearches } }, sub, u.counters.filtersFollowed.used),
+        historyMonths: u.historyMonths, source: u.source, sourceLabel: u.sourceLabel, notices: u.notices, history: u.history,
+      };
+    } catch (e) {
+      if (!(e instanceof DataError) || e.status !== 402) throw e;
+      const [usage, sub] = await Promise.all([this.getUsage(), this.getSubscription()]);
+      return buildTrackUsage(usage, sub, 0);
+    }
+  }
+  // Estimation des prix (/api/pricing/*) : le prix est décidé par l'estimation, mon IA perso l'explique seulement.
+  estimatePrice(input: PriceEstimateInput) { return this.post<PriceEstimate>("/api/pricing/estimate", input); }
+  pricingModelStatus() { return this.get<PricingModelView>("/api/pricing/model"); }
   listPurchaseRequests() { return this.get<(PurchaseRequest & { opportunity: Opportunity | null })[]>("/api/purchases"); }
   createPurchaseRequest(input: { opportunityId: string; maxPriceCents: number; budgetCents: number }) { return this.post<PurchaseRequest>("/api/purchases", input); }
   confirmPurchaseRequest(id: string) { return this.post<PurchaseRequest>(`/api/purchases/${id}/confirm`); }

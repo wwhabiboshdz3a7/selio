@@ -9,6 +9,7 @@ import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { dateInputToIso } from "../../lib/dates";
 import { MoneyInput, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { PriceSuggestion } from "../components/pricing";
 
 const MAX_PHOTO_BYTES = 1_500_000;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -125,6 +126,13 @@ export default function ItemForm() {
             <Field label="Prix d'achat" required>{(p) => <MoneyInput id={p.id} value={form.purchasePriceCents ?? 0} onChange={(v) => setForm({ ...form, purchasePriceCents: v ?? 0 })} allowEmpty={false} />}</Field>
             <Field label="Frais d'acquisition" hint="Port entrant, nettoyage, retouche…">{(p) => <MoneyInput id={p.id} aria-describedby={p.describedBy} value={form.purchaseFeesCents ?? 0} onChange={(v) => setForm({ ...form, purchaseFeesCents: v ?? 0 })} allowEmpty={false} />}</Field>
             <Field label="Prix affiché" error={errors.listedPriceCents}>{(p) => <MoneyInput id={p.id} invalid={p.invalid} value={form.listedPriceCents ?? null} onChange={(v) => setForm({ ...form, listedPriceCents: v })} />}</Field>
+            {/* Prix conseillé (§5.10) à la saisie de la marque, de la catégorie et de l'état : l'utilisateur choisit. */}
+            <PriceSuggestion
+              features={{ brand: form.brand?.trim() || null, category: form.category ?? "other", size: form.size?.trim() || null, condition: form.condition, photoCount: Math.min(30, form.photos.length) }}
+              onPick={(cents) => setForm((f) => ({ ...f, listedPriceCents: cents }))}
+              floorCents={form.floorPriceCents ?? null}
+              current={form.listedPriceCents ?? null}
+            />
             <Field label="Prix plancher" error={errors.floorPriceCents} hint={<>Suggéré par vos règles : <button type="button" className="font-medium text-text underline underline-offset-2" onClick={() => setForm({ ...form, floorPriceCents: suggestedFloor })}><Money cents={suggestedFloor} /></button> (marge min. {formatPercent(rules.minMarginRate)} et <Money cents={rules.minMarginCents} />).</>}>{(p) => <MoneyInput id={p.id} invalid={p.invalid} aria-describedby={p.describedBy} value={form.floorPriceCents ?? null} onChange={(v) => setForm({ ...form, floorPriceCents: v })} />}</Field>
             <Field label="Statut">{(p) => <Select id={p.id} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as FormState["status"] })}>{ITEM_STATUSES.map((s) => <option key={s} value={s}>{ITEM_STATUS_LABELS[s]}</option>)}</Select>}</Field>
             <Field label="Date d'achat">{(p) => <Input id={p.id} type="date" value={form.purchasedAt ? form.purchasedAt.slice(0, 10) : ""} onChange={(e) => { const iso = dateInputToIso(e.target.value); if (e.target.value && !iso) return; setForm({ ...form, purchasedAt: iso }); }} />}</Field>

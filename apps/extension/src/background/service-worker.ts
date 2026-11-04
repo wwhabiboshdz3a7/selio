@@ -1,6 +1,7 @@
 import { toBackground, isSupportedUrl, type BackgroundResponse, type ExtensionStatus } from "../shared/messages";
 import { clearConfig, readConfig, writeConfig } from "../shared/storage";
 import { apiRequest, ExtApiError } from "../shared/api";
+import { comparablesFailure, fetchComparables, isQuietComparablesError } from "./comparables";
 
 /**
  * Service worker : seul détenteur du jeton. Il valide l'expéditeur et le
@@ -19,7 +20,7 @@ async function status(): Promise<ExtensionStatus> {
   return { paired: Boolean(c.token && c.apiBaseUrl), apiBaseUrl: c.apiBaseUrl, orgName: c.orgName, scopes: c.scopes, lastPingAt: c.lastPingAt, lastError: c.lastError };
 }
 
-async function withToken<T>(fn: (base: string, token: string) => Promise<T>): Promise<T> {
+async function withToken<T>(fn: (base: string, token: string) => Promise<T>, opts: { quiet?: (e: ExtApiError) => boolean } = {}): Promise<T> {
   const c = await readConfig();
   if (!c.token || !c.apiBaseUrl) throw new ExtApiError("unpaired", "Extension non associée : ouvrez les options et collez un jeton Selio.", 401);
   try {
@@ -28,7 +29,7 @@ async function withToken<T>(fn: (base: string, token: string) => Promise<T>): Pr
     return out;
   } catch (e) {
     if (e instanceof ExtApiError && e.status === 401) await writeConfig({ lastError: "Jeton refusé (révoqué ou expiré) : créez un nouveau jeton dans Selio." });
-    else if (e instanceof ExtApiError) await writeConfig({ lastError: e.message });
+    else if (e instanceof ExtApiError && !opts.quiet?.(e)) await writeConfig({ lastError: e.message });
     throw e;
   }
 }
@@ -37,7 +38,7 @@ async function handle(msg: unknown, sender: chrome.runtime.MessageSender): Promi
   const parsed = toBackground.safeParse(msg);
   if (!parsed.success) return { ok: false, code: "invalid_message", message: "Message invalide" };
   const m = parsed.data;
-  const fromContent = ["capture", "rules", "draft", "diagnostic"].includes(m.type);
+  const fromContent = ["capture", "rules", "draft", "diagnostic", "comparables"].includes(m.type);
   if (!senderAllowed(sender, fromContent)) return { ok: false, code: "forbidden", message: "Expéditeur non autorisé" };
   try {
     switch (m.type) {
@@ -68,6 +69,15 @@ async function handle(msg: unknown, sender: chrome.runtime.MessageSender): Promi
       case "rules": {
         const data = await withToken((base, token) => apiRequest(base, token, "POST", "/api/ext/rules", { externalRef: m.externalRef, listedPriceCents: m.listedPriceCents, offerCents: m.offerCents }));
         return { ok: true, data };
+      }
+      case "comparables": {
+        // Lecture seule : aucune action sur la page ni dans Selio ; erreurs normalisées pour le panneau.
+        try {
+          const data = await withToken((base, token) => fetchComparables(base, token, m.item), { quiet: isQuietComparablesError });
+          return { ok: true, data };
+        } catch (e) {
+          return { ok: false, ...comparablesFailure(e) };
+        }
       }
       case "draft": {
         if (!m.conversation.buyerHandle) return { ok: false, code: "validation", message: "Acheteur non identifié sur la page." };

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { comparablesRequest } from "./comparables";
 
 /**
  * Contrat de messages entre content script, popup/options et service worker.
@@ -38,6 +39,8 @@ export const toBackground = z.discriminatedUnion("type", [
   z.object({ type: z.literal("capture"), item: capturedItem, adapterVersion: z.string().max(40), purchasePriceCents: z.number().int().min(0).nullable() }),
   z.object({ type: z.literal("rules"), externalRef: z.string().max(120).nullable(), listedPriceCents: z.number().int().min(0).nullable(), offerCents: z.number().int().min(0).nullable() }),
   z.object({ type: z.literal("draft"), conversation: capturedConversation, itemExternalRef: z.string().max(120).nullable(), adapterVersion: z.string().max(40) }),
+  /** Comparables Selio (Track) : les six champs de l'article seulement (schéma strict). */
+  z.object({ type: z.literal("comparables"), item: comparablesRequest }),
   z.object({ type: z.literal("diagnostic"), report: z.object({ url: z.string().max(500), pageKind: z.string().max(20), adapterVersion: z.string().max(40), ok: z.boolean(), missing: z.array(z.string().max(40)), warnings: z.array(z.string().max(200)), at: z.string() }) }),
   z.object({ type: z.literal("pair"), apiBaseUrl: z.string().url().max(300).refine((u) => /^https?:\/\//i.test(u), "URL http(s) requise"), token: z.string().min(20).max(200) }),
   z.object({ type: z.literal("unpair") }),

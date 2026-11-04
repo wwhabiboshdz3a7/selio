@@ -1,7 +1,6 @@
-import { createHash } from "node:crypto";
 import {
   RADAR_3DS_TIMEOUT_MINUTES, RADAR_AUTO_PRICE_TOLERANCE_CENTS, RADAR_AUTO_SHARED_ADDRESS_NOTICE, RADAR_AUTO_UNSHOWN_SHIPPING_ALLOWANCE_CENTS, RADAR_BLOCKS_PER_1000_THRESHOLD, RADAR_CATCHUP_GAP_MINUTES,
-  RADAR_DEMO_INTERVAL_SECONDS, RADAR_DUE_TOLERANCE_SECONDS, RADAR_EMBEDDING_MIN_SIMILARITY, RADAR_EMBEDDING_TOP_K, RADAR_INITIAL_STOCK_GRACE_MINUTES,
+  RADAR_DEMO_INTERVAL_SECONDS, RADAR_DUE_TOLERANCE_SECONDS, RADAR_INITIAL_STOCK_GRACE_MINUTES,
   RADAR_LIVE_REQUIRES_CLOUD, RADAR_MAX_CONSECUTIVE_ANOMALIES, RADAR_MAX_PRIORITY_SEARCHES, RADAR_MAX_SLOWDOWN_FACTOR, RADAR_OPPORTUNITY_PERSONAL_DATA_DAYS, RADAR_PRIORITY_INTERVAL_SECONDS, RADAR_READ_INTERVAL_SECONDS,
   RADAR_READS_RETENTION_DAYS, RADAR_SLOWDOWN_RECOVERY_HOURS, RADAR_SLOWDOWN_WINDOW_READS, RADAR_TICK_SECONDS,
   filterVintedStorageState, isStorageStateEmpty, radarAlertPayload, radarSearchCreate, radarSettingsUpdate,
@@ -9,13 +8,14 @@ import {
 } from "@selio/contracts";
 import { repos, type Tx } from "@selio/db";
 import {
-  autoBuyDecision, canStillCancel, cancelableUntil, comparableText, comparablesFromSales, estimateResale, estimateResaleFromSimilar, isActiveAccount, nearestComparables, purchaseCost, purchaseOutcome,
-  rankOpportunities, resolvePurchaseAccount, runPurchaseChecks, scoreOpportunity, titledComparablesFromSales,
-  type Comparable, type Estimate, type PurchaseCost, type TitledComparable,
+  autoBuyDecision, canStillCancel, cancelableUntil, estimateResale, isActiveAccount, purchaseCost, purchaseOutcome,
+  rankOpportunities, resolvePurchaseAccount, runPurchaseChecks, scoreOpportunity,
+  type Estimate, type PurchaseCost,
 } from "@selio/domain";
 import { AppError, nowIso, requireAction, withOrg, type OrgContext, type Services, type ServicesConfig } from "../context";
 import { enqueueAutoSuspendedAlert, enqueueBlockedAlert, enqueueOpportunityAlert, enqueuePaymentAlert, enqueueSearchSuspendedAlert, localDayStart, sendDueAlerts, type SendAlertsSummary } from "./alerts";
 import * as cloud from "./cloud";
+import * as pricing from "./pricing";
 import { checkLiveAccountTx, readLiveSessionTx, safeVintedUrl, sourceFor, type LiveAccount, type PurchaseRunOutcome, type RadarSignal, type RadarSourceResult } from "./radar-sources";
 
 /**
@@ -277,74 +277,46 @@ export function deleteSearch(ctx: OrgContext, id: string): Promise<void> {
 
 // ---------------------------------------------------------------- estimation de revente
 
-type EmbeddingKind = Parameters<typeof repos.embeddingsCache.get>[1];
-
-const sha = (s: string) => createHash("sha256").update(s, "utf8").digest("hex").slice(0, 32);
-
-/** Ventes de l'organisation vectorisées au plus par lecture (les plus récentes d'abord ; le cache fait le reste). */
-const EMBED_POOL_CAP_PER_READ = 200;
-
-function embedModelName(services: Services): string {
-  const p = services.ai.provider as { embedModel?: string | null; model: string };
-  return (typeof p.embedModel === "string" && p.embedModel) || p.model;
-}
-
-/** Vecteurs des textes, depuis le cache `embeddings_cache` (même empreinte de texte), sinon calculés puis gardés. */
-async function vectorsFor(ctx: OrgContext, kind: EmbeddingKind, entries: readonly { ref: string; text: string }[], cap: number): Promise<Map<string, number[]>> {
-  const model = embedModelName(ctx.services);
-  const out = new Map<string, number[]>();
-  if (entries.length === 0) return out;
-  const cached = await withOrg(ctx, (tx) => repos.embeddingsCache.get(tx, kind, entries.map((e) => e.ref), model));
-  const missing: { ref: string; text: string }[] = [];
-  for (const e of entries) {
-    const c = cached.get(e.ref);
-    if (c && c.textHash === sha(e.text)) out.set(e.ref, c.vector);
-    else missing.push(e);
-  }
-  const todo = missing.slice(0, Math.max(0, cap));
-  if (todo.length > 0) {
-    const res = await ctx.services.ai.embed(ctx.orgId, todo.map((e) => e.text));
-    if (res.embeddings.length !== todo.length) throw new Error("embeddings incomplets");
-    const rows = todo.map((e, i) => ({ kind, ref: e.ref, model, textHash: sha(e.text), vector: res.embeddings[i]! }));
-    await withOrg(ctx, (tx) => repos.embeddingsCache.put(tx, rows));
-    for (const r of rows) out.set(r.ref, r.vector);
-  }
-  return out;
-}
-
-/** Estimation par marque et catégorie (méthode d'avant), étiquetée « brand_category ». */
-function brandCategoryEstimate(item: Pick<RadarCatalogItem, "priceCents" | "brand" | "category" | "condition">, comps: Comparable[]): Estimate {
-  return { ...estimateResale({ priceCents: item.priceCents, brand: item.brand, category: item.category, condition: item.condition }, comps), method: "brand_category" };
+/** Estimation de Radar quand l'estimation des prix n'a ni comparable ni modèle : multiple prudent (×1,6), comme avant. */
+function prudentEstimate(item: Pick<RadarCatalogItem, "priceCents" | "brand" | "category" | "condition">): Estimate {
+  return { ...estimateResale({ priceCents: item.priceCents, brand: item.brand, category: item.category, condition: item.condition }, []), method: "brand_category" };
 }
 
 /**
- * Revente estimée pour chaque annonce : par similarité d'embeddings (modèle 2) quand l'IA sait vectoriser
- * — titre de l'annonce contre les titres des ventes de l'organisation, top 8 au-dessus de 0,6, vecteurs
- * en cache — sinon (ou si moins de 2 ventes proches, ou en cas de panne de l'IA) par marque et catégorie.
- * Les observations de marché « vendues » (Track) rejoindront ce lot quand elles existeront : aujourd'hui,
- * aucune observation vendue n'est relevée en mode connecté.
+ * Méthode affichée sur l'affaire : « embeddings » (ventes proches, modèle 2), « brand_category » (marque et
+ * catégorie, ou multiple prudent sans comparable), « model » (modèle de prix seul), « blend » (comparables
+ * et modèle de prix).
  */
-export async function estimateForItems(ctx: OrgContext, items: readonly RadarCatalogItem[], pools: { comps: Comparable[]; titled: TitledComparable[] }): Promise<Estimate[]> {
-  const fallback = items.map((it) => brandCategoryEstimate(it, pools.comps));
-  if (items.length === 0 || !ctx.services.ai.canEmbed || pools.titled.length === 0) return fallback;
+function radarEstimate(item: Pick<RadarCatalogItem, "priceCents" | "brand" | "category" | "condition">, est: pricing.EngineEstimate): Estimate {
+  if (est.method === "none" || est.p50 === null) return prudentEstimate(item);
+  const method = est.method === "comparables" ? "brand_category" : est.method;
+  return { resalePriceCents: est.p50, confidence: est.confidenceLevel, method, comparableCount: est.comparableCount };
+}
+
+/**
+ * Revente estimée pour chaque annonce par l'estimation des prix (§5.10, `pricing.estimateMany`) : ventes de
+ * l'organisation et base de références, affinées par similarité des titres (modèle 2, vecteurs en cache,
+ * 8 au plus au-dessus de 0,6), sinon marque et catégorie ; modèle de prix combiné s'il est chargé. Sans
+ * comparable ni modèle : multiple prudent du prix observé. Une panne de l'IA ne bloque jamais la lecture.
+ *
+ * Lecture en direct (`live`) : un modèle entraîné sur les données de démonstration (simulateur) n'est
+ * JAMAIS utilisé — la revente d'une vraie annonce (marge, note, alertes, Radar Auto) ne repose que sur des
+ * comparables réels, sinon sur le multiple prudent. Le simulateur, lui, peut s'en servir (tout y est démo).
+ */
+export async function estimateForItems(ctx: OrgContext, items: readonly RadarCatalogItem[], pools: pricing.PricingPools, opts: { live?: boolean } = {}): Promise<Estimate[]> {
+  if (items.length === 0) return [];
   try {
-    const poolVectors = await vectorsFor(ctx, "sale", pools.titled.map((t) => ({ ref: t.ref, text: t.text })), EMBED_POOL_CAP_PER_READ);
-    const pool = pools.titled.filter((t) => poolVectors.has(t.ref)).map((t) => ({ ref: t.ref, vector: poolVectors.get(t.ref)!, comparable: t.comparable }));
-    const targets = items.map((it) => {
-      const text = comparableText(it.title, it.brand);
-      return { ref: sha(text), text };
-    });
-    const unique = [...new Map(targets.map((t) => [t.ref, t])).values()];
-    const targetVectors = await vectorsFor(ctx, "opportunity", unique, unique.length);
+    const targets = items.map((it) => ({ title: it.title, brand: it.brand, category: it.category, condition: it.condition, size: it.size, photoCount: it.photoCount }));
+    const estimates = await pricing.estimateMany(ctx, targets, pools);
     return items.map((it, i) => {
-      const v = targetVectors.get(targets[i]!.ref);
-      if (!v) return fallback[i]!;
-      const near = nearestComparables(v, pool, { k: RADAR_EMBEDDING_TOP_K, minSimilarity: RADAR_EMBEDDING_MIN_SIMILARITY });
-      return estimateResaleFromSimilar({ condition: it.condition }, near) ?? fallback[i]!;
+      const est = estimates[i]!;
+      // Modèle de démonstration sur une vraie annonce : comparables seuls (le modèle est écarté).
+      const real = opts.live && est.demo ? pricing.combineEstimate(targets[i]!, est.selection, null) : est;
+      return radarEstimate(it, real);
     });
   } catch {
-    // Panne, disjoncteur ouvert ou quota de l'IA : l'estimation se replie, la lecture continue.
-    return fallback;
+    // Estimation impossible (base indisponible pendant le calcul…) : repli prudent, la lecture continue.
+    return items.map((it) => prudentEstimate(it));
   }
 }
 
@@ -558,12 +530,10 @@ export async function runSearch(ctx: OrgContext, id: string, opts: RunSearchOpti
         if (item.externalRef ? await repos.opportunities.byExternalRef(tx, item.externalRef) : await repos.opportunities.exists(tx, search.id, item.title, item.priceCents)) { dup++; continue; }
         fresh.push(item);
       }
-      if (fresh.length === 0) return { fresh, dup, comps: [] as Comparable[], titled: [] as TitledComparable[] };
-      const orders = await repos.orders.all(tx);
-      const items = new Map((await repos.items.all(tx)).map((i) => [i.id, i]));
-      return { fresh, dup, comps: comparablesFromSales(orders, items), titled: titledComparablesFromSales(orders, items) };
+      if (fresh.length === 0) return { fresh, dup, pools: { sales: [], references: [] } as pricing.PricingPools };
+      return { fresh, dup, pools: await pricing.loadPoolsTx(tx, fresh) };
     });
-    const estimates = pre && pre.fresh.length ? await estimateForItems(ctx, pre.fresh, { comps: pre.comps, titled: pre.titled }) : [];
+    const estimates = pre && pre.fresh.length ? await estimateForItems(ctx, pre.fresh, pre.pools, { live: live !== null }) : [];
 
     // 3. Affaires et alertes.
     const recorded = !pre || pre.fresh.length === 0 ? { found: 0, duplicates: pre?.dup ?? 0, alertsQueued: 0, initialStock: 0 } : await withOrg(ctx, async (tx) => {

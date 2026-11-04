@@ -21,7 +21,7 @@ const PAGES: { href: string; heading: RegExp }[] = [
   { href: "/app/automatisation/stock", heading: /Stock automatique/ },
   { href: "/app/automations", heading: /Journal des tâches/ },
   // Selio Track est une filiale : son menu propose ensuite les Bonnes affaires, qui ramènent dans Selio.
-  { href: "/track", heading: /sourcing des comptes Vinted/ },
+  { href: "/track", heading: /Tableau de bord/ },
   { href: "/app/radar", heading: /Bonnes affaires/ },
   { href: "/app/purchase", heading: /À valider/ },
   { href: "/app/auto-buy", heading: /Achat auto/ },

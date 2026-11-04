@@ -126,6 +126,12 @@ export interface EmbedResult {
 export interface AIProvider {
   readonly name: string;
   readonly model: string;
+  /**
+   * Vrai si les images envoyées sont réellement lues (modèle de vision branché ; le simulateur les
+   * « accepte » mais ses sorties sont marquées simulées). Absent : faux — une requête avec photos irait au
+   * modèle de texte, qui ne les voit pas.
+   */
+  readonly canSeeImages?: boolean;
   health(opts?: GenerateOptions): Promise<HealthResult>;
   generate(req: GenerateRequest, opts?: GenerateOptions): Promise<GenerateResult>;
   generateStructured<T>(req: StructuredRequest<T>, opts?: GenerateOptions): Promise<StructuredResult<T>>;
@@ -136,6 +142,11 @@ export interface AIProvider {
    * sans modèle d'embedding ne l'implémente pas.
    */
   embed?(texts: string[], opts?: GenerateOptions): Promise<EmbedResult>;
+}
+
+/** Vrai si le fournisseur lit réellement les photos (sinon : rien ne doit être « décrit » d'une photo non vue). */
+export function providerCanSeeImages(provider: Pick<AIProvider, "canSeeImages">): boolean {
+  return provider.canSeeImages === true;
 }
 
 /** Crée un signal qui expire après `timeoutMs` et suit un signal parent optionnel. */

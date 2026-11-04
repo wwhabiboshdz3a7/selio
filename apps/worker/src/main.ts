@@ -6,13 +6,15 @@ import { BrowserSlots, PlaywrightRunner, PurchaseRunner, RadarReader, probeChrom
 import { createAIService } from "@selio/ai";
 import { createPaymentProvider, loadPaymentConfig, paymentStartupNotices } from "@selio/connectors";
 import { Db, SecretBox, createPool } from "@selio/db";
-import type { Services } from "@selio/core";
+import { pricing, type Services } from "@selio/core";
 import { createEmailProvider, emailStartupWarnings, loadEmailConfig } from "@selio/email";
-import { cloudDrainMs, cloudLoginConcurrency, cloudProfileMaxAgeMs, cloudRunnable, cloudServicesConfig, disabledSchedules, loadEnv, maintenanceSchedules, radarBrowsingMaxMs, radarServicesConfig } from "./config";
+import { cloudDrainMs, cloudLoginConcurrency, cloudProfileMaxAgeMs, cloudRunnable, cloudServicesConfig, disabledSchedules, loadEnv, maintenanceSchedules, radarBrowsingMaxMs, radarServicesConfig, trackServicesConfig } from "./config";
 import { CLOUD_LOGIN_JOB, CLOUD_LOGIN_QUEUE, CloudTickRunner, RunnerCloudExecutor, cloudLoginTask, cloudTick, createRedisLoginBus } from "./cloud";
 import { WebPushSender, loadVapidConfig } from "./push";
 import { CloudOffRadarReader, CloudPurchaseAdapter, CloudRadarReader, PageRateLimiter, RADAR_QUEUE, RADAR_RESUME_JOB, SingleFlight, alertsTick, radarAutoTick, radarResumeTask, radarTick, type AlertsTickSummary, type RadarAutoTickSummary, type RadarTickSummary } from "./radar";
 import { automationTick, connectorSyncTick, processJobs, renewSubscriptions, retentionTick } from "./tasks";
+import { createPricingServices } from "./pricing";
+import { CloudTrackReader, TRACK_TICK_BUDGET_MINUTES, pricingReferencesTick, pricingTrainTask, trackTick, type PricingTrainSummary, type TrackTickSummary } from "./track";
 
 /**
  * Worker Selio : tâches planifiées et traitements asynchrones (BullMQ/Redis).
@@ -39,8 +41,14 @@ async function main() {
     publicWebUrl: env.PUBLIC_WEB_URL,
     payments: createPaymentProvider(paymentConfig, { logger: log }),
     billing: { franchiseTva: env.FRANCHISE_TVA },
-    config: { ...cloudServicesConfig(env), ...radarServicesConfig(env) },
+    config: { ...cloudServicesConfig(env), ...radarServicesConfig(env), ...trackServicesConfig(env) },
   };
+  // Modèle de prix (§5.10) : entraîneur et chargeur de @selio/pricing ; le modèle actif est chargé plus bas.
+  // Entraînement dans un fil séparé (boucle d'événements libre), arrêté au-delà de PRICING_TRAIN_MAX_MS.
+  services.pricing = createPricingServices(() => services.now(), {
+    maxMs: env.PRICING_TRAIN_MAX_MS,
+    onReport: (r) => log.info(r, r.insufficient ? "prix : entraînement refusé (pas assez de ventes avant le mois de test)" : "prix : rapport d'entraînement"),
+  });
   // Notifications Web Push (alertes Radar) : sans clés VAPID, les alertes restent en file.
   const vapid = loadVapidConfig(env);
   if (vapid) services.push = new WebPushSender(vapid);
@@ -113,6 +121,30 @@ async function main() {
   services.radar = runner
     ? { reader: new CloudRadarReader(new RadarReader({ fetcher: runner, pageBudgetMs: env.RADAR_PAGE_BUDGET_MS, ...(cloudLog ? { logger: cloudLog } : {}) }), log), ...(purchases ? { purchaser: purchases } : {}) }
     : { reader: new CloudOffRadarReader() };
+  // Selio Track : pages PUBLIQUES du catalogue (aucune session), seulement si TRACK_LIVE_ENABLED et que le Cloud
+  // tourne (mêmes créneaux de navigateurs) ; sinon le simulateur (données de démonstration).
+  if (env.TRACK_LIVE_ENABLED && runner) {
+    services.track = { reader: new CloudTrackReader(new RadarReader({ fetcher: runner, pageBudgetMs: env.RADAR_PAGE_BUDGET_MS, ...(cloudLog ? { logger: cloudLog } : {}) }), log) };
+    log.warn({ maxPagesPerMinute: env.TRACK_MAX_PAGES_PER_MINUTE, intervalMinutes: env.TRACK_READ_INTERVAL_MINUTES }, "Track : lecture en direct des pages publiques OUVERTE (TRACK_LIVE_ENABLED=true) — usage des données de Vinted à valider juridiquement");
+  } else if (env.TRACK_LIVE_ENABLED) {
+    log.warn({}, "Track : TRACK_LIVE_ENABLED=true mais Selio Cloud est désactivé — le simulateur reste la source (données de démonstration)");
+  } else {
+    log.info({ intervalMinutes: env.TRACK_READ_INTERVAL_MINUTES }, "Track : simulateur (données de démonstration), lecture en direct fermée");
+  }
+  // Plafond de pages par minute propre à Track ; ses pages comptent aussi dans celui de la machine (Radar).
+  const trackLimiter = new PageRateLimiter(env.TRACK_MAX_PAGES_PER_MINUTE);
+  // Un passage (toutes les 15 min) lit au rythme réglé pendant 12 min au plus : TRACK_MAX_PAGES_PER_MINUTE × 12
+  // empreintes, en attendant une place dans le plafond de Track plutôt que de s'arrêter à la dixième page.
+  const trackTicks: SingleFlight<TrackTickSummary> = new SingleFlight("track.tick", () => trackTick(services, log, { limiter: trackLimiter, machineLimiter: limiter, shouldStop: () => trackTicks.stopping, limit: env.TRACK_MAX_PAGES_PER_MINUTE * TRACK_TICK_BUDGET_MINUTES, maxWaitMs: TRACK_TICK_BUDGET_MINUTES * 60_000 }), log, (r) => {
+    if (r.reads || r.blocked || r.errors || r.paused) log.info({ name: "track.tick", ...r }, "track : passage");
+  });
+  // Entraînement du modèle de prix : un seul à la fois (planning du dimanche ou demande d'un opérateur).
+  const trainings: SingleFlight<PricingTrainSummary> = new SingleFlight("pricing.train", () => pricingTrainTask(services, log, { minReferences: env.PRICING_MIN_REFERENCES }), log);
+  // Modèle actif chargé au démarrage (Studio, Radar et Track l'utilisent aussi dans le worker).
+  await pricing.refreshActiveModel(services).then(
+    (m) => log.info({ version: m?.version ?? null, synthetic: m?.synthetic ?? false }, m ? "prix : modèle actif chargé" : "prix : modèle non entraîné (comparables seuls)"),
+    (err: unknown) => log.warn({ error: err instanceof Error ? err.message.slice(0, 200) : "Error" }, "prix : modèle actif illisible (comparables seuls)"),
+  );
   const radarTicks: SingleFlight<RadarTickSummary> = new SingleFlight("radar.tick", () => radarTick(services, log, { liveEnabled: runner !== null, limiter, concurrency: env.CLOUD_MAX_BROWSERS, shouldStop: () => radarTicks.stopping, purchases }), log, (r) => {
     if (r.liveReads || r.demoReads || r.blocked || r.errors || r.expired3ds) log.info({ name: "radar.tick", ...r }, "radar : passage");
   });
@@ -153,6 +185,11 @@ async function main() {
         case "billing.renew": result = await renewSubscriptions(services, log); break;
         // Passage du Cloud lancé sans retenir la file (un seul à la fois ; il journalise son bilan).
         case "cloud.tick": result = cloudTicks.trigger(); break;
+        // Selio Track : passage lancé sans retenir la file (un seul à la fois ; il journalise son bilan).
+        case "track.tick": result = trackTicks.trigger(); break;
+        case "pricing.references": result = await pricingReferencesTick(services, log); break;
+        // Entraînement (calcul long sur le processeur) : lancé sans retenir la file, un seul à la fois.
+        case "pricing.train": result = trainings.trigger(); break;
         default: log.warn({ name: job.name }, "tâche inconnue"); return null;
       }
       log.info({ name: job.name, result, ms: Date.now() - started }, "tâche terminée");
@@ -200,6 +237,8 @@ async function main() {
     radarTicks.stop();
     autoTicks.stop();
     alertTicks.stop();
+    trackTicks.stop();
+    trainings.stop();
     await worker.close();
     // Fenêtres de connexion et reprises 3-D Secure : attente bornée (le client se reconnectera ; les fenêtres
     // restées ouvertes en base expirent, les dossiers de travail restants sont supprimés au prochain démarrage).
@@ -211,6 +250,8 @@ async function main() {
       radarTicks.drain(env.RADAR_PAGE_BUDGET_MS + 15_000),
       autoTicks.drain(env.RADAR_PURCHASE_TIMEOUT_MS + 15_000),
       alertTicks.drain(15_000),
+      trackTicks.drain(env.RADAR_PAGE_BUDGET_MS + 15_000),
+      trainings.drain(30_000),
     ]);
     // Navigateurs tenus ouverts pour une validation 3-D Secure : fermés (les demandes expireront, avec alerte).
     await purchases?.closeAll();

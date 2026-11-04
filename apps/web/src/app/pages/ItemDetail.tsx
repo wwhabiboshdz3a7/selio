@@ -2,13 +2,15 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Archive, Lightbulb, Pencil, RotateCcw, Trash2 } from "lucide-react";
-import { ITEM_CATEGORY_LABELS, ITEM_CONDITION_LABELS, ITEM_STATUS_LABELS, type ItemStatus } from "@selio/contracts";
-import { ITEM_TRANSITIONS, daysInStock, projectedMargin } from "@selio/domain";
+import { ITEM_CATEGORY_LABELS, ITEM_CONDITION_LABELS, ITEM_STATUS_LABELS, type InventoryItem, type ItemStatus, type PriceEstimate, type PriceStrategies } from "@selio/contracts";
+import { ITEM_TRANSITIONS, can, daysInStock, projectedMargin } from "@selio/domain";
 import { Button, Card, ConfirmDialog, DescriptionList, Menu, Money, PageHeader, Tag, cn, formatDate, formatDateTime, formatPercent } from "@selio/ui";
 import { ScoreRing, scoreTextTone } from "../../components/charts";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { ItemStatusBadge, OrderStatusBadge, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { PriceEstimateView } from "../components/pricing";
+import { itemPriceFeatures } from "../../lib/track";
 
 export default function ItemDetail() {
   const { id = "" } = useParams();
@@ -113,6 +115,7 @@ export default function ItemDetail() {
                     {dressing.data.performance.republishDue ? <Link to="/app/dressing?filter=due"><Button size="sm" variant="accent" className="mt-3" fullWidth>Republier avec la variante {dressing.data.plan.next?.index}</Button></Link> : null}
                   </Card>
                 ) : null}
+                {it.status !== "sold" && it.status !== "archived" ? <ItemPricePanel item={it} canWrite={canWrite} canExplain={can(session.role, "ai.use")} /> : null}
                 <Card>
                   <h2 className="mb-3 text-md font-semibold">Prix et marge</h2>
                   <DescriptionList items={[
@@ -159,4 +162,50 @@ export default function ItemDetail() {
     if (Array.isArray(v)) return v.join(", ");
     return String(v);
   }
+}
+
+/**
+ * « Prix conseillé par les ventes réelles » : fourchette, trois stratégies avec « Appliquer » (jamais sous le
+ * prix plancher), méthode et confiance ; explication en mots par mon IA perso à la demande (une requête IA).
+ */
+function ItemPricePanel({ item, canWrite, canExplain }: { item: InventoryItem; canWrite: boolean; canExplain: boolean }) {
+  const client = useClient();
+  const features = itemPriceFeatures(item);
+  const estimate = useQuery({ queryKey: ["price-estimate", "item", item.id, features], queryFn: () => client.estimatePrice(features), staleTime: 60_000 });
+  const model = useQuery({ queryKey: ["pricing-model"], queryFn: () => client.pricingModelStatus(), staleTime: 60_000 });
+  const [explained, setExplained] = useState<PriceEstimate | null>(null);
+  const [applying, setApplying] = useState<keyof PriceStrategies | null>(null);
+  const explain = useAppMutation(() => client.estimatePrice({ ...features, explain: true }), {
+    invalidate: ["ai-requests", "usage"],
+    success: (e) => (e.explanation ? null : "Explication indisponible pour le moment : le prix reste valable."),
+    onSuccess: (e) => setExplained(e),
+  });
+  const apply = useAppMutation((cents: number) => client.updateItem(item.id, { listedPriceCents: cents }), {
+    invalidate: ["item", "items", "dressing", "overview"],
+    success: "Prix appliqué à l'article",
+    onSettled: () => setApplying(null),
+  });
+  return (
+    <Card aria-label="Prix conseillé par les ventes réelles">
+      <h2 className="text-md font-semibold">Prix conseillé par les ventes réelles</h2>
+      <p className="mb-3 text-xs text-text-muted">Ventes comparables et modèle de prix. Mon IA perso explique le prix, elle ne le choisit jamais.</p>
+      <QueryBoundary query={estimate} skeleton="spinner">
+        {(e) => {
+          const shown = explained ?? e;
+          return (
+            <PriceEstimateView
+              estimate={shown}
+              modelStatus={model.data}
+              current={item.listedPriceCents}
+              floorCents={item.floorPriceCents}
+              disabled={!canWrite || apply.isPending}
+              applying={applying}
+              onApply={canWrite ? (cents, key) => { setApplying(key); apply.mutate(cents); } : undefined}
+              explainAction={canExplain && !shown.explanation ? <Button size="sm" variant="ghost" onClick={() => explain.mutate(undefined)} loading={explain.isPending}>Expliquer en mots</Button> : undefined}
+            />
+          );
+        }}
+      </QueryBoundary>
+    </Card>
+  );
 }

@@ -81,6 +81,22 @@ export const apiEnvSchema = z
     RADAR_REAL_PURCHASE: bool,
     /** Attente de la validation 3-D Secure par le client (ms) : même valeur que le worker. */
     CLOUD_3DS_TIMEOUT_MS: z.coerce.number().int().min(60_000).max(30 * 60_000).default(600_000),
+    /**
+     * Selio Track : lecture en direct des pages PUBLIQUES du catalogue (worker, lecteur de Selio Cloud, mêmes
+     * garde-fous que Radar). Faux par défaut : la source est le simulateur (données de démonstration). L'usage
+     * des données issues de Vinted est à valider juridiquement. Même valeur que le worker.
+     */
+    TRACK_LIVE_ENABLED: bool,
+    /**
+     * Analyse d'un vendeur concurrent (Agence) : faux par défaut, à valider juridiquement (RGPD). Même
+     * ouverte, seul l'écran d'explication existe (501) : rien n'est construit au-delà.
+     */
+    TRACK_SELLER_ANALYSIS_ENABLED: bool,
+    /**
+     * Références nécessaires pour entraîner le modèle de prix (affiché par GET /api/pricing/model ;
+     * l'entraînement a lieu dans le worker) : 500 au moins, même valeur que le worker.
+     */
+    PRICING_MIN_REFERENCES: z.coerce.number().int().min(500).max(1_000_000).default(500),
   })
   .merge(aiConfigSchema)
   // Stockage des photos (S3 / MinIO), emails transactionnels et paiement Revolut : blocs facultatifs, validés ci-dessous.
@@ -147,6 +163,11 @@ export function radarServicesConfig(cfg: Pick<ApiEnv, "RADAR_AUTO_ENABLED" | "RA
   };
 }
 
+/** Réglages Track transmis au cœur (`services.config`) : lecture en direct et analyse d'un vendeur fermées par défaut. */
+export function trackServicesConfig(cfg: Pick<ApiEnv, "TRACK_LIVE_ENABLED" | "TRACK_SELLER_ANALYSIS_ENABLED">): Pick<ServicesConfig, "trackLiveEnabled" | "trackSellerAnalysisEnabled"> {
+  return { trackLiveEnabled: cfg.TRACK_LIVE_ENABLED, trackSellerAnalysisEnabled: cfg.TRACK_SELLER_ANALYSIS_ENABLED };
+}
+
 export interface StartupNotice {
   level: "warn" | "info";
   message: string;
@@ -174,5 +195,9 @@ export function startupNotices(cfg: ApiEnv): StartupNotice[] {
   } else if (cfg.RADAR_REAL_PURCHASE) {
     out.push({ level: "warn", message: "RADAR_REAL_PURCHASE=true sans RADAR_AUTO_ENABLED : sans effet, aucun achat réel." });
   }
+  out.push(cfg.TRACK_LIVE_ENABLED
+    ? { level: "warn", message: "Selio Track : lecture en direct des pages publiques OUVERTE (TRACK_LIVE_ENABLED=true) — usage des données de Vinted à valider juridiquement." }
+    : { level: "info", message: "Selio Track : simulateur (données de démonstration) ; lecture en direct fermée (TRACK_LIVE_ENABLED=false)." });
+  if (cfg.TRACK_SELLER_ANALYSIS_ENABLED) out.push({ level: "warn", message: "TRACK_SELLER_ANALYSIS_ENABLED=true : seul l'écran d'explication existe (501) ; l'analyse d'un vendeur reste à valider juridiquement (RGPD)." });
   return out;
 }

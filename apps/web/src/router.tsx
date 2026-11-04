@@ -155,7 +155,14 @@ export const router = createBrowserRouter([
     ),
     errorElement: <RouteError />,
     children: guarded([
-      { index: true, lazy: lazy(() => import("./app/pages/Market")) },
+      // Selio Track (Pro et Agence) : statistiques seulement ; page d'explication pour les autres offres.
+      { index: true, lazy: lazy(() => import("./app/pages/track/Dashboard")) },
+      { path: "filtres", lazy: lazy(() => import("./app/pages/track/Filters")) },
+      { path: "filtres/:id", lazy: lazy(() => import("./app/pages/track/FilterDetail")) },
+      { path: "niches", lazy: lazy(() => import("./app/pages/track/Niches")) },
+      { path: "photo", lazy: lazy(() => import("./app/pages/track/Photo")) },
+      { path: "ventes", lazy: lazy(() => import("./app/pages/track/Sales")) },
+      { path: "vendeurs", lazy: lazy(() => import("./app/pages/track/Sellers")) },
       { path: "*", element: <Navigate to="/track" replace /> },
     ]),
   },

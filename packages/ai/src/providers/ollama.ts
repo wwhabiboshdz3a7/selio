@@ -72,6 +72,11 @@ export class OllamaProvider implements AIProvider {
     return { "content-type": "application/json", accept: "application/json", ...(this.opts.headers ?? {}) };
   }
 
+  /** Vrai seulement si un modèle de vision est configuré (OLLAMA_VISION_MODEL) : sinon les photos ne sont pas lues. */
+  get canSeeImages(): boolean {
+    return this.visionModel !== null;
+  }
+
   /** Les trois modèles attendus par la configuration, dans l'ordre texte, vision, embed. */
   expectedModels(installed: string[] = []): ExpectedModel[] {
     const out: ExpectedModel[] = [{ role: "text", name: this.model, present: hasModel(installed, this.model) }];

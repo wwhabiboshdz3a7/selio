@@ -10,7 +10,7 @@ import type { Services } from "@selio/core";
 import { createPaymentProvider, loadPaymentConfig } from "@selio/connectors";
 import { createEmailProvider, loadEmailConfig, type EmailLogger } from "@selio/email";
 import { createStorageClient, loadStorageConfig } from "@selio/storage";
-import { cloudServicesConfig, radarServicesConfig, startupNotices, type ApiEnv } from "./config";
+import { cloudServicesConfig, radarServicesConfig, startupNotices, trackServicesConfig, type ApiEnv } from "./config";
 import { errorHandler } from "./errors";
 import authPlugin from "./plugins/auth";
 import authRoutes from "./routes/auth";
@@ -32,7 +32,10 @@ import helpRoutes from "./routes/help";
 import uploadsRoutes from "./routes/uploads";
 import cloudRoutes from "./routes/cloud";
 import pushRoutes from "./routes/push";
-import { RADAR_QUEUE, createQueues, type QueueHandle } from "./queue";
+import trackRoutes from "./routes/track";
+import pricingRoutes from "./routes/pricing";
+import { MAINTENANCE_QUEUE, RADAR_QUEUE, createQueues, type QueueHandle } from "./queue";
+import { PRICE_MODEL_REFRESH_MS, createApiPricingServices, refreshPriceModel, schedulePriceModelRefresh } from "./pricing";
 import { WebPushSender, loadVapidConfig } from "./push";
 import { CLOUD_LOGIN_QUEUE, createRedisCloudRelay, maskSecretsInUrl, type CloudRelay } from "./cloud-relay";
 
@@ -56,27 +59,37 @@ export function buildServices(env: ApiEnv, overrides: Partial<Services> = {}, lo
   // Notifications Web Push (alertes Radar, notification de test) : absent sans clés VAPID ; les tests injectent le leur.
   const vapid = loadVapidConfig(env);
   const push = "push" in overrides ? overrides.push : vapid ? new WebPushSender(vapid) : undefined;
+  const now = overrides.now ?? (() => new Date());
   return {
     db,
     ai,
     secrets: overrides.secrets ?? new SecretBox(env.SECRETS_ENCRYPTION_KEY),
-    now: overrides.now ?? (() => new Date()),
+    now,
     allowAiFallback: env.ALLOW_AI_FALLBACK,
     version: API_VERSION,
     email,
     publicWebUrl: overrides.publicWebUrl ?? env.PUBLIC_WEB_URL,
     payments,
     billing: overrides.billing ?? { franchiseTva: env.FRANCHISE_TVA },
-    // Réglages du Cloud (actions lourdes, comptes par organisation, navigateurs, option Pro, heures, ticket)
-    // et de Radar (verrous de Radar Auto, achat réel, délai 3-D Secure). Aucun navigateur dans l'API :
-    // `cloud` et `radar` restent absents (sauf injection par les tests), seul le worker lit et achète.
-    config: overrides.config ?? { ...cloudServicesConfig(env), ...radarServicesConfig(env) },
+    // Réglages du Cloud (actions lourdes, comptes par organisation, navigateurs, option Pro, heures, ticket),
+    // de Radar (verrous de Radar Auto, achat réel, délai 3-D Secure) et de Track (lecture en direct, analyse
+    // d'un vendeur). Aucun navigateur dans l'API : `cloud`, `radar` et `track` restent absents (sauf
+    // injection par les tests), seul le worker lit et achète.
+    config: overrides.config ?? { ...cloudServicesConfig(env), ...radarServicesConfig(env), ...trackServicesConfig(env) },
+    // Modèle de prix : chargé depuis `price_models` (jamais entraîné ici) ; les tests injectent le leur.
+    pricing: overrides.pricing ?? createApiPricingServices(now),
     ...(push ? { push } : {}),
     ...(overrides.radar ? { radar: overrides.radar } : {}),
+    ...(overrides.track ? { track: overrides.track } : {}),
   };
 }
 
-export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}): Promise<BuiltServer> {
+export interface BuildServerOptions {
+  /** Rechargement du modèle de prix actif (ms) : toutes les heures par défaut ; 0 = jamais (tests). */
+  priceModelRefreshMs?: number;
+}
+
+export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}, options: BuildServerOptions = {}): Promise<BuiltServer> {
   const app = Fastify({
     logger: {
       level: env.LOG_LEVEL,
@@ -136,8 +149,18 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   // Notifications de la PWA (clé publique VAPID seulement ; la clé privée ne quitte jamais le serveur).
   const vapid = loadVapidConfig(env);
   await app.register(pushRoutes, { publicKey: vapid?.publicKey ?? null });
+  // Selio Track (statistiques seulement ; aucune page lue ici) et estimation des prix.
+  await app.register(trackRoutes, { liveEnabled: services.config?.trackLiveEnabled === true });
+  await app.register(pricingRoutes, { maintenanceQueue: queues.queues.get(MAINTENANCE_QUEUE) ?? null, minReferences: env.PRICING_MIN_REFERENCES });
+
+  // Modèle de prix actif : chargé au démarrage (jamais bloquant), puis rechargé toutes les heures (nouvel
+  // entraînement du worker le dimanche).
+  await refreshPriceModel(services, app.log);
+  const refreshEvery = options.priceModelRefreshMs ?? PRICE_MODEL_REFRESH_MS;
+  const stopPriceRefresh = refreshEvery > 0 ? schedulePriceModelRefresh(services, app.log, refreshEvery) : () => {};
 
   app.addHook("onClose", async () => {
+    stopPriceRefresh();
     await cloudRelay?.close();
     await queues.close();
     await services.db.close();

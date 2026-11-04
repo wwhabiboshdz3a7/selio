@@ -31,11 +31,13 @@ test.describe("nouveaux modules", () => {
     await expect(page.getByText(/Republication enregistrée/)).toBeVisible();
   });
 
-  test("analyse des revendeurs, achat auto et galerie de graphiques", async ({ page }) => {
+  test("Selio Track, achat auto et galerie de graphiques", async ({ page }) => {
     await openDemo(page);
     await gotoApp(page, "/track");
-    await expect(page.getByText("Top revendeurs")).toBeVisible();
-    await expect(page.getByText("Opportunités de niche")).toBeVisible();
+    // Statistiques seulement : filtres suivis, quotas du mois et source des données (simulateur en démonstration).
+    await expect(page.getByRole("heading", { name: "Filtres suivis" })).toBeVisible();
+    await expect(page.getByText("Source des données")).toBeVisible();
+    await expect(page.getByText("Simulateur", { exact: true })).toBeVisible();
     await gotoApp(page, "/app/auto-buy");
     await expect(page.getByText("Garde-fous")).toBeVisible();
     await page.getByRole("button", { name: "Annuler l'achat" }).first().click();

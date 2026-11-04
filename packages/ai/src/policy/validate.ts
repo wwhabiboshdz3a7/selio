@@ -1,4 +1,4 @@
-import type { HelpAnswerOutput, ReplySuggestion } from "@selio/contracts";
+import type { HelpAnswerOutput, PhotoDescription, ReplySuggestion } from "@selio/contracts";
 import { helpTokens, normalizeHelpText, scanForInjection, type NegotiationResult } from "@selio/domain";
 
 export interface ValidationContext {
@@ -161,4 +161,47 @@ export function validateHelpAnswer(out: HelpAnswerOutput, passages: { id: string
   }
   if (normalizeHelpText(answer).length === 0) return { ok: false, code: "too_short", reason: "Réponse vide." };
   return { ok: true, output: { answer, sourceIds, outOfScope: false } };
+}
+
+// ---------------------------------------------------------------- estimation des prix (§5.10)
+
+export type PriceExplanationValidation = { ok: true; explanation: string } | { ok: false; code: string; reason: string };
+
+/**
+ * L'explication d'un prix par mon IA perso n'est montrée que si elle reste dans les faits fournis :
+ * aucun prix autre que ceux décidés par l'estimation, aucun chiffre absent des faits (délai, nombre de
+ * ventes), aucune promesse, ni lien, ni HTML, ni motif d'injection repris (D07 : l'IA rédige, elle ne
+ * choisit jamais le prix).
+ */
+export function validatePriceExplanation(text: string, ctx: { allowedPricesCents: readonly number[]; facts: readonly string[] }): PriceExplanationValidation {
+  const explanation = text.replace(/\s+/g, " ").trim();
+  if (explanation.length < 20) return { ok: false, code: "too_short", reason: "Explication trop courte." };
+  if (/<[a-z!/][^>]*>/i.test(explanation)) return { ok: false, code: "html", reason: "L'explication contient du HTML." };
+  if (/https?:\/\/|www\.|\]\(/i.test(explanation)) return { ok: false, code: "link", reason: "L'explication contient un lien." };
+  const scan = scanForInjection(explanation);
+  if (scan.suspicious) return { ok: false, code: "injection_echo", reason: `L'explication reprend un motif suspect (${scan.matches[0]}).` };
+  if (/garanti|100\s?%|z[ée]ro risque|sans risque|à coup sûr|certain(e)? de vendre/i.test(explanation)) return { ok: false, code: "promise", reason: "L'explication promet un résultat." };
+  const allowed = new Set(ctx.allowedPricesCents.map((c) => Math.round(c)));
+  const foreignPrice = extractAllPricesCents(explanation).find((c) => !allowed.has(c));
+  if (foreignPrice !== undefined) return { ok: false, code: "invented_price", reason: `Prix absent de l'estimation : ${(foreignPrice / 100).toFixed(2)} €.` };
+  const known = numbersIn(ctx.facts.join("\n"));
+  const invented = [...numbersIn(explanation)].find((n) => !known.has(n));
+  if (invented) return { ok: false, code: "invented_number", reason: `Chiffre absent des faits fournis : ${invented}.` };
+  return { ok: true, explanation: explanation.slice(0, 800) };
+}
+
+export type PhotoDescriptionValidation = { ok: true; description: PhotoDescription } | { ok: false; code: string; reason: string };
+
+/** La description lue sur une photo ne contient ni prix, ni lien, ni HTML, ni motif d'injection. */
+export function validatePhotoDescription(raw: PhotoDescription): PhotoDescriptionValidation {
+  // Un champ vide (« "brand": "" », fréquent chez les modèles de vision) vaut « inconnu » : null.
+  const blank = (v: string | null | undefined) => (typeof v === "string" && v.trim() ? v.replace(/\s+/g, " ").trim() : null);
+  const d: PhotoDescription = { ...raw, brand: blank(raw.brand), subcategory: blank(raw.subcategory), material: blank(raw.material), color: blank(raw.color) };
+  const text = [d.title, d.brand, d.subcategory, d.material, d.color].filter(Boolean).join(" \n ");
+  if (/<[a-z!/][^>]*>/i.test(text)) return { ok: false, code: "html", reason: "La description contient du HTML." };
+  if (/https?:\/\/|www\./i.test(text)) return { ok: false, code: "link", reason: "La description contient un lien." };
+  if (extractAllPricesCents(text).length > 0) return { ok: false, code: "price", reason: "La description donne un prix (interdit : le prix est calculé ailleurs)." };
+  const scan = scanForInjection(text);
+  if (scan.suspicious) return { ok: false, code: "injection_echo", reason: `La description reprend un motif suspect (${scan.matches[0]}).` };
+  return { ok: true, description: { ...d, title: d.title.replace(/\s+/g, " ").trim() } };
 }

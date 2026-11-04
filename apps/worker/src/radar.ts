@@ -274,6 +274,14 @@ export class PageRateLimiter {
     return t;
   }
 
+  /** Millisecondes avant qu'une place se libère dans la fenêtre d'une minute (0 : une place est libre). */
+  msUntilFree(now: Date): number {
+    const t = now.getTime();
+    this.prune(t);
+    if (this.stamps.length < this.maxPerMinute) return 0;
+    return Math.max(1, Math.min(...this.stamps) + 60_000 - t);
+  }
+
   /** Rend une réservation (aucune page lue). */
   release(token: number): void {
     const i = this.stamps.lastIndexOf(token);

@@ -75,10 +75,19 @@ export function vintedListingUrl(url: string | null | undefined): string | null 
   }
 }
 
-/** Méthode d'estimation de la revente, en clair. */
+/**
+ * Méthode d'estimation de la revente, en clair : celles de l'estimation des prix (§5.10) que Radar
+ * affiche (`embeddings`, `brand_category`, `model`, `blend`), puis les phrases de l'ancienne estimation
+ * (médiane de la marque, multiple prudent), affichées telles quelles en détail.
+ */
 export function estimateMethodLabel(method: string): { label: string; detail: string } {
   if (method === "embeddings") return { label: "Ventes proches (similarité)", detail: "Médiane des ventes dont le titre et la marque ressemblent le plus à cette annonce (modèle 2, comparaison par embeddings)." };
-  if (method === "brand_category") return { label: "Marque et catégorie", detail: "Médiane des ventes de la même marque et de la même catégorie, ajustée à l'état." };
+  if (method === "brand_category" || method === "comparables") return { label: "Marque et catégorie", detail: "Médiane des ventes de la même marque et de la même catégorie, ajustée à l'état." };
+  if (method === "model") return { label: "Modèle de prix", detail: "Prix médian prédit par le modèle de prix (entraîné sur la base de références), faute de ventes comparables." };
+  if (method === "blend") return { label: "Ventes comparables et modèle de prix", detail: "Ventes comparables et modèle de prix combinés : plus il y a de comparables, plus ils pèsent (80 % au plus, dès 12 ventes)." };
+  if (method === "none") return { label: "Estimation prudente", detail: "Pas assez de références : revente estimée prudemment à partir du prix demandé." };
+  // Phrases d'avant l'estimation des prix (`estimateResale`, affaires déjà enregistrées) : gardées en détail.
+  if (/^aucun comparable/i.test(method)) return { label: "Estimation prudente", detail: method };
   return { label: "Marque et catégorie", detail: method };
 }
 

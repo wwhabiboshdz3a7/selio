@@ -18,7 +18,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:unit": "vitest run --project domain --project contracts --project ai --project connectors --project cloud --project ui --project web --project extension",
+    "test:unit": "vitest run --project domain --project contracts --project ai --project connectors --project cloud --project pricing --project ui --project web --project extension",
     "test:integration": "vitest run --project api --project worker --project db",
     "test:e2e": "pnpm --filter @selio/web test:e2e",
     "db:migrate": "pnpm --filter @selio/db migrate",
@@ -26,6 +26,7 @@
     "ai:diagnose": "pnpm --filter @selio/ai diagnose",
     "ai:bench": "pnpm --filter @selio/ai bench",
     "cloud:bench": "pnpm --filter @selio/cloud bench",
+    "prix:eval": "pnpm --filter @selio/pricing eval",
     "format:check": "prettier --check ."
   },
   "devDependencies": {

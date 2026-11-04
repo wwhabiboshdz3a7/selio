@@ -20,6 +20,8 @@ export class MockAIProvider implements AIProvider {
   readonly model = "selio-mock-v1";
   /** Modèle 2 simulé : vecteurs déterministes de dimension MOCK_EMBED_DIMENSIONS. */
   readonly embedModel = "selio-mock-embed-v1";
+  /** Le simulateur accepte les photos ; ses descriptions sont toujours marquées simulées par l'appelant. */
+  readonly canSeeImages: boolean = true;
   constructor(private readonly opts: MockOptions = {}) {}
 
   async health(): Promise<HealthResult> {
@@ -117,6 +119,8 @@ export class MockAIProvider implements AIProvider {
   private renderStructured(req: StructuredRequest<unknown>): unknown {
     const hints = readHints(req.prompt);
     if (req.schemaName === "listing_generation") return mockGeneratedListing(hints);
+    if (req.schemaName === "photo_description") return mockPhotoDescription(hints);
+    if (req.schemaName === "price_explanation") return { explanation: mockPriceExplanation(hints) };
     if (req.schemaName === "help_answer") return mockHelpAnswer(req.prompt);
     if (req.schemaName === "listing_description") {
       return {
@@ -146,6 +150,16 @@ export class MockAIProvider implements AIProvider {
 
 interface Hints {
   kind?: string;
+  /** Explication d'un prix : montants décidés par l'estimation, méthode, nombre de ventes, délai, facteurs. */
+  fast?: string;
+  standard?: string;
+  max?: string;
+  method?: string;
+  count?: string;
+  delay?: string;
+  confidence?: string;
+  factors?: string;
+  demo?: string;
   notes?: string;
   files?: string;
   photos?: string;
@@ -310,4 +324,47 @@ function mockGeneratedListing(h: Hints): Record<string, unknown> {
     hashtags: [brand ? tag(brand) : null, tag(spec.piece), tag(color)].filter(Boolean),
     confidence: brand || byKeyword ? 0.6 : 0.35,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Estimation des prix simulée : la description de la photo reprend le
+// générateur d'annonces simulé (il ne voit pas la photo) ; l'explication
+// recopie les faits fournis, sans aucun montant ni facteur nouveau.
+// ---------------------------------------------------------------------------
+
+function mockPhotoDescription(h: Hints): Record<string, unknown> {
+  const listing = mockGeneratedListing(h);
+  const colors = listing.colors as string[];
+  const title = String(listing.title);
+  const piece = PIECES.find((p) => title.includes(p.piece))?.piece ?? null;
+  return {
+    title,
+    brand: listing.brand,
+    category: listing.category,
+    subcategory: piece,
+    material: listing.material,
+    color: colors[0] ?? null,
+    condition: listing.condition,
+    confidence: listing.confidence,
+  };
+}
+
+const eurosFromHint = (v: string | undefined): string | null => {
+  const n = Number.parseInt(v ?? "", 10);
+  return Number.isFinite(n) ? `${(n / 100).toFixed(2).replace(".", ",")} €` : null;
+};
+
+function mockPriceExplanation(h: Hints): string {
+  const standard = eurosFromHint(h.standard);
+  const fast = eurosFromHint(h.fast);
+  const max = eurosFromHint(h.max);
+  const count = Number.parseInt(h.count ?? "0", 10) || 0;
+  const parts = [
+    `Le prix standard de ${standard ?? "l'estimation"} vient de la méthode « ${(h.method ?? "estimation").toLowerCase()} »${count > 0 ? `, à partir de ${count} vente(s) comparable(s)` : ""}.`,
+    fast && max ? `Pour vendre plus vite, ${fast} ; pour viser la marge maximale, ${max}.` : "",
+    h.delay ? `Le délai de vente estimé est d'environ ${h.delay} jours, sans certitude.` : "",
+    h.factors ? `Facteurs pris en compte : ${h.factors}.` : "",
+    h.demo === "1" ? "Attention : ces chiffres reposent sur des données de démonstration." : "",
+  ];
+  return parts.filter(Boolean).join(" ").slice(0, 800);
 }

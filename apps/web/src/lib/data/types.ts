@@ -8,6 +8,7 @@ import type { BillingCycle, CheckoutResult, Invoice, InvoiceView, PaidPlan, Subs
 import type { HelpAnswer } from "@selio/contracts";
 import type { CloudAccount, CloudAction, CloudActionKind, CloudActionLevel, CloudActionStatus, CloudAvailability, CloudConsentView, CloudLoginTicket } from "@selio/contracts";
 import type { AutoBuySettings, PushSubscriptionInput, PushSubscriptionView, RadarAlertPayload, RadarMetrics, RadarReadOutcome, RadarSettings, RadarSettingsUpdate, RadarSourceKind } from "@selio/contracts";
+import type { PriceEstimate, PriceEstimateInput, PriceModelStatus, TrackSource, TrackBrandShare, TrackFilter, TrackFilterCreate, TrackFilterUpdate, TrackPhotoSearch, TrackPhotoSearchInput, TrackSalesFeed, TrackScan, TrackScanInput, TrackTrends } from "@selio/contracts";
 import type { AccountStats, AiHealthSummary, BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
 
 export type VariantLeaderboardRow = ReturnType<typeof variantLeaderboard>[number];
@@ -361,6 +362,47 @@ export interface CloudLoginStart extends CloudLoginTicket {
   simulated: boolean;
 }
 
+// ---------------------------------------------------------------- Selio Track et estimation des prix (§5.9, §5.10)
+
+/**
+ * Tendances d'un filtre (miroir de `TrackTrends`, packages/core/src/services/track.ts), plus les parts de
+ * marques de la dernière lecture quand le serveur les rend (la démonstration les rend toujours).
+ */
+export interface TrackTrendsView extends TrackTrends {
+  brandShares?: TrackBrandShare[];
+}
+
+/** Utilisation de Track sur le mois : quotas du plan (Pro 5 / 10 / 30, Agence 25 / 50 / 150), historique. */
+export interface TrackUsageView {
+  plan: Plan;
+  /** Track compris dans l'offre (Pro et Agence) ; sinon page « compris à partir de Pro ». */
+  available: boolean;
+  /** Flux des ventes : Agence seulement. */
+  salesFeed: boolean;
+  filters: UsageCounter;
+  scans: UsageCounter;
+  photoSearches: UsageCounter;
+  /** Historique gardé (mois) : 3 en Pro, 12 en Agence. */
+  historyMonths: number;
+  period: { from: string; to: string };
+  /** Source des lectures sur ce serveur : simulateur (par défaut) ou pages publiques lues par Selio Cloud. */
+  source?: TrackSource;
+  sourceLabel?: string;
+  notices?: string[];
+  /** Scans et recherches par photo par mois, dans la limite de l'historique du plan (le plus ancien d'abord). */
+  history?: { month: string; scans: number; photoSearches: number }[];
+}
+
+/** État du modèle de prix (GET /api/pricing/model), avec le volume de la base de références quand le serveur le rend. */
+export interface PricingModelView extends PriceModelStatus {
+  /** Version chargée en mémoire par l'API (null : aucune). */
+  loaded?: string | null;
+  references?: { real: number; demo: number; minimum: number };
+}
+
+/** Annonce rédigée par Studio, avec l'estimation des prix (absente des serveurs plus anciens). */
+export type StudioDraft = ListingDraft & { pricing?: PriceEstimate | null };
+
 export interface DataClient {
   readonly mode: Mode;
   // Session
@@ -474,12 +516,37 @@ export interface DataClient {
   /** Notification de test vers les appareils abonnés de l'utilisateur. */
   testPush(): Promise<PushTestResult>;
   // Générateur d'annonces (IA)
-  generateListing(input: ListingGenerationInput): Promise<ListingDraft>;
+  /** Annonce rédigée et prix conseillé (trois stratégies, explication en mots par mon IA perso). */
+  generateListing(input: ListingGenerationInput): Promise<StudioDraft>;
   // Dressing intelligent
   getDressing(query: DressingQuery): Promise<DressingData>;
   republishItem(id: string, variantId: string): Promise<InventoryItem>;
   // Analyse des revendeurs et des niches
   getMarketInsights(query: MarketQuery): Promise<MarketData>;
+  // Selio Track (Pro et Agence) : statistiques seulement, aucune annonce, aucune photo, aucun pseudo
+  /** Filtres suivis, avec la dernière et la prochaine lecture de leur empreinte (toutes les 2 h, partagée entre clients). */
+  trackFilters(): Promise<TrackFilter[]>;
+  /** 402 si Track n'est pas dans l'offre ou si le quota de filtres est atteint ; 409 si le même filtre est déjà suivi. */
+  createTrackFilter(input: TrackFilterCreate): Promise<TrackFilter>;
+  updateTrackFilter(id: string, input: TrackFilterUpdate): Promise<TrackFilter>;
+  deleteTrackFilter(id: string): Promise<void>;
+  /** Tendances sur 7, 30 (par défaut) ou 90 jours, bornées à l'historique du plan. */
+  trackTrends(filterId: string, days?: number): Promise<TrackTrendsView>;
+  trackScans(): Promise<TrackScan[]>;
+  /** Scan de niche (marque × catégorie) : note sur 100 ; « données insuffisantes » ne consomme pas le quota. */
+  runNicheScan(input: TrackScanInput): Promise<TrackScan>;
+  trackPhotoSearches(): Promise<TrackPhotoSearch[]>;
+  /** Recherche par photo (photo réduite par le navigateur, JAMAIS conservée) : description lue puis estimation. */
+  trackPhotoSearch(input: TrackPhotoSearchInput): Promise<TrackPhotoSearch>;
+  /** Flux des ventes agrégé par marque et catégorie (Agence seulement, 402 sinon). */
+  trackSalesFeed(): Promise<TrackSalesFeed>;
+  /** Quotas et utilisation de Track sur le mois, et disponibilité selon l'offre. */
+  trackUsage(): Promise<TrackUsageView>;
+  // Estimation des prix
+  /** Fourchette P25 / P50 / P75, trois stratégies, délai, méthode ; explication en mots si demandée (facultative). */
+  estimatePrice(input: PriceEstimateInput): Promise<PriceEstimate>;
+  /** État du modèle de prix : version, références, erreur mesurée ou « modèle non entraîné ». */
+  pricingModelStatus(): Promise<PricingModelView>;
   // Achat assisté
   listPurchaseRequests(): Promise<(PurchaseRequest & { opportunity: Opportunity | null })[]>;
   createPurchaseRequest(input: { opportunityId: string; maxPriceCents: number; budgetCents: number }): Promise<PurchaseRequest>;
