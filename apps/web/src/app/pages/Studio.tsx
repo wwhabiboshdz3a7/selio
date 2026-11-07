@@ -1,19 +1,27 @@
 import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Camera, Check, ClipboardCopy, ImagePlus, Info, Send, Sparkles, Star, Trash2, Upload, Wand2 } from "lucide-react";
-import { ITEM_CATEGORIES, ITEM_CATEGORY_LABELS, ITEM_CONDITIONS, ITEM_CONDITION_LABELS, type GeneratorPhoto, type InventoryItem, type ListingDraft, type MarketplaceConnection } from "@selio/contracts";
-import type { StudioDraft } from "../../lib/data/types";
-import { hasPrice } from "../../lib/track";
-import { PriceEstimateView } from "../components/pricing";
-import { listingAccounts, newId, suggestFloorPrice } from "@selio/domain";
-import { Alert, Button, Card, Field, IconButton, IconTile, Input, Money, PageHeader, Select, Tag, Textarea, cn, formatCents } from "@selio/ui";
+import { ArrowLeft, Camera, Check, ImagePlus, ScanSearch, Shirt, Sparkles, Star, Trash2, Upload, Wand2 } from "lucide-react";
+import { GARMENT_KINDS, GARMENT_KIND_LABELS, STUDIO_MAX_PHOTOS, STUDIO_MODEL_MAX_PHOTOS, STUDIO_MODEL_MAX_SIDE_PX, type GarmentKind, type InventoryItem, type MarketplaceConnection, type MeasurementName, type PhotoRole } from "@selio/contracts";
+import { listingAccounts, suggestFloorPrice } from "@selio/domain";
+import { Alert, Button, Card, Field, IconButton, IconTile, Input, PageHeader, Select, cn } from "@selio/ui";
+import { DataError, type DemoPhotoContent, type StudioDraft, type StudioPrepareRequest } from "../../lib/data/types";
 import { useClient, useData, useRequiredSession } from "../../lib/data/provider";
+import { reducePhoto, toGeneratorPhoto, type ReducedPhoto } from "../../lib/studio/reduce";
+import { renderSamplePhotos } from "../../lib/studio/samples";
+import { assignmentFrom, coverFirst, groupsFrom, mergeUiPreps, toUiPrep, type SortAssignment, type UiPrep } from "../../lib/studio/flow";
+import { buildPrepAnswers, emptyEdits, type PrepEdits } from "../../lib/studio/prep";
 import { MoneyInput } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { StudioStepper, type StudioStep } from "./studio/shared";
+import { SortStep } from "./studio/SortStep";
+import { LabelStep } from "./studio/LabelStep";
+import { MeasuresStep } from "./studio/MeasuresStep";
+import { DraftCard, toForm, type DraftForm } from "./studio/DraftCard";
 
-const MAX_PHOTOS = 12;
-const MAX_SIDE = 1100;
+const MAX_PHOTOS = STUDIO_MAX_PHOTOS;
+
+type StudioPhoto = ReducedPhoto & { content?: DemoPhotoContent };
 
 /** « @pseudo — nom interne », avec la mention simulation ou perso. */
 function accountOptionLabel(c: MarketplaceConnection): string {
@@ -22,63 +30,32 @@ function accountOptionLabel(c: MarketplaceConnection): string {
   return `${name}${c.provider === "demo" ? " (simulation)" : c.usage === "personal" ? " (perso)" : ""}`;
 }
 
-/** Compresse une photo dans le navigateur (JPEG, ~150–300 Ko) avant envoi. */
-async function compress(file: File): Promise<GeneratorPhoto> {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error(`Image illisible : ${file.name}`));
-      el.src = url;
-    });
-    const scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Compression indisponible dans ce navigateur");
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return { id: newId(), url: canvas.toDataURL("image/jpeg", 0.8), alt: file.name.slice(0, 200) };
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-interface DraftForm {
-  title: string;
-  description: string;
-  brand: string;
-  size: string;
-  category: InventoryItem["category"];
-  condition: InventoryItem["condition"];
-  colors: string;
-  material: string;
-  priceCents: number | null;
-  hashtags: string[];
-}
-
-function toForm(d: ListingDraft): DraftForm {
-  return { title: d.title, description: d.description, brand: d.brand ?? "", size: d.size ?? "", category: d.category, condition: d.condition, colors: d.colors.join(", "), material: d.material ?? "", priceCents: d.suggestedPriceCents, hashtags: d.hashtags };
-}
-
+/**
+ * Selio Studio façon Kavis (§5.11) : Photos → Tri → Étiquette → Mesures → Annonce. Les photos sont réduites
+ * dans le navigateur (1 024 px, JPEG 0,8) avant tout envoi ; chaque valeur lue porte sa provenance ou reste
+ * vide avec la question au vendeur ; la génération repart de la préparation validée.
+ */
 export default function Studio() {
   const client = useClient();
   const { mode } = useData();
   const session = useRequiredSession();
   const navigate = useNavigate();
   const connections = useQuery({ queryKey: ["connections"], queryFn: () => client.listConnections() });
-  const [photos, setPhotos] = useState<GeneratorPhoto[]>([]);
+  const [step, setStep] = useState<StudioStep>("photos");
+  const [photos, setPhotos] = useState<StudioPhoto[]>([]);
   const [busyPhotos, setBusyPhotos] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [connectionId, setConnectionId] = useState<string>("");
   const [hints, setHints] = useState({ brand: "", size: "", notes: "", purchasePriceCents: null as number | null });
+  const [kindHint, setKindHint] = useState<GarmentKind | "">("");
+  const [prep, setPrep] = useState<UiPrep | null>(null);
+  const [assignment, setAssignment] = useState<SortAssignment>({});
+  const [current, setCurrent] = useState(0);
+  const [edits, setEdits] = useState<Record<string, PrepEdits>>({});
+  const [measureErrors, setMeasureErrors] = useState<Partial<Record<MeasurementName, string>>>({});
+  const [shareNote, setShareNote] = useState<string | null>(null);
   const [draft, setDraft] = useState<StudioDraft | null>(null);
-  // État du modèle de prix (« modèle non entraîné », « données de démonstration ») affiché avec l'estimation.
-  const priceModel = useQuery({ queryKey: ["pricing-model"], queryFn: () => client.pricingModelStatus(), staleTime: 60_000, enabled: draft !== null });
   const [form, setForm] = useState<DraftForm | null>(null);
   const [saved, setSaved] = useState<{ item: InventoryItem; published: boolean } | null>(null);
   // Selio Studio : les annonces créées à la suite pendant cette visite (la plus récente en tête).
@@ -89,6 +66,21 @@ export default function Studio() {
   // Comptes Vente uniquement (Vinted d'abord), puis les comptes Perso, signalés ; jamais un compte Achat.
   const accounts = useMemo(() => listingAccounts(connections.data ?? []), [connections.data]);
   const account = accounts.find((c) => c.id === connectionId) ?? accounts[0] ?? null;
+  const byId = useMemo(() => new Map(photos.map((p) => [p.id, p])), [photos]);
+  const ui = prep?.articles[current] ?? null;
+  const articleEdits = ui ? edits[ui.prepId] ?? emptyEdits() : emptyEdits();
+
+  const resetDraft = () => { setDraft(null); setForm(null); setSaved(null); setShareNote(null); setMeasureErrors({}); };
+  /** Les photos changent : la préparation ne correspond plus, elle est oubliée. */
+  const changePhotos = (next: (p: StudioPhoto[]) => StudioPhoto[]) => {
+    setPhotos((p) => next(p).slice(0, MAX_PHOTOS));
+    setPrep(null);
+    setAssignment({});
+    setEdits({});
+    setCurrent(0);
+    resetDraft();
+    setStep("photos");
+  };
 
   const addFiles = async (files: FileList | File[] | null) => {
     if (!files) return;
@@ -97,26 +89,102 @@ export default function Studio() {
     if (list.length === 0) { setPhotoError("Ajoutez des images (JPEG, PNG, WebP ou HEIC depuis un iPhone)."); return; }
     setBusyPhotos(true);
     try {
-      const out: GeneratorPhoto[] = [];
+      const out: StudioPhoto[] = [];
       for (const f of list) {
-        try { out.push(await compress(f)); } catch (e) { setPhotoError(e instanceof Error ? e.message : "Photo illisible"); }
+        // Réduction AVANT l'envoi : côté long ≤ 1 024 px, JPEG qualité 0,8, ≤ 1 Mo (jamais la photo en pleine taille).
+        try { out.push(await reducePhoto(f)); } catch (e) { setPhotoError(e instanceof Error ? e.message : "Photo illisible"); }
       }
-      setPhotos((p) => [...p, ...out].slice(0, MAX_PHOTOS));
+      if (out.length) changePhotos((p) => [...p, ...out]);
     } finally {
       setBusyPhotos(false);
     }
   };
 
-  const generate = useAppMutation(() => client.generateListing({ photos, connectionId: account?.id ?? null, hints: { brand: hints.brand || undefined, size: hints.size || undefined, notes: hints.notes || undefined, purchasePriceCents: hints.purchasePriceCents ?? undefined } }), {
-    invalidate: ["ai-requests"],
-    success: (d) => (d.source === "ai" ? "Annonce rédigée : relisez-la avant de publier" : "Gabarit de secours utilisé : complétez l'annonce"),
-    onSuccess: (d) => { setDraft(d); setForm(toForm(d)); setSaved(null); },
+  const loadSamples = async () => {
+    setPhotoError(null);
+    setBusyPhotos(true);
+    try {
+      const samples = await renderSamplePhotos();
+      changePhotos(() => samples);
+      setHints({ brand: "", size: "", notes: "", purchasePriceCents: null });
+      setKindHint("");
+    } catch (e) {
+      setPhotoError(e instanceof Error ? e.message : "Photos d'exemple indisponibles");
+    } finally {
+      setBusyPhotos(false);
+    }
+  };
+
+  const prepareInput = (list: StudioPhoto[], roles?: Record<string, PhotoRole>): StudioPrepareRequest => ({
+    photos: list.map((p) => ({ id: p.id, url: p.url, ...(roles?.[p.id] ? { role: roles[p.id] } : {}) })),
+    ...(kindHint ? { garmentKind: kindHint } : {}),
+    ...(hints.notes.trim() ? { notes: hints.notes.trim() } : {}),
+    hints: { ...(hints.brand.trim() ? { brand: hints.brand.trim() } : {}), ...(hints.size.trim() ? { size: hints.size.trim() } : {}) },
+  });
+  /** Démonstration : ce que montrent les photos d'exemple (ignoré par le serveur). `regroup` : le vendeur a fixé l'article. */
+  const simulatorFor = (list: StudioPhoto[], regroup = false) => ({
+    simulator: { photos: Object.fromEntries(list.map((p) => [p.id, { name: p.alt, ...(p.content ?? {}), ...(regroup ? { group: 1 } : {}) }])) },
   });
 
+  const prepare = useAppMutation(async () => {
+    const r = await client.prepareStudio(prepareInput(photos), simulatorFor(photos));
+    return toUiPrep(r, photos.map((p) => p.id));
+  }, {
+    invalidate: ["ai-requests"],
+    success: (u) => `${u.articles.length > 1 ? `${u.articles.length} articles retrouvés` : "Photos triées"} : vérifiez le tri`,
+    onSuccess: (u) => { setPrep(u); setAssignment(assignmentFrom(u)); setCurrent(0); setEdits({}); resetDraft(); setStep("sort"); },
+  });
+
+  // Tri corrigé par le vendeur : relu article par article (rôles indiqués par lui, prioritaires).
+  const reread = useAppMutation(async () => {
+    const out: UiPrep[] = [];
+    for (const g of groupsFrom(assignment, photos.map((p) => p.id))) {
+      const list = g.photoIds.flatMap((id) => (byId.get(id) ? [byId.get(id)!] : []));
+      const roles = Object.fromEntries(g.photoIds.map((id) => [id, assignment[id]!.role]));
+      const r = await client.prepareStudio(prepareInput(list, roles), simulatorFor(list, true));
+      out.push(toUiPrep(r, list.map((p) => p.id)));
+    }
+    return mergeUiPreps(out);
+  }, {
+    invalidate: ["ai-requests"],
+    success: "Étiquette et mesures relues avec votre tri",
+    onSuccess: (u) => { setPrep(u); setAssignment(assignmentFrom(u)); setCurrent(0); setEdits({}); resetDraft(); setStep("label"); },
+  });
+
+  // Validation (réponses du vendeur → provenance « vous ») puis rédaction à partir de la préparation validée.
+  const generate = useAppMutation(async () => {
+    if (!prep || !ui) throw new DataError("validation", "Préparez d'abord les photos.", 400);
+    const built = buildPrepAnswers(ui.article, articleEdits);
+    if (!built.ok) {
+      setMeasureErrors(built.errors);
+      throw new DataError("validation", "Une mesure n'est pas lisible : indiquez-la en cm (par exemple 52 ou 41,5).", 400);
+    }
+    setMeasureErrors({});
+    const v = await client.validateStudioPrep(ui.prepId, built.answers);
+    // La préparation est validée même si la rédaction échoue ensuite (quota…) : l'écran suit le serveur.
+    const validated = { ...ui.article, status: v.prep.status, fields: v.prep.fields, measurements: v.prep.measurements, questions: v.prep.questions, garmentKind: v.prep.garmentKind };
+    setPrep((p) => (p ? { ...p, articles: p.articles.map((a, i) => (i === current ? { ...a, article: validated } : a)) } : p));
+    setEdits((e) => ({ ...e, [ui.prepId]: emptyEdits() }));
+    setShareNote(built.answers.shareMeasurements ? (v.shared.done ? "Mesures partagées anonymement avec la base des références. Merci !" : `Mesures non partagées : ${v.shared.reason ?? "conditions non réunies"}`) : null);
+    const descriptionIds = ui.photoIds.filter((id) => ui.roles[id]?.role !== "label" && ui.roles[id]?.role !== "tape");
+    return client.generateListing({
+      prepId: ui.prepId,
+      photos: descriptionIds.flatMap((id) => (byId.get(id) ? [toGeneratorPhoto(byId.get(id)!)] : [])),
+      connectionId: account?.id ?? null,
+      hints: { ...(hints.notes.trim() ? { notes: hints.notes.trim() } : {}), ...(hints.purchasePriceCents ? { purchasePriceCents: hints.purchasePriceCents } : {}) },
+    });
+  }, {
+    invalidate: ["ai-requests", "usage"],
+    success: (d) => (d.source === "ai" ? "Annonce rédigée : relisez-la avant de publier" : "Gabarit de secours utilisé : complétez l'annonce"),
+    onSuccess: (d) => { setDraft(d); setForm(toForm(d)); setSaved(null); setStep("listing"); },
+  });
+
+  const articlePhotoIds = ui ? coverFirst(ui.photoIds, ui.roles) : photos.map((p) => p.id);
   const save = useAppMutation(async (publish: boolean) => {
     if (!form) throw new Error("Aucune annonce générée");
     const purchase = hints.purchasePriceCents ?? 0;
     const floor = form.priceCents ? Math.min(form.priceCents, suggestFloorPrice({ purchasePriceCents: purchase, purchaseFeesCents: 0 }, session.org.settings.margin)) : null;
+    const itemPhotos = articlePhotoIds.flatMap((id) => (byId.get(id) ? [byId.get(id)!] : []));
     const item = await client.createItem({
       title: form.title.trim(),
       description: [form.description.trim(), form.hashtags.length ? form.hashtags.join(" ") : ""].filter(Boolean).join("\n\n"),
@@ -124,7 +192,7 @@ export default function Studio() {
       size: form.size.trim() || null,
       category: form.category,
       condition: form.condition,
-      photos: photos.map((p, position) => ({ id: p.id, url: p.url, alt: p.alt || form.title, position })),
+      photos: itemPhotos.map((p, position) => ({ id: p.id, url: p.url, alt: p.alt || form.title, position })),
       purchasePriceCents: purchase,
       purchaseFeesCents: 0,
       listedPriceCents: form.priceCents,
@@ -137,48 +205,47 @@ export default function Studio() {
     return { item, published: publish };
   }, { invalidate: ["items", "overview", "nav-counts", "dressing"], success: (r) => (r.published ? "Annonce mise en vente" : "Brouillon enregistré"), onSuccess: (r) => { setSaved(r); setSeries((s) => [r, ...s]); } });
 
-  const reset = () => { setPhotos([]); setDraft(null); setForm(null); setSaved(null); setHints({ brand: "", size: "", notes: "", purchasePriceCents: null }); };
-  const copy = (text: string) => { void navigator.clipboard?.writeText(text); };
-  const titleLen = form?.title.length ?? 0;
+  const reset = () => { changePhotos(() => []); setHints({ brand: "", size: "", notes: "", purchasePriceCents: null }); setKindHint(""); };
+  const remaining = prep ? prep.articles.length - current - 1 : 0;
+  const next = () => {
+    if (prep && remaining > 0) { setCurrent(current + 1); resetDraft(); setStep("label"); return; }
+    reset();
+  };
+  const reachable = (s: StudioStep) => s === "photos" || (s === "sort" && Boolean(prep)) || ((s === "label" || s === "measures") && Boolean(ui)) || (s === "listing" && Boolean(draft));
+
+  const articleNav = prep && prep.articles.length > 1 ? (
+    <nav aria-label="Articles" className="mb-4 flex flex-wrap items-center gap-2 border-b border-border pb-3">
+      {prep.articles.map((a, i) => (
+        <button key={a.prepId} type="button" aria-current={i === current ? "true" : undefined} onClick={() => { setCurrent(i); resetDraft(); if (step === "listing") setStep("label"); }} className={cn("inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-sm", i === current ? "bg-accent-soft text-accent" : "text-text-muted hover:bg-surface-muted")}>
+          Article {i + 1}{a.article.status === "validated" ? <Check className="size-3.5" aria-label="validé" /> : null}
+        </button>
+      ))}
+    </nav>
+  ) : null;
 
   return (
     <>
       <PageHeader
         title="Générateur d'annonces"
         eyebrow="Selio Studio · Créer"
-        description="Ajoutez seulement vos photos : l'IA reconnaît l'article et rédige l'annonce (titre, description, marque, taille, état, couleurs). Vous relisez, puis vous enregistrez en brouillon ou publiez directement sur le compte choisi — et vous enchaînez avec l'article suivant."
-        actions={draft ? <Button variant="secondary" icon={<ArrowLeft />} onClick={reset}>Nouvelle annonce</Button> : undefined}
+        description="Ajoutez vos photos : Studio les trie par article, lit l'étiquette et les mesures sur un mètre ruban photographié, puis rédige l'annonce. Chaque valeur dit d'où elle vient ; rien n'est inventé. Vous relisez, puis brouillon ou mise en vente."
+        actions={step !== "photos" ? <Button variant="secondary" icon={<ArrowLeft />} onClick={reset}>Nouvelle annonce</Button> : undefined}
       />
 
       {mode === "demo" ? (
-        <Alert tone="info" className="mb-5" title="Démonstration : IA simulée">Le simulateur ne voit pas réellement vos photos : il s'appuie sur la marque, la taille, les notes et le nom des fichiers (ex. « ralph-lauren-pull-bleu-M.jpg »). Avec mon modèle perso branché (texte + vision), l'analyse des photos est réelle. Le prix conseillé vient des ventes comparables et du modèle de prix (ici de démonstration) ; mon IA perso l'explique, elle ne le choisit jamais.</Alert>
+        <Alert tone="info" className="mb-5" title="Démonstration : IA simulée">
+          Le simulateur ne voit pas vos photos : avec elles, l'étiquette reste illisible et aucun mètre ruban n'est vu, donc les champs restent vides avec leur question (jamais une valeur devinée). Les photos d'exemple décrivent leur étiquette et leur mètre ruban au simulateur pour montrer des lectures. Le prix conseillé vient des ventes comparables et du modèle de prix (ici de démonstration) ; mon IA perso l'explique, elle ne le choisit jamais.
+        </Alert>
       ) : null}
 
-      <ol className="mb-8 grid gap-4 sm:grid-cols-3" aria-label="Étapes">
-        {[
-          { n: 1, t: "Ajoutez vos photos", d: "Face, dos, étiquette, défauts : 3 à 8 photos idéalement." },
-          { n: 2, t: "L'IA rédige l'annonce", d: "Titre optimisé, description honnête, attributs Vinted." },
-          { n: 3, t: "Brouillon ou publication", d: "Vous relisez et choisissez : brouillon ou mise en vente." },
-        ].map((s) => {
-          const done = (s.n === 1 && photos.length > 0) || (s.n === 2 && Boolean(draft)) || (s.n === 3 && Boolean(saved));
-          return (
-            <li key={s.n} className="flex items-start gap-3">
-              <span className={cn("num inline-flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold", done ? "bg-accent text-accent-on" : "bg-surface text-text-muted ring-1 ring-border")} aria-hidden>{done ? <Check className="size-3.5" /> : s.n}</span>
-              <div className="min-w-0">
-                <p className={cn("text-sm font-medium", done ? "text-text" : "text-text")}>{s.t}{done ? <span className="sr-only"> (fait)</span> : null}</p>
-                <p className="text-xs text-text-muted">{s.d}</p>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
+      <StudioStepper current={step} reachable={reachable} onGo={(s) => { if (s !== "listing") setSaved(null); setStep(s); }} />
 
       {series.length > 0 ? (
         <section aria-label="Série en cours" className="card mb-6 flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3">
           <p className="text-sm font-medium text-text">Série en cours <span className="num font-normal text-text-muted">· {series.length} annonce{series.length > 1 ? "s" : ""} ({series.filter((s) => s.published).length} en vente)</span></p>
           <ul className="flex min-w-0 flex-1 flex-wrap gap-2">
             {series.slice(0, 8).map(({ item, published }) => (
-              <li key={item.id}>
+              <li key={item.id} className="min-w-0">
                 <Link to={`/app/items/${item.id}`} className="flex max-w-56 items-center gap-2 rounded-md border border-border py-1 pr-2.5 pl-1 text-xs text-text hover:bg-surface-muted" title={item.title}>
                   {item.photos[0] ? <img src={item.photos[0].url} alt="" className="size-7 rounded-sm object-cover" /> : <span className="size-7 rounded-sm bg-surface-muted" aria-hidden />}
                   <span className="min-w-0 truncate">{item.title}</span>
@@ -191,172 +258,143 @@ export default function Studio() {
         </section>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <div className="flex flex-col gap-4">
-          <Card>
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-md font-semibold">Photos <span className="num text-sm font-normal text-text-muted">{photos.length}/{MAX_PHOTOS}</span></h2>
-              {photos.length > 0 ? <Button size="sm" variant="ghost" onClick={() => setPhotos([])}>Tout retirer</Button> : null}
-            </div>
-            <div
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => { e.preventDefault(); setDragOver(false); void addFiles(e.dataTransfer.files); }}
-              className={cn("rounded-xl border border-dashed p-4 transition-colors", dragOver ? "border-accent bg-accent-soft" : "border-border-strong bg-surface-muted/40")}
-            >
-              {photos.length === 0 ? (
-                <div className="flex flex-col items-center gap-3 py-8 text-center">
-                  <IconTile icon={<ImagePlus />} tone="accent" size={48} />
-                  <div>
-                    <p className="text-base font-medium text-text">Glissez vos photos ici</p>
-                    <p className="text-sm text-text-muted">ou choisissez-les depuis l'ordinateur ou le téléphone</p>
-                  </div>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    <Button icon={<Upload />} onClick={() => fileRef.current?.click()} loading={busyPhotos}>Choisir des photos</Button>
-                    <Button variant="secondary" icon={<Camera />} onClick={() => cameraRef.current?.click()} className="md:hidden">Prendre une photo</Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                  {photos.map((p, i) => (
-                    <figure key={p.id} className="group relative aspect-square overflow-hidden rounded-lg bg-surface">
-                      <img src={p.url} alt={p.alt || `Photo ${i + 1}`} className="size-full object-cover" />
-                      {i === 0 ? <span className="absolute top-1.5 left-1.5 rounded-full bg-black/65 px-2 py-0.5 text-[11px] font-medium text-white">Couverture</span> : null}
-                      <div className="absolute inset-x-1.5 bottom-1.5 flex justify-end gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
-                        {i > 0 ? <IconButton label="Mettre en couverture" size="sm" variant="secondary" onClick={() => setPhotos((ps) => [ps[i]!, ...ps.filter((_, j) => j !== i)])}><Star /></IconButton> : null}
-                        <IconButton label={`Retirer la photo ${i + 1}`} size="sm" variant="secondary" onClick={() => setPhotos((ps) => ps.filter((x) => x.id !== p.id))}><Trash2 /></IconButton>
-                      </div>
-                    </figure>
-                  ))}
-                  {photos.length < MAX_PHOTOS ? (
-                    <button type="button" onClick={() => fileRef.current?.click()} className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border-strong text-xs text-text-muted hover:bg-surface">
-                      <ImagePlus className="size-5" aria-hidden /> Ajouter
-                    </button>
-                  ) : null}
-                </div>
-              )}
-              <input ref={fileRef} type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { void addFiles(e.target.files); e.target.value = ""; }} aria-label="Choisir des photos" />
-              <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => { void addFiles(e.target.files); e.target.value = ""; }} aria-label="Prendre une photo" />
-            </div>
-            {photoError ? <p role="alert" className="mt-2 text-xs text-danger">{photoError}</p> : <p className="mt-2 text-xs text-text-muted">Les photos sont compressées dans votre navigateur avant l'envoi. La première sert de couverture.</p>}
-          </Card>
-
-          <Card>
-            <h2 className="mb-3 text-md font-semibold">Compte et indications</h2>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Compte Vinted" className="sm:col-span-2" hint={!account ? <>Aucun compte Vente : <Link to="/app/accounts?categorie=vente" className="underline underline-offset-2">ajoutez-en un</Link>.</> : account.usage === "personal" ? "Compte perso : l'annonce y sera rattachée, mais aucune automatisation ne s'y appliquera." : account.provider === "vinted" ? "L'annonce sera rattachée à ce compte de vente." : "Simulateur : aucune publication réelle."}>
-                {(p) => (
-                  <Select id={p.id} aria-describedby={p.describedBy} value={account?.id ?? ""} onChange={(e) => setConnectionId(e.target.value)}>
-                    {accounts.length === 0 ? <option value="">Aucun compte Vente connecté</option> : null}
-                    {accounts.map((c) => <option key={c.id} value={c.id}>{accountOptionLabel(c)}</option>)}
-                  </Select>
-                )}
-              </Field>
-              <Field label="Marque (facultatif)">{(p) => <Input id={p.id} value={hints.brand} onChange={(e) => setHints({ ...hints, brand: e.target.value })} placeholder="ex. Ralph Lauren" maxLength={80} />}</Field>
-              <Field label="Taille (facultatif)">{(p) => <Input id={p.id} value={hints.size} onChange={(e) => setHints({ ...hints, size: e.target.value })} placeholder="ex. M, 42" maxLength={40} />}</Field>
-              <Field label="Prix d'achat" hint="Pour calculer votre marge et le prix plancher.">{(p) => <MoneyInput id={p.id} aria-describedby={p.describedBy} value={hints.purchasePriceCents} onChange={(v) => setHints({ ...hints, purchasePriceCents: v })} />}</Field>
-              <Field label="Notes pour l'IA" hint="Défaut, matière, mesures…">{(p) => <Input id={p.id} aria-describedby={p.describedBy} value={hints.notes} onChange={(e) => setHints({ ...hints, notes: e.target.value })} placeholder="ex. pull torsadé, porté 2 fois" maxLength={500} />}</Field>
-            </div>
-            <Button variant="brand" size="lg" fullWidth className="mt-4" icon={<Sparkles />} disabled={photos.length === 0 || !canWrite} loading={generate.isPending} onClick={() => generate.mutate(undefined)}>
-              {draft ? "Régénérer l'annonce" : "Générer l'annonce"}
-            </Button>
-            {photos.length === 0 ? <p className="mt-2 text-center text-xs text-text-muted">Ajoutez au moins une photo pour lancer la génération.</p> : null}
-          </Card>
-        </div>
-
-        <div>
-          {saved ? (
-            <Card className="flex flex-col items-center gap-4 py-10 text-center">
-              <IconTile icon={<Check />} tone="accent" size={52} />
-              <div>
-                <h2 className="text-lg font-semibold">{saved.published ? "Annonce mise en vente" : "Brouillon enregistré"}</h2>
-                <p className="mt-1 text-sm text-text-muted">{saved.published ? `« ${saved.item.title} » est en vente${account ? ` sur ${account.label}` : ""}${mode === "demo" ? " (simulation)" : ""}. Elle apparaît dans votre dressing intelligent.` : `« ${saved.item.title} » est enregistré en brouillon (statut « En stock »). Publiez-le quand vous voulez.`}</p>
-              </div>
-              <div className="flex flex-wrap justify-center gap-2">
-                <Link to={`/app/items/${saved.item.id}`}><Button variant="secondary">Voir l'article</Button></Link>
-                {saved.published ? <Link to="/app/dressing"><Button variant="secondary">Ouvrir le dressing</Button></Link> : null}
-                <Button icon={<Sparkles />} onClick={reset}>Article suivant</Button>
-              </div>
-            </Card>
-          ) : !form || !draft ? (
-            <Card className="flex h-full min-h-[420px] flex-col items-center justify-center gap-3 text-center">
-              <IconTile icon={<Wand2 />} size={48} />
-              <h2 className="text-md font-semibold">Votre annonce apparaîtra ici</h2>
-              <p className="max-w-md text-sm text-text-muted">Titre optimisé pour la recherche, description claire et honnête, attributs (marque, taille, état, couleurs), prix conseillé en trois stratégies (vente rapide, standard, marge maximale) expliquées en mots. Tout reste modifiable avant publication.</p>
-              {generate.isPending ? <p className="text-sm font-medium text-accent">Analyse des photos en cours…</p> : null}
-            </Card>
-          ) : (
+      {step === "photos" ? (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+          <div className="flex flex-col gap-4">
             <Card>
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-md font-semibold">Annonce proposée</h2>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Tag accent>{draft.source === "ai" ? (draft.simulated ? "IA simulée" : `IA · ${draft.model}`) : "Gabarit de secours"}</Tag>
-                  <Tag>Confiance {Math.round(draft.confidence * 100)} %</Tag>
-                </div>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-md font-semibold">Photos <span className="num text-sm font-normal text-text-muted">{photos.length}/{MAX_PHOTOS}</span></h2>
+                {photos.length > 0 ? <Button size="sm" variant="ghost" onClick={() => changePhotos(() => [])}>Tout retirer</Button> : null}
               </div>
-              {draft.warnings.length > 0 ? <Alert tone="warning" className="mb-4">{draft.warnings.join(" ")}</Alert> : null}
-              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
-                <div className="flex flex-col gap-3">
-                  <Field label={<span className="flex items-center justify-between gap-2">Titre <span className={cn("num text-xs font-normal", titleLen > 70 ? "text-warning" : "text-text-muted")}>{titleLen}/100</span></span>}>
-                    {(p) => <div className="flex gap-2"><Input id={p.id} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} maxLength={100} /><IconButton label="Copier le titre" variant="secondary" onClick={() => copy(form.title)}><ClipboardCopy /></IconButton></div>}
-                  </Field>
-                  <Field label="Description">
-                    {(p) => <div className="relative"><Textarea id={p.id} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={7} maxLength={2000} /><IconButton label="Copier la description" size="sm" variant="secondary" className="absolute top-2 right-2" onClick={() => copy(form.description)}><ClipboardCopy /></IconButton></div>}
-                  </Field>
-                  {form.hashtags.length ? <p className="text-xs text-text-muted">Mots-clés : {form.hashtags.join(" ")}</p> : null}
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="Marque">{(p) => <Input id={p.id} value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} placeholder="À vérifier sur l'étiquette" />}</Field>
-                    <Field label="Taille">{(p) => <Input id={p.id} value={form.size} onChange={(e) => setForm({ ...form, size: e.target.value })} placeholder="À vérifier" />}</Field>
-                    <Field label="Catégorie">{(p) => <Select id={p.id} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value as DraftForm["category"] })}>{ITEM_CATEGORIES.map((c) => <option key={c} value={c}>{ITEM_CATEGORY_LABELS[c]}</option>)}</Select>}</Field>
-                    <Field label="État">{(p) => <Select id={p.id} value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value as DraftForm["condition"] })}>{ITEM_CONDITIONS.map((c) => <option key={c} value={c}>{ITEM_CONDITION_LABELS[c]}</option>)}</Select>}</Field>
-                    <Field label="Couleurs">{(p) => <Input id={p.id} value={form.colors} onChange={(e) => setForm({ ...form, colors: e.target.value })} placeholder="ex. Bleu marine" />}</Field>
-                    <Field label="Matière">{(p) => <Input id={p.id} value={form.material} onChange={(e) => setForm({ ...form, material: e.target.value })} placeholder="ex. Coton" />}</Field>
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => { e.preventDefault(); setDragOver(false); void addFiles(e.dataTransfer.files); }}
+                className={cn("rounded-xl border border-dashed p-4 transition-colors", dragOver ? "border-accent bg-accent-soft" : "border-border-strong bg-surface-muted/40")}
+              >
+                {photos.length === 0 ? (
+                  <div className="flex flex-col items-center gap-3 py-8 text-center">
+                    <IconTile icon={<ImagePlus />} tone="accent" size={48} />
+                    <div>
+                      <p className="text-base font-medium text-text">Glissez vos photos ici</p>
+                      <p className="text-sm text-text-muted">Face, dos, étiquette, et le mètre ruban posé à plat sur l'article</p>
+                    </div>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <Button icon={<Upload />} onClick={() => fileRef.current?.click()} loading={busyPhotos}>Choisir des photos</Button>
+                      <Button variant="secondary" icon={<Camera />} onClick={() => cameraRef.current?.click()} className="md:hidden">Prendre une photo</Button>
+                    </div>
+                    {mode === "demo" ? <Button variant="ghost" size="sm" icon={<Shirt />} onClick={() => void loadSamples()} disabled={busyPhotos}>Essayer avec des photos d'exemple</Button> : null}
                   </div>
-                </div>
-                <div className="flex flex-col gap-3">
-                  {photos[0] ? <img src={photos[0].url} alt="Couverture" className="aspect-square w-full rounded-lg object-cover" /> : null}
-                  <div className="rounded-lg bg-surface-muted p-3">
-                    <Field label="Prix de vente">{(p) => <MoneyInput id={p.id} value={form.priceCents} onChange={(v) => setForm({ ...form, priceCents: v })} />}</Field>
-                    <p className="mt-2 text-xs text-text-muted">Conseillé (standard) : <button type="button" className="font-semibold text-text underline underline-offset-2" onClick={() => setForm({ ...form, priceCents: draft.suggestedPriceCents })}><Money cents={draft.suggestedPriceCents} /></button></p>
-                    {hasPrice(draft.pricing) ? <p className="mt-1 text-[11px] text-text-muted">Trois stratégies et leur explication sous l'annonce.</p> : (
-                      <>
-                        <div className="mt-2 h-1.5 rounded-full" style={{ background: "linear-gradient(90deg, var(--violet-200), var(--accent-vivid), var(--violet-200))" }} aria-hidden />
-                        <p className="num mt-1 flex justify-between text-[11px] text-text-muted"><span>{formatCents(draft.priceLowCents)}</span><span>{formatCents(draft.priceHighCents)}</span></p>
-                        <p className="mt-1 text-[11px] text-text-muted">{draft.priceMethod} · {draft.comparableCount} vente(s) comparable(s)</p>
-                      </>
-                    )}
-                    {hints.purchasePriceCents && form.priceCents ? <p className="num mt-2 text-sm">Marge : <span className={form.priceCents - hints.purchasePriceCents >= 0 ? "font-semibold text-success" : "font-semibold text-danger"}>{formatCents(form.priceCents - hints.purchasePriceCents)}</span></p> : null}
+                ) : (
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {photos.map((p, i) => (
+                      <figure key={p.id} className="group relative aspect-square overflow-hidden rounded-lg bg-surface">
+                        <img src={p.url} alt={p.alt || `Photo ${i + 1}`} className="size-full object-cover" />
+                        {i === 0 ? <span className="absolute top-1.5 left-1.5 rounded-full bg-surface/90 px-2 py-0.5 text-[11px] font-medium text-text shadow-sm">Couverture</span> : null}
+                        <div className="absolute inset-x-1.5 bottom-1.5 flex justify-end gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+                          {i > 0 ? <IconButton label="Mettre en couverture" size="sm" variant="secondary" onClick={() => changePhotos((ps) => [ps[i]!, ...ps.filter((_, j) => j !== i)])}><Star /></IconButton> : null}
+                          <IconButton label={`Retirer la photo ${i + 1}`} size="sm" variant="secondary" onClick={() => changePhotos((ps) => ps.filter((x) => x.id !== p.id))}><Trash2 /></IconButton>
+                        </div>
+                      </figure>
+                    ))}
+                    {photos.length < MAX_PHOTOS ? (
+                      <button type="button" onClick={() => fileRef.current?.click()} className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border-strong text-xs text-text-muted hover:bg-surface">
+                        <ImagePlus className="size-5" aria-hidden /> Ajouter
+                      </button>
+                    ) : null}
                   </div>
-                </div>
+                )}
+                <input ref={fileRef} type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { void addFiles(e.target.files); e.target.value = ""; }} aria-label="Choisir des photos" />
+                <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => { void addFiles(e.target.files); e.target.value = ""; }} aria-label="Prendre une photo" />
               </div>
-              {draft.pricing ? (
-                <section aria-label="Prix conseillé" className="mt-5 border-t border-border pt-4">
-                  <h3 className="mb-3 text-sm font-semibold">Prix conseillé : trois stratégies</h3>
-                  <PriceEstimateView
-                    estimate={draft.pricing}
-                    // Absent tant qu'il n'est pas lu : jamais « non entraîné » par défaut.
-                    modelStatus={priceModel.data}
-                    // Valeurs relevées au plancher (prix d'achat et marge minimale) par le serveur.
-                    strategies={{ fast: draft.priceLowCents, standard: draft.suggestedPriceCents, max: draft.priceHighCents }}
-                    current={form.priceCents}
-                    onApply={(cents) => setForm({ ...form, priceCents: cents })}
-                    disabled={!canWrite}
-                    simulated={draft.simulated}
-                  />
-                </section>
-              ) : null}
-              <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
-                <p className="flex items-center gap-1.5 text-xs text-text-muted"><Info className="size-3.5" aria-hidden />{account ? `Compte : ${account.label}` : "Aucun compte sélectionné"}{account?.provider === "vinted" && mode === "connected" ? " · publication via l'extension Selio" : ""}</p>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" onClick={() => save.mutate(false)} loading={save.isPending && save.variables === false} disabled={!canWrite || form.title.trim().length < 3}>Enregistrer en brouillon</Button>
-                  <Button variant="accent" icon={<Send />} onClick={() => save.mutate(true)} loading={save.isPending && save.variables === true} disabled={!canWrite || form.title.trim().length < 3 || !form.priceCents}>Publier directement</Button>
-                </div>
-              </div>
+              {photoError ? <p role="alert" className="mt-2 text-xs text-danger">{photoError}</p> : <p className="mt-2 text-xs text-text-muted">Réduites dans votre navigateur avant l'envoi ({STUDIO_MODEL_MAX_SIDE_PX.toLocaleString("fr-FR")} px de côté long, JPEG qualité 80) ; le modèle en reçoit {STUDIO_MODEL_MAX_PHOTOS} au plus à la fois. La première sert de couverture.</p>}
             </Card>
-          )}
-          {saved ? null : <p className="mt-3 text-xs text-text-muted">Rien n'est publié sans votre clic. <button type="button" className="underline underline-offset-2" onClick={() => navigate("/app/settings/ai")}>Réglages de l'IA</button></p>}
+
+            <Card>
+              <h2 className="mb-3 text-md font-semibold">Compte et indications</h2>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Compte Vinted" className="sm:col-span-2" hint={!account ? <>Aucun compte Vente : <Link to="/app/accounts?categorie=vente" className="underline underline-offset-2">ajoutez-en un</Link>.</> : account.usage === "personal" ? "Compte perso : l'annonce y sera rattachée, mais aucune automatisation ne s'y appliquera." : account.provider === "vinted" ? "L'annonce sera rattachée à ce compte de vente." : "Simulateur : aucune publication réelle."}>
+                  {(p) => (
+                    <Select id={p.id} aria-describedby={p.describedBy} value={account?.id ?? ""} onChange={(e) => setConnectionId(e.target.value)}>
+                      {accounts.length === 0 ? <option value="">Aucun compte Vente connecté</option> : null}
+                      {accounts.map((c) => <option key={c.id} value={c.id}>{accountOptionLabel(c)}</option>)}
+                    </Select>
+                  )}
+                </Field>
+                <Field label="Type de pièce (facultatif)" hint="Seulement pour savoir quelles mesures demander.">{(p) => <Input id={p.id} aria-describedby={p.describedBy} value={hints.notes} onChange={(e) => setHints({ ...hints, notes: e.target.value })} placeholder="ex. jean slim, pull torsadé" maxLength={200} />}</Field>
+                <Field label="Famille">
+                  {(p) => (
+                    <Select id={p.id} value={kindHint} onChange={(e) => setKindHint(e.target.value as GarmentKind | "")}>
+                      <option value="">D'après le type de pièce</option>
+                      {GARMENT_KINDS.map((k) => <option key={k} value={k}>{GARMENT_KIND_LABELS[k]}</option>)}
+                    </Select>
+                  )}
+                </Field>
+                <Field label="Marque (facultatif)" hint="Si vous la connaissez : comparée à l'étiquette.">{(p) => <Input id={p.id} aria-describedby={p.describedBy} value={hints.brand} onChange={(e) => setHints({ ...hints, brand: e.target.value })} placeholder="ex. Ralph Lauren" maxLength={80} />}</Field>
+                <Field label="Taille (facultatif)">{(p) => <Input id={p.id} value={hints.size} onChange={(e) => setHints({ ...hints, size: e.target.value })} placeholder="ex. M, 42" maxLength={40} />}</Field>
+                <Field label="Prix d'achat" hint="Pour calculer votre marge et le prix plancher.">{(p) => <MoneyInput id={p.id} aria-describedby={p.describedBy} value={hints.purchasePriceCents} onChange={(v) => setHints({ ...hints, purchasePriceCents: v })} />}</Field>
+              </div>
+              <Button variant="brand" size="lg" fullWidth className="mt-4" icon={<ScanSearch />} disabled={photos.length === 0 || !canWrite || busyPhotos} loading={prepare.isPending} onClick={() => prepare.mutate(undefined)}>
+                Préparer l'annonce
+              </Button>
+              {photos.length === 0 ? <p className="mt-2 text-center text-xs text-text-muted">Ajoutez au moins une photo pour lancer la préparation.</p> : null}
+              {prepare.error instanceof DataError && prepare.error.code === "ai_unavailable" ? <p className="mt-2 text-center text-xs text-text-muted">Lecture des photos indisponible : <Link to="/app/items/new" className="font-medium text-accent hover:underline">créer l'article à la main</Link>.</p> : null}
+            </Card>
+          </div>
+
+          <Card className="flex h-full min-h-[420px] flex-col items-center justify-center gap-3 text-center">
+            <IconTile icon={<Wand2 />} size={48} />
+            <h2 className="text-md font-semibold">Préparer, puis générer</h2>
+            <ul className="max-w-md space-y-1.5 text-left text-sm text-text-muted">
+              <li>1. <span className="text-text">Tri</span> : face, dos, étiquette, mètre ruban, défauts ; photos regroupées par article.</li>
+              <li>2. <span className="text-text">Étiquette</span> : marque, taille, matière et référence lues avec leur confiance, sinon une question.</li>
+              <li>3. <span className="text-text">Mesures</span> : lues sur le mètre ruban, retrouvées par la référence, ou indiquées par vous. Jamais estimées à l'œil.</li>
+              <li>4. <span className="text-text">Annonce</span> : rédigée à partir de ce que vous avez validé, prix conseillé en trois stratégies.</li>
+            </ul>
+            {prepare.isPending ? <p className="text-sm font-medium text-accent">Tri et lecture des photos en cours…</p> : null}
+          </Card>
         </div>
-      </div>
+      ) : null}
+
+      {step === "sort" && prep ? (
+        <SortStep prep={prep} photos={photos} assignment={assignment} onChange={setAssignment} onContinue={() => setStep("label")} onReread={() => reread.mutate(undefined)} busy={reread.isPending} canWrite={canWrite} />
+      ) : null}
+
+      {step === "label" && prep && ui ? (
+        <LabelStep ui={ui} prep={prep} photos={byId} edits={articleEdits} onEdits={(e) => setEdits({ ...edits, [ui.prepId]: e })} onBack={() => setStep("sort")} onNext={() => setStep("measures")} nav={articleNav} canWrite={canWrite} />
+      ) : null}
+
+      {step === "measures" && prep && ui ? (
+        <MeasuresStep ui={ui} edits={articleEdits} onEdits={(e) => setEdits({ ...edits, [ui.prepId]: e })} onBack={() => setStep("label")} onGenerate={() => generate.mutate(undefined)} generating={generate.isPending} nav={articleNav} canWrite={canWrite} errors={measureErrors} demo={mode === "demo"} />
+      ) : null}
+
+      {step === "listing" && draft && form ? (
+        saved ? (
+          <Card className="flex flex-col items-center gap-4 py-10 text-center">
+            <IconTile icon={<Check />} tone="accent" size={52} />
+            <div>
+              <h2 className="text-lg font-semibold">{saved.published ? "Annonce mise en vente" : "Brouillon enregistré"}</h2>
+              <p className="mt-1 text-sm text-text-muted">{saved.published ? `« ${saved.item.title} » est en vente${account ? ` sur ${account.label}` : ""}${mode === "demo" ? " (simulation)" : ""}. Elle apparaît dans votre dressing intelligent.` : `« ${saved.item.title} » est enregistré en brouillon (statut « En stock »). Publiez-le quand vous voulez.`}</p>
+              {remaining > 0 ? <p className="mt-1 text-sm text-text-muted">Encore {remaining} article{remaining > 1 ? "s" : ""} dans cet envoi.</p> : null}
+            </div>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Link to={`/app/items/${saved.item.id}`}><Button variant="secondary">Voir l'article</Button></Link>
+              {saved.published ? <Link to="/app/dressing"><Button variant="secondary">Ouvrir le dressing</Button></Link> : null}
+              <Link to="/studio/photos-portees"><Button variant="secondary">Photos portées</Button></Link>
+              <Button icon={<Sparkles />} onClick={next}>Article suivant</Button>
+            </div>
+          </Card>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {articleNav}
+            {shareNote ? <Alert tone="info">{shareNote}</Alert> : null}
+            <DraftCard draft={draft} form={form} onForm={setForm} cover={byId.get(articlePhotoIds[0] ?? "")?.url ?? null} purchasePriceCents={hints.purchasePriceCents} account={account} mode={mode} canWrite={canWrite} onSave={(publish) => save.mutate(publish)} saving={save.isPending ? save.variables ?? null : null} />
+            <div className="flex justify-start"><Button variant="ghost" icon={<ArrowLeft />} onClick={() => setStep("measures")}>Revenir aux mesures</Button></div>
+          </div>
+        )
+      ) : null}
+
+      {saved ? null : <p className="mt-3 text-xs text-text-muted">Rien n'est publié sans votre clic. <button type="button" className="underline underline-offset-2" onClick={() => navigate("/app/settings/ai")}>Réglages de l'IA</button></p>}
     </>
   );
 }

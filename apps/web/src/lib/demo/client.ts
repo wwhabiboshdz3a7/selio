@@ -49,6 +49,10 @@ import { MockAIProvider as PhotoReader, buildPhotoDescriptionRequest, validatePh
 import type { PricingModelView, StudioDraft, TrackTrendsView, TrackUsageView } from "../data/types";
 import { buildTrackUsage } from "../track";
 import { demoEstimate, demoModelStatus, demoPricingPool, explainDemoEstimate } from "./pricing";
+import { NO_WORN_PROVIDER, isFromPrepInput, adjustToPrep, checkPrepareInput, demoPrepare, demoValidate, descriptionPhotoIds, prepById, prepFacts, seedDemoStudio, storePreps, type DemoStudioState, type DemoWornJob } from "./studio";
+import { STUDIO_MODEL_MAX_PHOTOS, WORN_OVERAGE_UNIT_CENTS, generatorPhoto as generatorPhotoSchema, type GeneratorPhoto } from "@selio/contracts";
+import type { StoredStudioPhoto, StudioGenerateFromPrepInput, StudioPrepAnswersInput, StudioPrepareOptions, StudioPrepareRequest, StudioPrepResultView, StudioPrepView, ValidatePrepResultView, WornPhotoRequestInput, WornPhotosView, WornPhotoView, WornPose } from "../data/types";
+import { WORN_NIGHT_DEFAULT, inNightWindow, nextNightWindow } from "../studio/prep";
 import { completeCriteria, demoFingerprint, demoNicheScan, demoSalesFeed, demoTrends, seedDemoTrack, withReadTimes, type DemoTrackState } from "./track";
 
 function paginate<T>(items: T[], page = 1, pageSize = 25): Page<T> {
@@ -76,6 +80,8 @@ type DemoCloudHolder = DemoState & { cloud?: DemoCloudState };
 type DemoRadarHolder = DemoState & { radar?: DemoRadarState };
 /** Selio Track de la démonstration (filtres, scans, recherches par photo ; simulateur) : voir ./track.ts. */
 type DemoTrackHolder = DemoState & { track?: DemoTrackState };
+/** Selio Studio façon Kavis de la démonstration (préparations, base des références, photos portées) : voir ./studio.ts. */
+type DemoStudioHolder = DemoState & { studio?: DemoStudioState };
 
 export interface DemoClientOptions {
   /**
@@ -1530,25 +1536,17 @@ export class DemoClient implements DataClient {
   }
 
   // ---------- générateur d'annonces ----------
-  async generateListing(input: ListingGenerationInput): Promise<StudioDraft> {
-    const st = this.s;
+  async generateListing(input: ListingGenerationInput | StudioGenerateFromPrepInput): Promise<StudioDraft> {
+    if (isFromPrepInput(input)) return this.generateFromPrep(input as StudioGenerateFromPrepInput);
     const parsed = listingGenerationInputSchema.safeParse(input);
     if (!parsed.success) throw new DataError("validation", parsed.error.issues[0]?.message ?? "Demande invalide", 400, parsed.error.flatten());
-    if (!st.org.settings.ai.enabled) throw new DataError("ai_unavailable", "L'assistant IA est désactivé dans les paramètres.", 409);
-    const monthKey = this.now().slice(0, 7);
-    // Quota Studio de l'offre (même règle et mêmes messages que le serveur) : 0 = Studio non inclus.
-    const studioQuota = st.subscription.quotas.studioListingsPerMonth;
-    if (studioQuota <= 0) throw new DataError("quota_exceeded", "Studio n'est pas inclus dans votre offre.", 402);
-    const studioUsed = st.usage.filter((u) => u.kind === "studio.listing" && u.createdAt.startsWith(monthKey)).reduce((s, u) => s + u.quantity, 0);
-    if (studioUsed >= studioQuota) throw new DataError("quota_exceeded", `Quota Studio du mois atteint (${studioQuota}).`, 402);
-    const ai = this.aiMonth();
-    if (ai.used >= ai.quota) throw new DataError("quota_exceeded", `Quota IA mensuel atteint (${ai.quota}).`, 402);
+    const req = this.studioGate();
     const { photos, hints } = parsed.data;
-    const images = photos.map((p) => p.url.slice(p.url.indexOf(",") + 1));
-    const req: AiRequest = { id: newId(), orgId: st.org.id, kind: "listing_generation", provider: "mock", model: "selio-mock-v1", status: "running", conversationId: null, itemId: null, promptTokens: 0, outputTokens: 0, latencyMs: 0, validated: false, rejectionReason: null, error: null, createdAt: this.now(), finishedAt: null };
-    st.aiRequests.unshift(req);
+    // Jamais 12 photos en pleine taille : les 6 premières au plus (la première est la couverture), comme le serveur.
+    const selected = photos.slice(0, STUDIO_MODEL_MAX_PHOTOS);
+    const images = selected.map((p) => p.url.slice(p.url.indexOf(",") + 1));
     const fallback = (): ListingGenerationOutput => ({ title: [hints.brand, "Article", hints.size].filter(Boolean).join(" ") || "Article", description: "Article d'occasion en bon état. Complétez la marque, la taille et les mesures. Envoi soigné sous 48 h.", brand: hints.brand ?? null, category: "other", size: hints.size ?? null, condition: "good", colors: [], material: null, hashtags: [], confidence: 0.2 });
-    const res = await this.ai.generateListing(st.org.id, { images, fileNames: photos.map((p) => p.alt), hints }, { fallback });
+    const res = await this.ai.generateListing(this.s.org.id, { images, fileNames: selected.map((p) => p.alt), hints }, { fallback });
     req.status = "succeeded";
     req.validated = true;
     req.promptTokens = res.usage.promptTokens;
@@ -1559,7 +1557,8 @@ export class DemoClient implements DataClient {
     // Chaque annonce rédigée compte aussi dans le quota mensuel de Studio (page « Mon utilisation »).
     this.usage("studio.listing", { requestId: req.id });
     this.persist();
-    const draft = this.priceDraft(res.data, { source: res.source, provider: res.provider, model: res.model, latencyMs: res.latencyMs, warnings: res.warnings, purchasePriceCents: hints.purchasePriceCents ?? null, simulated: true });
+    const sentWarning = photos.length > selected.length ? [`${selected.length} photos sur ${photos.length} envoyées au modèle (${STUDIO_MODEL_MAX_PHOTOS} au plus par appel).`] : [];
+    const draft = this.priceDraft(res.data, { source: res.source, provider: res.provider, model: res.model, latencyMs: res.latencyMs, warnings: [...res.warnings, ...sentWarning], purchasePriceCents: hints.purchasePriceCents ?? null, simulated: true });
     // Prix (§5.10) : comparables et modèle de démonstration, trois stratégies, explication par mon IA perso (simulée).
     const features = { title: res.data.title, brand: res.data.brand, category: res.data.category, size: res.data.size, material: res.data.material, color: res.data.colors[0] ?? null, condition: res.data.condition, photoCount: photos.length };
     const pricing = await explainDemoEstimate(features, demoEstimate(features, this.pricingPool()));
@@ -1575,6 +1574,219 @@ export class DemoClient implements DataClient {
     warnings.push("Le modèle de prix repose sur des données de démonstration.");
     return { ...draft, suggestedPriceCents: lift(s.standard), priceLowCents: lift(s.fast), priceHighCents: lift(s.max), priceMethod: PRICE_METHOD_LABELS[pricing.method], comparableCount: pricing.comparableCount, warnings, pricing };
   }
+  /** Quotas Studio et IA avant tout appel (mêmes règles et messages que le serveur) ; rien n'est compté ici. */
+  private studioGate(): AiRequest {
+    const st = this.s;
+    if (!st.org.settings.ai.enabled) throw new DataError("ai_unavailable", "L'assistant IA est désactivé dans les paramètres.", 409);
+    const monthKey = this.now().slice(0, 7);
+    const studioQuota = st.subscription.quotas.studioListingsPerMonth;
+    if (studioQuota <= 0) throw new DataError("quota_exceeded", "Studio n'est pas inclus dans votre offre.", 402);
+    const studioUsed = st.usage.filter((u) => u.kind === "studio.listing" && u.createdAt.startsWith(monthKey)).reduce((sum, u) => sum + u.quantity, 0);
+    if (studioUsed >= studioQuota) throw new DataError("quota_exceeded", `Quota Studio du mois atteint (${studioQuota}).`, 402);
+    const ai = this.aiMonth();
+    if (ai.used >= ai.quota) throw new DataError("quota_exceeded", `Quota IA mensuel atteint (${ai.quota}).`, 402);
+    const req: AiRequest = { id: newId(), orgId: st.org.id, kind: "listing_generation", provider: "mock", model: "selio-mock-v1", status: "running", conversationId: null, itemId: null, promptTokens: 0, outputTokens: 0, latencyMs: 0, validated: false, rejectionReason: null, error: null, createdAt: this.now(), finishedAt: null };
+    st.aiRequests.unshift(req);
+    return req;
+  }
+
+  /** Annonce rédigée à partir d'une préparation validée (miroir de `generateFromPrep`) : rien n'est relu. */
+  private async generateFromPrep(input: StudioGenerateFromPrepInput): Promise<StudioDraft> {
+    const studio = this.studio();
+    const prep = prepById(studio, input.prepId);
+    if (prep.status !== "validated") throw new DataError("prep_not_validated", "Validez d'abord la marque, la taille et les mesures de la préparation.", 409);
+    const photos = (input.photos ?? []).map((p) => generatorPhotoSchema.parse(p));
+    const req = this.studioGate();
+    const byId = new Map(photos.map((p) => [p.id, p]));
+    const images = descriptionPhotoIds(prep).flatMap((id) => (byId.get(id) ? [byId.get(id)!.url] : []));
+    const warnings: string[] = [];
+    if (images.length === 0 && prep.photos.some((p) => p.role !== "label" && p.role !== "tape")) warnings.push("Photos de l'article non renvoyées : la description est rédigée à partir des champs validés seulement.");
+    const f = prep.fields;
+    const facts = prepFacts(prep, input.hints?.notes);
+    const fallback = (): ListingGenerationOutput => ({ title: [f.brand.value, "Article", f.size.value].filter(Boolean).join(" ") || "Article", description: "Article d'occasion. Envoi soigné sous 48 h.", brand: f.brand.value, category: prep.category ?? "other", size: f.size.value, condition: "good", colors: [], material: f.material.value, hashtags: [], confidence: 0.2 });
+    const res = await this.ai.generateListing(this.s.org.id, { images: images.map((u) => u.slice(u.indexOf(",") + 1)), fileNames: [], hints: { brand: f.brand.value ?? undefined, size: f.size.value ?? undefined, notes: facts || undefined } }, { fallback });
+    const adjusted = adjustToPrep(res.data, prep);
+    req.status = "succeeded";
+    req.validated = true;
+    req.promptTokens = res.usage.promptTokens;
+    req.outputTokens = res.usage.outputTokens;
+    req.latencyMs = res.latencyMs;
+    req.finishedAt = this.now();
+    this.usage("ai.request", { requestId: req.id, kind: "listing_generation" });
+    this.usage("studio.listing", { requestId: req.id, prepId: prep.prepId });
+    studio.preps = studio.preps.map((p) => (p.prepId === prep.prepId ? { ...p, listingGeneratedAt: this.now() } : p));
+    this.persist();
+    const purchase = input.hints?.purchasePriceCents ?? null;
+    const draft = this.priceDraft(adjusted.data, { source: res.source, provider: res.provider, model: res.model, latencyMs: res.latencyMs, warnings: [...res.warnings, ...warnings, ...adjusted.warnings], purchasePriceCents: purchase, simulated: true });
+    const extra = { prepId: prep.prepId, fields: prep.fields, measurements: prep.measurements };
+    const features = { title: adjusted.data.title, brand: adjusted.data.brand, category: adjusted.data.category, size: adjusted.data.size, material: adjusted.data.material, color: adjusted.data.colors[0] ?? null, condition: adjusted.data.condition, photoCount: prep.photos.length };
+    const pricing = await explainDemoEstimate(features, demoEstimate(features, this.pricingPool()));
+    if (pricing.method === "none" || !pricing.strategies) return { ...draft, pricing, ...extra };
+    const floor = purchase && purchase > 0 ? suggestFloorPrice({ purchasePriceCents: purchase, purchaseFeesCents: 0 }, this.margin()) : 100;
+    const lift = (c: number) => Math.max(floor, c);
+    const st = pricing.strategies;
+    const draftWarnings = draft.warnings.filter((w) => !w.startsWith("Peu de ventes comparables"));
+    if (st.fast < floor || st.standard < floor) draftWarnings.push(`Prix relevé au plancher (${formatEurosFr(floor)} : prix d'achat et marge minimale).`);
+    if (pricing.confidenceLevel === "low") draftWarnings.push("Peu de ventes comparables : le prix conseillé est une estimation prudente, ajustez-le.");
+    draftWarnings.push("Le modèle de prix repose sur des données de démonstration.");
+    return { ...draft, suggestedPriceCents: lift(st.standard), priceLowCents: lift(st.fast), priceHighCents: lift(st.max), priceMethod: PRICE_METHOD_LABELS[pricing.method], comparableCount: pricing.comparableCount, warnings: draftWarnings, pricing, ...extra };
+  }
+
+  // ---------- Studio façon Kavis : préparer avant de générer ----------
+  /** État Studio de la démonstration, créé au premier accès (base des références d'exemple). */
+  private studio(): DemoStudioState {
+    const st = this.s as DemoStudioHolder;
+    if (!st.studio || st.studio.version !== 1) {
+      st.studio = seedDemoStudio();
+      this.storage.save(st);
+    }
+    return st.studio;
+  }
+  /** Photos « envoyées au stockage » pendant cette visite (jamais persistées : seulement leur clé l'est). */
+  private readonly studioUploads = new Map<string, string>();
+
+  async prepareStudio(input: StudioPrepareRequest, opts: StudioPrepareOptions = {}): Promise<StudioPrepResultView> {
+    const st = this.s;
+    const studio = this.studio();
+    // Photos contrôlées AVANT les quotas et la requête IA (comme le serveur) : une photo trop grande ne laisse aucune trace.
+    checkPrepareInput(input, this.studioUploads);
+    const req = this.studioGate();
+    try {
+      const out = await demoPrepare({ ai: this.ai, orgId: st.org.id, input, contents: opts.simulator?.photos, uploads: this.studioUploads, references: studio.references, now: this.now(), newId });
+      storePreps(studio, out.views);
+      req.status = "succeeded";
+      req.validated = true;
+      req.promptTokens = out.usage.promptTokens;
+      req.outputTokens = out.usage.outputTokens;
+      req.latencyMs = out.usage.latencyMs;
+      req.finishedAt = this.now();
+      // Une préparation = une requête IA ; aucune annonce Studio n'est comptée à cette étape.
+      this.usage("ai.request", { requestId: req.id, kind: "studio_prep", calls: out.usage.calls, articles: out.views.length });
+      this.audit("studio.prepared", "studio_prep", out.result.batchId, { articles: out.views.length, photos: out.result.photos.length });
+      this.persist();
+      return out.result;
+    } catch (err) {
+      req.status = err instanceof DataError && err.code === "photo_rejected" ? "rejected" : "failed";
+      req.error = err instanceof Error ? err.message.slice(0, 500) : "erreur";
+      req.finishedAt = this.now();
+      this.persist();
+      throw err;
+    }
+  }
+  async getStudioPrep(prepId: string): Promise<StudioPrepView> {
+    return prepById(this.studio(), prepId);
+  }
+  async validateStudioPrep(prepId: string, answers: StudioPrepAnswersInput): Promise<ValidatePrepResultView> {
+    if (!can(this.session().role, "ai.use")) throw new DataError("forbidden", "Votre rôle ne permet pas de valider une préparation.", 403);
+    const out = demoValidate(this.studio(), prepId, answers, this.now());
+    this.audit("studio.prep_validated", "studio_prep", prepId, { shared: out.shared.done });
+    if (out.shared.done) this.audit("studio.measurements_shared", "studio_prep", prepId, { brand: out.prep.fields.brand.value, reference: out.prep.fields.reference.value });
+    this.persist();
+    return out;
+  }
+
+  // ---------- photos portées : aucun fournisseur choisi, file de nuit ----------
+  /** Demandes dont la nuit est venue : sans fournisseur (« noop »), refusées proprement, place de quota rendue. */
+  private settleWornPhotos(): DemoStudioState {
+    const studio = this.studio();
+    const now = this.clock();
+    if (!inNightWindow(now, WORN_NIGHT_DEFAULT)) return studio;
+    let changed = false;
+    for (const job of studio.worn) {
+      if (job.status !== "queued" || new Date(job.scheduledFor).getTime() > now.getTime()) continue;
+      job.status = "refused";
+      job.error = NO_WORN_PROVIDER;
+      job.startedAt = this.now();
+      job.finishedAt = this.now();
+      if (job.usageEventId) this.s.usage = this.s.usage.filter((u) => u.id !== job.usageEventId);
+      job.usageEventId = null;
+      job.overageCents = 0;
+      changed = true;
+    }
+    if (changed) this.persist();
+    return studio;
+  }
+  private wornUsed(): number {
+    const monthKey = this.now().slice(0, 7);
+    return this.s.usage.filter((u) => u.kind === "studio.worn_photo" && u.createdAt.startsWith(monthKey)).reduce((sum, u) => sum + u.quantity, 0);
+  }
+  private wornView(job: DemoWornJob): WornPhotoView {
+    const { usageEventId: _u, ...view } = job;
+    return view;
+  }
+  /** Démonstration : dépassement désactivé (comme WORN_OVERAGE_ENABLED par défaut) et aucun fournisseur. */
+  async wornPhotos(): Promise<WornPhotosView> {
+    const studio = this.settleWornPhotos();
+    const st = this.s;
+    const quota = st.subscription.quotas.wornPhotosPerMonth;
+    const next = nextNightWindow(this.clock(), WORN_NIGHT_DEFAULT.timezone, WORN_NIGHT_DEFAULT);
+    const billable = st.subscription.cardOnFile && (st.subscription.status === "active" || st.subscription.status === "trialing") && !st.subscription.cancelAtPeriodEnd;
+    return {
+      jobs: studio.worn.map((j) => this.wornView(j)),
+      status: {
+        counter: buildUsageCounter(this.wornUsed(), quota),
+        planQuota: quota,
+        overage: { enabled: false, unitCents: WORN_OVERAGE_UNIT_CENTS, proposal: true, billable },
+        window: { ...WORN_NIGHT_DEFAULT },
+        nextWindow: { start: next.start.toISOString(), end: next.end.toISOString(), inWindow: next.inWindow },
+        provider: { name: "noop", configured: false, message: NO_WORN_PROVIDER },
+      },
+    };
+  }
+  /** Démonstration : la photo reste dans cet onglet (jamais envoyée ni enregistrée) ; seule sa clé est gardée. */
+  async uploadStudioPhoto(photo: GeneratorPhoto): Promise<StoredStudioPhoto> {
+    const p = generatorPhotoSchema.parse(photo);
+    const ext = p.url.startsWith("data:image/png") ? "png" : p.url.startsWith("data:image/webp") ? "webp" : "jpg";
+    const key = `org/${this.s.org.id}/studio-photo/${newId()}.${ext}`;
+    this.studioUploads.set(key, p.url);
+    return { key, readUrl: p.url };
+  }
+  /** Démonstration : la photo n'a jamais quitté l'onglet ; sa clé est simplement oubliée. */
+  async deleteStudioPhoto(key: string): Promise<{ deleted: true; key: string }> {
+    if (!key.startsWith(`org/${this.s.org.id}/studio-photo/`)) throw new DataError("forbidden", "Cette photo n'appartient pas à votre espace.", 403);
+    this.studioUploads.delete(key);
+    return { deleted: true, key };
+  }
+  async requestWornPhoto(input: WornPhotoRequestInput): Promise<WornPhotoView> {
+    const st = this.s;
+    if (!can(this.session().role, "ai.use")) throw new DataError("forbidden", "Votre rôle ne permet pas de demander une photo portée.", 403);
+    // Même règle que le serveur : l'accord vaut pour le prix affiché, un autre prix n'est jamais accepté en silence.
+    if (input.acceptOverage && input.acceptedUnitCents !== undefined && input.acceptedUnitCents !== WORN_OVERAGE_UNIT_CENTS) {
+      throw new DataError("overage_price_changed", `Le prix du dépassement est de ${(WORN_OVERAGE_UNIT_CENTS / 100).toFixed(2).replace(".", ",")} € la photo : relisez-le et confirmez à nouveau.`, 409, { unitCents: WORN_OVERAGE_UNIT_CENTS, acceptedUnitCents: input.acceptedUnitCents });
+    }
+    const m = /^org\/([A-Za-z0-9_-]+)\/(item-photo|studio-photo)\/[A-Za-z0-9_-]+\.(jpg|png|webp)$/.exec(input.photoKey ?? "");
+    if (!m) throw new DataError("validation", "Photo attendue : une clé de stockage d'une photo d'article ou de Studio (JPEG, PNG ou WebP).", 400);
+    if (m[1] !== st.org.id) throw new DataError("forbidden", "Cette photo n'appartient pas à votre espace.", 403);
+    const studio = this.settleWornPhotos();
+    const quota = st.subscription.quotas.wornPhotosPerMonth;
+    if (quota <= 0) throw new DataError("quota_exceeded", "Les photos portées ne sont pas incluses dans votre offre (Pro : 10 par mois, Agence : 30).", 402, { quota, used: 0, overageAvailable: false });
+    const used = this.wornUsed();
+    // Dépassement désactivé dans la démonstration (réglage serveur faux par défaut) : refus au-delà du quota.
+    if (used >= quota) throw new DataError("quota_exceeded", `Quota de photos portées du mois atteint (${quota}).`, 402, { quota, used, overageAvailable: false });
+    const pose: WornPose = input.pose ?? "front";
+    const now = this.now();
+    const usageId = newId();
+    st.usage.unshift({ id: usageId, orgId: st.org.id, kind: "studio.worn_photo", quantity: 1, meta: { pose }, createdAt: now });
+    const scheduledFor = nextNightWindow(this.clock(), WORN_NIGHT_DEFAULT.timezone, WORN_NIGHT_DEFAULT).start.toISOString();
+    const job: DemoWornJob = { id: newId(), orgId: st.org.id, itemId: input.itemId ?? null, photoKey: input.photoKey, status: "queued", provider: "noop", resultKey: null, error: null, scheduledFor, createdAt: now, pose, startedAt: null, finishedAt: null, overageCents: 0, overageAcceptedAt: null, billed: false, usageEventId: usageId };
+    studio.worn.unshift(job);
+    if (studio.worn.length > 100) studio.worn.length = 100;
+    this.audit("studio.worn_photo_requested", "worn_photo", job.id, { pose, scheduledFor, provider: "noop", overageCents: 0 });
+    this.persist();
+    return this.wornView(job);
+  }
+  async cancelWornPhoto(id: string): Promise<{ cancelled: true; id: string }> {
+    const studio = this.settleWornPhotos();
+    const job = studio.worn.find((j) => j.id === id);
+    if (!job) throw new DataError("not_found", "Demande introuvable.", 404);
+    if (job.status !== "queued") throw new DataError("conflict", "Cette demande a déjà été traitée ou est en cours : elle ne peut plus être annulée.", 409);
+    studio.worn = studio.worn.filter((j) => j.id !== id);
+    if (job.usageEventId) this.s.usage = this.s.usage.filter((u) => u.id !== job.usageEventId);
+    this.audit("studio.worn_photo_cancelled", "worn_photo", id, {});
+    this.persist();
+    return { cancelled: true, id };
+  }
+
   /** Comparables de l'estimation des prix (ventes de la démonstration et marché simulé, sans vendeur). */
   private pricingPool() {
     return demoPricingPool(this.s.orders, this.s.items, this.market());

@@ -77,7 +77,7 @@ function UsageReport({ u, actionsToday, planLabel, trackFilters }: { u: UsageSum
 
       <Section title="Selio Studio" description="Annonces rédigées à partir de vos photos. Inclus dans Pro et Agence ; Studio seul se paie à la photo.">
         <UsageMeter label="Annonces Studio" counter={u.studio.listings} hint="Par mois." />
-        <UsageMeter label="Photos portées" counter={u.studio.wornPhotos} hint="Par mois." planned />
+        <UsageMeter label="Photos portées" counter={u.studio.wornPhotos} hint={<>Par mois · <Link to="/studio/photos-portees" className="font-medium text-accent hover:underline">File de nuit</Link> (aucun fournisseur choisi)</>} planned />
       </Section>
 
       <Section title="Selio Track" tag={<Tag>En développement</Tag>} description="Statistiques de marché seulement : Track ne republie jamais d'annonce. Inclus dans Pro (essentiel) et Agence (complet).">

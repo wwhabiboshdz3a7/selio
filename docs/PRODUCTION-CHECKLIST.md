@@ -16,7 +16,7 @@
 - [ ] Tarifs définitifs décidés ; `VITE_SHOW_INDICATIVE_PRICING` ajusté ; CGV rédigées.
 - [ ] Service d'email choisi avec Ibrahim et branché (`EMAIL_PROVIDER=smtp`, `SMTP_URL`, `EMAIL_FROM`, SPF/DKIM) : invitations et mot de passe oublié sont prêts ; par défaut `noop`, rien ne part (avertissement au démarrage).
 - [ ] Stockage objet pour les photos (MinIO sur la machine derrière Caddy, `STORAGE_*`) : routes `/api/uploads` prêtes, envoi depuis le navigateur à brancher (data URL en démo, URL en base en connecté tant que ce n'est pas fait).
-- [ ] `pnpm db:migrate` exécuté (0005 → 0012 : carte enregistrée, vue administrateur de l'usage, jetons, rattrapage des quotas des anciens abonnements, paiement Revolut avec `payment_orders` et `invoices`, compteur de factures transactionnel et réservation des webhooks, tables de Selio Cloud, tables de Selio Radar). Si la 0012 a averti « doublons actifs existants », les résoudre puis la relancer pour créer l'index d'une seule demande d'achat active par affaire.
+- [ ] `pnpm db:migrate` exécuté (0005 → 0014 : carte enregistrée, vue administrateur de l'usage, jetons, rattrapage des quotas des anciens abonnements, paiement Revolut avec `payment_orders` et `invoices`, compteur de factures transactionnel et réservation des webhooks, tables de Selio Cloud, tables de Selio Radar, tables de Selio Track et du modèle de prix (0013), Studio façon Kavis : `size_references`, `studio_preps`, `worn_photo_jobs` et lignes supplémentaires des factures (0014)). Si la 0012 a averti « doublons actifs existants », les résoudre puis la relancer pour créer l'index d'une seule demande d'achat active par affaire.
 - [ ] Logo vectoriel officiel fourni (`logo-principal.svg`) pour favicons nets.
 
 ## Connecteurs et IA
@@ -24,6 +24,7 @@
 - [ ] Vérification juridique de l'usage de l'extension au regard des conditions d'utilisation de la plateforme.
 - [ ] Serveur Ollama installé (OLLAMA-SETUP.md), `pnpm ai:diagnose` OK, latence et capacité mesurées, `ALLOW_AI_FALLBACK=false`.
 - [ ] Quotas IA par plan revus selon la capacité mesurée.
+- [ ] Studio : `pnpm studio:eval` lancé sur **nos** photos (200 étiquettes, 50 articles avec mètre ruban, STUDIO.md §6), rapport archivé hors du dépôt et tableau de STUDIO.md §6.5 rempli ; tant que ce n'est pas fait, l'écran et `GET /api/studio/limits` disent « précision à mesurer » et aucun chiffre n'est promis. `OLLAMA_OCR_MODEL` vide, ou nom exact du modèle OCR vérifié sur la machine et apport mesuré avec `--no-ocr`.
 
 ## Paiement (Revolut Merchant API)
 - [ ] Compte Revolut Business avec le compte marchand (Merchant) activé ; clés du **bac à sable** d'abord (`REVOLUT_SECRET_KEY=sk_…`, `REVOLUT_MODE=sandbox`) côté API et worker.
@@ -76,6 +77,15 @@
 - [ ] Mention « à valider juridiquement » visible sur les écrans Track tant que l'avis n'est pas rendu ; « estimation » sur les annonces disparues ; « Track est compris à partir de Pro » pour les autres offres.
 - [ ] Vérifié en base : aucune colonne de pseudo, de photo, de titre ni d'identifiant d'annonce dans `track_*` et `price_references` ; aucune photo de recherche conservée ; références d'une organisation supprimées avec elle.
 - [ ] Panneau « Comparables Selio » de l'extension essayé sur un compte de l'équipe (Pro) : fourchette affichée, « Track est compris à partir de Pro » sur un compte Starter, « hors ligne » API coupée ; aucune autre donnée de la page envoyée (vérifié dans l'onglet réseau du service worker).
+
+## Selio Studio (STUDIO.md)
+- [ ] **`WORN_PHOTO_PROVIDER=noop`** côté API **et** worker (défaut) tant qu'Ibrahim n'a pas choisi entre un modèle maison à licence commerciale et un service payant ; `mock` refusé en production (le démarrage le vérifie). Le journal de démarrage dit « Photos portées : aucun fournisseur choisi ».
+- [ ] **`WORN_OVERAGE_ENABLED=false`** (défaut) tant que le prix du dépassement (0,25 € la photo = proposition, `WORN_OVERAGE_CENTS`) n'est pas fixé par Ibrahim ; le journal de démarrage ne contient pas « Photos portées au-delà du quota OUVERTES ».
+- [ ] Fenêtre de nuit confirmée (`WORN_NIGHT_WINDOW=22-6`, `WORN_NIGHT_TIMEZONE=Europe/Paris`, mêmes valeurs des deux côtés) ; tâche `studio.worn` visible dans le journal du worker, rien lancé le jour.
+- [ ] Avant tout fournisseur réel de photos portées : licence du modèle ou contrat du service, lieu de traitement des images (France), durée de conservation du résultat, et règle sur les **visages** (aucune photo de personne, SECURITY.md) validés avec l'avocat.
+- [ ] Base des références de tailles : import opérateur vérifié en `?dryRun=true` puis réel ; fichier **sans aucune colonne personnelle** (refus sinon), gardé hors du dépôt ; `select source, count(*) from size_references group by 1` relu.
+- [ ] Vérifié en base : `studio_preps` et `worn_photo_jobs` ne contiennent que des **clés de stockage** (jamais d'image ni de data URL) ; brouillons de préparation purgés après 30 jours par la rétention ; `size_references` sans `org_id` ni identifiant.
+- [ ] Parcours essayé sur un compte de l'équipe avec de vraies photos : photos réduites dans le navigateur (1 024 px, JPEG 80), 12 photos acceptées (une 13e → 413 `too_many_photos`), une photo non réduite (plus de 1 024 px ou 1 Mo) refusée 422 `photo_rejected` / `needs_reduction`, une photo de plus de 1,5 Mo refusée 413, champs vides avec question quand l'étiquette ou le mètre manquent (jamais une valeur devinée), provenance affichée sur chaque valeur.
 
 ## Qualité
 - [ ] `pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e && pnpm build` verts sur la branche de release.

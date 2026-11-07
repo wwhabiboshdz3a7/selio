@@ -1,4 +1,5 @@
-import { AIError, extractJson, toAIError, withTimeout, type AIProvider, type EmbedResult, type ExpectedModel, type GenerateOptions, type GenerateRequest, type GenerateResult, type HealthResult, type StructuredRequest, type StructuredResult } from "../types";
+import { stripStudioSimulatorHints } from "../prompts";
+import { AIError, extractJson, toAIError, withTimeout, type AIProvider, type EmbedResult, type ExpectedModel, type GenerateOptions, type GenerateRequest, type GenerateResult, type HealthResult, type OcrRequest, type OcrResult, type StructuredRequest, type StructuredResult } from "../types";
 
 export interface OllamaOptions {
   baseUrl: string;
@@ -8,6 +9,8 @@ export interface OllamaOptions {
   visionModel?: string;
   /** Modèle 2, « les prix » : utilisé par `embed()`. */
   embedModel?: string;
+  /** OCR d'essai des étiquettes (facultatif) : utilisé par `ocr()`, en second recours seulement. */
+  ocrModel?: string;
   timeoutMs: number;
   contextLimit: number;
   maxOutputTokens: number;
@@ -54,12 +57,14 @@ export class OllamaProvider implements AIProvider {
   readonly model: string;
   readonly visionModel: string | null;
   readonly embedModel: string | null;
+  readonly ocrModel: string | null;
   private readonly fetchImpl: typeof fetch;
 
   constructor(private readonly opts: OllamaOptions) {
     this.model = opts.model;
     this.visionModel = opts.visionModel ?? null;
     this.embedModel = opts.embedModel ?? null;
+    this.ocrModel = opts.ocrModel ?? null;
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch;
     if (!this.fetchImpl) throw new AIError("config", "fetch indisponible dans cet environnement");
   }
@@ -77,11 +82,15 @@ export class OllamaProvider implements AIProvider {
     return this.visionModel !== null;
   }
 
-  /** Les trois modèles attendus par la configuration, dans l'ordre texte, vision, embed. */
+  /**
+   * Les modèles attendus par la configuration, dans l'ordre texte, vision, embed, puis l'OCR d'essai
+   * (facultatif, seulement s'il est configuré : jamais compté comme manquant quand il ne l'est pas).
+   */
   expectedModels(installed: string[] = []): ExpectedModel[] {
     const out: ExpectedModel[] = [{ role: "text", name: this.model, present: hasModel(installed, this.model) }];
     if (this.visionModel) out.push({ role: "vision", name: this.visionModel, present: hasModel(installed, this.visionModel) });
     if (this.embedModel) out.push({ role: "embed", name: this.embedModel, present: hasModel(installed, this.embedModel) });
+    if (this.ocrModel) out.push({ role: "ocr", name: this.ocrModel, present: hasModel(installed, this.ocrModel), optional: true });
     return out;
   }
 
@@ -94,18 +103,24 @@ export class OllamaProvider implements AIProvider {
       if (!res.ok) return { ok: false, status: "unavailable", message: `Ollama a répondu ${res.status}`, latencyMs, model: this.model, provider: this.name };
       const body = (await res.json()) as { models?: { name: string }[] };
       const installed = (body.models ?? []).map((m) => m.name);
-      const models = this.expectedModels(installed);
+      const all = this.expectedModels(installed);
+      // L'OCR d'essai est facultatif : absent, il est signalé à part et ne dégrade jamais la santé.
+      const models = all.filter((m) => !m.optional);
+      const optional = all.filter((m) => m.optional);
       const missing = models.filter((m) => !m.present).map((m) => m.name);
-      const details = { models, missing, installed };
+      const optionalMissing = optional.filter((m) => !m.present).map((m) => m.name);
+      const details = { models: all, missing, installed, ...(optional.length > 0 ? { optionalMissing } : {}) };
       const pull = missing.map((m) => `ollama pull ${m}`).join(" ; ");
+      const ocrNote = optionalMissing.length > 0 ? ` OCR d'essai « ${optionalMissing.join(" », « ")} » absent (facultatif, ollama pull ${optionalMissing.join(" ; ollama pull ")}) : les étiquettes sont lues sans second recours.` : "";
       if (!models[0]!.present) {
         return { ok: false, status: "unavailable", message: `Serveur joignable mais modèle de texte « ${this.model} » absent (${pull})`, latencyMs, model: this.model, provider: this.name, details };
       }
       if (missing.length > 0) {
         const roles = models.filter((m) => !m.present).map((m) => (m.role === "vision" ? "les photos ne seront pas lues" : "les prix comparables ne seront pas retrouvés"));
-        return { ok: false, status: "degraded", message: `Modèle de texte présent, mais ${missing.length > 1 ? "modèles" : "modèle"} « ${missing.join(" », « ")} » absent${missing.length > 1 ? "s" : ""} (${pull}) : ${roles.join(", ")}`, latencyMs, model: this.model, provider: this.name, details };
+        return { ok: false, status: "degraded", message: `Modèle de texte présent, mais ${missing.length > 1 ? "modèles" : "modèle"} « ${missing.join(" », « ")} » absent${missing.length > 1 ? "s" : ""} (${pull}) : ${roles.join(", ")}${ocrNote ? `.${ocrNote}` : ""}`, latencyMs, model: this.model, provider: this.name, details };
       }
-      return { ok: true, status: "healthy", message: `Ollama joignable, ${models.length > 1 ? "modèles" : "modèle"} « ${models.map((m) => m.name).join(" », « ")} » présent${models.length > 1 ? "s" : ""}`, latencyMs, model: this.model, provider: this.name, details };
+      const present = all.filter((m) => m.present);
+      return { ok: true, status: "healthy", message: `Ollama joignable, ${present.length > 1 ? "modèles" : "modèle"} « ${present.map((m) => m.name).join(" », « ")} » présent${present.length > 1 ? "s" : ""}${ocrNote ? `.${ocrNote}` : ""}`, latencyMs, model: this.model, provider: this.name, details };
     } catch (err) {
       const e = toAIError(err);
       return { ok: false, status: "unavailable", message: e.code === "timeout" ? "Délai de connexion dépassé" : `Ollama injoignable : ${e.message}`, latencyMs: Date.now() - started, model: this.model, provider: this.name };
@@ -158,7 +173,7 @@ export class OllamaProvider implements AIProvider {
   }
 
   async generate(req: GenerateRequest, opts?: GenerateOptions): Promise<GenerateResult> {
-    const { data, latencyMs } = await this.call({ ...this.target(req), system: req.system, prompt: req.prompt, stream: false, options: this.options(req) }, opts);
+    const { data, latencyMs } = await this.call({ ...this.target(req), system: req.system, prompt: stripStudioSimulatorHints(req.prompt), stream: false, options: this.options(req) }, opts);
     return {
       text: (data.response ?? "").trim(),
       usage: { promptTokens: data.prompt_eval_count ?? 0, outputTokens: data.eval_count ?? 0 },
@@ -169,7 +184,8 @@ export class OllamaProvider implements AIProvider {
   }
 
   async generateStructured<T>(req: StructuredRequest<T>, opts?: GenerateOptions): Promise<StructuredResult<T>> {
-    const prompt = `${req.prompt}\n\nRéponds UNIQUEMENT avec un objet JSON valide${req.example ? ` de la forme : ${JSON.stringify(req.example)}` : ""}.`;
+    // Les indices du simulateur Studio ne partent jamais vers un vrai modèle : il ne doit lire que les photos.
+    const prompt = `${stripStudioSimulatorHints(req.prompt)}\n\nRéponds UNIQUEMENT avec un objet JSON valide${req.example ? ` de la forme : ${JSON.stringify(req.example)}` : ""}.`;
     const target = this.target(req);
     const { data, latencyMs } = await this.call({ ...target, system: req.system, prompt, stream: false, format: "json", options: this.options(req) }, opts);
     const raw = (data.response ?? "").trim();
@@ -219,6 +235,24 @@ export class OllamaProvider implements AIProvider {
       model: data.model ?? model,
       provider: this.name,
     };
+  }
+
+  /**
+   * OCR d'essai des étiquettes difficiles (OLLAMA_OCR_MODEL, ex. GLM-OCR) via POST /api/generate avec
+   * l'image : renvoie le texte brut reconnu. Facultatif et jamais utilisé seul : le service le donne au
+   * modèle 1 comme une DONNÉE à relire sur la photo. Non configuré : AIError « config ».
+   */
+  async ocr(req: OcrRequest, opts?: GenerateOptions): Promise<OcrResult> {
+    const model = this.ocrModel;
+    if (!model) throw new AIError("config", "Aucun modèle OCR configuré (OLLAMA_OCR_MODEL, facultatif)", false);
+    const images = req.images.filter((i) => i.length > 0);
+    if (images.length === 0) throw new AIError("input_rejected", "Aucune image d'étiquette pour l'OCR", false);
+    const { data, latencyMs } = await this.call(
+      // Un modèle OCR ne reçoit que sa consigne : aucun indice [[…]] (ni du simulateur, ni de rôle).
+      { model, prompt: req.prompt.replace(/\s*\[\[[a-zA-Z]+:[^\]]*\]\]/g, "").trim(), images, stream: false, options: { num_ctx: this.opts.contextLimit, num_predict: Math.min(req.maxOutputTokens ?? 300, this.opts.maxOutputTokens), temperature: 0 } },
+      opts,
+    );
+    return { text: (data.response ?? "").trim(), usage: { promptTokens: data.prompt_eval_count ?? 0, outputTokens: data.eval_count ?? 0 }, latencyMs, model: data.model ?? model, provider: this.name };
   }
 
   async *stream(req: GenerateRequest, opts?: GenerateOptions): AsyncIterable<string> {

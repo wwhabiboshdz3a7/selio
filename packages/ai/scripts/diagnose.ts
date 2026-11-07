@@ -10,7 +10,7 @@
 import { z } from "zod";
 import { createProvider, loadAIConfig, type ExpectedModel } from "../src/index";
 
-const ROLE_LABEL: Record<ExpectedModel["role"], string> = { text: "mon IA perso (texte)", vision: "modèle 1, les photos", embed: "modèle 2, les prix" };
+const ROLE_LABEL: Record<ExpectedModel["role"], string> = { text: "mon IA perso (texte)", vision: "modèle 1, les photos", embed: "modèle 2, les prix", ocr: "OCR d'essai des étiquettes (facultatif)" };
 
 async function main() {
   const config = loadAIConfig(process.env);
@@ -19,6 +19,7 @@ async function main() {
   console.info(`Texte    : ${config.OLLAMA_MODEL} (mon IA perso)`);
   console.info(`Photos   : ${config.OLLAMA_VISION_MODEL ?? "désactivé"} (modèle 1)`);
   console.info(`Prix     : ${config.OLLAMA_EMBED_MODEL ?? "désactivé"} (modèle 2, embeddings)`);
+  console.info(`OCR      : ${config.OLLAMA_OCR_MODEL ?? "non configuré"} (essai facultatif, étiquettes difficiles)`);
   console.info(`Timeout  : ${config.AI_TIMEOUT_MS} ms · contexte ${config.AI_CONTEXT_LIMIT} · sortie max ${config.AI_MAX_OUTPUT_TOKENS} · ${config.AI_MAX_CONCURRENCY} en parallèle`);
   const provider = createProvider(config);
   const started = Date.now();

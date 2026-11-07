@@ -2,6 +2,7 @@ import { repos, type Db } from "@selio/db";
 import { getConnector } from "@selio/connectors";
 import { quotasForPlan } from "@selio/contracts";
 import { admin, automation, billing, cloud, connections as connectionsService, pricing, radar, track, type OrgContext, type Services } from "@selio/core";
+import { studioRetention } from "./studio";
 
 /** Contexte « système » : actions du worker, journalisées avec l'acteur `system`. */
 export function systemContext(services: Services, orgId: string): OrgContext {
@@ -78,7 +79,7 @@ export async function connectorSyncTick(services: Services, log: TaskLogger): Pr
  * photo du vendeur effacés des autres affaires après 30 jours, alertes traitées gardées 90 jours.
  * Selio Track : historique selon le plan (3 mois en Pro, 12 en Agence, rien sans Track), instantanés
  * partagés selon le plan le plus long des organisations qui suivent l'empreinte, filtres au-delà du
- * quota coupés.
+ * quota coupés. Selio Studio : brouillons de préparation jamais validés supprimés après 30 jours.
  */
 export async function retentionTick(services: Services, log?: TaskLogger) {
   const base = await admin.retentionCleanup(services);
@@ -98,7 +99,8 @@ export async function retentionTick(services: Services, log?: TaskLogger) {
     }
   }
   const trackResult = await trackRetention(services, log);
-  return { ...base, cloud: cloudResult, radar: radarResult, track: trackResult };
+  const studioResult = await studioRetention(services, log);
+  return { ...base, cloud: cloudResult, radar: radarResult, track: trackResult, studio: studioResult };
 }
 
 export interface RenewalSummary {

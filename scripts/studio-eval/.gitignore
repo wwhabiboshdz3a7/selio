@@ -1,0 +1,14 @@
+# Protocole de validation de Studio : les photos (étiquettes, mètre ruban), les vérités terrain et les
+# rapports restent HORS du dépôt. Seuls le code, les tests et les lignes d'exemple (fictives, sans photo)
+# sont versionnés. Le dossier du jeu vit sur la machine (par exemple /srv/selio/studio-eval/).
+rapports/
+donnees/
+*.jpg
+*.jpeg
+*.png
+*.webp
+*-studio-eval.md
+*-studio-eval.json
+# Vérités terrain : seules les lignes d'exemple sont versionnées.
+*.csv
+!exemple/**/*.csv

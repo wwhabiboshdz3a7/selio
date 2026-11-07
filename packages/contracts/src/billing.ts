@@ -51,6 +51,56 @@ export const CARD_VERIFICATION_AMOUNT_CENTS = 100;
 /** Numéro de facture : SEL-AAAA-000001, continu par année (compteur transactionnel en base). */
 export const INVOICE_NUMBER_RE = /^SEL-\d{4}-\d{6}$/;
 
+/**
+ * Photos portées au-delà du quota du plan (Studio, §5.11) : 0,25 € la photo. PROPOSITION, pas un prix
+ * décidé (docs §7) : le serveur peut le régler (WORN_OVERAGE_UNIT_CENTS) et rien n'est facturé tant que
+ * WORN_OVERAGE_ENABLED n'est pas activé. Chaque photo au-delà demande l'accord explicite du client ; les
+ * photos produites sont facturées au renouvellement, comme une ligne de dépassement de la facture.
+ */
+export const WORN_OVERAGE_UNIT_CENTS = 25;
+
+/** Montant en euros pour un libellé de facture : 25 → « 0,25 € » (espace simple, deux décimales). */
+export function euroLabel(cents: number): string {
+  return `${(Math.max(0, Math.round(cents)) / 100).toFixed(2).replace(".", ",")} €`;
+}
+
+/**
+ * Lignes supplémentaires d'une facture, comprises dans son montant TTC : aujourd'hui seulement le
+ * dépassement des photos portées (`overage` / `worn_photo`). Aucune ligne quand le dépassement est
+ * désactivé ou que rien n'a été produit au-delà du quota.
+ */
+export const INVOICE_EXTRA_LINE_KINDS = ["overage"] as const;
+export const INVOICE_EXTRA_LINE_PRODUCTS = ["worn_photo"] as const;
+export const invoiceExtraLine = z.object({
+  kind: z.enum(INVOICE_EXTRA_LINE_KINDS),
+  product: z.enum(INVOICE_EXTRA_LINE_PRODUCTS),
+  label: z.string().trim().min(1).max(200),
+  quantity: z.number().int().min(1).max(100_000),
+  /** Prix unitaire TTC en centimes. */
+  unitCents: nonNegCents,
+  /** quantity × unitCents, TTC en centimes. */
+  amountCents: nonNegCents,
+});
+export type InvoiceExtraLine = z.infer<typeof invoiceExtraLine>;
+
+/** « Photos portées au-delà du quota : 3 × 0,25 € ». */
+export function wornOverageLineLabel(quantity: number, unitCents: number = WORN_OVERAGE_UNIT_CENTS): string {
+  return `Photos portées au-delà du quota : ${Math.max(0, Math.round(quantity))} × ${euroLabel(unitCents)}`;
+}
+
+/** Ligne de dépassement des photos portées (quantité ≥ 1), ou null quand il n'y a rien à facturer. */
+export function wornOverageLine(quantity: number, unitCents: number = WORN_OVERAGE_UNIT_CENTS): InvoiceExtraLine | null {
+  const q = Math.max(0, Math.round(quantity));
+  const unit = Math.max(0, Math.round(unitCents));
+  if (q < 1) return null;
+  return { kind: "overage", product: "worn_photo", label: wornOverageLineLabel(q, unit), quantity: q, unitCents: unit, amountCents: q * unit };
+}
+
+/** Total TTC des lignes supplémentaires (centimes). */
+export function extraLinesTotal(lines: readonly Pick<InvoiceExtraLine, "amountCents">[] = []): number {
+  return lines.reduce((sum, l) => sum + Math.max(0, Math.round(l.amountCents)), 0);
+}
+
 export const invoice = z.object({
   id,
   orgId: id,
@@ -67,6 +117,11 @@ export const invoice = z.object({
   periodEnd: isoDate,
   /** Commande Revolut à l'origine du paiement (traçabilité), null pour une facture manuelle. */
   orderId: z.string().max(120).nullable().default(null),
+  /**
+   * Lignes supplémentaires (dépassement), comprises dans `amountCents` ; absentes ou vides pour une facture
+   * d'abonnement seul (facultatif : les factures d'avant 0014 et la démonstration n'en ont pas).
+   */
+  extraLines: z.array(invoiceExtraLine).max(20).optional(),
   issuedAt: isoDate,
   createdAt: isoDate,
 });
@@ -78,9 +133,13 @@ export interface InvoiceAmounts {
   inclVatCents: number;
 }
 
-/** Décompose un montant TTC : HT arrondi au centime, TVA = différence (le TTC reste exact). */
-export function invoiceAmounts(amountCents: number, vatRate: number): InvoiceAmounts {
-  const incl = Math.max(0, Math.round(amountCents));
+/**
+ * Décompose un montant TTC : HT arrondi au centime, TVA = différence (le TTC reste exact).
+ * `extraLines` (dépassement) s'ajoutent au montant de base : `invoiceAmounts(base, taux, lignes)`
+ * vaut `invoiceAmounts(base + total des lignes, taux)`.
+ */
+export function invoiceAmounts(amountCents: number, vatRate: number, extraLines: readonly Pick<InvoiceExtraLine, "amountCents">[] = []): InvoiceAmounts {
+  const incl = Math.max(0, Math.round(amountCents)) + extraLinesTotal(extraLines);
   const rate = Math.max(0, vatRate);
   const excl = rate > 0 ? Math.round(incl / (1 + rate / 100)) : incl;
   return { exclVatCents: excl, vatCents: incl - excl, inclVatCents: incl };
@@ -91,7 +150,11 @@ export interface InvoiceView {
   invoice: Invoice;
   issuer: { name: string; vatNotice: string | null };
   customer: { orgName: string; email: string | null };
-  lines: { label: string; periodLabel: string; amountCents: number }[];
+  /**
+   * Abonnement d'abord (`kind: "plan"`), puis les lignes de dépassement (`kind: "overage"`, avec
+   * quantité et prix unitaire). La somme des lignes est le TTC de la facture.
+   */
+  lines: { label: string; periodLabel: string; amountCents: number; kind?: "plan" | "overage"; quantity?: number; unitCents?: number }[];
   totals: InvoiceAmounts & { vatRate: number };
   /** Frais du fournisseur de paiement : information, jamais refacturés au client. */
   paymentProvider: "revolut" | null;
@@ -127,6 +190,11 @@ export const paymentOrder = z.object({
   attempt: z.number().int().min(0).default(0),
   /** Motif d'échec rapporté par le fournisseur, sans donnée de carte. */
   error: z.string().max(500).nullable().default(null),
+  /**
+   * Lignes supplémentaires comprises dans `amountCents` (renouvellement : dépassement des photos portées
+   * quand WORN_OVERAGE_ENABLED). Reprises telles quelles sur la facture quand la commande est payée.
+   */
+  extraLines: z.array(invoiceExtraLine).max(20).optional(),
   createdAt: isoDate,
   updatedAt: isoDate,
 });

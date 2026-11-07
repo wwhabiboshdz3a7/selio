@@ -6,15 +6,17 @@ import { BrowserSlots, PlaywrightRunner, PurchaseRunner, RadarReader, probeChrom
 import { createAIService } from "@selio/ai";
 import { createPaymentProvider, loadPaymentConfig, paymentStartupNotices } from "@selio/connectors";
 import { Db, SecretBox, createPool } from "@selio/db";
-import { pricing, type Services } from "@selio/core";
+import { pricing, wornPhotos, type Services, type WornRunSummary } from "@selio/core";
 import { createEmailProvider, emailStartupWarnings, loadEmailConfig } from "@selio/email";
-import { cloudDrainMs, cloudLoginConcurrency, cloudProfileMaxAgeMs, cloudRunnable, cloudServicesConfig, disabledSchedules, loadEnv, maintenanceSchedules, radarBrowsingMaxMs, radarServicesConfig, trackServicesConfig } from "./config";
+import { StorageObjectStore, createStorageClient, loadStorageConfig } from "@selio/storage";
+import { cloudDrainMs, cloudLoginConcurrency, cloudProfileMaxAgeMs, cloudRunnable, cloudServicesConfig, disabledSchedules, loadEnv, maintenanceSchedules, radarBrowsingMaxMs, radarServicesConfig, studioServicesConfig, trackServicesConfig, wornOverageCents } from "./config";
 import { CLOUD_LOGIN_JOB, CLOUD_LOGIN_QUEUE, CloudTickRunner, RunnerCloudExecutor, cloudLoginTask, cloudTick, createRedisLoginBus } from "./cloud";
 import { WebPushSender, loadVapidConfig } from "./push";
 import { CloudOffRadarReader, CloudPurchaseAdapter, CloudRadarReader, PageRateLimiter, RADAR_QUEUE, RADAR_RESUME_JOB, SingleFlight, alertsTick, radarAutoTick, radarResumeTask, radarTick, type AlertsTickSummary, type RadarAutoTickSummary, type RadarTickSummary } from "./radar";
 import { automationTick, connectorSyncTick, processJobs, renewSubscriptions, retentionTick } from "./tasks";
 import { createPricingServices } from "./pricing";
 import { CloudTrackReader, TRACK_TICK_BUDGET_MINUTES, pricingReferencesTick, pricingTrainTask, trackTick, type PricingTrainSummary, type TrackTickSummary } from "./track";
+import { studioWornTick } from "./studio";
 
 /**
  * Worker Selio : tâches planifiées et traitements asynchrones (BullMQ/Redis).
@@ -41,8 +43,20 @@ async function main() {
     publicWebUrl: env.PUBLIC_WEB_URL,
     payments: createPaymentProvider(paymentConfig, { logger: log }),
     billing: { franchiseTva: env.FRANCHISE_TVA },
-    config: { ...cloudServicesConfig(env), ...radarServicesConfig(env), ...trackServicesConfig(env) },
+    config: { ...cloudServicesConfig(env), ...radarServicesConfig(env), ...trackServicesConfig(env), ...studioServicesConfig(env) },
+    // Photos portées : AUCUN fournisseur choisi (décision d'Ibrahim) ; « noop » refuse proprement, « mock » (tests) jamais en production.
+    wornPhotos: wornPhotos.createWornPhotoProvider(env.WORN_PHOTO_PROVIDER, { production: env.NODE_ENV === "production" }),
   };
+  log.info(
+    { provider: services.wornPhotos!.name, nightWindow: `${env.WORN_NIGHT_WINDOW.startHour}-${env.WORN_NIGHT_WINDOW.endHour}`, timezone: env.WORN_NIGHT_TIMEZONE, overage: env.WORN_OVERAGE_ENABLED, overageCents: wornOverageCents(env), ocr: env.OLLAMA_OCR_MODEL ?? null },
+    services.wornPhotos!.name === "noop" ? `Studio : photos portées sans fournisseur (${wornPhotos.NO_WORN_PROVIDER_MESSAGE}) ; OCR d'essai ${env.OLLAMA_OCR_MODEL ? "configuré (second recours)" : "non configuré (facultatif)"}` : "Studio : photos portées par le fournisseur de TEST « mock » (aucune image produite)",
+  );
+  // Stockage des photos (S3 / MinIO, mêmes variables que l'API) : le worker ne lit pas de photo, il efface celle
+  // d'une demande de photo portée refusée, en échec, interrompue ou purgée (jamais une photo d'article). Sans
+  // STORAGE_ENDPOINT, rien n'est effacé et la rétention le dit.
+  const storage = createStorageClient(loadStorageConfig(process.env), services.now);
+  if (storage) services.studio = { photos: new StorageObjectStore(storage) };
+  else log.warn("Stockage des photos non configuré (STORAGE_ENDPOINT absent) : les photos des demandes de photo portée refusées ou purgées ne sont pas effacées du stockage.");
   // Modèle de prix (§5.10) : entraîneur et chargeur de @selio/pricing ; le modèle actif est chargé plus bas.
   // Entraînement dans un fil séparé (boucle d'événements libre), arrêté au-delà de PRICING_TRAIN_MAX_MS.
   services.pricing = createPricingServices(() => services.now(), {
@@ -154,6 +168,10 @@ async function main() {
   const autoTicks: SingleFlight<RadarAutoTickSummary> = new SingleFlight("radar.auto", () => radarAutoTick(services, log, { shouldStop: () => autoTicks.stopping }), log, (r) => {
     if (r.bought || r.awaiting3ds || r.errors) log.info({ name: "radar.auto", ...r }, "radar auto : passage");
   });
+  // Photos portées (la nuit) : passage lancé sans retenir la file, un seul à la fois ; l'arrêt du worker n'en
+  // prend plus de nouvelle (la demande en cours se termine, une demande interrompue est close au passage suivant).
+  const wornStop = new AbortController();
+  const wornTicks: SingleFlight<WornRunSummary & { provider: string }> = new SingleFlight("studio.worn", () => studioWornTick(services, log, { signal: wornStop.signal }), log);
   const profiles = { baseDir: env.CLOUD_PROFILE_DIR, maxAgeMs: cloudProfileMaxAgeMs(env) };
   const cloudTicks: CloudTickRunner = new CloudTickRunner(() => cloudTick(services, log, { executor, concurrency: env.CLOUD_MAX_BROWSERS, shouldStop: () => cloudTicks.stopping, profiles }), log);
   const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
@@ -190,6 +208,8 @@ async function main() {
         case "pricing.references": result = await pricingReferencesTick(services, log); break;
         // Entraînement (calcul long sur le processeur) : lancé sans retenir la file, un seul à la fois.
         case "pricing.train": result = trainings.trigger(); break;
+        // Photos portées : file de nuit (rien n'est lancé hors de WORN_NIGHT_WINDOW).
+        case "studio.worn": result = wornTicks.trigger(); break;
         default: log.warn({ name: job.name }, "tâche inconnue"); return null;
       }
       log.info({ name: job.name, result, ms: Date.now() - started }, "tâche terminée");
@@ -239,6 +259,8 @@ async function main() {
     alertTicks.stop();
     trackTicks.stop();
     trainings.stop();
+    wornTicks.stop();
+    wornStop.abort();
     await worker.close();
     // Fenêtres de connexion et reprises 3-D Secure : attente bornée (le client se reconnectera ; les fenêtres
     // restées ouvertes en base expirent, les dossiers de travail restants sont supprimés au prochain démarrage).
@@ -252,6 +274,7 @@ async function main() {
       alertTicks.drain(15_000),
       trackTicks.drain(env.RADAR_PAGE_BUDGET_MS + 15_000),
       trainings.drain(30_000),
+      wornTicks.drain(30_000),
     ]);
     // Navigateurs tenus ouverts pour une validation 3-D Secure : fermés (les demandes expireront, avec alerte).
     await purchases?.closeAll();

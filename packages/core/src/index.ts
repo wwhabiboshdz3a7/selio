@@ -37,3 +37,8 @@ export { FakePriceModel, FakePriceTrainer } from "./services/pricing";
 export type { PlannedTrackRead, TrackListingState, TrackReadResult, TrackReader, TrackReaderInput, TrackReaderOutcome, TrackSkipReason, TrackTickSummary } from "./services/track";
 export { FakeTrackReader, fingerprintOf, planTrackReads, trackConfigFromEnv } from "./services/track";
 export type { TrackMarketSection, TrackNiche } from "./services/market";
+export * as wornPhotos from "./services/worn-photos";
+export type { CheckedPhoto, GenerateFromPrepInput, ImageReducer, StudioListingDraft, StudioPhotoStore, StudioPrepAnswers, StudioPrepArticleView, StudioPrepPhoto, StudioPrepResult, StudioPrepView, StudioPrepareInput, StudioServices, StudioVision, StudioVisionCall, StudioVisionOptions, ValidatePrepResult } from "./services/studio";
+export { FakeStudioVision, studioVisionOf, visionFromAI } from "./services/studio";
+export type { NightWindow, WornPhotoOutcome, WornPhotoProvider, WornPhotoRequest, WornPhotoRequestInput, WornPhotoView, WornPose, WornRunSummary, WornSettings } from "./services/worn-photos";
+export { FakeWornPhotoProvider, NO_WORN_PROVIDER_MESSAGE, NoopWornPhotoProvider, createWornPhotoProvider, inNightWindow, nextNightWindow, wornConfigFromEnv } from "./services/worn-photos";

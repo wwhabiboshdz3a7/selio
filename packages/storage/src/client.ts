@@ -28,10 +28,19 @@ export interface PresignedDownload {
   expiresAt: string;
 }
 
+export interface DeleteObjectOptions {
+  fetchImpl?: typeof fetch;
+  /** Délai de la requête (10 s par défaut). */
+  timeoutMs?: number;
+}
+
 /**
- * Client de stockage : ne parle jamais au service lui-même, il ne fait que
- * signer des URLs que le navigateur utilisera directement. Aucune URL
- * publique : tout accès passe par une signature courte.
+ * Client de stockage : pour le navigateur, il ne fait que signer des URLs
+ * (PUT, GET) utilisées directement ; aucune URL publique, tout accès passe
+ * par une signature courte. Seule la SUPPRESSION d'un objet est faite par le
+ * serveur lui-même (`deleteObject`, DELETE signé exécuté par l'API ou le
+ * worker) : une photo de Studio annulée, refusée, en échec ou purgée ne
+ * reste pas dans le bucket.
  */
 export class StorageClient {
   constructor(
@@ -92,6 +101,32 @@ export class StorageClient {
       expiresSeconds: this.ttl(input.ttlSeconds),
     });
     return { url: signed.url, expiresAt: signed.expiresAt.toISOString() };
+  }
+
+  /** DELETE signé, courte durée (usage serveur : jamais rendu au navigateur). */
+  presignDelete(input: PresignDownloadInput): PresignedDownload {
+    const signed = presignUrl({
+      method: "DELETE",
+      url: this.objectUrl(input.key),
+      region: this.cfg.region,
+      accessKey: this.cfg.accessKey,
+      secretKey: this.cfg.secretKey,
+      date: this.now(),
+      expiresSeconds: this.ttl(input.ttlSeconds),
+    });
+    return { url: signed.url, expiresAt: signed.expiresAt.toISOString() };
+  }
+
+  /**
+   * Supprime un objet du bucket (l'appelant a déjà vérifié que la clé appartient à l'organisation). Idempotent :
+   * un objet déjà absent (404) compte comme supprimé ; toute autre réponse d'erreur lève. Aucune redirection suivie.
+   */
+  async deleteObject(key: string, opts: DeleteObjectOptions = {}): Promise<void> {
+    const { url } = this.presignDelete({ key });
+    const fetchImpl = opts.fetchImpl ?? fetch;
+    const res = await fetchImpl(url, { method: "DELETE", redirect: "error", signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000) });
+    await res.body?.cancel().catch(() => undefined);
+    if (!res.ok && res.status !== 404) throw new Error(`stockage : suppression refusée (HTTP ${res.status})`);
   }
 
   private ttl(requested: number | undefined): number {

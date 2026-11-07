@@ -653,6 +653,120 @@ describe("base de données", () => {
     expect(await app.withGlobal((tx) => repos.priceReferences.countBySource(tx))).toMatchObject({ sale: 0, track: 2 });
   });
 
+  it("0014 : Studio — préparations et photos portées isolées par RLS, références de tailles en lecture seule (écriture par fonctions), dépassement facturé une fois", async () => {
+    if (!available) return;
+    await owner.pool.query("truncate size_references");
+    const { orgA, orgB } = await owner.withGlobal(async (tx) => ({
+      orgA: await repos.orgs.create(tx, { name: "Org Studio A", slug: "org-studio-a", settings: {} }),
+      orgB: await repos.orgs.create(tx, { name: "Org Studio B", slug: "org-studio-b", settings: {} }),
+    }));
+    const keyA = `org/${orgA.id}/studio-photo/p1.jpg`;
+
+    // Préparations : une ligne par article, clés et rôles des photos (jamais l'image), isolées par RLS.
+    const prep = await app.withOrg(orgA.id, (tx) => repos.studioPreps.create(tx, {
+      batchId: "batch-1", articleGroup: 1, photos: [{ index: 0, id: "p1", key: keyA, role: "label", confidence: 0.9 }],
+      fields: { brand: { value: "Zara", source: "label", confidence: 0.95 }, size: { value: null, source: null } },
+      measurements: [{ name: "chest", valueCm: null, source: null, question: "Mesurez la poitrine." }], questions: [{ field: "chest", reason: "no_tape", text: "Mesurez la poitrine." }],
+      warnings: [], details: { tapeVisible: false }, garment: "top", category: "women", simulated: false,
+    }));
+    expect(prep).toMatchObject({ status: "draft", articleGroup: 1, garment: "top", shareMeasurements: false, validatedAt: null });
+    expect(prep.fields).toMatchObject({ brand: { value: "Zara", source: "label" } });
+    expect(await app.withOrg(orgB.id, (tx) => repos.studioPreps.byId(tx, prep.id))).toBeNull();
+    expect(await app.withOrg(orgB.id, (tx) => tx.query("select id from studio_preps"))).toHaveLength(0);
+    await expect(app.withOrg(orgB.id, (tx) => tx.query("insert into studio_preps (org_id, batch_id) values ($1, 'x')", [orgA.id]))).rejects.toBeInstanceOf(Error);
+    const validated = await app.withOrg(orgA.id, (tx) => repos.studioPreps.update(tx, prep.id, { status: "validated", validatedAt: "2026-11-04T10:00:00.000Z", shareMeasurements: true }));
+    expect(validated).toMatchObject({ status: "validated", shareMeasurements: true, validatedAt: "2026-11-04T10:00:00.000Z" });
+    expect((await app.withOrg(orgA.id, (tx) => repos.studioPreps.byBatch(tx, "batch-1"))).map((p) => p.id)).toEqual([prep.id]);
+    await expect(app.withOrg(orgA.id, (tx) => tx.query("update studio_preps set status = 'publiée' where id = $1", [prep.id]))).rejects.toMatchObject({ code: "validation" });
+    // Rétention : seuls les brouillons partent.
+    const draft = await app.withOrg(orgA.id, (tx) => repos.studioPreps.create(tx, { batchId: "batch-0", articleGroup: 1, photos: [], fields: {}, measurements: [], questions: [], warnings: [], details: {}, garment: null, category: null, simulated: true, createdAt: "2026-09-01T00:00:00.000Z" }));
+    expect(await app.withOrg(orgA.id, (tx) => repos.studioPreps.purgeDraftsBefore(tx, "2026-10-01T00:00:00.000Z"))).toBe(1);
+    expect(await app.withOrg(orgA.id, (tx) => repos.studioPreps.byId(tx, draft.id))).toBeNull();
+
+    // Références de tailles : lecture pour tous, aucune écriture directe pour le rôle applicatif.
+    await expect(app.withGlobal((tx) => tx.query("insert into size_references (brand, reference, measurements, source) values ('X', 'AB12', '{\"chest\": 50}', 'provided')"))).rejects.toBeInstanceOf(Error);
+    const provided = await app.withGlobal((tx) => repos.sizeReferences.provide(tx, { brand: "Levi's", reference: "501-0115", size: "W32 L32", category: "bottom", measurements: { waist: 41, inseam: 81 } }));
+    expect(provided).toMatchObject({ brand: "Levi's", reference: "501-0115", size: "W32 L32", category: "bottom", source: "provided", measurements: { waist: 41, inseam: 81 } });
+    await expect(app.withGlobal((tx) => tx.query("update size_references set measurements = '{\"waist\": 1}'"))).rejects.toBeInstanceOf(Error);
+    // Clés normalisées : « LEVIS » / « 501 0115 » / « w32l32 » retrouvent la même ligne ; la contribution d'un vendeur ne la modifie jamais.
+    expect((await app.withOrg(orgB.id, (tx) => repos.sizeReferences.findAll(tx, "LEVIS", "501 0115"))).map((r) => r.size)).toEqual(["W32 L32"]);
+    expect(await app.withOrg(orgB.id, (tx) => repos.sizeReferences.contribute(tx, { brand: "levis", reference: "5010115", size: "w32l32", category: "bottom", measurements: { waist: 99, rise: 30 } }))).toBeNull();
+    expect((await app.withGlobal((tx) => repos.sizeReferences.findAll(tx, "Levi's", "501-0115")))[0]!.measurements).toEqual({ waist: 41, inseam: 81 });
+    // Contribution « seller_validated » : ajoute seulement les mesures manquantes, ne remplace jamais une mesure connue.
+    const c1 = await app.withOrg(orgB.id, (tx) => repos.sizeReferences.contribute(tx, { brand: "Zara", reference: "ZR-0001", size: "M", category: "top", measurements: { chest: 52 } }));
+    expect(c1).toMatchObject({ source: "seller_validated" });
+    await app.withOrg(orgA.id, (tx) => repos.sizeReferences.contribute(tx, { brand: "ZARA", reference: "zr 0001", size: "m", category: "top", measurements: { chest: 60, length: 70 } }));
+    const zara = await app.withGlobal((tx) => repos.sizeReferences.findAll(tx, "zara", "ZR0001"));
+    expect(zara).toHaveLength(1);
+    expect(zara[0]).toMatchObject({ source: "seller_validated", measurements: { chest: 52, length: 70 } });
+    // Aucune donnée d'organisation ni de personne dans la table partagée.
+    const cols = await owner.withGlobal((tx) => tx.query<{ columnName: string }>("select column_name from information_schema.columns where table_name = 'size_references'"));
+    expect(cols.map((c) => c.columnName).filter((c) => /org|user|email|photo|ip/.test(c))).toEqual([]);
+    // Mesures contrôlées par la base : nombres de 0,5 à 300 cm, clés en minuscules.
+    for (const bad of [{ chest: 400 }, { chest: "52" }, { "Chest!": 52 }, {}]) {
+      await expect(app.withGlobal((tx) => repos.sizeReferences.contribute(tx, { brand: "Mango", reference: "MG-1", size: "S", category: "top", measurements: bad as Record<string, number> }))).rejects.toMatchObject({ code: "validation" });
+    }
+    expect(await app.withGlobal((tx) => repos.sizeReferences.count(tx))).toBe(2);
+
+    // Photos portées : clés de l'organisation seulement, RLS, file de nuit lue par fonction (identifiants seulement).
+    await expect(app.withOrg(orgB.id, (tx) => repos.wornPhotoJobs.create(tx, { photoKey: keyA, pose: "front", provider: "noop", scheduledFor: "2026-11-04T21:00:00.000Z" }))).rejects.toMatchObject({ code: "validation" });
+    await expect(app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.create(tx, { photoKey: "https://exemple.fr/p.jpg", pose: "front", provider: "noop", scheduledFor: "2026-11-04T21:00:00.000Z" }))).rejects.toMatchObject({ code: "validation" });
+    await expect(app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.create(tx, { photoKey: keyA, pose: "front", provider: "noop", scheduledFor: "2026-11-04T21:00:00.000Z", overageCents: 25 }))).rejects.toMatchObject({ code: "validation" });
+    const j1 = await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.create(tx, { photoKey: keyA, pose: "front", provider: "mock", scheduledFor: "2026-11-04T21:00:00.000Z", overageCents: 25, overageAcceptedAt: "2026-11-04T10:00:00.000Z" }));
+    const j2 = await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.create(tx, { photoKey: keyA, pose: "back", provider: "mock", scheduledFor: "2026-11-05T21:00:00.000Z" }));
+    expect(j1).toMatchObject({ status: "queued", pose: "front", provider: "mock", overageCents: 25, billedInvoiceId: null });
+    expect(await app.withOrg(orgB.id, (tx) => repos.wornPhotoJobs.list(tx))).toEqual([]);
+    const due = await app.withGlobal((tx) => repos.wornPhotoJobs.due(tx, "2026-11-04T21:30:00.000Z", "2026-11-04T20:30:00.000Z"));
+    expect(due.filter((d) => d.orgId === orgA.id)).toEqual([{ orgId: orgA.id, id: j1.id, status: "queued" }]);
+    // Prise conditionnelle : une seule fois ; pas avant l'heure prévue.
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.claim(tx, j2.id, "2026-11-04T21:30:00.000Z", "mock"))).toBeNull();
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.claim(tx, j1.id, "2026-11-04T21:30:00.000Z", "mock"))).toMatchObject({ status: "running" });
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.claim(tx, j1.id, "2026-11-04T21:31:00.000Z", "mock"))).toBeNull();
+    // Résultat : une clé de l'organisation seulement.
+    await expect(app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.finish(tx, j1.id, { status: "done", finishedAt: "2026-11-04T21:32:00.000Z", resultKey: `org/${orgB.id}/studio-photo/x.jpg`, keepOverage: true }))).rejects.toMatchObject({ code: "validation" });
+    const done = await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.finish(tx, j1.id, { status: "done", finishedAt: "2026-11-04T21:32:00.000Z", resultKey: `org/${orgA.id}/studio-photo/worn-1.jpg`, keepOverage: true }));
+    expect(done).toMatchObject({ status: "done", resultKey: `org/${orgA.id}/studio-photo/worn-1.jpg`, overageCents: 25 });
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.finish(tx, j1.id, { status: "failed", finishedAt: "2026-11-04T21:33:00.000Z", keepOverage: false }))).toBeNull();
+    // Annulation : seulement en file (suppression).
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.deleteQueued(tx, j1.id))).toBeNull();
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.deleteQueued(tx, j2.id))).toMatchObject({ id: j2.id });
+    // Objets du stockage : autres demandes qui utilisent la même photo (avant d'effacer l'objet) ; purge des demandes
+    // terminées depuis 30 jours (clés rendues pour effacer les objets), un dépassement produit non facturé est gardé.
+    const j3 = await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.create(tx, { photoKey: keyA, pose: "front", provider: "noop", scheduledFor: "2026-11-05T21:00:00.000Z" }));
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.countByPhotoKey(tx, keyA, j1.id))).toBe(1);
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.countByPhotoKey(tx, keyA))).toBe(2);
+    expect(await app.withOrg(orgB.id, (tx) => repos.wornPhotoJobs.countByPhotoKey(tx, keyA))).toBe(0);
+    await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.claim(tx, j3.id, "2026-11-05T21:30:00.000Z", "noop"));
+    await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.finish(tx, j3.id, { status: "refused", finishedAt: "2026-11-05T21:31:00.000Z", error: "aucun fournisseur", keepOverage: false }));
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.purgeFinishedBefore(tx, "2026-11-05T21:00:00.000Z"))).toEqual([]);
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.purgeFinishedBefore(tx, "2026-12-06T00:00:00.000Z"))).toEqual([{ id: j3.id, status: "refused", photoKey: keyA, resultKey: null }]);
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.byId(tx, j3.id))).toBeNull();
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.byId(tx, j1.id))).not.toBeNull();
+
+    // Dépassement : compté jusqu'à la date limite, rattaché une seule fois à une facture ; lignes supplémentaires gardées.
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.unbilledOverage(tx, "2026-11-04T21:00:00.000Z"))).toEqual([]);
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.unbilledOverage(tx, "2026-11-05T09:00:00.000Z"))).toEqual([{ unitCents: 25, quantity: 1 }]);
+    const extraLines = [{ kind: "overage" as const, product: "worn_photo" as const, label: "Photos portées au-delà du quota : 1 × 0,25 €", quantity: 1, unitCents: 25, amountCents: 25 }];
+    const po = await app.withOrg(orgA.id, (tx) => repos.paymentOrders.create(tx, { orderId: "ord-studio-1", kind: "renewal", plan: "pro", cycle: "monthly", amountCents: 2524, captureMode: "automatic", extraLines }));
+    expect(po.extraLines).toEqual(extraLines);
+    const inv = await app.withOrg(orgA.id, (tx) => repos.invoices.create(tx, { plan: "pro", cycle: "monthly", amountCents: 2524, vatRate: 20, vatNotice: null, periodStart: "2026-11-05T09:00:00.000Z", periodEnd: "2026-12-05T09:00:00.000Z", orderId: "ord-studio-1", issuedAt: "2026-11-05T09:00:00.000Z", extraLines }));
+    expect(inv.extraLines).toEqual(extraLines);
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.markOverageBilled(tx, { invoiceId: inv.id, cutoff: "2026-11-05T09:00:00.000Z", unitCents: 25, quantity: 1, at: "2026-11-05T09:00:00.000Z" }))).toBe(1);
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.markOverageBilled(tx, { invoiceId: inv.id, cutoff: "2026-11-05T09:00:00.000Z", unitCents: 25, quantity: 1, at: "2026-11-05T09:00:00.000Z" }))).toBe(0);
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.unbilledOverage(tx, "2026-12-05T09:00:00.000Z"))).toEqual([]);
+    expect((await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.byId(tx, j1.id)))?.billedInvoiceId).toBe(inv.id);
+    // Facturée : la purge peut maintenant l'emporter, avec ses deux clés (photo d'origine, résultat).
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.purgeFinishedBefore(tx, "2026-12-06T00:00:00.000Z"))).toEqual([{ id: j1.id, status: "done", photoKey: keyA, resultKey: `org/${orgA.id}/studio-photo/worn-1.jpg` }]);
+    expect(await app.withOrg(orgA.id, (tx) => repos.wornPhotoJobs.byId(tx, j1.id))).toBeNull();
+    // Une facture d'avant 0014 (sans lignes) se relit avec une liste vide.
+    const old = await app.withOrg(orgA.id, (tx) => repos.invoices.create(tx, { plan: "pro", cycle: "monthly", amountCents: 2499, vatRate: 20, vatNotice: null, periodStart: "2026-10-05T09:00:00.000Z", periodEnd: "2026-11-05T09:00:00.000Z", orderId: null, issuedAt: "2026-10-05T09:00:00.000Z" }));
+    expect(old.extraLines).toEqual([]);
+    // L'organisation supprimée emporte ses préparations et ses demandes, pas les références partagées.
+    await owner.withGlobal((tx) => tx.query("delete from organizations where id = $1", [orgA.id]));
+    expect(await owner.withGlobal((tx) => tx.count("select count(*) from worn_photo_jobs where org_id = $1", [orgA.id]))).toBe(0);
+    expect(await app.withGlobal((tx) => repos.sizeReferences.count(tx))).toBe(2);
+  });
+
   it("limite le débit par fenêtre", async () => {
     if (!available) return;
     const a = await app.withGlobal((tx) => repos.rateLimits.hit(tx, "test:ip", 60_000));

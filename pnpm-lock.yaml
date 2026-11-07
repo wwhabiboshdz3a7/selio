@@ -311,6 +311,9 @@ importers:
       '@selio/pricing':
         specifier: workspace:*
         version: link:../../packages/pricing
+      '@selio/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
       bullmq:
         specifier: ^5.81.5
         version: 5.81.5
@@ -630,6 +633,31 @@ importers:
       react-dom:
         specifier: ^19.3.0
         version: 19.3.0(react@19.3.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/node@22.20.5)(happy-dom@18.0.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.51.2)(tsx@4.23.15)
+
+  scripts/studio-eval:
+    dependencies:
+      '@selio/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@selio/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@selio/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.5
+        version: 22.20.5
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

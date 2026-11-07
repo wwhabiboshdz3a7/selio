@@ -22,6 +22,13 @@ export const aiConfigSchema = z.object({
    * vide : les embeddings sont désactivés (AIError « config »).
    */
   OLLAMA_EMBED_MODEL: z.string().default("qwen3-embedding:0.6b").transform((v) => (v.trim() ? v.trim() : undefined)),
+  /**
+   * OCR d'essai pour les étiquettes difficiles (ex. GLM-OCR) : facultatif, VIDE par défaut. Défini, il
+   * sert seulement en second recours sur l'image de l'étiquette, et son texte est fourni en donnée au
+   * modèle 1 pour relecture (jamais utilisé seul). Absent ou vide : la lecture des étiquettes s'en passe,
+   * et la santé n'est jamais dégradée.
+   */
+  OLLAMA_OCR_MODEL: z.string().default("").transform((v) => (v.trim() ? v.trim() : undefined)),
   /** En-tête d'autorisation d'une passerelle placée devant Ollama (ex. « Bearer … »). */
   OLLAMA_AUTH_HEADER: z.string().optional().transform((v) => (v && v.trim() ? v.trim() : undefined)),
   AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(45_000),
