@@ -3,7 +3,7 @@ import { aiConfigSchema } from "@selio/ai";
 import { loadStorageConfig, storageConfigSchema } from "@selio/storage";
 import { emailConfigSchema, emailStartupWarnings, loadEmailConfig } from "@selio/email";
 import { loadPaymentConfig, paymentConfigSchema, paymentStartupNotices } from "@selio/connectors";
-import type { ServicesConfig, radar } from "@selio/core";
+import { wornPhotos, type ServicesConfig, type radar } from "@selio/core";
 import { loadVapidConfig } from "./push";
 
 const bool = z.string().optional().transform((v) => v === "true" || v === "1");
@@ -25,6 +25,50 @@ export const activeHoursSchema = z
     }
     return { startHour, endHour };
   });
+
+/** Fournisseur des photos portées : « noop » (défaut, aucun fournisseur choisi) ou « mock » (tests, démonstration). */
+export const wornProviderSchema = z
+  .string()
+  .optional()
+  .transform((raw, ctx) => {
+    const name = raw && raw.trim() ? raw.trim().toLowerCase() : "noop";
+    if (name !== "noop" && name !== "mock") {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "« noop » (défaut : aucun fournisseur choisi, décision d'Ibrahim) ou « mock » (tests et démonstration)" });
+      return z.NEVER;
+    }
+    return name as "noop" | "mock";
+  });
+
+/** Fenêtre de nuit des photos portées : « 22-6 » (défaut), « 22:00-06:00 » ou « 22h-6h ». */
+export const nightWindowSchema = z
+  .string()
+  .optional()
+  .transform((raw, ctx) => {
+    const hours = wornPhotos.parseNightWindow(raw && raw.trim() ? raw : "22-6");
+    if (!hours) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "format attendu « début-fin » en heures, ex. 22-6 (de 22 h à 6 h, début ≠ fin)" });
+      return z.NEVER;
+    }
+    return hours;
+  });
+
+/** Fuseau IANA de la fenêtre de nuit (Europe/Paris par défaut). */
+export const timezoneSchema = z
+  .string()
+  .optional()
+  .transform((raw, ctx) => {
+    const tz = raw && raw.trim() ? raw.trim() : "Europe/Paris";
+    try {
+      new Intl.DateTimeFormat("fr-FR", { timeZone: tz }).format(new Date(0));
+      return tz;
+    } catch {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "fuseau IANA attendu, ex. Europe/Paris" });
+      return z.NEVER;
+    }
+  });
+
+/** Entier facultatif : vide ou blanc = absent (une ligne « X= » du fichier .env ne vaut pas 0). */
+const optionalInt = (min: number, max: number) => z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), z.coerce.number().int().min(min).max(max).optional());
 
 export const apiEnvSchema = z
   .object({
@@ -97,6 +141,26 @@ export const apiEnvSchema = z
      * l'entraînement a lieu dans le worker) : 500 au moins, même valeur que le worker.
      */
     PRICING_MIN_REFERENCES: z.coerce.number().int().min(500).max(1_000_000).default(500),
+    /**
+     * Photos portées (Studio, §5.11) : AUCUN modèle ni service choisi (décision d'Ibrahim, partie 7). « noop »
+     * (défaut) refuse chaque demande proprement (« aucun fournisseur configuré : décision à prendre », quota
+     * rendu) ; « mock » sert aux tests et à la démonstration (aucune image produite), refusé en production.
+     * L'API ne produit aucune photo (le worker les traite la nuit) ; même valeur que le worker.
+     */
+    WORN_PHOTO_PROVIDER: wornProviderSchema,
+    /** File de nuit des photos portées (heure locale de WORN_NIGHT_TIMEZONE) : « 22-6 » par défaut. Même valeur que le worker. */
+    WORN_NIGHT_WINDOW: nightWindowSchema,
+    WORN_NIGHT_TIMEZONE: timezoneSchema,
+    /**
+     * Photos portées au-delà du quota du plan (10 en Pro, 30 en Agence) : faux par défaut (refus 402). Ouvert, une
+     * photo de plus demande l'accord explicite du client (`acceptOverage: true`) et un abonnement payé par carte ;
+     * elle est facturée au renouvellement, en ligne de dépassement de la facture Revolut.
+     */
+    WORN_OVERAGE_ENABLED: bool,
+    /** Prix d'une photo portée au-delà du quota, en centimes : 25 (0,25 €) par défaut, PROPOSITION à confirmer ; 500 au plus. */
+    WORN_OVERAGE_CENTS: optionalInt(1, 500),
+    /** Ancien nom de WORN_OVERAGE_CENTS (lu seulement si WORN_OVERAGE_CENTS est absent). */
+    WORN_OVERAGE_UNIT_CENTS: optionalInt(1, 500),
   })
   .merge(aiConfigSchema)
   // Stockage des photos (S3 / MinIO), emails transactionnels et paiement Revolut : blocs facultatifs, validés ci-dessous.
@@ -124,6 +188,10 @@ export function loadEnv(env: Record<string, string | undefined> = process.env): 
   // Radar Auto reste réservé aux comptes de l'équipe : en production, la liste est obligatoire.
   if (cfg.NODE_ENV === "production" && cfg.RADAR_AUTO_ENABLED && cfg.RADAR_AUTO_ORG_IDS.length === 0) {
     throw new Error("Configuration invalide :\n  - RADAR_AUTO_ENABLED=true exige RADAR_AUTO_ORG_IDS en production (Radar Auto réservé aux comptes de l'équipe, pas aux clients sur l'adresse partagée).");
+  }
+  // Photos portées : le fournisseur de test ne produit aucune image ; il n'a rien à faire chez un client.
+  if (cfg.NODE_ENV === "production" && cfg.WORN_PHOTO_PROVIDER === "mock") {
+    throw new Error("Configuration invalide :\n  - WORN_PHOTO_PROVIDER=mock est interdit en production (fournisseur de test, aucune image produite) : « noop » tant qu'aucun fournisseur n'est choisi.");
   }
   // Une configuration de stockage, d'email, de paiement ou de notifications à moitié remplie (ou un
   // mode live non autorisé) arrête le démarrage ici (même format de message).
@@ -168,6 +236,23 @@ export function trackServicesConfig(cfg: Pick<ApiEnv, "TRACK_LIVE_ENABLED" | "TR
   return { trackLiveEnabled: cfg.TRACK_LIVE_ENABLED, trackSellerAnalysisEnabled: cfg.TRACK_SELLER_ANALYSIS_ENABLED };
 }
 
+/** Prix unitaire du dépassement des photos portées (centimes) : WORN_OVERAGE_CENTS, sinon l'ancien nom, sinon 25 (proposition). */
+export function wornOverageCents(cfg: Pick<ApiEnv, "WORN_OVERAGE_CENTS" | "WORN_OVERAGE_UNIT_CENTS">): number {
+  return cfg.WORN_OVERAGE_CENTS ?? cfg.WORN_OVERAGE_UNIT_CENTS ?? 25;
+}
+
+/**
+ * Réglages Studio transmis au cœur (`services.config`) : dépassement des photos portées fermé par défaut,
+ * 0,25 € la photo au-delà (proposition), file de nuit 22 h – 6 h à Paris.
+ */
+export function studioServicesConfig(cfg: Pick<ApiEnv, "WORN_OVERAGE_ENABLED" | "WORN_OVERAGE_CENTS" | "WORN_OVERAGE_UNIT_CENTS" | "WORN_NIGHT_WINDOW" | "WORN_NIGHT_TIMEZONE">): Pick<ServicesConfig, "wornOverageEnabled" | "wornOverageUnitCents" | "wornNightWindow"> {
+  return {
+    wornOverageEnabled: cfg.WORN_OVERAGE_ENABLED,
+    wornOverageUnitCents: wornOverageCents(cfg),
+    wornNightWindow: { startHour: cfg.WORN_NIGHT_WINDOW.startHour, endHour: cfg.WORN_NIGHT_WINDOW.endHour, timezone: cfg.WORN_NIGHT_TIMEZONE },
+  };
+}
+
 export interface StartupNotice {
   level: "warn" | "info";
   message: string;
@@ -199,5 +284,11 @@ export function startupNotices(cfg: ApiEnv): StartupNotice[] {
     ? { level: "warn", message: "Selio Track : lecture en direct des pages publiques OUVERTE (TRACK_LIVE_ENABLED=true) — usage des données de Vinted à valider juridiquement." }
     : { level: "info", message: "Selio Track : simulateur (données de démonstration) ; lecture en direct fermée (TRACK_LIVE_ENABLED=false)." });
   if (cfg.TRACK_SELLER_ANALYSIS_ENABLED) out.push({ level: "warn", message: "TRACK_SELLER_ANALYSIS_ENABLED=true : seul l'écran d'explication existe (501) ; l'analyse d'un vendeur reste à valider juridiquement (RGPD)." });
+  // Studio : OCR d'essai facultatif (jamais obligatoire), photos portées sans fournisseur tant qu'Ibrahim n'a pas décidé.
+  out.push({ level: "info", message: cfg.OLLAMA_OCR_MODEL ? `Studio : OCR d'essai des étiquettes « ${cfg.OLLAMA_OCR_MODEL} » (second recours seulement, facultatif).` : "Studio : OCR d'essai non configuré (OLLAMA_OCR_MODEL vide, facultatif) : les étiquettes sont lues par le modèle 1 seul." });
+  out.push(cfg.WORN_PHOTO_PROVIDER === "mock"
+    ? { level: "warn", message: "Photos portées : fournisseur de TEST « mock » (aucune image produite, démonstration seulement)." }
+    : { level: "info", message: "Photos portées : aucun fournisseur choisi (WORN_PHOTO_PROVIDER=noop) : chaque demande est refusée proprement, quota rendu — décision à prendre." });
+  if (cfg.WORN_OVERAGE_ENABLED) out.push({ level: "warn", message: `Photos portées au-delà du quota OUVERTES (WORN_OVERAGE_ENABLED=true) : ${(wornOverageCents(cfg) / 100).toFixed(2).replace(".", ",")} € la photo (PROPOSITION), avec l'accord explicite du client, facturées au renouvellement.` });
   return out;
 }

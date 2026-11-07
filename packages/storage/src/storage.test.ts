@@ -3,6 +3,7 @@ import { loadStorageConfig, storageConfigSchema, type StorageConfig } from "./co
 import { MAX_UPLOAD_BYTES, UPLOAD_KINDS, extensionFor, normalizeContentType, validateUpload } from "./policy";
 import { keyBelongsToOrg, objectKey, orgPrefix, parseObjectKey } from "./keys";
 import { StorageClient, createStorageClient } from "./client";
+import { StorageObjectStore } from "./objects";
 
 const FULL_ENV = {
   STORAGE_ENDPOINT: "http://127.0.0.1:9000",
@@ -185,5 +186,29 @@ describe("StorageClient", () => {
     const capped = client().presignDownload({ key, ttlSeconds: 99_999 });
     expect(new URL(capped.url).searchParams.get("X-Amz-Expires")).toBe("900");
     expect(() => client().presignDownload({ key, ttlSeconds: 0 })).toThrow(/Durée/);
+  });
+
+  it("presignDelete et deleteObject : DELETE signé exécuté par le serveur, idempotent (404 = déjà absent), toute autre erreur lève, aucune redirection suivie", async () => {
+    const key = objectKey(ORG, "studio-photo", "s9", "jpg");
+    const del = client().presignDelete({ key });
+    const url = new URL(del.url);
+    expect(url.pathname).toBe(`/selio-photos/${key}`);
+    expect(url.searchParams.get("X-Amz-SignedHeaders")).toBe("host");
+    expect(url.searchParams.get("X-Amz-Expires")).toBe("900");
+    expect(del.url).not.toContain("selio-minio-secret");
+    // La signature d'un DELETE diffère de celle d'un GET sur la même clé : l'URL de lecture ne permet pas d'effacer.
+    expect(url.searchParams.get("X-Amz-Signature")).not.toBe(new URL(client().presignDownload({ key }).url).searchParams.get("X-Amz-Signature"));
+    const calls: { url: string; method?: string; redirect?: string }[] = [];
+    const fetchImpl = (status: number) => (async (u: string | URL | Request, init?: RequestInit) => { calls.push({ url: String(u), method: init?.method, redirect: init?.redirect }); return new Response(null, { status }); }) as typeof fetch;
+    await client().deleteObject(key, { fetchImpl: fetchImpl(204) });
+    await client().deleteObject(key, { fetchImpl: fetchImpl(404) });
+    await expect(client().deleteObject(key, { fetchImpl: fetchImpl(403) })).rejects.toThrow(/suppression refusée \(HTTP 403\)/);
+    expect(calls).toHaveLength(3);
+    expect(calls.every((c) => c.method === "DELETE" && c.redirect === "error" && c.url.startsWith(`http://127.0.0.1:9000/selio-photos/${key}?`))).toBe(true);
+    // Le magasin d'objets du serveur (Studio) délègue au client ; sans `deleteObject`, il refuse plutôt que de faire semblant.
+    await new StorageObjectStore(client(), { fetchImpl: fetchImpl(204) }).delete(key);
+    expect(calls).toHaveLength(4);
+    const c = client();
+    await expect(new StorageObjectStore({ presignDownload: c.presignDownload.bind(c) }).delete(key)).rejects.toThrow(/suppression non disponible/);
   });
 });

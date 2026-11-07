@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Bot, Calculator, Camera, CircleUser, Cloud, FileCheck, Filter, Gauge, LineChart, Scale, HandCoins, LayoutGrid, Lightbulb, FileStack, ListChecks, Palette, Radar, Settings, ShieldCheck, Shirt, SlidersHorizontal, Sparkles, Store, TrendingUp, UserPlus, Users, Workflow } from "lucide-react";
+import { Bot, Calculator, Camera, CircleUser, Cloud, FileCheck, Filter, Gauge, LineChart, Scale, HandCoins, LayoutGrid, Lightbulb, FileStack, MoonStar, ListChecks, Palette, Radar, Settings, ShieldCheck, Shirt, SlidersHorizontal, Sparkles, Store, TrendingUp, UserPlus, Users, Workflow } from "lucide-react";
 import type { NavGroup } from "../layout";
 
 /**
@@ -104,6 +104,7 @@ export const SPACE_GROUPS: Record<Exclude<SpaceArea, "selio">, NavGroup[]> = {
       { to: "/studio", label: "Créer", icon: <Sparkles />, end: true, hint: "Vos photos → annonce, article après article" },
       { to: "/studio/annonces", label: "Annonces générées", icon: <FileStack />, hint: "Historique et note du dressing" },
       { to: "/studio/performances", label: "Ce qui performe", icon: <Lightbulb />, hint: "Ce que vos ventes apprennent" },
+      { to: "/studio/photos-portees", label: "Photos portées", icon: <MoonStar />, hint: "File de nuit et quota du mois" },
     ] },
     { title: "Dans Selio", items: [
       { to: "/app/dressing", label: "Dressing intelligent", icon: <Shirt /> },

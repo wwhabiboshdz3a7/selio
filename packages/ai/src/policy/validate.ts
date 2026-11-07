@@ -1,5 +1,7 @@
-import type { HelpAnswerOutput, PhotoDescription, ReplySuggestion } from "@selio/contracts";
-import { helpTokens, normalizeHelpText, scanForInjection, type NegotiationResult } from "@selio/domain";
+import { LABEL_FIELDS, MEASUREMENT_NAMES, STUDIO_MEASUREMENT_TOLERANCE_CM, STUDIO_MIN_CONFIDENCE } from "@selio/contracts";
+import type { HelpAnswerOutput, LabelReadOutput, MeasurementName, MeasurementsOutput, PhotoDescription, PhotoSortOutput, ReplySuggestion, SellerQuestion, SortedPhoto, StudioQuestionField, StudioQuestionReason } from "@selio/contracts";
+import { helpTokens, normalizeHelpText, sanitizeUntrustedText, scanForInjection, simplifyText, studioQuestion, type NegotiationResult } from "@selio/domain";
+import { STUDIO_EXAMPLE_BRAND, STUDIO_EXAMPLE_MEASUREMENT } from "../prompts";
 
 export interface ValidationContext {
   decision: NegotiationResult | null;
@@ -204,4 +206,232 @@ export function validatePhotoDescription(raw: PhotoDescription): PhotoDescriptio
   const scan = scanForInjection(text);
   if (scan.suspicious) return { ok: false, code: "injection_echo", reason: `La description reprend un motif suspect (${scan.matches[0]}).` };
   return { ok: true, description: { ...d, title: d.title.replace(/\s+/g, " ").trim() } };
+}
+
+// ---------------------------------------------------------------- Studio façon Kavis (§5.11)
+// Le modèle 1 ne remplit rien qu'il n'a pas lu : la validation écarte une valeur sans provenance
+// (readFrom absent, mesure sans ruban visible), une lecture peu sûre (confiance < 0,5 : valeur vide et
+// question au vendeur), une marque absente du texte lu, une recopie de l'exemple du prompt, et tout ce
+// qui ressemble à du HTML, un lien ou une injection.
+
+/** Une valeur écartée par la validation, et pourquoi (journalisée, et convertie en question au vendeur). */
+export interface FieldRejection {
+  field: StudioQuestionField;
+  code: "no_tape" | "not_read" | "low_confidence" | "not_in_text" | "example_echo" | "unsafe" | "implausible" | "no_evidence" | "duplicate";
+  reason: string;
+}
+
+export type PhotoSortValidation = { ok: true; output: PhotoSortOutput; warnings: string[] } | { ok: false; code: string; reason: string };
+
+/**
+ * Tri des photos : une entrée par photo envoyée, positions dans [0, N-1] (une numérotation à partir de 1
+ * est ramenée à 0), doublons et positions inconnues écartés, photo oubliée → « other » avec une confiance
+ * nulle, groupes renumérotés 1, 2… dans l'ordre d'apparition.
+ */
+export function validatePhotoSort(out: PhotoSortOutput, photoCount: number): PhotoSortValidation {
+  if (photoCount <= 0) return { ok: false, code: "empty", reason: "Aucune photo envoyée." };
+  const warnings: string[] = [];
+  let entries = out.photos;
+  const indexes = entries.map((p) => p.index);
+  // Numérotation de 1 à N (fréquente chez les modèles) : ramenée de 0 à N-1.
+  if (indexes.length === photoCount && !indexes.includes(0) && indexes.every((i) => i >= 1 && i <= photoCount) && new Set(indexes).size === photoCount) {
+    entries = entries.map((p) => ({ ...p, index: p.index - 1 }));
+  }
+  const byIndex = new Map<number, SortedPhoto>();
+  let dropped = 0;
+  for (const p of entries) {
+    if (p.index < 0 || p.index >= photoCount || byIndex.has(p.index)) {
+      dropped++;
+      continue;
+    }
+    byIndex.set(p.index, p);
+  }
+  if (byIndex.size === 0) return { ok: false, code: "no_photo", reason: "Le tri ne correspond à aucune photo envoyée." };
+  if (dropped > 0) warnings.push(`${dropped} entrée(s) du tri ignorée(s) (photo inconnue ou en double).`);
+  const missing: number[] = [];
+  const photos: SortedPhoto[] = [];
+  let lastGroup = 1;
+  for (let i = 0; i < photoCount; i++) {
+    const p = byIndex.get(i);
+    if (p) {
+      photos.push({ ...p, confidence: Math.min(1, Math.max(0, p.confidence)) });
+      lastGroup = p.articleGroup;
+    } else {
+      missing.push(i);
+      photos.push({ index: i, role: "other", articleGroup: lastGroup, confidence: 0 });
+    }
+  }
+  if (missing.length > 0) warnings.push(`Rôle inconnu pour ${missing.length} photo(s) : classées « autre », à vérifier.`);
+  // Groupes renumérotés dans l'ordre d'apparition (1, 2, 3…).
+  const order: number[] = [];
+  for (const p of photos) if (!order.includes(p.articleGroup)) order.push(p.articleGroup);
+  return { ok: true, output: { photos: photos.map((p) => ({ ...p, articleGroup: order.indexOf(p.articleGroup) + 1 })) }, warnings };
+}
+
+function unsafeText(text: string): string | null {
+  if (/<[a-z!/][^>]*>/i.test(text)) return "HTML";
+  if (/https?:\/\/|www\./i.test(text)) return "lien";
+  if (extractAllPricesCents(text).length > 0) return "prix";
+  const scan = scanForInjection(text);
+  if (scan.suspicious) return `motif suspect (${scan.matches[0]})`;
+  return null;
+}
+
+/**
+ * La valeur figure-t-elle dans le texte lu (transcription du modèle ou de l'OCR) ? Comparaison sans
+ * accents, casse ni ponctuation ; une valeur courte (« M », « 38 ») doit être un mot entier du texte.
+ */
+export function appearsInText(value: string, text: string): boolean {
+  const v = simplifyText(value);
+  const t = simplifyText(text);
+  if (!v || !t) return false;
+  const tokens = ` ${t} `;
+  if (tokens.includes(` ${v} `)) return true;
+  const compact = v.replace(/ /g, "");
+  return compact.length >= 3 && t.replace(/ /g, "").includes(compact);
+}
+
+export interface LabelReadValidation {
+  output: LabelReadOutput;
+  questions: SellerQuestion[];
+  rejected: FieldRejection[];
+  /** Aucun texte transcrit (ni par le modèle, ni par l'OCR d'essai) : aucune valeur n'a pu être corroborée. */
+  noTranscript: boolean;
+}
+
+const EMPTY_LABEL_FIELD = { value: null, confidence: 0, readFrom: null } as const;
+
+/**
+ * Lecture de l'étiquette : un champ n'est gardé que s'il est lu sur l'étiquette (`readFrom` « label »),
+ * avec une confiance d'au moins 0,5, sans HTML ni lien ni motif suspect ; la marque, la taille et la
+ * référence doivent en plus figurer dans le texte lu (transcription du modèle, texte de l'OCR d'essai).
+ * SANS AUCUNE TRANSCRIPTION, rien n'est retenu (un modèle qui « reconnaît » une marque sans transcrire
+ * l'étiquette l'a déduite du logo ou du style) : les quatre champs sont écartés avec une question au vendeur,
+ * et le service tente l'OCR d'essai en second recours s'il est configuré. Exemption documentée : avec une
+ * transcription, la matière n'est pas cherchée mot à mot dans le texte, car le modèle normalise la composition
+ * (« 100% COTTON » → « 100 % coton ») ; elle reste exigée lue sur l'étiquette, avec sa confiance. Une marque
+ * recopiée de l'exemple du prompt fait écarter toute la lecture. Chaque champ écarté devient vide, avec une
+ * question au vendeur.
+ */
+export function validateLabelRead(raw: LabelReadOutput, ctx: { ocrText?: string | null } = {}): LabelReadValidation {
+  const rejected: FieldRejection[] = [];
+  const questions: SellerQuestion[] = [];
+  const transcript = [raw.text, ctx.ocrText].filter((t): t is string => typeof t === "string" && t.trim().length > 0).join("\n");
+  const noTranscript = transcript.length === 0;
+  const echo = raw.brand.value !== null && simplifyText(raw.brand.value) === simplifyText(STUDIO_EXAMPLE_BRAND);
+  const out: LabelReadOutput = { brand: { ...EMPTY_LABEL_FIELD }, size: { ...EMPTY_LABEL_FIELD }, material: { ...EMPTY_LABEL_FIELD }, reference: { ...EMPTY_LABEL_FIELD }, careSymbols: [], text: null };
+  for (const key of LABEL_FIELDS) {
+    const f = raw[key];
+    const value = f.value?.replace(/\s+/g, " ").trim() || null;
+    if (value === null) continue;
+    const reject = (code: FieldRejection["code"], reason: string, reason_: StudioQuestionReason) => {
+      rejected.push({ field: key, code, reason });
+      questions.push(studioQuestion(key, reason_, reason_ === "low_confidence" ? { read: null } : {}));
+    };
+    if (echo) {
+      reject("example_echo", "Lecture recopiée de l'exemple du prompt : rien n'a été lu.", "rejected");
+      continue;
+    }
+    if (f.readFrom !== "label") {
+      reject("not_read", `${key} non lu sur l'étiquette (provenance absente) : aucune déduction depuis le style.`, "rejected");
+      continue;
+    }
+    if (f.confidence < STUDIO_MIN_CONFIDENCE) {
+      reject("low_confidence", `${key} lu avec une confiance de ${f.confidence.toFixed(2)} (< ${STUDIO_MIN_CONFIDENCE}).`, "low_confidence");
+      continue;
+    }
+    const unsafe = unsafeText(value);
+    if (unsafe) {
+      reject("unsafe", `${key} écarté (${unsafe}).`, "rejected");
+      continue;
+    }
+    if (noTranscript) {
+      reject("not_in_text", `${key} « ${value.slice(0, 40)} » sans aucun texte transcrit de l'étiquette : rien n'est retenu.`, "rejected");
+      continue;
+    }
+    if (key !== "material" && !appearsInText(value, transcript)) {
+      reject("not_in_text", `${key} « ${value.slice(0, 40)} » absent du texte lu sur l'étiquette.`, "rejected");
+      continue;
+    }
+    out[key] = { value: value.slice(0, 80), confidence: f.confidence, readFrom: "label" };
+  }
+  const care = echo ? [] : (raw.careSymbols ?? []).map((c) => c.replace(/\s+/g, " ").trim()).filter((c) => c.length > 0 && !unsafeText(c));
+  out.careSymbols = [...new Set(care)].slice(0, 12);
+  const text = !echo && raw.text ? sanitizeUntrustedText(raw.text, 600) : "";
+  out.text = text && !unsafeText(text) ? text : null;
+  return { output: out, questions, rejected, noTranscript };
+}
+
+/** Bornes plausibles d'une mesure lue (cm) : au-delà, c'est une erreur de lecture (pouces, millimètres, autre graduation). */
+export const MEASUREMENT_BOUNDS_CM: Record<MeasurementName, readonly [number, number]> = {
+  chest: [15, 100],
+  length: [15, 200],
+  shoulders: [15, 80],
+  sleeve: [5, 110],
+  waist: [15, 100],
+  hips: [15, 110],
+  inseam: [5, 120],
+  rise: [5, 60],
+  sole: [5, 45],
+};
+
+export interface MeasurementsValidation {
+  output: MeasurementsOutput;
+  questions: SellerQuestion[];
+  rejected: FieldRejection[];
+}
+
+/**
+ * Mesures : sans mètre ruban visible, aucune mesure n'est gardée (un modèle qui en donne quand même les
+ * a estimées « à l'œil ») ; chaque mesure gardée porte la preuve « tape_photo », une confiance d'au moins
+ * 0,5 et une valeur plausible en cm (arrondie au demi-centimètre). Une mesure recopiée de l'exemple du
+ * prompt est écartée. Chaque mesure écartée devient une question au vendeur.
+ */
+export function validateMeasurements(raw: MeasurementsOutput): MeasurementsValidation {
+  const rejected: FieldRejection[] = [];
+  const questions: SellerQuestion[] = [];
+  const reject = (name: MeasurementName, code: FieldRejection["code"], reason: string, q: StudioQuestionReason) => {
+    rejected.push({ field: name, code, reason });
+    if (!questions.some((x) => x.field === name)) questions.push(studioQuestion(name, q));
+  };
+  if (!raw.tapeVisible) {
+    for (const m of raw.measurements) if (m.valueCm !== null) reject(m.name, "no_tape", `${m.name} donnée sans mètre ruban visible : mesure estimée, écartée.`, "no_tape");
+    return { output: { tapeVisible: false, measurements: [] }, questions, rejected };
+  }
+  const candidates = new Map<MeasurementName, MeasurementsOutput["measurements"]>();
+  for (const m of raw.measurements) {
+    if (m.valueCm === null) continue;
+    if (m.evidence !== "tape_photo") {
+      reject(m.name, "no_evidence", `${m.name} sans preuve « tape_photo » : écartée.`, "rejected");
+      continue;
+    }
+    if (m.confidence < STUDIO_MIN_CONFIDENCE) {
+      reject(m.name, "low_confidence", `${m.name} lue avec une confiance de ${m.confidence.toFixed(2)} (< ${STUDIO_MIN_CONFIDENCE}).`, "low_confidence");
+      continue;
+    }
+    if (m.name === STUDIO_EXAMPLE_MEASUREMENT.name && m.valueCm === STUDIO_EXAMPLE_MEASUREMENT.valueCm) {
+      reject(m.name, "example_echo", `${m.name} identique à l'exemple du prompt : écartée par prudence.`, "rejected");
+      continue;
+    }
+    const [min, max] = MEASUREMENT_BOUNDS_CM[m.name];
+    if (m.valueCm < min || m.valueCm > max) {
+      reject(m.name, "implausible", `${m.name} = ${m.valueCm} cm hors des bornes plausibles (${min} à ${max} cm).`, "rejected");
+      continue;
+    }
+    candidates.set(m.name, [...(candidates.get(m.name) ?? []), m]);
+  }
+  const kept = new Map<MeasurementName, MeasurementsOutput["measurements"][number]>();
+  for (const [name, list] of candidates) {
+    const values = list.map((m) => m.valueCm!);
+    // Deux lectures de la même mesure : la plus sûre est gardée ; trop différentes, aucune.
+    if (Math.max(...values) - Math.min(...values) > STUDIO_MEASUREMENT_TOLERANCE_CM) {
+      reject(name, "duplicate", `${name} lue plusieurs fois avec des valeurs différentes (${values.join(", ")} cm).`, "rejected");
+      continue;
+    }
+    const best = [...list].sort((a, b) => b.confidence - a.confidence)[0]!;
+    kept.set(name, { ...best, valueCm: Math.round(best.valueCm! * 2) / 2 });
+  }
+  const order = new Map(MEASUREMENT_NAMES.map((n, i) => [n, i]));
+  const measurements = [...kept.values()].sort((a, b) => order.get(a.name)! - order.get(b.name)!);
+  return { output: { tapeVisible: true, measurements }, questions, rejected };
 }

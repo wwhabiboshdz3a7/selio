@@ -10,6 +10,8 @@ import type { PushSender } from "./services/alerts";
 import type { PurchaseRunner, RadarReader } from "./services/radar-sources";
 import type { PricingServices } from "./services/pricing";
 import type { TrackReader } from "./services/track";
+import type { StudioServices } from "./services/studio";
+import type { WornPhotoProvider } from "./services/worn-photos";
 
 export class AppError extends Error {
   constructor(public readonly code: string, message: string, public readonly status = 400, public readonly details?: unknown) {
@@ -66,6 +68,18 @@ export interface Services {
    * sans session), utilisé seulement si TRACK_LIVE_ENABLED. Absent : le simulateur.
    */
   track?: { reader?: TrackReader };
+  /**
+   * Studio façon Kavis : lecture des photos par le modèle 1 (tri, étiquette, mètre ruban), lecture des photos
+   * stockées par leur clé et réduction d'image. Absent : `vision` est pris sur `ai` s'il sait lire les photos ;
+   * sans stockage, seules les photos réduites envoyées en base64 sont acceptées ; sans réduction, une photo
+   * trop grande pour le modèle est refusée (jamais envoyée en pleine taille).
+   */
+  studio?: StudioServices;
+  /**
+   * Photos portées (worker) : aucun modèle ni service choisi (décision d'Ibrahim). Absent : fournisseur « noop »,
+   * qui refuse chaque demande (« aucun fournisseur configuré : décision à prendre »).
+   */
+  wornPhotos?: WornPhotoProvider;
   /** Réglages serveur lus dans l'environnement (`cloudConfigFromEnv`, `radarConfigFromEnv`, `trackConfigFromEnv`). Valeurs prudentes par défaut. */
   config?: ServicesConfig;
 }
@@ -106,6 +120,15 @@ export interface ServicesConfig {
   trackSellerAnalysisEnabled?: boolean;
   /** TRACK_READ_INTERVAL_MINUTES : relecture d'une empreinte suivie (120 min par défaut, 60 au moins), × facteur de ralentissement. */
   trackReadIntervalMinutes?: number;
+  /**
+   * WORN_OVERAGE_ENABLED : photos portées au-delà du quota du plan, avec l'accord explicite du client, facturées
+   * au renouvellement (ligne de dépassement). Faux par défaut : au-delà du quota, refus 402.
+   */
+  wornOverageEnabled?: boolean;
+  /** WORN_OVERAGE_UNIT_CENTS : prix d'une photo portée au-delà du quota (25 = 0,25 €, PROPOSITION à confirmer). */
+  wornOverageUnitCents?: number;
+  /** WORN_NIGHT_WINDOW / WORN_NIGHT_TIMEZONE : file de nuit des photos portées (22 h – 6 h, Europe/Paris par défaut). */
+  wornNightWindow?: { startHour: number; endHour: number; timezone?: string };
 }
 
 /** Contexte d'une requête authentifiée dans une organisation. */

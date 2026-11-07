@@ -3,7 +3,7 @@ import { z } from "zod";
 import { repos } from "@selio/db";
 import { newId } from "@selio/domain";
 import { AppError, requireAction, withOrg } from "@selio/core";
-import { MAX_UPLOAD_BYTES, UPLOAD_KINDS, keyBelongsToOrg, objectKey, validateUpload, type StorageClient, type UploadKind } from "@selio/storage";
+import { MAX_UPLOAD_BYTES, UPLOAD_KINDS, keyBelongsToOrg, objectKey, parseObjectKey, validateUpload, type StorageClient, type UploadKind } from "@selio/storage";
 
 /**
  * Téléversement des photos vers le stockage objet (S3 / MinIO) par URLs
@@ -71,5 +71,27 @@ export default async function uploadsRoutes(app: FastifyInstance, opts: { storag
     if (!keyBelongsToOrg(key, ctx.orgId)) throw new AppError("forbidden", "Cette photo n'appartient pas à votre organisation.", 403);
     const read = storage.presignDownload({ key });
     return { url: read.url, expiresAt: read.expiresAt };
+  });
+
+  /**
+   * Suppression d'une photo envoyée pour Studio (`studio-photo` seulement : la photo d'un article vit avec lui) :
+   * le navigateur l'appelle quand la demande qui devait l'utiliser (photo portée) échoue après l'envoi, pour ne
+   * rien laisser dans le stockage. Clé du préfixe de l'organisation de la session, DELETE signé exécuté par l'API.
+   */
+  app.delete("/api/uploads/object", { config: { rateLimit: UPLOAD_PRESIGN_RATE_LIMIT } }, async (req) => {
+    const ctx = app.requireCtx(req);
+    requireAction(ctx, "items.write");
+    const storage = storageOrUnavailable();
+    const { key } = readQuery.parse(req.query);
+    if (!keyBelongsToOrg(key, ctx.orgId)) throw new AppError("forbidden", "Cette photo n'appartient pas à votre organisation.", 403);
+    const parsed = parseObjectKey(key);
+    if (!parsed || parsed.kind !== "studio-photo") throw new AppError("validation", "Seule une photo envoyée pour Studio (studio-photo) peut être supprimée ici.", 400);
+    try {
+      await storage.deleteObject(key);
+    } catch {
+      throw new AppError("storage_error", "Le stockage n'a pas pu supprimer la photo : réessayez plus tard.", 502);
+    }
+    await withOrg(ctx, (tx) => repos.audit.add(tx, { actorUserId: ctx.userId, action: "upload.deleted", targetType: "storage_object", targetId: parsed.id, meta: { key, kind: parsed.kind }, ip: ctx.ip }));
+    return { deleted: true, key };
   });
 }

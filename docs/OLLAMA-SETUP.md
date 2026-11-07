@@ -9,12 +9,14 @@ Trois rôles, tous servis par Ollama sur la même machine. Dans l'interface et l
 | Rôle | Variable | Valeur par défaut | Sert à | Mémoire GPU (Q4, estimation) |
 |---|---|---|---|---|
 | **Mon IA perso**, la voix | `OLLAMA_MODEL` | `qwen2.5:7b-instruct` (valeur de démarrage) | Réponses aux acheteurs, rédaction des annonces, aide, explication des prix en mots | ≈ 5 Go pour un 7–8 B |
-| **Modèle 1**, les photos | `OLLAMA_VISION_MODEL` | `qwen3-vl:8b` | Studio (annonce à partir des photos), lecture des étiquettes, contrôle des photos | ≈ 6 Go |
+| **Modèle 1**, les photos | `OLLAMA_VISION_MODEL` | `qwen3-vl:8b` | Studio façon Kavis (tri des photos, lecture des étiquettes et du mètre ruban, annonce à partir des photos), contrôle des photos | ≈ 6 Go |
 | **Modèle 2**, les prix | `OLLAMA_EMBED_MODEL` | `qwen3-embedding:0.6b` | Vecteurs (embeddings) pour retrouver les ventes comparables et estimer un prix | ≈ 1 Go |
+| **OCR d'essai** (facultatif), les étiquettes difficiles | `OLLAMA_OCR_MODEL` | **vide** (désactivé) | Studio : second recours sur l'image de l'étiquette quand marque ou taille restent vides ou peu sûres ; son texte est relu par le modèle 1, jamais retenu seul | à mesurer avec `ollama ps` (GLM-OCR : nom exact à vérifier) |
 
 - **Le nom du modèle de texte est donné à part par Ibrahim** : la valeur par défaut ne sert qu'au démarrage. On le renseigne dans `OLLAMA_MODEL` côté API et worker, rien d'autre ne change.
 - Les trois tiennent ensemble dans les 16 Go de la carte (≈ 12–13 Go avec le cache de contexte à `AI_CONTEXT_LIMIT=8192` et `OLLAMA_NUM_PARALLEL=2`). Si le modèle de texte choisi dépasse ≈ 8 B, Ollama déborde sur la mémoire vive et tout ralentit : à vérifier avec `ollama ps` (colonne « PROCESSOR », viser 100 % GPU).
-- Un modèle secondaire peut être désactivé en laissant sa variable **explicitement vide** (`OLLAMA_VISION_MODEL=`) : Studio rédige alors sans lire les photos et l'écran le signale ; `OLLAMA_EMBED_MODEL=` désactive les embeddings (erreur « config » explicite, jamais un vecteur simulé).
+- Un modèle secondaire peut être désactivé en laissant sa variable **explicitement vide** (`OLLAMA_VISION_MODEL=`) : Studio rédige alors sans lire les photos et l'écran le signale ; la préparation façon Kavis (tri, étiquette, mesures) répond 503 plutôt que de deviner ; `OLLAMA_EMBED_MODEL=` désactive les embeddings (erreur « config » explicite, jamais un vecteur simulé).
+- **L'OCR d'essai est facultatif et vide par défaut** (`OLLAMA_OCR_MODEL=`). Il n'est jamais obligatoire : sans lui, les étiquettes sont lues par le modèle 1 seul et la santé reste `healthy`. Défini, il ne sert qu'en **second recours** (docs/STUDIO.md §4) ; le quatrième modèle doit tenir dans la carte avec les trois autres (`OLLAMA_MAX_LOADED_MODELS=4` dans ce cas).
 
 ## Routage
 
@@ -25,6 +27,8 @@ Le code choisit le modèle, jamais l'utilisateur :
 | Requête **avec images** (`images` non vide) | modèle 1 (`visionModel`) | `OllamaProvider.target()` → `POST /api/generate` |
 | `AIService.embed(orgId, textes)` | modèle 2 (`embedModel`) | `OllamaProvider.embed()` → `POST /api/embed` `{ model, input }` |
 | Tout le reste (réponses, annonces sans photo, aide, flux) | mon IA perso (`model`) | `POST /api/generate` |
+| Studio façon Kavis : `AIService.sortPhotos`, `readLabel`, `readMeasurements` (6 / 2 / 3 photos réduites par appel, ≤ 1 024 px, ≤ 1 Mo, refus au-delà) | modèle 1 (`visionModel`) | `POST /api/generate` avec les images |
+| `readLabel` : marque ou taille vide ou peu sûre **et** `OLLAMA_OCR_MODEL` défini | OCR d'essai (`ocrModel`), second recours seulement | `OllamaProvider.ocr()` → `POST /api/generate` (texte brut, température 0), puis relecture par le modèle 1 |
 
 Les embeddings passent par la même file et le même disjoncteur que les générations ; leur latence est mesurée à part sous le rôle `embed` (`metrics.byKind.embed`, p50/p95), car elle n'a rien à voir avec celle d'une réponse rédigée. **Quotas :** `createAIService` ne reçoit aucun `QuotaGuard` (API et worker) ; le quota IA de l'offre est appliqué par l'appelant côté `core` en comptant les lignes `ai_requests` du mois (`messaging.suggestReply`, `studio.generateListing`). Un futur consommateur de `AIService.embed` (estimation des prix, 5.10) devra faire de même : rien ne le décompte aujourd'hui.
 
@@ -45,6 +49,7 @@ navigateur ──HTTPS──▶ API Selio ──réseau privé (tunnel WireGuard
    ollama pull <modèle de texte donné par Ibrahim>   # mon IA perso (OLLAMA_MODEL)
    ollama pull qwen3-vl:8b                           # modèle 1, les photos
    ollama pull qwen3-embedding:0.6b                  # modèle 2, les prix
+   # facultatif : ollama pull <modèle OCR d'essai>     # OLLAMA_OCR_MODEL, étiquettes difficiles (nom exact à vérifier)
    ```
 3. Régler le service pour **garder les trois chargés** et n'écouter que sur l'interface privée (`/etc/systemd/system/ollama.service.d/override.conf`) :
    ```ini
@@ -69,6 +74,7 @@ OLLAMA_BASE_URL=http://10.0.0.5:11434
 OLLAMA_MODEL=<nom donné par Ibrahim>   # mon IA perso (texte)
 OLLAMA_VISION_MODEL=qwen3-vl:8b        # modèle 1 : les photos
 OLLAMA_EMBED_MODEL=qwen3-embedding:0.6b # modèle 2 : les prix
+OLLAMA_OCR_MODEL=                      # facultatif, VIDE par défaut : OCR d'essai des étiquettes (second recours seulement)
 OLLAMA_AUTH_HEADER=                    # facultatif : « Bearer … » si une passerelle protège Ollama
 AI_TIMEOUT_MS=45000                    # délai maximal par génération
 AI_MAX_CONCURRENCY=2                   # aligné sur OLLAMA_NUM_PARALLEL, à régler après pnpm ai:bench
@@ -91,7 +97,7 @@ ALLOW_AI_FALLBACK=false                # obligatoire en production
 | Modèle de texte présent, mais modèle 1 ou 2 absent | `degraded` (le message dit lequel et la commande `ollama pull`) | non |
 | Modèle de texte absent, ou serveur injoignable | `unavailable` | non |
 
-`details.models` liste `{ role, name, present }` pour `text`, `vision`, `embed` ; `details.missing` donne les noms à installer ; `details.installed` ce que le serveur a réellement. Un nom est reconnu s'il est exact, ou si la variable ne porte pas d'étiquette et que `:latest` est installé ; une autre étiquette (`qwen3-embedding:4b` pour `:0.6b`) compte comme absent, car la génération répondrait 404.
+`details.models` liste `{ role, name, present }` pour `text`, `vision`, `embed` (et `ocr` avec `optional: true` quand `OLLAMA_OCR_MODEL` est défini : absent du serveur, il est listé dans `details.optionalMissing`, signalé dans le message, et le statut reste `healthy`) ; `details.missing` donne les noms à installer ; `details.installed` ce que le serveur a réellement. Un nom est reconnu s'il est exact, ou si la variable ne porte pas d'étiquette et que `:latest` est installé ; une autre étiquette (`qwen3-embedding:4b` pour `:0.6b`) compte comme absent, car la génération répondrait 404.
 
 En service : `GET /api/ai/health` (en-tête `x-health-token`) renvoie cette santé, les métriques (globales et par rôle : p50/p95, échecs, sorties rejetées, jetons), l'état de la file et du disjoncteur. L'interface affiche le statut (Paramètres › Assistant IA, pastille dans la barre latérale, alerte sur la vue d'ensemble).
 
@@ -100,7 +106,7 @@ En service : `GET /api/ai/health` (en-tête `x-health-token`) renvoie cette sant
 ```bash
 AI_PROVIDER=ollama OLLAMA_BASE_URL=http://10.0.0.5:11434 OLLAMA_MODEL=<texte> pnpm ai:diagnose
 ```
-Affiche les trois modèles et leur présence, teste une génération structurée (JSON) sur mon IA perso puis un embedding sur le modèle 2. Codes de sortie : 0 OK, 2 serveur injoignable ou modèle de texte absent, 3 génération en échec, 4 embedding en échec. Un modèle secondaire absent est signalé mais n'interrompt pas le diagnostic.
+Affiche les trois modèles et leur présence, teste une génération structurée (JSON) sur mon IA perso puis un embedding sur le modèle 2. La ligne « OCR » indique le modèle d'essai des étiquettes ou « non configuré » (facultatif, jamais bloquant). Codes de sortie : 0 OK, 2 serveur injoignable ou modèle de texte absent, 3 génération en échec, 4 embedding en échec. Un modèle secondaire absent est signalé mais n'interrompt pas le diagnostic.
 
 ## Mesurer la capacité : `pnpm ai:bench`
 
@@ -138,6 +144,18 @@ Ces repères viennent du compte rendu de réunion, pas d'une mesure sur la machi
 |---|---|---|---|---|---|---|---|---|---|
 | à remplir | | | | | | | | | |
 
+## Studio : mesurer la lecture des étiquettes et des mesures — `pnpm studio:eval`
+
+Les objectifs de Studio façon Kavis (≥ 95 % de marques et tailles justes, 9 mesures sur 10 à 1 cm près) sont **à mesurer** sur nos propres photos : 200 photos d'étiquettes et 50 articles avec mètre ruban, avec leur vérité terrain, dans un dossier hors du dépôt. Sur la machine, une fois le modèle 1 présent :
+
+```bash
+AI_PROVIDER=ollama OLLAMA_BASE_URL=http://10.0.0.5:11434 pnpm studio:eval /srv/selio/studio-eval
+AI_PROVIDER=ollama OLLAMA_BASE_URL=http://10.0.0.5:11434 OLLAMA_OCR_MODEL=<modèle OCR> pnpm studio:eval /srv/selio/studio-eval            # avec l'OCR d'essai
+AI_PROVIDER=ollama OLLAMA_BASE_URL=http://10.0.0.5:11434 OLLAMA_OCR_MODEL=<modèle OCR> pnpm studio:eval /srv/selio/studio-eval --no-ocr   # puis sans, pour comparer
+```
+
+Le rapport Markdown daté (`scripts/studio-eval/rapports/`, ignoré par Git) donne les taux de justes, de fausses et de non lues, la latence p50 / p95 par lecture, et le verdict de chaque objectif ; il est à reporter dans le tableau de docs/STUDIO.md §6.5. Structure du jeu, format des vérités, mode par l'API locale et codes de sortie : docs/STUDIO.md §6.
+
 ## Comportement en cas d'indisponibilité
 
 - File à concurrence limitée et délai par requête ; annulation si le client ferme la connexion.
@@ -146,12 +164,14 @@ Ces repères viennent du compte rendu de réunion, pas d'une mesure sur la machi
 - Automatisations : gabarits déterministes, elles continuent sans IA. Aucun résultat simulé ne remplace Ollama en production (`AI_PROVIDER=mock` refusé).
 - Modèle 1 **désactivé** (`OLLAMA_VISION_MODEL=` explicitement vide) : Studio rédige sans lire les photos, à partir des indications, et l'écran l'affiche. Modèle 1 **configuré mais non installé** (valeur par défaut `qwen3-vl:8b` sans `ollama pull`) : santé « degraded », chaque génération Studio reçoit `model_missing` et l'API répond 503 « Générateur indisponible (model_missing) » jusqu'au `ollama pull` ; rien n'est rédigé en production (`ALLOW_AI_FALLBACK=false`).
 - Modèle 2 : `AIService.embed` lève `model_missing` (non installé) ou `config` (désactivé), jamais un vecteur inventé. Aucun consommateur n'est branché pour l'instant : l'estimation de prix de Studio (`comparablesFromSales`) n'utilise pas encore les embeddings ; prévu avec l'estimation des prix (5.10).
+- OCR d'essai (`OLLAMA_OCR_MODEL`) : vide, rien ne lui est demandé ; configuré mais absent ou en panne, `readLabel` garde la première lecture du modèle 1 avec un avertissement (« OCR d'essai indisponible ») : jamais bloquant, jamais compté par le disjoncteur comme une panne de Studio.
 - Quotas : par organisation (plan + réglage `settings.ai.monthlyRequestQuota`), vérifiés par `core` avant chaque réponse et chaque annonce Studio en comptant les `ai_requests` du mois ; les embeddings ne sont pas décomptés (voir « Routage »).
 
 ## Tests disponibles
 
 - Unitaires et contrat sur HTTP simulé : `packages/ai/src/ai.test.ts` (génération structurée, routage des trois modèles, embeddings `/api/embed`, modèle manquant, sortie invalide, timeout, annulation, santé à trois modèles, flux, disjoncteur, file, validation politique, quotas, simulateur d'embeddings déterministe).
-- Intégration réelle : `pnpm ai:diagnose` puis `pnpm ai:bench` avec un Ollama accessible ; à exécuter sur la machine.
+- Studio façon Kavis : `packages/ai/src/studio.test.ts` (tri, étiquette, mesures, OCR d'essai en second recours, photos refusées, simulateur sans invention) ; `scripts/studio-eval` (protocole, sur HTTP simulé et simulateur).
+- Intégration réelle : `pnpm ai:diagnose` puis `pnpm ai:bench` avec un Ollama accessible, puis `pnpm studio:eval` sur nos photos ; à exécuter sur la machine.
 
 ## Changer de fournisseur plus tard
 

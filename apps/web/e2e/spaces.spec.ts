@@ -85,19 +85,67 @@ test.describe("Selio et ses filiales", () => {
     await expect(page).toHaveURL(/\/app\/espaces$/);
   });
 
-  test("Selio Studio : série d'annonces, historique noté, ce qui performe", async ({ page }) => {
+  test("Selio Studio : photos d'exemple triées par article, étiquette et mètre ruban lus avec leur provenance, série d'annonces, historique noté, ce qui performe", async ({ page }) => {
+    test.setTimeout(120_000);
     await openDemo(page, "/studio");
-    await page.getByLabel("Choisir des photos").setInputFiles([{ name: "ralph-lauren-pull-bleu-marine-M.png", mimeType: "image/png", buffer: PNG }]);
+    // Photos d'exemple de la démonstration : un jean (face, dos, étiquette, mètre ruban) et un pull (face, étiquette peu lisible).
+    await page.getByRole("button", { name: "Essayer avec des photos d'exemple" }).click();
+    await expect(page.getByText("Couverture", { exact: true })).toBeVisible();
+    await expect(page.getByText(/6\/12/)).toBeVisible();
+    await page.getByRole("button", { name: "Préparer l'annonce" }).click();
+    await expect(page.getByRole("heading", { name: "Tri des photos" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/6 photos rangées en 2 articles/)).toBeVisible();
+    await expect(page.getByRole("region", { name: "Article 1" })).toContainText("4 photos");
+    await expect(page.getByLabel("Rôle de jean-etiquette.jpg")).toHaveValue("label");
+    await expect(page.getByLabel("Rôle de jean-metre-ruban.jpg")).toHaveValue("tape");
+    await page.getByRole("button", { name: "Continuer vers l'étiquette" }).click();
+    // Étiquette du jean : lue avec sa confiance ; rien n'est déduit du style.
+    await expect(page.getByRole("heading", { name: "Étiquette" })).toBeVisible();
+    await expect(page.getByLabel("Marque", { exact: true })).toHaveValue("Levi's");
+    await expect(page.getByText("Lue sur l'étiquette · confiance 92 %").first()).toBeVisible();
+    await expect(page.getByLabel("Référence", { exact: true })).toHaveValue("501");
+    await page.getByRole("button", { name: "Continuer vers les mesures" }).click();
+    // Mesures : tour de taille lu sur le ruban, entrejambe retrouvé par la référence ; chaque valeur dit d'où elle vient.
+    await expect(page.getByText("Jamais de mesure inventée")).toBeVisible();
+    await expect(page.getByLabel("Tour de taille")).toHaveValue("41");
+    await expect(page.getByText("Lue sur le mètre ruban · confiance 88 %")).toBeVisible();
+    await expect(page.getByLabel("Entrejambe")).toHaveValue("81");
+    await expect(page.getByText("Base des références", { exact: true }).first()).toBeVisible();
     await page.getByRole("button", { name: "Générer l'annonce" }).click();
-    await expect(page.getByText("Annonce proposée")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Annonce proposée")).toBeVisible({ timeout: 20_000 });
     const title = await page.getByLabel(/Titre/).first().inputValue();
+    expect(title).toContain("Levi's");
+    await expect(page.getByLabel("Description").first()).toHaveValue(/Mesures à plat : tour de taille 41 cm, entrejambe 81 cm/);
     await page.getByRole("button", { name: "Publier directement" }).click();
     await expect(page.getByRole("heading", { name: "Annonce mise en vente" })).toBeVisible();
+    await expect(page.getByText("Encore 1 article dans cet envoi.")).toBeVisible();
     const series = page.getByRole("region", { name: "Série en cours" });
     await expect(series).toContainText("1 annonce");
+    // Article suivant du même envoi : le pull, dont l'étiquette peu lisible est « à confirmer », jamais tenue pour sûre.
     await page.getByRole("button", { name: "Article suivant" }).click();
-    await expect(page.getByText("Glissez vos photos ici")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Étiquette" })).toBeVisible();
+    await expect(page.getByLabel("Marque", { exact: true })).toHaveValue("Sézane");
+    await expect(page.getByText("Lue sur l'étiquette · confiance 62 % · à confirmer").first()).toBeVisible();
     await expect(series).toBeVisible();
+    // Le silence ne vaut pas confirmation : « Générer l'annonce » reste fermé tant que les lectures peu sûres ne sont ni confirmées ni corrigées.
+    await expect(page.getByText("À confirmer avant de générer")).toBeVisible();
+    await page.getByRole("button", { name: "Continuer vers les mesures" }).click();
+    await expect(page.getByRole("button", { name: "Générer l'annonce" })).toBeDisabled();
+    await page.getByRole("button", { name: "Retour à l'étiquette" }).click();
+    await page.getByRole("button", { name: "Confirmer « Sézane »" }).click();
+    await page.getByRole("button", { name: "Confirmer « M »" }).click();
+    await page.getByLabel("Matière", { exact: true }).fill("100 % laine");
+    await expect(page.getByText("À confirmer avant de générer")).toHaveCount(0);
+    await expect(page.getByText("Confirmée par vous").first()).toBeVisible();
+    await page.getByRole("button", { name: "Continuer vers les mesures" }).click();
+    await expect(page.getByRole("button", { name: "Générer l'annonce" })).toBeEnabled();
+    await page.getByRole("button", { name: "Générer l'annonce" }).click();
+    await expect(page.getByText("Annonce proposée")).toBeVisible({ timeout: 20_000 });
+    // La provenance de l'annonce dit que ces valeurs viennent du vendeur (confirmées ou corrigées), pas d'une lecture tenue pour sûre.
+    await expect(page.getByLabel("Marque", { exact: true })).toHaveValue("Sézane");
+    const provenance = page.getByRole("region", { name: "Provenance des champs" });
+    await expect(provenance).toContainText("Indiquée par le vendeur");
+    await expect(provenance).toContainText("Aucune mesure connue : l'annonce n'en cite aucune.");
 
     await gotoApp(page, "/studio/annonces");
     await expect(page.getByRole("heading", { name: "Annonces générées" })).toBeVisible();
@@ -112,6 +160,32 @@ test.describe("Selio et ses filiales", () => {
     await expect(page.getByText(/calculé sur vos \d+ annonces mises en ligne/)).toBeVisible();
     await expect(page.getByRole("heading", { name: "Quelle longueur de titre se vend le mieux ?" })).toBeVisible();
     await expect(page.getByText(/Échantillon modeste/)).toBeVisible();
+    await noHorizontalOverflow(page);
+  });
+
+  test("Selio Studio : photos portées en file de nuit, aucun fournisseur choisi, dépassement proposé mais fermé, annulation qui rend la place", async ({ page }) => {
+    // Entre 22 h et 6 h (heure de Paris), la démonstration refuse aussitôt la demande (aucun fournisseur) au lieu
+    // de la garder en file : l'horloge du navigateur est figée en journée (11 h à Paris), les minuteries restent réelles.
+    await page.clock.setFixedTime(new Date("2026-11-07T10:00:00Z"));
+    await openDemo(page, "/studio/photos-portees");
+    await expect(page.getByRole("heading", { name: "Photos portées" })).toBeVisible();
+    await expect(page.getByText("Aucun fournisseur configuré : décision à prendre")).toBeVisible();
+    const meter = page.getByRole("progressbar", { name: "Photos portées ce mois-ci" });
+    await expect(meter).toHaveAttribute("aria-valuetext", "0 % (0 sur 10)");
+    await expect(page.getByText("Proposition, prix à décider")).toBeVisible();
+    // Dépassement à 0,25 € : réglage serveur fermé (WORN_OVERAGE_ENABLED=false) → la case d'accord est désactivée.
+    await expect(page.getByRole("checkbox", { name: /J'accepte de payer 0,25/ })).toBeDisabled();
+    await expect(page.getByText(/Désactivé sur ce serveur/)).toBeVisible();
+    await expect(page.getByText(/File de nuit, entre 22 h et 6 h \(heure de Paris\)/)).toBeVisible();
+    await page.getByLabel("Photo de l'article pour la photo portée").setInputFiles([{ name: "pull-a-plat.png", mimeType: "image/png", buffer: PNG }]);
+    await page.getByRole("button", { name: "Mettre en file pour la nuit" }).click();
+    const list = page.getByRole("list", { name: "Demandes de photos portées" });
+    await expect(list).toContainText("En file pour la nuit");
+    await expect(list).toContainText(/Prévue (ce soir|demain|le \d+|dès que possible)/);
+    await expect(meter).toHaveAttribute("aria-valuetext", "10 % (1 sur 10)");
+    await page.getByRole("button", { name: "Annuler la demande" }).click();
+    await expect(page.getByText("Aucune demande")).toBeVisible();
+    await expect(meter).toHaveAttribute("aria-valuetext", "0 % (0 sur 10)");
     await noHorizontalOverflow(page);
   });
 

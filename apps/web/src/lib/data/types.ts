@@ -8,6 +8,8 @@ import type { BillingCycle, CheckoutResult, Invoice, InvoiceView, PaidPlan, Subs
 import type { HelpAnswer } from "@selio/contracts";
 import type { CloudAccount, CloudAction, CloudActionKind, CloudActionLevel, CloudActionStatus, CloudAvailability, CloudConsentView, CloudLoginTicket } from "@selio/contracts";
 import type { AutoBuySettings, PushSubscriptionInput, PushSubscriptionView, RadarAlertPayload, RadarMetrics, RadarReadOutcome, RadarSettings, RadarSettingsUpdate, RadarSourceKind } from "@selio/contracts";
+import type { GarmentKind, GeneratorPhoto, ItemCategory, LabelFieldName, MeasurementName, NamedMeasurementField, PhotoRole, PhotoRoleSource, SellerQuestion, StudioFields, StudioPrep, StudioPrepArticle, StudioSellerHints, WornPhotoJob } from "@selio/contracts";
+import type { StudioSimulatorHints } from "@selio/ai";
 import type { PriceEstimate, PriceEstimateInput, PriceModelStatus, TrackSource, TrackBrandShare, TrackFilter, TrackFilterCreate, TrackFilterUpdate, TrackPhotoSearch, TrackPhotoSearchInput, TrackSalesFeed, TrackScan, TrackScanInput, TrackTrends } from "@selio/contracts";
 import type { AccountStats, AiHealthSummary, BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
 
@@ -400,8 +402,171 @@ export interface PricingModelView extends PriceModelStatus {
   references?: { real: number; demo: number; minimum: number };
 }
 
-/** Annonce rédigée par Studio, avec l'estimation des prix (absente des serveurs plus anciens). */
-export type StudioDraft = ListingDraft & { pricing?: PriceEstimate | null };
+/**
+ * Annonce rédigée par Studio, avec l'estimation des prix (absente des serveurs plus anciens). Rédigée à
+ * partir d'une préparation validée : marque, taille, matière et mesures reprises avec leur provenance.
+ */
+export type StudioDraft = ListingDraft & { pricing?: PriceEstimate | null; prepId?: string; fields?: StudioFields; measurements?: NamedMeasurementField[] };
+
+// ---------------------------------------------------------------- Studio façon Kavis (§5.11)
+
+/** Photo envoyée à la préparation : photo réduite par le navigateur (data URL) OU clé de stockage, et rôle indiqué par le vendeur. */
+export interface StudioPrepPhotoInput {
+  id: string;
+  url?: string;
+  key?: string;
+  /** Rôle corrigé par le vendeur (« c'est l'étiquette ») : il prime sur le tri du modèle. */
+  role?: PhotoRole;
+}
+
+/** Demande de préparation (miroir de `studioPrepareInput`, packages/core/src/services/studio.ts). */
+export interface StudioPrepareRequest {
+  photos: StudioPrepPhotoInput[];
+  itemId?: string | null;
+  category?: ItemCategory | null;
+  garmentKind?: GarmentKind;
+  /** Type de pièce en quelques mots (« jean slim ») : sert seulement à choisir les mesures à demander. */
+  notes?: string;
+  /** Indications du vendeur : provenance « seller ». */
+  hints?: StudioSellerHints;
+}
+
+/**
+ * Démonstration seulement : ce qui est « visible » sur une photo d'exemple pour le simulateur (rôle, article,
+ * texte de l'étiquette, mesures lisibles sur le mètre ruban). Jamais transmis au serveur ; sans ces indices,
+ * le simulateur ne lit rien (étiquette illisible, aucun ruban), honnêtement.
+ */
+export interface DemoPhotoContent {
+  /** Nom du fichier : le simulateur en déduit seulement un rôle (« etiquette.jpg », « metre.jpg »). */
+  name?: string;
+  role?: PhotoRole;
+  group?: number;
+  label?: StudioSimulatorHints["label"];
+  tape?: StudioSimulatorHints["tape"];
+  ocrText?: string;
+}
+
+export interface StudioPrepareOptions {
+  simulator?: { photos: Record<string, DemoPhotoContent> };
+}
+
+/** Article d'une préparation (miroir de `StudioPrepArticleView`). */
+export type StudioPrepArticleView = StudioPrepArticle & { prepId: string; status: "draft" | "validated" };
+/** Préparation complète (miroir de `StudioPrepResult`) : rôles des photos, articles, avertissements. */
+export type StudioPrepResultView = Omit<StudioPrep, "articles"> & { batchId: string; articles: StudioPrepArticleView[] };
+
+/** Une préparation enregistrée (miroir de `StudioPrepView`). */
+export interface StudioPrepView {
+  prepId: string;
+  batchId: string;
+  articleGroup: number;
+  status: "draft" | "validated";
+  itemId: string | null;
+  garmentKind: GarmentKind;
+  category: ItemCategory | null;
+  fields: StudioFields;
+  measurements: NamedMeasurementField[];
+  questions: SellerQuestion[];
+  warnings: string[];
+  /** Photos de l'article : rôle, confiance du tri et provenance du rôle (modèle ou vendeur, jamais déduite de la confiance). */
+  photos: { index: number; id: string; key: string | null; role: PhotoRole; confidence: number; roleSource: PhotoRoleSource }[];
+  photoIndexes: number[];
+  modelPhotoIndexes: number[];
+  careSymbols: string[];
+  tapeVisible: boolean;
+  sizeReference: { brand: string; reference: string; size: string | null } | null;
+  simulated: boolean;
+  shareMeasurements: boolean;
+  validatedAt: string | null;
+  listingGeneratedAt: string | null;
+  createdAt: string;
+}
+
+/**
+ * Réponses du vendeur (miroir de `studioPrepAnswers`) : une valeur devient « seller », null laisse le champ
+ * vide (« je ne sais pas »), un champ absent garde sa valeur lue.
+ */
+export interface StudioPrepAnswersInput {
+  fields?: Partial<Record<LabelFieldName, string | null>>;
+  measurements?: Partial<Record<MeasurementName, number | null>>;
+  garmentKind?: GarmentKind;
+  itemId?: string | null;
+  /** « Partager anonymement la mesure » avec la base des références (marque, référence, taille, mesures ; rien d'autre). */
+  shareMeasurements?: boolean;
+}
+
+export interface ValidatePrepResultView {
+  prep: StudioPrepView;
+  shared: { done: boolean; reason: string | null };
+}
+
+/** Rédaction d'une annonce à partir d'une préparation validée (rien n'est relu sur l'étiquette ni le ruban). */
+export interface StudioGenerateFromPrepInput {
+  prepId: string;
+  photos: GeneratorPhoto[];
+  connectionId?: string | null;
+  hints?: { notes?: string; purchasePriceCents?: number };
+}
+
+/** Photos portées : poses proposées (miroir de `WORN_POSES`). */
+export type WornPose = "front" | "three_quarter" | "back";
+
+/** Une demande de photo portée (miroir de `WornPhotoView`, packages/core/src/services/worn-photos.ts). */
+export type WornPhotoView = WornPhotoJob & {
+  pose: WornPose;
+  startedAt: string | null;
+  finishedAt: string | null;
+  /** Prix unitaire du dépassement accepté (centimes) ; 0 = dans le quota du plan. */
+  overageCents: number;
+  overageAcceptedAt: string | null;
+  billed: boolean;
+};
+
+export interface WornPhotoRequestInput {
+  /** Clé de stockage de la photo (`org/<org>/studio-photo/…`), obtenue par `uploadStudioPhoto`. */
+  photoKey: string;
+  itemId?: string | null;
+  pose?: WornPose;
+  /** Accord explicite pour une photo au-delà du quota (facturée au renouvellement). Jamais implicite. */
+  acceptOverage?: boolean;
+  /** Prix unitaire affiché au moment de l'accord (centimes) : le serveur refuse (409) s'il a changé entre-temps. */
+  acceptedUnitCents?: number;
+}
+
+/**
+ * État des photos portées : quota du mois, dépassement (réglage serveur, prix PROPOSÉ), fenêtre de nuit,
+ * fournisseur. Sans fournisseur choisi, `provider.configured` est faux : les demandes sont refusées la nuit,
+ * quota rendu.
+ */
+export interface WornPhotoStatusView {
+  counter: UsageCounter;
+  /** Quotas des offres, pour l'affichage (Pro 10, Agence 30). */
+  planQuota: number;
+  overage: {
+    /** Réglage serveur WORN_OVERAGE_ENABLED (faux par défaut) : sans lui, la case d'accord est désactivée. */
+    enabled: boolean;
+    unitCents: number;
+    /** Prix proposé, pas décidé (docs §7). */
+    proposal: boolean;
+    /** Abonnement en cours avec carte enregistrée : le dépassement est facturé au renouvellement. */
+    billable: boolean;
+  };
+  window: { startHour: number; endHour: number; timezone: string };
+  nextWindow: { start: string; end: string; inWindow: boolean };
+  provider: { name: string; configured: boolean; message: string | null };
+}
+
+export interface WornPhotosView {
+  jobs: WornPhotoView[];
+  status: WornPhotoStatusView;
+}
+
+/** Photo envoyée au stockage pour une demande (clé de l'organisation, jamais d'URL publique). */
+export interface StoredStudioPhoto {
+  key: string;
+  /** URL de lecture signée et courte, ou la photo elle-même en démonstration. */
+  readUrl: string | null;
+}
 
 export interface DataClient {
   readonly mode: Mode;
@@ -516,8 +681,32 @@ export interface DataClient {
   /** Notification de test vers les appareils abonnés de l'utilisateur. */
   testPush(): Promise<PushTestResult>;
   // Générateur d'annonces (IA)
-  /** Annonce rédigée et prix conseillé (trois stratégies, explication en mots par mon IA perso). */
-  generateListing(input: ListingGenerationInput): Promise<StudioDraft>;
+  /**
+   * Annonce rédigée et prix conseillé (trois stratégies, explication en mots par mon IA perso). Avec `prepId`,
+   * à partir d'une préparation validée : marque, taille, matière et mesures reprises telles quelles.
+   */
+  generateListing(input: ListingGenerationInput | StudioGenerateFromPrepInput): Promise<StudioDraft>;
+  // Studio façon Kavis (§5.11) : préparer avant de générer
+  /**
+   * Tri des photos (face, dos, étiquette, mètre ruban, défauts ; regroupement par article), lecture de
+   * l'étiquette et des mesures sur le mètre ruban, base des références. Chaque valeur porte sa provenance
+   * ou reste vide avec une question au vendeur. Photos réduites par le navigateur (≤ 1 024 px, JPEG 0,8).
+   */
+  prepareStudio(input: StudioPrepareRequest, opts?: StudioPrepareOptions): Promise<StudioPrepResultView>;
+  getStudioPrep(prepId: string): Promise<StudioPrepView>;
+  /** Réponses du vendeur (provenance « seller ») ; la préparation devient « validée ». */
+  validateStudioPrep(prepId: string, answers: StudioPrepAnswersInput): Promise<ValidatePrepResultView>;
+  // Photos portées (Studio) : aucun fournisseur choisi, file de nuit, quota du plan
+  /** Demandes (la plus récente d'abord) et état : quota du mois, dépassement, fenêtre de nuit, fournisseur. */
+  wornPhotos(): Promise<WornPhotosView>;
+  /** Envoie une photo réduite au stockage de l'organisation (URL signée) et rend sa clé. */
+  uploadStudioPhoto(photo: GeneratorPhoto): Promise<StoredStudioPhoto>;
+  /** Efface une photo envoyée pour Studio (`studio-photo`) quand la demande qui devait l'utiliser a échoué : rien ne reste dans le stockage. */
+  deleteStudioPhoto(key: string): Promise<{ deleted: true; key: string }>;
+  /** 402 au-delà du quota, sauf dépassement activé sur le serveur ET accord explicite (`acceptOverage`). */
+  requestWornPhoto(input: WornPhotoRequestInput): Promise<WornPhotoView>;
+  /** Annule une demande encore en file : place de quota rendue, rien n'est facturé. */
+  cancelWornPhoto(id: string): Promise<{ cancelled: true; id: string }>;
   // Dressing intelligent
   getDressing(query: DressingQuery): Promise<DressingData>;
   republishItem(id: string, variantId: string): Promise<InventoryItem>;

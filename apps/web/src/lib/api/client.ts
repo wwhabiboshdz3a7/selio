@@ -15,6 +15,8 @@ import type { CloudAccount, CloudAction, CloudActionLevel, CloudConsentView, Clo
 import { loginSocketUrl } from "../cloud/login-protocol";
 import type { PriceEstimate, PriceEstimateInput, TrackFilter, TrackFilterCreate, TrackFilterUpdate, TrackPhotoSearch, TrackPhotoSearchInput, TrackSalesFeed, TrackScan, TrackScanInput } from "@selio/contracts";
 import type { PricingModelView, StudioDraft, TrackTrendsView, TrackUsageView } from "../data/types";
+import type { StoredStudioPhoto, StudioGenerateFromPrepInput, StudioPrepAnswersInput, StudioPrepareOptions, StudioPrepareRequest, StudioPrepResultView, StudioPrepView, ValidatePrepResultView, WornPhotoRequestInput, WornPhotosView, WornPhotoStatusView, WornPhotoView } from "../data/types";
+import { buildUsageCounter, type GeneratorPhoto } from "@selio/contracts";
 import { buildTrackUsage } from "../track";
 
 type Query = Record<string, string | number | boolean | undefined | null>;
@@ -29,6 +31,28 @@ interface ApiTrackUsage {
   source?: TrackSource;
   sourceLabel?: string;
   notices?: string[];
+}
+
+/** Réponse de GET /api/studio/worn (apps/api/src/routes/studio.ts). */
+interface ApiWornPhotos {
+  jobs: WornPhotoView[];
+  quota: { used: number; quota: number; remaining: number };
+  provider: { name: string; configured: boolean; message?: string };
+  overage: { enabled: boolean; unitCents: number; proposal: boolean };
+  nightWindow: { startHour: number; endHour: number; timezone: string; nextStart: string; nextEnd: string; inWindow: boolean };
+}
+
+/** État des photos portées pour l'écran, à partir de la réponse du serveur et de l'abonnement. */
+export function wornStatusFromApi(r: ApiWornPhotos, sub: Subscription | null): WornPhotoStatusView {
+  const billable = !!sub && sub.cardOnFile && sub.provider === "revolut" && (sub.status === "active" || sub.status === "trialing") && !sub.cancelAtPeriodEnd;
+  return {
+    counter: buildUsageCounter(r.quota.used, r.quota.quota),
+    planQuota: r.quota.quota,
+    overage: { enabled: r.overage.enabled === true, unitCents: r.overage.unitCents, proposal: r.overage.proposal !== false, billable },
+    window: { startHour: r.nightWindow.startHour, endHour: r.nightWindow.endHour, timezone: r.nightWindow.timezone },
+    nextWindow: { start: r.nightWindow.nextStart, end: r.nightWindow.nextEnd, inWindow: r.nightWindow.inWindow },
+    provider: { name: r.provider.name, configured: r.provider.configured === true, message: r.provider.message ?? null },
+  };
 }
 
 function qs(q: Query | undefined): string {
@@ -188,7 +212,46 @@ export class ApiClient implements DataClient {
   unsubscribePush(endpoint: string) { return this.request<{ removed: boolean }>("DELETE", "/api/push/subscriptions", { endpoint }); }
   removePushSubscription(id: string) { return this.request<{ removed: boolean }>("DELETE", `/api/push/subscriptions/${encodeURIComponent(id)}`); }
   testPush() { return this.post<PushTestResult>("/api/push/test"); }
-  generateListing(input: ListingGenerationInput) { return this.post<StudioDraft>("/api/studio/generate", input); }
+  /** Générateur (POST /api/studio/generate) ; avec `prepId`, à partir d'une préparation validée. */
+  generateListing(input: ListingGenerationInput | StudioGenerateFromPrepInput) { return this.post<StudioDraft>("/api/studio/generate", input); }
+  // Studio façon Kavis (apps/api/src/routes/studio.ts) : les indices du simulateur ne quittent jamais le navigateur.
+  prepareStudio(input: StudioPrepareRequest, _opts?: StudioPrepareOptions) { return this.post<StudioPrepResultView>("/api/studio/prepare", input); }
+  getStudioPrep(prepId: string) { return this.get<StudioPrepView>(`/api/studio/preps/${encodeURIComponent(prepId)}`); }
+  validateStudioPrep(prepId: string, answers: StudioPrepAnswersInput) { return this.post<ValidatePrepResultView>(`/api/studio/preps/${encodeURIComponent(prepId)}/validate`, answers); }
+  /**
+   * Photos portées (GET /api/studio/worn) : demandes, quota du mois, dépassement (réglage serveur, prix
+   * proposé), fenêtre de nuit et fournisseur. « Facturable » se lit sur l'abonnement (carte enregistrée,
+   * en cours, non résilié), comme le serveur le vérifie au moment de la demande.
+   */
+  async wornPhotos(): Promise<WornPhotosView> {
+    const [r, sub] = await Promise.all([this.get<ApiWornPhotos>("/api/studio/worn"), this.getSubscription().catch(() => null)]);
+    return { jobs: r.jobs, status: wornStatusFromApi(r, sub) };
+  }
+  /**
+   * Envoi d'une photo réduite au stockage de l'organisation (docs/STOCKAGE.md) : URL signée par l'API
+   * (sorte « studio-photo », type et taille imposés), PUT direct vers le stockage, puis la clé seule.
+   */
+  async uploadStudioPhoto(photo: GeneratorPhoto): Promise<StoredStudioPhoto> {
+    const comma = photo.url.indexOf(",");
+    const contentType = photo.url.slice(5, photo.url.indexOf(";")) || "image/jpeg";
+    const bin = atob(photo.url.slice(comma + 1));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const presign = await this.post<{ key: string; uploadUrl: string; method: string; headers: Record<string, string>; readUrl: string | null }>("/api/uploads/presign", { kind: "studio-photo", contentType, size: bytes.length });
+    let res: Response;
+    try {
+      // En-têtes renvoyés tels quels : Content-Type et Content-Length font partie de la signature.
+      const headers = Object.fromEntries(Object.entries(presign.headers ?? {}).filter(([k]) => k.toLowerCase() !== "content-length"));
+      res = await fetch(presign.uploadUrl, { method: presign.method || "PUT", headers, body: new Blob([bytes], { type: contentType }) });
+    } catch (e) {
+      throw new DataError("network", "Impossible d'envoyer la photo au stockage. Vérifiez votre connexion.", 0, e);
+    }
+    if (!res.ok) throw new DataError("upload_failed", `Envoi de la photo refusé par le stockage (${res.status}).`, res.status);
+    return { key: presign.key, readUrl: presign.readUrl ?? null };
+  }
+  deleteStudioPhoto(key: string) { return this.del<{ deleted: true; key: string }>(`/api/uploads/object?key=${encodeURIComponent(key)}`); }
+  requestWornPhoto(input: WornPhotoRequestInput) { return this.post<WornPhotoView>("/api/studio/worn", input); }
+  cancelWornPhoto(id: string) { return this.del<{ cancelled: true; id: string }>(`/api/studio/worn/${encodeURIComponent(id)}`); }
   getDressing(query: DressingQuery) { return this.get<DressingData>("/api/dressing", query as Query); }
   republishItem(id: string, variantId: string) { return this.post<InventoryItem>(`/api/items/${id}/republish`, { variantId }); }
   getMarketInsights(query: MarketQuery) { return this.get<MarketData>("/api/market/insights", query as Query); }

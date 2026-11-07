@@ -4,7 +4,7 @@ import { z } from "zod";
 import { aiConfigSchema } from "@selio/ai";
 import { loadPaymentConfig, paymentConfigSchema } from "@selio/connectors";
 import { emailConfigSchema, loadEmailConfig } from "@selio/email";
-import type { ServicesConfig, radar } from "@selio/core";
+import { wornPhotos, type ServicesConfig, type radar } from "@selio/core";
 import { loadVapidConfig } from "./push";
 
 const bool = z.string().optional().transform((v) => v === "true" || v === "1");
@@ -26,6 +26,50 @@ export const activeHoursSchema = z
     }
     return { startHour, endHour };
   });
+
+/** Fournisseur des photos portées : « noop » (défaut, aucun fournisseur choisi) ou « mock » (tests, démonstration). */
+export const wornProviderSchema = z
+  .string()
+  .optional()
+  .transform((raw, ctx) => {
+    const name = raw && raw.trim() ? raw.trim().toLowerCase() : "noop";
+    if (name !== "noop" && name !== "mock") {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "« noop » (défaut : aucun fournisseur choisi, décision d'Ibrahim) ou « mock » (tests et démonstration)" });
+      return z.NEVER;
+    }
+    return name as "noop" | "mock";
+  });
+
+/** Fenêtre de nuit des photos portées : « 22-6 » (défaut), « 22:00-06:00 » ou « 22h-6h ». */
+export const nightWindowSchema = z
+  .string()
+  .optional()
+  .transform((raw, ctx) => {
+    const hours = wornPhotos.parseNightWindow(raw && raw.trim() ? raw : "22-6");
+    if (!hours) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "format attendu « début-fin » en heures, ex. 22-6 (de 22 h à 6 h, début ≠ fin)" });
+      return z.NEVER;
+    }
+    return hours;
+  });
+
+/** Fuseau IANA de la fenêtre de nuit (Europe/Paris par défaut). */
+export const timezoneSchema = z
+  .string()
+  .optional()
+  .transform((raw, ctx) => {
+    const tz = raw && raw.trim() ? raw.trim() : "Europe/Paris";
+    try {
+      new Intl.DateTimeFormat("fr-FR", { timeZone: tz }).format(new Date(0));
+      return tz;
+    } catch {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "fuseau IANA attendu, ex. Europe/Paris" });
+      return z.NEVER;
+    }
+  });
+
+/** Entier facultatif : vide ou blanc = absent (une ligne « X= » du fichier .env ne vaut pas 0). */
+const optionalInt = (min: number, max: number) => z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), z.coerce.number().int().min(min).max(max).optional());
 
 export const workerEnvSchema = z
   .object({
@@ -140,6 +184,27 @@ export const workerEnvSchema = z
     PRICING_MIN_REFERENCES: z.coerce.number().int().min(500).max(1_000_000).default(500),
     /** Durée maximale d'un entraînement (fil séparé, arrêté au-delà ; l'ancien modèle reste actif). 10 min par défaut. */
     PRICING_TRAIN_MAX_MS: z.coerce.number().int().min(10_000).max(6 * 3_600_000).default(600_000),
+    /**
+     * Photos portées (Studio, §5.11) : passage toutes les 10 min ; il n'agit que DANS la fenêtre de nuit
+     * (WORN_NIGHT_WINDOW, heure de WORN_NIGHT_TIMEZONE) et, hors fenêtre, ne fait que clore les demandes
+     * interrompues (quota rendu).
+     */
+    CRON_STUDIO_WORN: z.string().default("*/10 * * * *"),
+    /**
+     * Fournisseur des photos portées : AUCUN modèle ni service choisi (décision d'Ibrahim, partie 7). « noop »
+     * (défaut) refuse chaque demande (« aucun fournisseur configuré : décision à prendre »), quota rendu ;
+     * « mock » (tests, démonstration) ne produit aucune image et est refusé en production. Même valeur que l'API.
+     */
+    WORN_PHOTO_PROVIDER: wornProviderSchema,
+    /** File de nuit (22 h – 6 h Europe/Paris par défaut) : la carte graphique reste aux annonces le jour. Même valeur que l'API. */
+    WORN_NIGHT_WINDOW: nightWindowSchema,
+    WORN_NIGHT_TIMEZONE: timezoneSchema,
+    /** Dépassement du quota des photos portées (facturé au renouvellement) : faux par défaut. Même valeur que l'API. */
+    WORN_OVERAGE_ENABLED: bool,
+    /** Prix d'une photo au-delà du quota (centimes) : 25 par défaut, PROPOSITION ; 500 au plus. */
+    WORN_OVERAGE_CENTS: optionalInt(1, 500),
+    /** Ancien nom de WORN_OVERAGE_CENTS (lu seulement si WORN_OVERAGE_CENTS est absent). */
+    WORN_OVERAGE_UNIT_CENTS: optionalInt(1, 500),
     /** Dossier des profils temporaires (un par exécution, supprimé à la fin). */
     CLOUD_PROFILE_DIR: z
       .string()
@@ -187,6 +252,23 @@ export function trackServicesConfig(cfg: Pick<WorkerEnv, "TRACK_LIVE_ENABLED" | 
   return { trackLiveEnabled: cfg.TRACK_LIVE_ENABLED, trackReadIntervalMinutes: cfg.TRACK_READ_INTERVAL_MINUTES };
 }
 
+/** Prix unitaire du dépassement des photos portées (centimes) : WORN_OVERAGE_CENTS, sinon l'ancien nom, sinon 25 (proposition). */
+export function wornOverageCents(cfg: Pick<WorkerEnv, "WORN_OVERAGE_CENTS" | "WORN_OVERAGE_UNIT_CENTS">): number {
+  return cfg.WORN_OVERAGE_CENTS ?? cfg.WORN_OVERAGE_UNIT_CENTS ?? 25;
+}
+
+/**
+ * Réglages Studio transmis au cœur (`services.config`) : file de nuit (22 h – 6 h Europe/Paris), dépassement
+ * fermé par défaut, 0,25 € la photo au-delà (proposition) — facturé au renouvellement par `billing.renew`.
+ */
+export function studioServicesConfig(cfg: Pick<WorkerEnv, "WORN_OVERAGE_ENABLED" | "WORN_OVERAGE_CENTS" | "WORN_OVERAGE_UNIT_CENTS" | "WORN_NIGHT_WINDOW" | "WORN_NIGHT_TIMEZONE">): Pick<ServicesConfig, "wornOverageEnabled" | "wornOverageUnitCents" | "wornNightWindow"> {
+  return {
+    wornOverageEnabled: cfg.WORN_OVERAGE_ENABLED,
+    wornOverageUnitCents: wornOverageCents(cfg),
+    wornNightWindow: { startHour: cfg.WORN_NIGHT_WINDOW.startHour, endHour: cfg.WORN_NIGHT_WINDOW.endHour, timezone: cfg.WORN_NIGHT_TIMEZONE },
+  };
+}
+
 /** Plannings de la file « selio-maintenance » : cron (`pattern`) ou intervalle (`every`, en ms). */
 export type MaintenanceSchedule = { name: string; pattern: string } | { name: string; every: number };
 
@@ -194,7 +276,7 @@ export type MaintenanceSchedule = { name: string; pattern: string } | { name: st
  * Plannings du worker. « radar.tick » tourne toutes les 30 s, « alerts.send » chaque minute ;
  * « radar.auto » n'existe que si RADAR_AUTO_ENABLED (sinon son planning est retiré au démarrage).
  * Track : « track.tick » toutes les 15 min ; prix : « pricing.references » chaque nuit, « pricing.train »
- * chaque dimanche à 04:00 (UTC).
+ * chaque dimanche à 04:00 (UTC). Studio : « studio.worn » toutes les 10 min (photos portées, la nuit seulement).
  */
 export function maintenanceSchedules(env: WorkerEnv): MaintenanceSchedule[] {
   return [
@@ -210,6 +292,7 @@ export function maintenanceSchedules(env: WorkerEnv): MaintenanceSchedule[] {
     { name: "track.tick", pattern: env.CRON_TRACK },
     { name: "pricing.references", pattern: env.CRON_PRICING_REFERENCES },
     { name: "pricing.train", pattern: env.PRICING_TRAIN_CRON },
+    { name: "studio.worn", pattern: env.CRON_STUDIO_WORN },
   ];
 }
 
@@ -259,6 +342,7 @@ export function loadEnv(env: Record<string, string | undefined> = process.env): 
   if (!parsed.success) throw new Error(`Configuration worker invalide :\n${parsed.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n")}`);
   if (parsed.data.NODE_ENV === "production" && (parsed.data.ALLOW_AI_FALLBACK || parsed.data.AI_PROVIDER === "mock")) throw new Error("En production : AI_PROVIDER=ollama et ALLOW_AI_FALLBACK=false.");
   if (parsed.data.NODE_ENV === "production" && !parsed.data.CLOUD_CHROMIUM_SANDBOX) throw new Error("En production : CLOUD_CHROMIUM_SANDBOX=false est refusé (Chromium ne tourne jamais sans son bac à sable).");
+  if (parsed.data.NODE_ENV === "production" && parsed.data.WORN_PHOTO_PROVIDER === "mock") throw new Error("En production : WORN_PHOTO_PROVIDER=mock est refusé (fournisseur de test, aucune image produite) ; « noop » tant qu'aucun fournisseur n'est choisi.");
   // Radar Auto reste réservé aux comptes de l'équipe : en production, la liste est obligatoire (comme l'API).
   if (parsed.data.NODE_ENV === "production" && parsed.data.RADAR_AUTO_ENABLED && parsed.data.RADAR_AUTO_ORG_IDS.length === 0) {
     throw new Error("Configuration worker invalide :\n  - RADAR_AUTO_ENABLED=true exige RADAR_AUTO_ORG_IDS en production (Radar Auto réservé aux comptes de l'équipe, pas aux clients sur l'adresse partagée).");

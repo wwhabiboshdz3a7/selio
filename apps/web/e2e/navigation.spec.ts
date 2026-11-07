@@ -34,6 +34,7 @@ const PAGES: { href: string; heading: RegExp }[] = [
   { href: "/studio", heading: /Générateur d'annonces/ },
   { href: "/studio/annonces", heading: /Annonces générées/ },
   { href: "/studio/performances", heading: /Ce qui performe/ },
+  { href: "/studio/photos-portees", heading: /Photos portées/ },
 ];
 
 async function clickNav(page: Page, href: string): Promise<void> {

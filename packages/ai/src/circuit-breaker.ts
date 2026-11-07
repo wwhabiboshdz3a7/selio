@@ -9,7 +9,7 @@ export type CircuitState = "closed" | "open" | "half_open";
  * ou « config » (texte vide, modèle non configuré). Sans cette exclusion, trois annonces Studio
  * avec un modèle de vision absent coupaient aussi les réponses aux acheteurs et l'aide.
  */
-const NOT_AN_OUTAGE: ReadonlySet<AIErrorCode> = new Set<AIErrorCode>(["invalid_output", "cancelled", "quota_exceeded", "model_missing", "config"]);
+const NOT_AN_OUTAGE: ReadonlySet<AIErrorCode> = new Set<AIErrorCode>(["invalid_output", "cancelled", "quota_exceeded", "model_missing", "config", "input_rejected"]);
 
 export interface CircuitOptions {
   failureThreshold: number;

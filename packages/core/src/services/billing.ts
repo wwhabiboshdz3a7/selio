@@ -1,5 +1,5 @@
 import {
-  CARD_ONLY_ORDER_KINDS, CARD_VERIFICATION_AMOUNT_CENTS, DATA_RETENTION_DAYS_AFTER_END, DEFAULT_VAT_RATE, PAID_PLANS, PLAN_LABELS, VAT_FRANCHISE_NOTICE, buildUsageCounter, invoiceAmounts, nextChargeDelayDays, quotasForPlan,
+  CARD_ONLY_ORDER_KINDS, CARD_VERIFICATION_AMOUNT_CENTS, DATA_RETENTION_DAYS_AFTER_END, DEFAULT_VAT_RATE, PAID_PLANS, PLAN_LABELS, VAT_FRANCHISE_NOTICE, buildUsageCounter, extraLinesTotal, invoiceAmounts, nextChargeDelayDays, quotasForPlan,
   type BillingCycle, type CheckoutResult, type Invoice, type InvoiceView, type PaidPlan, type PaymentOrder, type Plan, type PlanQuotas, type Subscription, type SubsidiaryUsage, type UsageCounter,
 } from "@selio/contracts";
 import { PRICING } from "@selio/demo-data";
@@ -9,6 +9,7 @@ import { alertEmail, paymentFailedEmail } from "@selio/email";
 import { PaymentApiError, type PaymentState, type PaymentWebhookEvent, type SavedPaymentMethod, type WebhookHeaders } from "@selio/connectors";
 import { AppError, requireAction, sendEmail, webLink, withOrg, type OrgContext, type Services } from "../context";
 import type { UsageSummary } from "../types-data";
+import { markWornOverageBilled, wornOverageLines } from "./worn-photos";
 
 export { USAGE_WARNING_RATE, buildUsageCounter, usagePercent } from "@selio/contracts";
 
@@ -455,7 +456,11 @@ export async function completePaidOrder(services: Services, orgId: string, po: P
     const start = po.kind === "renewal" || sub.status === "past_due" ? (previousEnd ?? now) : (paidUntil ?? now);
     const end = addCycle(start, po.cycle);
     const paymentMethodId = method?.id ?? sub.paymentMethodId ?? null;
-    const invoice = await repos.invoices.create(tx, { plan, cycle: po.cycle, amountCents: po.amountCents, vatRate, vatNotice, periodStart: start.toISOString(), periodEnd: end.toISOString(), orderId: po.orderId, issuedAt: now.toISOString() });
+    // Lignes de dépassement (photos portées) comprises dans le montant de la commande : reprises sur la facture,
+    // et les photos correspondantes rattachées à cette facture (jamais facturées deux fois).
+    const extraLines = po.extraLines ?? [];
+    const invoice = await repos.invoices.create(tx, { plan, cycle: po.cycle, amountCents: po.amountCents, vatRate, vatNotice, periodStart: start.toISOString(), periodEnd: end.toISOString(), orderId: po.orderId, issuedAt: now.toISOString(), extraLines });
+    if (extraLines.length > 0) await markWornOverageBilled(tx, invoice.id, extraLines, po.createdAt, now.toISOString());
     const subscription = await repos.subscriptions.upsert(tx, {
       plan,
       quotas: quotasForPlan(plan),
@@ -707,18 +712,23 @@ async function chargeDue(services: Services, orgId: string, sub: Subscription): 
     const r = await registerChargeFailure(services, orgId, "Aucun moyen de paiement enregistré");
     return { action: r.ended ? "ended" : "failed", reason: "no_payment_method", nextChargeAt: r.nextChargeAt };
   }
-  const amountCents = planPriceCents(plan, cycle);
+  // Dépassement des photos portées (WORN_OVERAGE_ENABLED seulement) : photos produites au-delà du quota avec
+  // l'accord du client, pas encore facturées, ajoutées à l'échéance comme lignes de dépassement.
+  const extraLines = await wornOverageLines(services, orgId, now.toISOString());
+  const overageCents = extraLinesTotal(extraLines);
+  const amountCents = planPriceCents(plan, cycle) + overageCents;
   const attempt = sub.chargeAttempts + 1;
   let orderId: string;
   try {
-    const order = await payments.createOrder({ orgId, plan, amountCents, currency: "EUR", customerId: sub.revolutCustomerId, captureMode: "automatic", description: `Selio ${PLAN_LABELS[plan]} — renouvellement ${cycleLabel(cycle)}`, metadata: { kind: "renewal", cycle, attempt: String(attempt) }, merchantOrderRef: orgId });
+    const description = `Selio ${PLAN_LABELS[plan]} — renouvellement ${cycleLabel(cycle)}${overageCents > 0 ? ` + photos portées au-delà du quota (${formatEuros(overageCents)})` : ""}`;
+    const order = await payments.createOrder({ orgId, plan, amountCents, currency: "EUR", customerId: sub.revolutCustomerId, captureMode: "automatic", description, metadata: { kind: "renewal", cycle, attempt: String(attempt), ...(overageCents > 0 ? { overageCents: String(overageCents) } : {}) }, merchantOrderRef: orgId });
     orderId = order.orderId;
   } catch (err) {
     if (isTransient(err)) return { action: "deferred", reason: (err as PaymentApiError).code };
     const r = await registerChargeFailure(services, orgId, err instanceof Error ? err.message : "Création de la commande refusée");
     return { action: r.ended ? "ended" : "failed", nextChargeAt: r.nextChargeAt };
   }
-  const po = await services.db.withOrg(orgId, (tx) => repos.paymentOrders.create(tx, { orderId, kind: "renewal", plan, cycle, amountCents, captureMode: "automatic", attempt, createdAt: now.toISOString() }));
+  const po = await services.db.withOrg(orgId, (tx) => repos.paymentOrders.create(tx, { orderId, kind: "renewal", plan, cycle, amountCents, captureMode: "automatic", attempt, createdAt: now.toISOString(), extraLines }));
   let state: PaymentState;
   let error: string | null = null;
   try {
@@ -795,14 +805,27 @@ export async function getInvoice(ctx: OrgContext, id: string): Promise<InvoiceVi
   if (!invoice) throw new AppError("not_found", "Facture introuvable.", 404);
   const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
   const email = (await ownerEmails(ctx.services, ctx.orgId))[0] ?? null;
-  const totals = invoiceAmounts(invoice.amountCents, invoice.vatRate);
+  return invoiceView(invoice, { orgName: org.name, email });
+}
+
+/**
+ * Rendu d'une facture : la ligne d'abonnement, puis les lignes de dépassement (« Photos portées au-delà du
+ * quota : n × 0,25 € ») comprises dans le montant. La somme des lignes est le TTC.
+ */
+export function invoiceView(invoice: Invoice, customer: { orgName: string; email: string | null }): InvoiceView {
+  const extra = invoice.extraLines ?? [];
+  const baseCents = Math.max(0, invoice.amountCents - extraLinesTotal(extra));
+  const totals = invoiceAmounts(baseCents, invoice.vatRate, extra);
   const start = new Date(invoice.periodStart);
   const end = new Date(invoice.periodEnd);
   return {
     invoice,
     issuer: { name: "Selio", vatNotice: invoice.vatNotice },
-    customer: { orgName: org.name, email },
-    lines: [{ label: `Abonnement Selio ${PLAN_LABELS[invoice.plan]} — ${cycleLabel(invoice.cycle)}`, periodLabel: `du ${formatDateFr(start)} au ${formatDateFr(end)}`, amountCents: invoice.amountCents }],
+    customer,
+    lines: [
+      { kind: "plan", label: `Abonnement Selio ${PLAN_LABELS[invoice.plan]} — ${cycleLabel(invoice.cycle)}`, periodLabel: `du ${formatDateFr(start)} au ${formatDateFr(end)}`, amountCents: baseCents },
+      ...extra.map((l) => ({ kind: "overage" as const, label: l.label, periodLabel: `produites avant le ${formatDateFr(start)}`, amountCents: l.amountCents, quantity: l.quantity, unitCents: l.unitCents })),
+    ],
     totals: { ...totals, vatRate: invoice.vatRate },
     paymentProvider: invoice.orderId ? "revolut" : null,
   };

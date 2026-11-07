@@ -127,6 +127,8 @@ export const router = createBrowserRouter([
       { index: true, lazy: lazy(() => import("./app/pages/Studio")) },
       { path: "annonces", lazy: lazy(() => import("./app/spaces/pages/StudioGenerated")) },
       { path: "performances", lazy: lazy(() => import("./app/spaces/pages/StudioInsights")) },
+      // Photos portées : file de nuit, quota du mois, aucun fournisseur choisi (dit à l'écran).
+      { path: "photos-portees", lazy: lazy(() => import("./app/spaces/pages/StudioWornPhotos")) },
       { path: "*", element: <Navigate to="/studio" replace /> },
     ]),
   },

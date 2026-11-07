@@ -1,5 +1,6 @@
+import { LABEL_FIELDS, MEASUREMENT_NAMES, PHOTO_ROLES, type PhotoRole } from "@selio/contracts";
 import { hashString, seededRandom } from "@selio/domain";
-import { AIError, extractJson, type AIProvider, type EmbedResult, type GenerateOptions, type GenerateRequest, type GenerateResult, type HealthResult, type StructuredRequest, type StructuredResult } from "../types";
+import { AIError, extractJson, type AIProvider, type EmbedResult, type GenerateOptions, type GenerateRequest, type GenerateResult, type HealthResult, type OcrRequest, type OcrResult, type StructuredRequest, type StructuredResult } from "../types";
 
 export interface MockOptions {
   /** Latence simulée (ms), déterministe. */
@@ -8,6 +9,8 @@ export interface MockOptions {
   failWith?: AIError | null;
   /** Retourne une sortie volontairement invalide (tests de validation). */
   invalidOutput?: boolean;
+  /** OCR d'essai simulé (facultatif) : null ou absent = non configuré, comme OLLAMA_OCR_MODEL vide. */
+  ocrModel?: string | null;
 }
 
 /**
@@ -22,7 +25,11 @@ export class MockAIProvider implements AIProvider {
   readonly embedModel = "selio-mock-embed-v1";
   /** Le simulateur accepte les photos ; ses descriptions sont toujours marquées simulées par l'appelant. */
   readonly canSeeImages: boolean = true;
-  constructor(private readonly opts: MockOptions = {}) {}
+  /** OCR d'essai simulé : non configuré par défaut (comme en production, OLLAMA_OCR_MODEL vide). */
+  readonly ocrModel: string | null;
+  constructor(private readonly opts: MockOptions = {}) {
+    this.ocrModel = opts.ocrModel ?? null;
+  }
 
   async health(): Promise<HealthResult> {
     return {
@@ -37,9 +44,10 @@ export class MockAIProvider implements AIProvider {
           { role: "text", name: this.model, present: true },
           { role: "vision", name: this.model, present: true },
           { role: "embed", name: this.embedModel, present: true },
+          ...(this.ocrModel ? [{ role: "ocr" as const, name: this.ocrModel, present: true, optional: true }] : []),
         ],
         missing: [],
-        installed: [this.model, this.embedModel],
+        installed: [this.model, this.embedModel, ...(this.ocrModel ? [this.ocrModel] : [])],
       },
     };
   }
@@ -105,6 +113,18 @@ export class MockAIProvider implements AIProvider {
     };
   }
 
+  /**
+   * OCR d'essai simulé : renvoie le texte de l'indice [[ocr: …]] (rien sinon). Non configuré : AIError
+   * « config », comme le vrai fournisseur sans OLLAMA_OCR_MODEL.
+   */
+  async ocr(req: OcrRequest, opts?: GenerateOptions): Promise<OcrResult> {
+    const started = Date.now();
+    if (!this.ocrModel) throw new AIError("config", "Aucun modèle OCR configuré (OLLAMA_OCR_MODEL, facultatif)", false);
+    await this.simulate(opts);
+    const text = readRawHints(req.prompt).ocr ?? "";
+    return { text, usage: { promptTokens: estimateTokens(req.prompt), outputTokens: estimateTokens(text) }, latencyMs: Date.now() - started, model: this.ocrModel, provider: this.name };
+  }
+
   private render(req: GenerateRequest): string {
     const hints = readHints(req.prompt);
     const rnd = seededRandom(hashString(req.prompt));
@@ -122,6 +142,9 @@ export class MockAIProvider implements AIProvider {
     if (req.schemaName === "photo_description") return mockPhotoDescription(hints);
     if (req.schemaName === "price_explanation") return { explanation: mockPriceExplanation(hints) };
     if (req.schemaName === "help_answer") return mockHelpAnswer(req.prompt);
+    if (req.schemaName === "photo_sort") return mockPhotoSort(req.prompt);
+    if (req.schemaName === "label_read") return mockLabelRead(req.prompt);
+    if (req.schemaName === "measurements_read") return mockMeasurements(req.prompt);
     if (req.schemaName === "listing_description") {
       return {
         title: `${hints.brand ? hints.brand + " " : ""}${hints.title ?? "Article"}`.slice(0, 120),
@@ -367,4 +390,99 @@ function mockPriceExplanation(h: Hints): string {
     h.demo === "1" ? "Attention : ces chiffres reposent sur des données de démonstration." : "",
   ];
   return parts.filter(Boolean).join(" ").slice(0, 800);
+}
+
+// ---------------------------------------------------------------------------
+// Studio façon Kavis simulé (§5.11) : le simulateur ne voit pas les photos. Il
+// répond seulement à partir des indices [[…]] que la démonstration ou les tests
+// fournissent ([[label: brand=Levi's,size=W32]], [[tape: chest=52,length=70]],
+// [[roles: front,label,tape]]…). Sans indice : rien n'est « lu » (étiquette
+// illisible, aucun ruban visible), jamais une valeur inventée.
+// ---------------------------------------------------------------------------
+
+/** Indices bruts du prompt (`[[clé: valeur]]`), la dernière occurrence l'emporte. */
+function readRawHints(prompt: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const m of prompt.matchAll(/\[\[([a-zA-Z]+):\s*([^\]]*)\]\]/g)) out[m[1]!] = m[2]!.trim();
+  return out;
+}
+
+/** « brand=Levi's,size=W32 L34,confidence=0.9 » → { brand, size, confidence } (une virgule dans une valeur est gardée). */
+function parsePairs(s: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!s) return out;
+  for (const part of s.split(/,(?=\s*[a-zA-Z]+\s*=)/)) {
+    const eq = part.indexOf("=");
+    if (eq <= 0) continue;
+    const key = part.slice(0, eq).trim();
+    const value = part.slice(eq + 1).trim();
+    if (key && value) out[key] = value;
+  }
+  return out;
+}
+
+const clamp01 = (v: number, fallback: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : fallback);
+
+function roleFromName(name: string): PhotoRole | null {
+  const n = simplify(name);
+  if (/etiquette|label|composition|\btag\b/.test(n)) return "label";
+  if (/metre|mesure|ruban|\btape\b|measure/.test(n)) return "tape";
+  if (/defaut|tache|trou|accroc|usure|defect/.test(n)) return "defect";
+  if (/\bdos\b|\bback\b|arriere/.test(n)) return "back";
+  if (/detail|zoom|gros plan|matiere/.test(n)) return "detail";
+  if (/\bface\b|devant|\bfront\b|entier/.test(n)) return "front";
+  return null;
+}
+
+function mockPhotoSort(prompt: string): Record<string, unknown> {
+  const h = readRawHints(prompt);
+  const n = Math.min(6, Math.max(1, Number.parseInt(h.photos ?? "1", 10) || 1));
+  const roles = (h.roles ?? "").split(",").map((r) => r.trim());
+  const groups = (h.groups ?? "").split(",").map((g) => Number.parseInt(g.trim(), 10));
+  const names = (h.photoNames ?? "").split("|").map((x) => x.trim());
+  const photos = Array.from({ length: n }, (_, i) => {
+    const hinted = (PHOTO_ROLES as readonly string[]).includes(roles[i] ?? "") ? (roles[i] as PhotoRole) : null;
+    const fromName = names[i] ? roleFromName(names[i]!) : null;
+    const role: PhotoRole = hinted ?? fromName ?? (i === 0 ? "front" : "other");
+    const group = groups[i];
+    return { index: i, role, articleGroup: group !== undefined && Number.isFinite(group) && group >= 1 ? group : 1, confidence: hinted ? 0.9 : fromName ? 0.75 : i === 0 ? 0.5 : 0.3 };
+  });
+  return { photos };
+}
+
+function mockLabelRead(prompt: string): Record<string, unknown> {
+  const h = readRawHints(prompt);
+  const pairs = parsePairs(h.label);
+  const base = clamp01(Number.parseFloat(pairs.confidence ?? ""), 0.9);
+  // Relecture avec le texte de l'OCR d'essai : une valeur qu'il confirme est lue avec plus de certitude.
+  const ocr = h.ocrText === "1" && h.ocr ? simplify(h.ocr).replace(/\s+/g, "") : "";
+  const unread = h.labelReadFrom === "none";
+  const field = (key: (typeof LABEL_FIELDS)[number]) => {
+    const value = pairs[key]?.trim();
+    if (!value) return { value: null, confidence: 0, readFrom: null };
+    const confirmed = ocr && ocr.includes(simplify(value).replace(/\s+/g, ""));
+    return { value, confidence: confirmed ? Math.max(base, 0.92) : base, readFrom: unread ? null : "label" };
+  };
+  const values = LABEL_FIELDS.map((k) => pairs[k]?.trim()).filter((v): v is string => Boolean(v));
+  return {
+    brand: field("brand"),
+    size: field("size"),
+    material: field("material"),
+    reference: field("reference"),
+    careSymbols: [],
+    text: ocr && h.ocr ? h.ocr : values.length > 0 ? values.join(" ") : null,
+  };
+}
+
+function mockMeasurements(prompt: string): Record<string, unknown> {
+  const h = readRawHints(prompt);
+  if (h.tape === undefined) return { tapeVisible: false, measurements: [] };
+  const pairs = parsePairs(h.tape);
+  const confidence = clamp01(Number.parseFloat(pairs.confidence ?? ""), 0.9);
+  const measurements = MEASUREMENT_NAMES.flatMap((name) => {
+    const v = Number.parseFloat(pairs[name] ?? "");
+    return Number.isFinite(v) ? [{ name, valueCm: v, confidence, evidence: "tape_photo" }] : [];
+  });
+  // [[tapeVisible: 0]] simule un modèle qui « mesure » sans ruban : la validation doit tout écarter.
+  return { tapeVisible: h.tapeVisible !== "0", measurements };
 }

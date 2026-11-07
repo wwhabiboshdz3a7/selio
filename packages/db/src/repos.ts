@@ -1944,3 +1944,327 @@ export const admin = {
     }));
   },
 };
+
+// ---------------------------------------------------------------- Studio façon Kavis (0014)
+//
+// Les colonnes JSON des préparations sont rendues telles qu'en base et validées par le service (`@selio/core`,
+// schémas `studioFields`, `namedMeasurementField`, `sellerQuestion` de `@selio/contracts`).
+
+export type SizeReferenceSource = "provided" | "seller_validated";
+
+/**
+ * Référence de tailles (table partagée, sans donnée personnelle ni d'organisation) : mesures en cm d'un
+ * modèle retrouvé par la référence lue sur l'étiquette (et la taille quand ses mesures en dépendent).
+ * Lecture pour tous ; écriture par deux fonctions SECURITY DEFINER (opérateur, partage anonyme du vendeur).
+ */
+export interface SizeReferenceRecord {
+  id: string;
+  brand: string;
+  reference: string;
+  /** Taille mesurée ; null quand les mesures ne dépendent pas de la taille (sac, accessoire). */
+  size: string | null;
+  /** Famille de la pièce (GARMENT_KINDS). */
+  category: string;
+  /** { nom de mesure: cm } (par exemple { chest: 52, length: 70 }). */
+  measurements: Record<string, number>;
+  source: SizeReferenceSource;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SizeReferenceInput {
+  brand: string;
+  reference: string;
+  size: string | null;
+  category: string;
+  measurements: Record<string, number>;
+}
+
+function toSizeReference(r: Record<string, unknown>): SizeReferenceRecord {
+  const m = r.measurements && typeof r.measurements === "object" && !Array.isArray(r.measurements) ? (r.measurements as Record<string, unknown>) : {};
+  const measurements = Object.fromEntries(Object.entries(m).filter(([, v]) => typeof v === "number" && Number.isFinite(v)).map(([k, v]) => [k, Number(v)]));
+  return {
+    id: String(r.id),
+    brand: String(r.brand),
+    reference: String(r.reference),
+    size: (r.size as string | null) ?? null,
+    category: String(r.category ?? "other"),
+    measurements,
+    source: r.source === "provided" ? "provided" : "seller_validated",
+    createdAt: String(r.createdAt),
+    updatedAt: String(r.updatedAt),
+  };
+}
+
+const SIZE_REFERENCE_COLUMNS = "id, brand, reference, size, category, measurements, source, created_at, updated_at";
+const SIZE_BRAND_KEY = "lower(regexp_replace($1, '[^[:alnum:]]', '', 'g'))";
+const SIZE_REFERENCE_KEY = "upper(regexp_replace($2, '[^A-Za-z0-9]', '', 'g'))";
+
+export const sizeReferences = {
+  /**
+   * Toutes les tailles connues d'un modèle, par marque et référence normalisées (« Levi's » = « levis »,
+   * « AB-123 » = « ab 123 ») ; le service choisit celle qui correspond à l'article (`matchSizeReference`).
+   */
+  async findAll(tx: Tx, brand: string, reference: string, limit = 50): Promise<SizeReferenceRecord[]> {
+    const rows = await tx.query<Record<string, unknown>>(
+      `select ${SIZE_REFERENCE_COLUMNS} from size_references where brand_key = ${SIZE_BRAND_KEY} and reference_key = ${SIZE_REFERENCE_KEY} order by size_key limit $3`,
+      [brand, reference, Math.min(200, Math.max(1, limit))],
+    );
+    return rows.map(toSizeReference);
+  },
+  async list(tx: Tx, opts: { brand?: string; limit?: number } = {}): Promise<SizeReferenceRecord[]> {
+    const limit = Math.min(500, Math.max(1, opts.limit ?? 100));
+    const rows = opts.brand
+      ? await tx.query<Record<string, unknown>>(`select ${SIZE_REFERENCE_COLUMNS} from size_references where brand_key = ${SIZE_BRAND_KEY} order by reference_key, size_key limit $2`, [opts.brand, limit])
+      : await tx.query<Record<string, unknown>>(`select ${SIZE_REFERENCE_COLUMNS} from size_references order by brand_key, reference_key, size_key limit $1`, [limit]);
+    return rows.map(toSizeReference);
+  },
+  async count(tx: Tx): Promise<number> {
+    return tx.count("select count(*) from size_references");
+  },
+  /** Référence fournie par l'opérateur (le service vérifie `isOperator`) : crée ou remplace. */
+  async provide(tx: Tx, input: SizeReferenceInput): Promise<SizeReferenceRecord> {
+    const r = await tx.one<{ id: string }>("select * from app_size_reference_provide($1, $2, $3, $4, $5::jsonb)", [input.brand, input.reference, input.size, input.category, JSON.stringify(input.measurements)], "Référence");
+    return toSizeReference(await tx.one<Record<string, unknown>>(`select ${SIZE_REFERENCE_COLUMNS} from size_references where id = $1`, [r.id], "Référence"));
+  },
+  /**
+   * Mesures validées et partagées anonymement par un vendeur : nouvelle ligne « seller_validated » ou ajout
+   * des seules mesures manquantes. Null quand la référence est fournie par l'opérateur (jamais modifiée).
+   */
+  async contribute(tx: Tx, input: SizeReferenceInput): Promise<{ id: string; source: SizeReferenceSource } | null> {
+    const r = await tx.maybeOne<{ id: string; source: SizeReferenceSource }>("select * from app_size_reference_contribute($1, $2, $3, $4, $5::jsonb)", [input.brand, input.reference, input.size, input.category, JSON.stringify(input.measurements)]);
+    return r ?? null;
+  },
+};
+
+export type StudioPrepStatus = "draft" | "validated";
+
+/** Préparation Studio d'un article (RLS). Aucune image : seulement des clés de stockage et des rôles. */
+export interface StudioPrepRecord {
+  id: string;
+  orgId: string;
+  batchId: string;
+  articleGroup: number;
+  itemId: string | null;
+  status: StudioPrepStatus;
+  photos: unknown[];
+  fields: Record<string, unknown>;
+  measurements: unknown[];
+  questions: unknown[];
+  warnings: string[];
+  details: Record<string, unknown>;
+  garment: string | null;
+  category: ItemCategory | null;
+  simulated: boolean;
+  shareMeasurements: boolean;
+  validatedAt: string | null;
+  listingGeneratedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type StudioPrepInput = Pick<StudioPrepRecord, "batchId" | "articleGroup" | "photos" | "fields" | "measurements" | "questions" | "warnings" | "details" | "garment" | "category" | "simulated"> & { itemId?: string | null; createdAt?: string };
+export type StudioPrepPatch = Partial<Pick<StudioPrepRecord, "itemId" | "status" | "fields" | "measurements" | "questions" | "warnings" | "details" | "garment" | "shareMeasurements" | "validatedAt" | "listingGeneratedAt">>;
+
+function toStudioPrep(r: Record<string, unknown>): StudioPrepRecord {
+  const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+  const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+  const iso = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
+  return {
+    id: String(r.id),
+    orgId: String(r.orgId),
+    batchId: String(r.batchId),
+    articleGroup: Number(r.articleGroup ?? 1),
+    itemId: (r.itemId as string | null) ?? null,
+    status: r.status === "validated" ? "validated" : "draft",
+    photos: arr(r.photos),
+    fields: obj(r.fields),
+    measurements: arr(r.measurements),
+    questions: arr(r.questions),
+    warnings: arr(r.warnings).filter((w): w is string => typeof w === "string"),
+    details: obj(r.details),
+    garment: (r.garment as string | null) ?? null,
+    category: (r.category as ItemCategory | null) ?? null,
+    simulated: r.simulated === true,
+    shareMeasurements: r.shareMeasurements === true,
+    validatedAt: iso(r.validatedAt),
+    listingGeneratedAt: iso(r.listingGeneratedAt),
+    createdAt: String(r.createdAt),
+    updatedAt: String(r.updatedAt),
+  };
+}
+
+export const studioPreps = {
+  async create(tx: Tx, input: StudioPrepInput): Promise<StudioPrepRecord> {
+    return toStudioPrep(await tx.insert("studio_preps", { ...input, itemId: input.itemId ?? null, orgId: tx.orgId }));
+  },
+  async byId(tx: Tx, id: string): Promise<StudioPrepRecord | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>("select * from studio_preps where org_id = $1 and id = $2", [tx.orgId, id]);
+    return r ? toStudioPrep(r) : null;
+  },
+  /** Lit et verrouille la préparation jusqu'à la fin de la transaction (validation et génération concurrentes). */
+  async lock(tx: Tx, id: string): Promise<StudioPrepRecord | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>("select * from studio_preps where org_id = $1 and id = $2 for update", [tx.orgId, id]);
+    return r ? toStudioPrep(r) : null;
+  },
+  async update(tx: Tx, id: string, patch: StudioPrepPatch): Promise<StudioPrepRecord> {
+    const { columns, values } = objectToColumns({ ...patch, updatedAt: new Date().toISOString() });
+    const sets = columns.map((c, i) => `${c} = $${i + 3}`);
+    return toStudioPrep(await tx.one(`update studio_preps set ${sets.join(", ")} where org_id = $1 and id = $2 returning *`, [tx.orgId, id, ...values], "Préparation Studio"));
+  },
+  async byBatch(tx: Tx, batchId: string): Promise<StudioPrepRecord[]> {
+    return (await tx.query<Record<string, unknown>>("select * from studio_preps where org_id = $1 and batch_id = $2 order by article_group, id", [tx.orgId, batchId])).map(toStudioPrep);
+  },
+  async list(tx: Tx, limit = 20): Promise<StudioPrepRecord[]> {
+    return (await tx.query<Record<string, unknown>>("select * from studio_preps where org_id = $1 order by created_at desc, article_group, id limit $2", [tx.orgId, Math.min(200, Math.max(1, limit))])).map(toStudioPrep);
+  },
+  /** Brouillons jamais validés créés avant `before` (ils ne contiennent que des clés et des champs). */
+  async purgeDraftsBefore(tx: Tx, before: string): Promise<number> {
+    return (await tx.query("delete from studio_preps where org_id = $1 and status = 'draft' and created_at < $2 returning id", [tx.orgId, before])).length;
+  },
+};
+
+export type WornPhotoStatus = "queued" | "running" | "done" | "failed" | "refused";
+export type WornPhotoPose = "front" | "three_quarter" | "back";
+
+/** Demande de photo portée (RLS). La photo d'origine et le résultat ne sont que des clés de stockage. */
+export interface WornPhotoJobRecord {
+  id: string;
+  orgId: string;
+  itemId: string | null;
+  photoKey: string;
+  pose: WornPhotoPose;
+  status: WornPhotoStatus;
+  provider: string;
+  resultKey: string | null;
+  error: string | null;
+  scheduledFor: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  usageEventId: string | null;
+  /** Prix unitaire du dépassement accepté (centimes) ; 0 = dans le quota du plan. */
+  overageCents: number;
+  overageAcceptedAt: string | null;
+  billedInvoiceId: string | null;
+  billedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function toWornPhotoJob(r: Record<string, unknown>): WornPhotoJobRecord {
+  const iso = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
+  return {
+    id: String(r.id),
+    orgId: String(r.orgId),
+    itemId: (r.itemId as string | null) ?? null,
+    photoKey: String(r.photoKey),
+    pose: (r.pose as WornPhotoPose) ?? "front",
+    status: r.status as WornPhotoStatus,
+    provider: String(r.provider),
+    resultKey: (r.resultKey as string | null) ?? null,
+    error: (r.error as string | null) ?? null,
+    scheduledFor: String(r.scheduledFor),
+    startedAt: iso(r.startedAt),
+    finishedAt: iso(r.finishedAt),
+    usageEventId: (r.usageEventId as string | null) ?? null,
+    overageCents: Number(r.overageCents ?? 0),
+    overageAcceptedAt: iso(r.overageAcceptedAt),
+    billedInvoiceId: (r.billedInvoiceId as string | null) ?? null,
+    billedAt: iso(r.billedAt),
+    createdAt: String(r.createdAt),
+    updatedAt: String(r.updatedAt),
+  };
+}
+
+export interface WornPhotoDue {
+  orgId: string;
+  id: string;
+  status: "queued" | "running";
+}
+
+export const wornPhotoJobs = {
+  async create(tx: Tx, input: { id?: string; itemId?: string | null; photoKey: string; pose: WornPhotoPose; provider: string; scheduledFor: string; usageEventId?: string | null; overageCents?: number; overageAcceptedAt?: string | null; createdAt?: string }): Promise<WornPhotoJobRecord> {
+    return toWornPhotoJob(await tx.insert("worn_photo_jobs", { ...input, provider: input.provider.slice(0, 40), itemId: input.itemId ?? null, overageCents: Math.max(0, Math.round(input.overageCents ?? 0)), status: "queued", orgId: tx.orgId }));
+  },
+  async byId(tx: Tx, id: string): Promise<WornPhotoJobRecord | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>("select * from worn_photo_jobs where org_id = $1 and id = $2", [tx.orgId, id]);
+    return r ? toWornPhotoJob(r) : null;
+  },
+  async list(tx: Tx, opts: { itemId?: string | null; limit?: number } = {}): Promise<WornPhotoJobRecord[]> {
+    const limit = Math.min(200, Math.max(1, opts.limit ?? 50));
+    const rows = opts.itemId
+      ? await tx.query<Record<string, unknown>>("select * from worn_photo_jobs where org_id = $1 and item_id = $2 order by created_at desc, id limit $3", [tx.orgId, opts.itemId, limit])
+      : await tx.query<Record<string, unknown>>("select * from worn_photo_jobs where org_id = $1 order by created_at desc, id limit $2", [tx.orgId, limit]);
+    return rows.map(toWornPhotoJob);
+  },
+  /** Prise conditionnelle d'une demande en file dont l'heure est venue ; null si un autre passage l'a prise. */
+  async claim(tx: Tx, id: string, now: string, provider: string): Promise<WornPhotoJobRecord | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>(
+      "update worn_photo_jobs set status = 'running', started_at = $3, provider = $4, updated_at = now() where org_id = $1 and id = $2 and status = 'queued' and scheduled_for <= $3 returning *",
+      [tx.orgId, id, now, provider.slice(0, 40)],
+    );
+    return r ? toWornPhotoJob(r) : null;
+  },
+  /**
+   * Fin d'une demande en cours (transition conditionnelle depuis « running » ; avec `staleBefore`, seulement
+   * si elle a commencé avant). Sans photo produite (`keepOverage` faux), le dépassement et la place de quota
+   * sont retirés de la ligne (le service supprime l'événement d'utilisation).
+   */
+  async finish(tx: Tx, id: string, input: { status: "done" | "refused" | "failed"; finishedAt: string; resultKey?: string | null; error?: string | null; staleBefore?: string; keepOverage: boolean }): Promise<WornPhotoJobRecord | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>(
+      `update worn_photo_jobs set status = $3, finished_at = $4, result_key = $5, error = $6,
+         overage_cents = case when $7::boolean then overage_cents else 0 end,
+         usage_event_id = case when $7::boolean then usage_event_id else null end, updated_at = now()
+       where org_id = $1 and id = $2 and status = 'running' and ($8::timestamptz is null or started_at < $8::timestamptz) returning *`,
+      [tx.orgId, id, input.status, input.finishedAt, input.resultKey ?? null, input.error ? input.error.slice(0, 500) : null, input.keepOverage, input.staleBefore ?? null],
+    );
+    return r ? toWornPhotoJob(r) : null;
+  },
+  /** Supprime une demande encore en file (annulation) et la rend ; null si elle a déjà commencé. */
+  async deleteQueued(tx: Tx, id: string): Promise<WornPhotoJobRecord | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>("delete from worn_photo_jobs where org_id = $1 and id = $2 and status = 'queued' returning *", [tx.orgId, id]);
+    return r ? toWornPhotoJob(r) : null;
+  },
+  /**
+   * Dépassement produit et pas encore facturé, terminé au plus tard à `cutoff`, groupé par prix unitaire
+   * (le même filtre que `markOverageBilled`).
+   */
+  async unbilledOverage(tx: Tx, cutoff: string): Promise<{ unitCents: number; quantity: number }[]> {
+    const rows = await tx.query<{ unitCents: number; quantity: number }>(
+      "select overage_cents as unit_cents, count(*)::int as quantity from worn_photo_jobs where org_id = $1 and status = 'done' and overage_cents > 0 and billed_invoice_id is null and finished_at <= $2 group by overage_cents order by overage_cents",
+      [tx.orgId, cutoff],
+    );
+    return rows.map((r) => ({ unitCents: Number(r.unitCents), quantity: Number(r.quantity) }));
+  },
+  /** Rattache à une facture `quantity` photos au prix `unitCents`, terminées au plus tard à `cutoff` (les plus anciennes d'abord). */
+  async markOverageBilled(tx: Tx, input: { invoiceId: string; cutoff: string; unitCents: number; quantity: number; at: string }): Promise<number> {
+    if (input.quantity <= 0) return 0;
+    return (await tx.query(
+      `update worn_photo_jobs set billed_invoice_id = $2, billed_at = $6, updated_at = now() where org_id = $1 and id in (
+         select id from worn_photo_jobs where org_id = $1 and status = 'done' and overage_cents = $4 and billed_invoice_id is null and finished_at <= $3
+         order by finished_at, id limit $5 for update
+       ) returning id`,
+      [tx.orgId, input.invoiceId, input.cutoff, input.unitCents, input.quantity, input.at],
+    )).length;
+  },
+  /** Autres demandes de l'organisation qui utilisent la même photo d'origine (avant de supprimer l'objet du stockage). */
+  async countByPhotoKey(tx: Tx, photoKey: string, excludeId: string | null = null): Promise<number> {
+    return tx.count("select count(*) from worn_photo_jobs where org_id = $1 and photo_key = $2 and ($3::text is null or id <> $3)", [tx.orgId, photoKey, excludeId]);
+  },
+  /**
+   * Rétention : demandes terminées (produite, refusée ou en échec) avant `before`, sauf un dépassement produit et
+   * pas encore facturé (il attend le renouvellement). Les lignes sont supprimées ; leurs clés sont rendues pour
+   * effacer les objets du stockage.
+   */
+  async purgeFinishedBefore(tx: Tx, before: string): Promise<{ id: string; status: WornPhotoStatus; photoKey: string; resultKey: string | null }[]> {
+    const rows = await tx.query<{ id: string; status: WornPhotoStatus; photoKey: string; resultKey: string | null }>(
+      "delete from worn_photo_jobs where org_id = $1 and status in ('done', 'refused', 'failed') and finished_at < $2 and (overage_cents = 0 or billed_invoice_id is not null) returning id, status, photo_key, result_key",
+      [tx.orgId, before],
+    );
+    return rows.map((r) => ({ id: String(r.id), status: r.status, photoKey: String(r.photoKey), resultKey: (r.resultKey as string | null) ?? null }));
+  },
+  /** Demandes à exécuter, toutes organisations (fonction SECURITY DEFINER, identifiants seulement) : worker. */
+  async due(tx: Tx, now: string, staleBefore: string, limit = 50): Promise<WornPhotoDue[]> {
+    return (await tx.query<WornPhotoDue>("select * from app_worn_photo_due($1, $2, $3)", [now, staleBefore, limit])).map((r) => ({ orgId: r.orgId, id: r.id, status: r.status }));
+  },
+};

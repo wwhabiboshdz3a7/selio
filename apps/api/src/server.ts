@@ -6,11 +6,11 @@ import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
 import { createAIService } from "@selio/ai";
 import { Db, SecretBox, createPool } from "@selio/db";
-import type { Services } from "@selio/core";
+import { wornPhotos, type Services } from "@selio/core";
 import { createPaymentProvider, loadPaymentConfig } from "@selio/connectors";
 import { createEmailProvider, loadEmailConfig, type EmailLogger } from "@selio/email";
 import { createStorageClient, loadStorageConfig } from "@selio/storage";
-import { cloudServicesConfig, radarServicesConfig, startupNotices, trackServicesConfig, type ApiEnv } from "./config";
+import { cloudServicesConfig, radarServicesConfig, startupNotices, studioServicesConfig, trackServicesConfig, type ApiEnv } from "./config";
 import { errorHandler } from "./errors";
 import authPlugin from "./plugins/auth";
 import authRoutes from "./routes/auth";
@@ -34,6 +34,8 @@ import cloudRoutes from "./routes/cloud";
 import pushRoutes from "./routes/push";
 import trackRoutes from "./routes/track";
 import pricingRoutes from "./routes/pricing";
+import adminRoutes from "./routes/admin";
+import { StoragePhotoStore } from "./studio-photos";
 import { MAINTENANCE_QUEUE, RADAR_QUEUE, createQueues, type QueueHandle } from "./queue";
 import { PRICE_MODEL_REFRESH_MS, createApiPricingServices, refreshPriceModel, schedulePriceModelRefresh } from "./pricing";
 import { WebPushSender, loadVapidConfig } from "./push";
@@ -75,12 +77,19 @@ export function buildServices(env: ApiEnv, overrides: Partial<Services> = {}, lo
     // de Radar (verrous de Radar Auto, achat réel, délai 3-D Secure) et de Track (lecture en direct, analyse
     // d'un vendeur). Aucun navigateur dans l'API : `cloud`, `radar` et `track` restent absents (sauf
     // injection par les tests), seul le worker lit et achète.
-    config: overrides.config ?? { ...cloudServicesConfig(env), ...radarServicesConfig(env), ...trackServicesConfig(env) },
+    // Studio : dépassement des photos portées fermé par défaut, 0,25 € la photo (proposition), file de nuit 22 h – 6 h.
+    config: overrides.config ?? { ...cloudServicesConfig(env), ...radarServicesConfig(env), ...trackServicesConfig(env), ...studioServicesConfig(env) },
     // Modèle de prix : chargé depuis `price_models` (jamais entraîné ici) ; les tests injectent le leur.
     pricing: overrides.pricing ?? createApiPricingServices(now),
+    // Photos portées : AUCUN fournisseur choisi (décision d'Ibrahim) ; « noop » refuse proprement, « mock » pour les
+    // tests. L'API ne produit rien (le worker traite la file la nuit), elle enregistre seulement le fournisseur prévu.
+    wornPhotos: overrides.wornPhotos ?? wornPhotos.createWornPhotoProvider(env.WORN_PHOTO_PROVIDER, { production: env.NODE_ENV === "production" }),
     ...(push ? { push } : {}),
     ...(overrides.radar ? { radar: overrides.radar } : {}),
     ...(overrides.track ? { track: overrides.track } : {}),
+    // Studio : lecture des photos (modèle 1, sinon prise sur `ai`), photos stockées lues par leur clé (branché
+    // dans buildServer avec le stockage), aucun réducteur d'image côté serveur (une photo trop grande est refusée).
+    ...(overrides.studio ? { studio: overrides.studio } : {}),
   };
 }
 
@@ -110,6 +119,8 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   const queues = createQueues(env.REDIS_URL, { warn: (m) => app.log.warn(m) });
   // Stockage des photos (S3 / MinIO) : null tant que STORAGE_ENDPOINT est absent, la route répond alors 503.
   const storage = createStorageClient(loadStorageConfig(env), services.now);
+  // Studio : photos envoyées par clé de stockage (`org/<org>/studio-photo/…`) lues par l'API avec une URL signée courte.
+  if (storage && !services.studio?.photos) services.studio = { ...services.studio, photos: new StoragePhotoStore(storage) };
   const origins = env.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean);
 
   await app.register(helmet, { contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "same-site" } });
@@ -152,6 +163,8 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   // Selio Track (statistiques seulement ; aucune page lue ici) et estimation des prix.
   await app.register(trackRoutes, { liveEnabled: services.config?.trackLiveEnabled === true });
   await app.register(pricingRoutes, { maintenanceQueue: queues.queues.get(MAINTENANCE_QUEUE) ?? null, minReferences: env.PRICING_MIN_REFERENCES });
+  // Administration de la base des références de tailles (Studio) : import CSV / JSON par un opérateur, sans donnée personnelle.
+  await app.register(adminRoutes);
 
   // Modèle de prix actif : chargé au démarrage (jamais bloquant), puis rechargé toutes les heures (nouvel
   // entraînement du worker le dimanche).

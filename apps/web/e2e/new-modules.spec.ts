@@ -5,15 +5,32 @@ import { gotoApp, isMobile, openDemo } from "./helpers";
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
 
 test.describe("nouveaux modules", () => {
-  test("générateur d'annonces : photos → annonce → publication", async ({ page }) => {
+  test("générateur d'annonces : photos → préparation (tri, étiquette, mesures) → annonce → publication", async ({ page }) => {
     await openDemo(page);
     await gotoApp(page, "/app/studio");
     await expect(page.getByRole("heading", { name: "Générateur d'annonces" })).toBeVisible();
     await page.getByLabel("Choisir des photos").setInputFiles([{ name: "ralph-lauren-pull-bleu-marine-M.png", mimeType: "image/png", buffer: PNG }]);
     await expect(page.getByText("Couverture", { exact: true })).toBeVisible();
+    // La marque vient du vendeur : rien n'est lu sur une vraie photo par le simulateur, rien n'est déduit du nom du fichier.
+    await page.getByLabel("Marque (facultatif)").fill("Ralph Lauren");
+    await page.getByRole("button", { name: "Préparer l'annonce" }).click();
+    await expect(page.getByRole("heading", { name: "Tri des photos" })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/1 photo rangée en 1 article/)).toBeVisible();
+    await page.getByRole("button", { name: "Continuer vers l'étiquette" }).click();
+    await expect(page.getByRole("heading", { name: "Étiquette" })).toBeVisible();
+    await expect(page.getByLabel("Marque", { exact: true })).toHaveValue("Ralph Lauren");
+    await expect(page.getByText("Indiquée par le vendeur").first()).toBeVisible();
+    // Taille et matière : illisibles → champs vides avec leur question, jamais « M » deviné d'après le nom du fichier.
+    await expect(page.getByLabel("Taille", { exact: true })).toHaveValue("");
+    await expect(page.getByText("À renseigner").first()).toBeVisible();
+    await expect(page.getByText(/Quelle taille est indiquée sur l'étiquette/)).toBeVisible();
+    await page.getByRole("button", { name: "Continuer vers les mesures" }).click();
+    await expect(page.getByText("Jamais de mesure inventée")).toBeVisible();
+    await expect(page.getByText(/Aucune photo avec un mètre ruban pour cet article/)).toBeVisible();
     await page.getByRole("button", { name: "Générer l'annonce" }).click();
     await expect(page.getByText("Annonce proposée")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel(/Titre/).first()).toHaveValue(/Ralph Lauren/);
+    await expect(page.getByRole("region", { name: "Provenance des champs" })).toContainText("Indiquée par le vendeur");
     await page.getByRole("button", { name: "Publier directement" }).click();
     await expect(page.getByRole("heading", { name: "Annonce mise en vente" })).toBeVisible();
   });

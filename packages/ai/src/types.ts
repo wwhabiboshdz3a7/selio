@@ -11,7 +11,9 @@ export type AIErrorCode =
   | "queue_full"
   | "invalid_output"
   | "model_missing"
-  | "http";
+  | "http"
+  /** Entrée refusée avant tout appel (trop de photos, photo trop grande ou illisible) : jamais une panne du serveur. */
+  | "input_rejected";
 
 export class AIError extends Error {
   constructor(
@@ -74,18 +76,22 @@ export interface StructuredResult<T> extends GenerateResult {
 }
 
 /**
- * Les trois rôles de modèle, tous servis par Ollama sur la machine :
+ * Les trois rôles de modèle, tous servis par Ollama sur la machine, plus un essai facultatif :
  * - `text` : « mon IA perso », la voix (réponses, annonces, aide) ;
  * - `vision` : modèle 1, les photos (Studio, lecture et contrôle des photos) ;
- * - `embed` : modèle 2, les prix (vecteurs pour retrouver les ventes comparables).
+ * - `embed` : modèle 2, les prix (vecteurs pour retrouver les ventes comparables) ;
+ * - `ocr` : OCR d'essai pour les étiquettes difficiles (OLLAMA_OCR_MODEL, vide par défaut), en second
+ *   recours seulement : son texte est relu par le modèle 1, jamais utilisé seul.
  */
-export type AIModelRole = "text" | "vision" | "embed";
+export type AIModelRole = "text" | "vision" | "embed" | "ocr";
 
 /** Un modèle attendu par la configuration, et s'il est installé sur le serveur. */
 export interface ExpectedModel {
   role: AIModelRole;
   name: string;
   present: boolean;
+  /** Facultatif (OCR d'essai) : son absence ne dégrade jamais la santé. */
+  optional?: boolean;
 }
 
 export interface HealthDetails {
@@ -123,9 +129,30 @@ export interface EmbedResult {
   provider: string;
 }
 
+/** Lecture OCR d'une image d'étiquette (modèle d'essai, texte brut). */
+export interface OcrRequest {
+  /** Image(s) de l'étiquette en base64 brut (sans préfixe data:). */
+  images: string[];
+  /** Consigne du modèle OCR (« Text Recognition: » pour GLM-OCR). */
+  prompt: string;
+  maxOutputTokens?: number;
+  requestId?: string;
+}
+
+export interface OcrResult {
+  /** Texte reconnu, brut : une DONNÉE non fiable, relue par le modèle 1, jamais utilisée seule. */
+  text: string;
+  usage: Usage;
+  latencyMs: number;
+  model: string;
+  provider: string;
+}
+
 export interface AIProvider {
   readonly name: string;
   readonly model: string;
+  /** Modèle OCR d'essai configuré (OLLAMA_OCR_MODEL), ou null : facultatif. */
+  readonly ocrModel?: string | null;
   /**
    * Vrai si les images envoyées sont réellement lues (modèle de vision branché ; le simulateur les
    * « accepte » mais ses sorties sont marquées simulées). Absent : faux — une requête avec photos irait au
@@ -142,6 +169,8 @@ export interface AIProvider {
    * sans modèle d'embedding ne l'implémente pas.
    */
   embed?(texts: string[], opts?: GenerateOptions): Promise<EmbedResult>;
+  /** OCR d'essai des étiquettes : optionnel, seulement quand `ocrModel` est configuré. */
+  ocr?(req: OcrRequest, opts?: GenerateOptions): Promise<OcrResult>;
 }
 
 /** Vrai si le fournisseur lit réellement les photos (sinon : rien ne doit être « décrit » d'une photo non vue). */

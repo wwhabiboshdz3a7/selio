@@ -4,12 +4,15 @@ import type { WebSocket } from "ws";
 import { createPool, runMigrations, MIGRATIONS_DIR, SecretBox, hashSecret, repos as dbRepos } from "@selio/db";
 import { RevolutClient, computeRevolutSignature } from "@selio/connectors";
 import { CLOUD_CONSENT_VERSION, PRICE_MODEL_DEMO_DATA, TRACK_DEMO_NOTICE, TRACK_SALES_FEED_AGENCY_ONLY, TRACK_SELLER_ANALYSIS_NOTICE, TRACK_UNAVAILABLE_MESSAGE, quotasForPlan, type ItemCategory, type Plan, type PriceReferenceInput } from "@selio/contracts";
-import { FakePriceModel, FakePushSender, auth as authService, cloud as cloudService, track as trackService, type OrgContext } from "@selio/core";
+import { FakePriceModel, FakePushSender, FakeStudioVision, auth as authService, cloud as cloudService, track as trackService, type OrgContext, type StudioServices } from "@selio/core";
 import { NoopEmailProvider, type EmailProvider } from "@selio/email";
 import { flatMetrics, trainPriceModel } from "@selio/pricing";
 import { generateSyntheticReferences } from "@selio/pricing/synthetic";
 import webpush from "web-push";
-import { loadEnv, radarServicesConfig, trackServicesConfig } from "../src/config";
+import { loadEnv, radarServicesConfig, startupNotices, studioServicesConfig, trackServicesConfig } from "../src/config";
+import { StoragePhotoStore } from "../src/studio-photos";
+import { isPersonalColumn, parseSizeReferenceImport } from "../src/size-references";
+import { photoRejectStatus } from "../src/routes/studio";
 import { decodedPhotoBytes } from "../src/routes/track";
 import { pricePosition } from "../src/routes/ext";
 import { refreshPriceModel } from "../src/pricing";
@@ -1040,7 +1043,7 @@ describe("API Selio (mode connecté, base réelle)", () => {
     const configured = await buildServer(loadEnv({ ...baseEnv, STORAGE_ENDPOINT: "http://127.0.0.1:9000", STORAGE_BUCKET: "selio-photos", STORAGE_ACCESS_KEY: "selio-minio", STORAGE_SECRET_KEY: "selio-minio-secret" }), { email: mailbox });
     await configured.app.ready();
     try {
-      const inject = async (method: "GET" | "POST", url: string, payload?: unknown, who = "a") => {
+      const inject = async (method: "GET" | "POST" | "DELETE", url: string, payload?: unknown, who = "a") => {
         const res = await configured.app.inject({ method, url, payload: payload as object | undefined, headers: { cookie: cookies[who] ?? "" } });
         return { status: res.statusCode, json: res.body ? JSON.parse(res.body) : null };
       };
@@ -1068,6 +1071,30 @@ describe("API Selio (mode connecté, base réelle)", () => {
       expect((await inject("POST", "/api/uploads/presign", { ...body, kind: "avatar" }, "v")).status).toBe(201);
       const audit = await inject("GET", "/api/audit?limit=10");
       expect(audit.json.some((a: { action: string; meta: { key?: string } }) => a.action === "upload.presigned" && a.meta.key === ok.json.key)).toBe(true);
+      // Suppression d'une photo envoyée pour Studio : DELETE signé exécuté par l'API (jamais rendu au navigateur), clé de
+      // l'organisation et sorte studio-photo seulement ; la photo d'un article vit avec lui.
+      const studio = await inject("POST", "/api/uploads/presign", { kind: "studio-photo", contentType: "image/jpeg", size: 2048 });
+      expect(studio.status).toBe(201);
+      const fetched: { url: string; method?: string }[] = [];
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = (async (u: string | URL | Request, init?: RequestInit) => { fetched.push({ url: String(u), method: init?.method }); return new Response(null, { status: fetched.length === 1 ? 204 : 503 }); }) as typeof fetch;
+      try {
+        const gone = await inject("DELETE", `/api/uploads/object?key=${encodeURIComponent(studio.json.key)}`);
+        expect(gone.status).toBe(200);
+        expect(gone.json).toEqual({ deleted: true, key: studio.json.key });
+        expect(fetched).toEqual([{ method: "DELETE", url: expect.stringMatching(new RegExp(`^http://127\\.0\\.0\\.1:9000/selio-photos/${studio.json.key}\\?`)) }]);
+        expect(fetched[0]!.url).not.toContain("selio-minio-secret");
+        // Stockage en panne : 502 explicite, rien d'autre.
+        expect((await inject("DELETE", `/api/uploads/object?key=${encodeURIComponent(studio.json.key)}`)).json.error.code).toBe("storage_error");
+        expect((await inject("DELETE", `/api/uploads/object?key=${encodeURIComponent(ok.json.key)}`)).status).toBe(400);
+        expect((await inject("DELETE", "/api/uploads/object?key=org/autre-organisation/studio-photo/x.jpg")).status).toBe(403);
+        expect((await inject("DELETE", `/api/uploads/object?key=${encodeURIComponent(studio.json.key)}`, undefined, "v")).status).toBe(403);
+        expect(fetched).toHaveLength(2);
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+      const audit2 = await inject("GET", "/api/audit?limit=10");
+      expect(audit2.json.some((a: { action: string; meta: { key?: string } }) => a.action === "upload.deleted" && a.meta.key === studio.json.key)).toBe(true);
     } finally {
       await configured.app.close();
     }
@@ -2238,5 +2265,439 @@ describe("Selio Track et estimation des prix (API)", () => {
       await owner?.query("truncate price_models");
       pricing.model = saved ?? null;
     }
+  });
+});
+
+// ---------------------------------------------------------------- Selio Studio façon Kavis
+
+/**
+ * Studio façon Kavis par l'API (§5.11) : préparation (tri, étiquette, mètre ruban, provenance, questions),
+ * photos refusées avant tout appel au modèle (413 / 422 explicites), validation par le vendeur, génération
+ * depuis une préparation, photos portées (quota, 402, file de nuit, fournisseur « noop »), et import opérateur
+ * de la base des références de tailles (sans donnée personnelle). Le modèle de vision est le simulateur de
+ * l'IA (`AI_PROVIDER=mock`) ou une lecture programmée (FakeStudioVision) injectée le temps d'un test.
+ */
+describe("Selio Studio façon Kavis (API)", () => {
+  const jar: Record<string, string> = {};
+  const orgs: Record<string, string> = {};
+  let owner: ReturnType<typeof createPool> | null = null;
+
+  const as = async (who: string, method: "GET" | "POST" | "PATCH" | "DELETE", url: string, body?: unknown, headers: Record<string, string> = {}) => {
+    // Adresse propre à ce bloc : le plafond global par adresse n'est pas partagé avec les autres tests.
+    const payload = typeof body === "string" ? body : (body as object | undefined);
+    const res = await built.app.inject({ method, url, payload, headers: { cookie: who === "none" ? "" : jar[who] ?? "", ...headers }, remoteAddress: "10.88.0.1" });
+    let json: unknown = null;
+    try { json = res.body ? JSON.parse(res.body) : null; } catch { json = res.body; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { status: res.statusCode, json: json as any, res };
+  };
+  const setPlan = (who: string, plan: Plan, extra: Record<string, unknown> = {}) => built.services.db.withOrg(orgs[who]!, (tx) => dbRepos.subscriptions.upsert(tx, { plan, status: "active", quotas: quotasForPlan(plan), ...extra }));
+  /** Faux PNG : signature et bloc IHDR (largeur, hauteur), complété jusqu'à `bytes` octets (seuls les en-têtes sont lus). */
+  const png = (width: number, height: number, bytes = 64) => {
+    const b = new Uint8Array(Math.max(33, bytes));
+    b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+    const v = new DataView(b.buffer);
+    v.setUint32(16, width);
+    v.setUint32(20, height);
+    return b;
+  };
+  const dataUrl = (b: Uint8Array) => `data:image/png;base64,${Buffer.from(b).toString("base64")}`;
+  const photo = (id: string, w = 1024, h = 768, extra: Record<string, unknown> = {}) => ({ id, url: dataUrl(png(w, h)), ...extra });
+  const aiCount = (who: string) => built.services.db.withOrg(orgs[who]!, (tx) => dbRepos.aiRequests.countSince(tx, "2000-01-01T00:00:00.000Z"));
+  const usageOf = (who: string, kind: "studio.listing" | "studio.worn_photo") => built.services.db.withOrg(orgs[who]!, (tx) => dbRepos.usage.sumKindSince(tx, kind, "2000-01-01T00:00:00.000Z"));
+  const read = (value: string, confidence = 0.95) => ({ value, confidence, readFrom: "label" });
+  /** Lecture programmée injectée le temps d'un test (le simulateur de l'IA ne « lit » rien sans indice). */
+  async function withVision<T>(vision: FakeStudioVision, fn: () => Promise<T>, extra: Partial<StudioServices> = {}): Promise<T> {
+    const saved = built.services.studio;
+    built.services.studio = { ...saved, vision, ...extra };
+    try {
+      return await fn();
+    } finally {
+      built.services.studio = saved;
+    }
+  }
+
+  beforeAll(async () => {
+    if (!available) return;
+    // Base des références partagée : propre à la base de test de l'API.
+    owner = createPool(OWNER_URL, { max: 1 });
+    await owner.query("truncate size_references");
+    const meta = { ip: null, userAgent: null, operatorEmails: ["studio-ops@test.local"] };
+    for (const [who, plan] of [["pro", "pro"], ["kavis", "pro"], ["other", "pro"], ["starter", "starter"], ["worn", "pro"], ["ops", "pro"]] as const) {
+      const r = await authService.register(built.services, { email: `studio-${who}@test.local`, password: `motdepasse-S${who}1`, displayName: `Studio ${who}`, orgName: `Studio ${who}` }, meta);
+      jar[who] = `selio_session=${r.sessionId}`;
+      orgs[who] = r.orgId!;
+      await setPlan(who, plan);
+    }
+  });
+
+  afterAll(async () => {
+    await owner?.query("truncate size_references");
+    await owner?.end();
+  });
+
+  it("configuration : OCR d'essai vide, photos portées « noop », nuit 22 h – 6 h à Paris, dépassement fermé à 0,25 € (proposition)", () => {
+    const env = loadEnv(baseEnv);
+    expect(env.OLLAMA_OCR_MODEL).toBeUndefined();
+    expect(env).toMatchObject({ WORN_PHOTO_PROVIDER: "noop", WORN_NIGHT_WINDOW: { startHour: 22, endHour: 6 }, WORN_NIGHT_TIMEZONE: "Europe/Paris", WORN_OVERAGE_ENABLED: false });
+    expect(studioServicesConfig(env)).toEqual({ wornOverageEnabled: false, wornOverageUnitCents: 25, wornNightWindow: { startHour: 22, endHour: 6, timezone: "Europe/Paris" } });
+    expect(built.services.config).toMatchObject({ wornOverageEnabled: false, wornOverageUnitCents: 25, wornNightWindow: { startHour: 22, endHour: 6, timezone: "Europe/Paris" } });
+    expect(built.services.wornPhotos?.name).toBe("noop");
+    const notices = startupNotices(env).map((n) => n.message).join("\n");
+    expect(notices).toMatch(/OCR d'essai non configuré \(OLLAMA_OCR_MODEL vide, facultatif\)/);
+    expect(notices).toMatch(/aucun fournisseur choisi \(WORN_PHOTO_PROVIDER=noop\)/);
+    // Réglages lus : formats acceptés, ancien nom du prix, valeur vide = défaut.
+    expect(studioServicesConfig(loadEnv({ ...baseEnv, WORN_NIGHT_WINDOW: "23:00-05:00", WORN_OVERAGE_ENABLED: "true", WORN_OVERAGE_CENTS: "30", OLLAMA_OCR_MODEL: "glm-ocr" }))).toEqual({ wornOverageEnabled: true, wornOverageUnitCents: 30, wornNightWindow: { startHour: 23, endHour: 5, timezone: "Europe/Paris" } });
+    expect(studioServicesConfig(loadEnv({ ...baseEnv, WORN_OVERAGE_UNIT_CENTS: "40" })).wornOverageUnitCents).toBe(40);
+    expect(studioServicesConfig(loadEnv({ ...baseEnv, WORN_OVERAGE_CENTS: "" })).wornOverageUnitCents).toBe(25);
+    expect(loadEnv({ ...baseEnv, OLLAMA_OCR_MODEL: "glm-ocr" }).OLLAMA_OCR_MODEL).toBe("glm-ocr");
+    expect(startupNotices(loadEnv({ ...baseEnv, OLLAMA_OCR_MODEL: "glm-ocr", WORN_OVERAGE_ENABLED: "true" })).map((n) => n.message).join("\n")).toMatch(/« glm-ocr » \(second recours seulement, facultatif\)[\s\S]*0,25 € la photo \(PROPOSITION\)/);
+    // Valeurs refusées au démarrage, et le fournisseur de test jamais en production.
+    expect(() => loadEnv({ ...baseEnv, WORN_PHOTO_PROVIDER: "service-payant" })).toThrow(/WORN_PHOTO_PROVIDER/);
+    expect(() => loadEnv({ ...baseEnv, WORN_NIGHT_WINDOW: "22-22" })).toThrow(/WORN_NIGHT_WINDOW/);
+    expect(() => loadEnv({ ...baseEnv, WORN_NIGHT_TIMEZONE: "Mars/Olympus" })).toThrow(/WORN_NIGHT_TIMEZONE/);
+    expect(() => loadEnv({ ...baseEnv, WORN_OVERAGE_CENTS: "600" })).toThrow(/WORN_OVERAGE_CENTS/);
+    expect(() => loadEnv({ ...baseEnv, NODE_ENV: "production", AI_PROVIDER: "ollama", COOKIE_SECURE: "true", WORN_PHOTO_PROVIDER: "mock" })).toThrow(/WORN_PHOTO_PROVIDER=mock est interdit en production/);
+    expect(photoRejectStatus(["too_large", "too_heavy"])).toBe(413);
+    expect(photoRejectStatus(["too_large", "unreadable"])).toBe(422);
+    expect(photoRejectStatus(["key"])).toBe(400);
+  });
+
+  it("limites des photos et précision « à mesurer » ; lecture des photos stockées bornée (1,5 Mo + 1 octet au plus, sans redirection)", async () => {
+    if (!available) return;
+    const limits = await as("pro", "GET", "/api/studio/limits");
+    expect(limits.status).toBe(200);
+    expect(limits.json).toMatchObject({ maxPhotos: 12, maxBytes: 1_500_000, maxSidePx: 1600, modelMaxSidePx: 1024, modelMaxBytes: 1_000_000, modelJpegQuality: 0.8, modelPhotosPerCall: 6, labelPhotosPerCall: 2, tapePhotosPerCall: 3, serverReduction: false, vision: { available: true, simulated: true, ocrConfigured: false }, accuracy: { status: "to_measure" } });
+    expect(limits.json.accuracy.label).toMatch(/à mesurer/i);
+    expect((await as("none", "GET", "/api/studio/limits")).status).toBe(401);
+
+    const signed: string[] = [];
+    const storage = { presignDownload: ({ key }: { key: string }) => { signed.push(key); return { url: `https://stockage.test/${key}?X-Amz-Signature=x`, method: "GET" as const, expiresAt: "" }; } };
+    const fetched: { url: string; redirect: unknown }[] = [];
+    const big = new Uint8Array(2_000_000).fill(7);
+    const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+      fetched.push({ url: String(url), redirect: init?.redirect });
+      if (String(url).includes("absente")) return new Response("non", { status: 404 });
+      if (String(url).includes("lourde")) return new Response(big, { status: 200, headers: { "content-type": "image/jpeg" } });
+      return new Response(png(800, 600), { status: 200, headers: { "content-type": "binary/octet-stream" } });
+    }) as typeof fetch;
+    const store = new StoragePhotoStore(storage, { fetchImpl });
+    const ok = await store.read("org/o1/studio-photo/face.png");
+    expect(ok).toMatchObject({ contentType: "image/png" });
+    expect(ok.data.length).toBe(64);
+    const heavy = await store.read("org/o1/studio-photo/lourde.jpg");
+    expect(heavy.data.length).toBe(1_500_001);
+    expect(heavy.contentType).toBe("image/jpeg");
+    await expect(store.read("org/o1/studio-photo/absente.jpg")).rejects.toThrow(/HTTP 404/);
+    expect(signed).toEqual(["org/o1/studio-photo/face.png", "org/o1/studio-photo/lourde.jpg", "org/o1/studio-photo/absente.jpg"]);
+    expect(fetched.every((f) => f.redirect === "error")).toBe(true);
+  });
+
+  it("photos refusées AVANT tout appel au modèle : 13 photos → 413, 12 photos trop grandes → 422 (toutes listées), trop lourde → 413, à réduire ou illisible → 422", async () => {
+    if (!available) return;
+    const before = await aiCount("pro");
+    const many = await as("pro", "POST", "/api/studio/prepare", { photos: Array.from({ length: 13 }, (_, i) => photo(`p${i}`)) });
+    expect(many.status).toBe(413);
+    expect(many.json.error).toMatchObject({ code: "too_many_photos", details: { received: 13, limits: { maxPhotos: 12, modelPhotosPerCall: 6 } } });
+    // 12 photos en pleine taille : refusées toutes ensemble, jamais envoyées au modèle.
+    const full = await as("pro", "POST", "/api/studio/prepare", { photos: Array.from({ length: 12 }, (_, i) => photo(`p${i}`, 4000, 3000)) });
+    expect(full.status).toBe(422);
+    expect(full.json.error.code).toBe("photo_rejected");
+    expect(full.json.error.message).toMatch(/^12 photos refusées/);
+    expect(full.json.error.message).toMatch(/Jamais de photo en pleine taille/);
+    expect(full.json.error.details.photos).toHaveLength(12);
+    expect(full.json.error.details.photos[0]).toEqual({ photoId: "p0", reason: "too_large", bytes: 64, width: 4000, height: 3000 });
+    expect(full.json.error.details.limits).toMatchObject({ maxSidePx: 1600, modelMaxSidePx: 1024, modelJpegQuality: 0.8 });
+    // Plus de 1,5 Mo : 413 ; avec une photo trop grande dans le même envoi, les deux sont listées.
+    const heavy = await as("pro", "POST", "/api/studio/prepare", { photos: [{ id: "lourde", url: dataUrl(png(800, 600, 1_600_000)) }, photo("grande", 2400, 1800), photo("bonne")] });
+    expect(heavy.status).toBe(413);
+    expect(heavy.json.error.details.photos.map((p: { photoId: string; reason: string }) => `${p.photoId}:${p.reason}`)).toEqual(["lourde:too_heavy", "grande:too_large"]);
+    // Entre 1 024 et 1 600 px, aucun réducteur côté serveur : refus (jamais envoyée telle quelle) ; format illisible : refus.
+    const medium = await as("pro", "POST", "/api/studio/prepare", { photos: [photo("moyenne", 1400, 1050)] });
+    expect(medium.status).toBe(422);
+    expect(medium.json.error.details).toMatchObject({ photoId: "moyenne", reason: "needs_reduction", width: 1400 });
+    const text = await as("pro", "POST", "/api/studio/prepare", { photos: [{ id: "texte", url: `data:image/jpeg;base64,${Buffer.from("pas une image").toString("base64")}` }] });
+    expect(text.status).toBe(422);
+    expect(text.json.error.details).toMatchObject({ reason: "unreadable" });
+    // Corps au-delà de la limite de l'envoi : 413 explicite, en français.
+    const huge = await as("pro", "POST", "/api/studio/prepare", JSON.stringify({ photos: [{ id: "x", url: `data:image/png;base64,${"A".repeat(26 * 1024 * 1024)}` }] }), { "content-type": "application/json" });
+    expect(huge.status).toBe(413);
+    expect(huge.json.error).toMatchObject({ code: "payload_too_large" });
+    expect(huge.json.error.message).toMatch(/1 024 px/);
+    // Générateur historique : mêmes limites de nombre et de taille (image illisible tolérée, compatibilité).
+    expect((await as("pro", "POST", "/api/studio/generate", { photos: Array.from({ length: 13 }, (_, i) => ({ id: `g${i}`, url: dataUrl(png(800, 600)), alt: "pull.jpg" })) })).status).toBe(413);
+    const genFull = await as("pro", "POST", "/api/studio/generate", { photos: [{ id: "g1", url: dataUrl(png(4000, 3000)), alt: "pull.jpg" }] });
+    expect(genFull.status).toBe(422);
+    expect(genFull.json.error.details.photos[0]).toMatchObject({ photoId: "g1", reason: "too_large" });
+    // Aucun appel au modèle, aucune requête IA, aucune annonce comptée.
+    expect(await aiCount("pro")).toBe(before);
+    expect(await usageOf("pro", "studio.listing")).toBe(0);
+    // Un lecteur ne peut rien lancer ; sans session : 401.
+    expect((await as("none", "POST", "/api/studio/prepare", { photos: [photo("a")] })).status).toBe(401);
+  });
+
+  it("préparation avec le simulateur : un article, rôles indiqués par le vendeur, marque « seller », rien d'inventé, sans mètre ruban → questions au vendeur", async () => {
+    if (!available) return;
+    const res = await as("kavis", "POST", "/api/studio/prepare", { photos: [photo("face"), photo("etiquette", 800, 600, { role: "label" }), photo("metre", 800, 600, { role: "tape" })], notes: "jean slim", hints: { brand: "Levi's" } });
+    expect(res.status).toBe(201);
+    expect(res.json).toMatchObject({ simulated: true, ocr: { configured: false, used: false } });
+    expect(res.json.warnings.join(" ")).toMatch(/Démonstration/);
+    expect(res.json.articles).toHaveLength(1);
+    const a = res.json.articles[0];
+    expect(a).toMatchObject({ status: "draft", articleGroup: 1, tapeVisible: false, garmentKind: "bottom", photoIndexes: [0, 1, 2] });
+    expect(a.fields.brand).toMatchObject({ value: "Levi's", source: "seller" });
+    // Étiquette illisible pour le simulateur sans indice : taille, matière, référence vides (jamais devinées).
+    for (const f of ["size", "material", "reference"]) expect(a.fields[f]).toMatchObject({ value: null, source: null });
+    // Aucune mesure sans mètre ruban lisible : toutes vides, chacune demandée au vendeur.
+    expect(a.measurements.length).toBeGreaterThan(0);
+    expect(a.measurements.every((m: { valueCm: number | null; source: string | null }) => m.valueCm === null && m.source === null)).toBe(true);
+    const asked = new Set(a.questions.map((q: { field: string }) => q.field));
+    expect(asked.has("size")).toBe(true);
+    for (const m of a.measurements) expect(asked.has(m.name)).toBe(true);
+    expect(a.questions.some((q: { reason: string }) => q.reason === "no_tape")).toBe(true);
+    expect(res.json.accuracy).toBeDefined();
+    // Une préparation enregistrée par article (sans image), lisible par son identifiant ; pas d'annonce comptée.
+    const got = await as("kavis", "GET", `/api/studio/preps/${a.prepId}`);
+    expect(got.status).toBe(200);
+    expect(got.json).toMatchObject({ prepId: a.prepId, batchId: res.json.batchId, status: "draft", simulated: true, fields: { brand: { value: "Levi's", source: "seller" } } });
+    expect(got.json.photos.map((p: { id: string; role: string; key: string | null }) => `${p.id}:${p.role}:${p.key}`)).toEqual(["face:front:null", "etiquette:label:null", "metre:tape:null"]);
+    expect(JSON.stringify(got.json)).not.toMatch(/base64|data:image/);
+    expect(await usageOf("kavis", "studio.listing")).toBe(0);
+    // Une autre organisation ne la voit pas.
+    expect((await as("other", "GET", `/api/studio/preps/${a.prepId}`)).status).toBe(404);
+    expect((await as("other", "POST", `/api/studio/preps/${a.prepId}/validate`, { fields: { size: "W32" } })).status).toBe(404);
+  });
+
+  it("préparation lue : deux articles regroupés, étiquette lue avec confiance (« label »), mesure lue sur le ruban (« tape_photo »), puis validation et génération depuis la préparation", async () => {
+    if (!available) return;
+    const vision = new FakeStudioVision()
+      .respond("sortPhotos", { photos: [{ index: 0, role: "front", articleGroup: 1, confidence: 0.9 }, { index: 1, role: "label", articleGroup: 1, confidence: 0.9 }, { index: 2, role: "front", articleGroup: 2, confidence: 0.9 }, { index: 3, role: "tape", articleGroup: 2, confidence: 0.9 }] })
+      .respond("readLabel", { brand: read("Zara"), size: read("M"), material: read("100 % coton"), reference: null, text: "ZARA M 100 % COTON" })
+      .respond("readMeasurements", { tapeVisible: true, measurements: [{ name: "chest", valueCm: 52, confidence: 0.9, evidence: "tape_photo" }] });
+    const res = await withVision(vision, () => as("kavis", "POST", "/api/studio/prepare", { photos: [photo("a-face"), photo("a-etiquette"), photo("b-face"), photo("b-metre")], garmentKind: "top" }));
+    expect(res.status).toBe(201);
+    expect(vision.count("sortPhotos")).toBe(1);
+    expect(vision.calls.find((c) => c.method === "readLabel")).toMatchObject({ images: 1 });
+    expect(vision.calls.find((c) => c.method === "readMeasurements")).toMatchObject({ images: 1, garmentKind: "top" });
+    expect(res.json.articles).toHaveLength(2);
+    const [first, second] = res.json.articles;
+    expect(first.photoIndexes).toEqual([0, 1]);
+    expect(second.photoIndexes).toEqual([2, 3]);
+    expect(first.fields.brand).toMatchObject({ value: "Zara", source: "label" });
+    expect(first.fields.size).toMatchObject({ value: "M", source: "label" });
+    expect(first.fields.material).toMatchObject({ value: "100 % coton", source: "label" });
+    // Second article : aucune étiquette photographiée → marque et taille vides, demandées ; poitrine lue sur le ruban.
+    expect(second.fields.brand).toMatchObject({ value: null, source: null });
+    expect(second.questions.some((q: { field: string }) => q.field === "brand")).toBe(true);
+    expect(second.measurements.find((m: { name: string }) => m.name === "chest")).toMatchObject({ valueCm: 52, source: "tape_photo" });
+    // Premier article sans ruban : aucune mesure (jamais « à l'œil »).
+    expect(first.measurements.every((m: { valueCm: number | null }) => m.valueCm === null)).toBe(true);
+    const list = await as("kavis", "GET", `/api/studio/preps?batchId=${res.json.batchId}`);
+    expect(list.json.map((p: { prepId: string }) => p.prepId).sort()).toEqual([first.prepId, second.prepId].sort());
+
+    // Génération refusée tant que la préparation n'est pas validée.
+    expect((await as("kavis", "POST", "/api/studio/generate", { prepId: first.prepId })).json.error).toMatchObject({ code: "prep_not_validated" });
+    // Validation : réponses du vendeur en « seller » ; partage refusé sans référence (rien n'est écrit dans la base).
+    const v = await as("kavis", "POST", `/api/studio/preps/${first.prepId}/validate`, { measurements: { chest: 50.2, length: 66 }, shareMeasurements: true });
+    expect(v.status).toBe(200);
+    expect(v.json.prep).toMatchObject({ status: "validated", fields: { brand: { value: "Zara", source: "label" } } });
+    expect(v.json.prep.measurements.find((m: { name: string }) => m.name === "chest")).toMatchObject({ valueCm: 50, source: "seller" });
+    expect(v.json.prep.measurements.find((m: { name: string }) => m.name === "length")).toMatchObject({ valueCm: 66, source: "seller" });
+    expect(v.json.shared).toMatchObject({ done: false });
+    expect(v.json.shared.reason).toMatch(/référence/);
+    expect(Number((await owner!.query("select count(*)::int as n from size_references")).rows[0].n)).toBe(0);
+    // Génération depuis la préparation : marque, taille, matière et mesures imposées, rien n'est relu.
+    const callsBefore = vision.calls.length;
+    const gen = await withVision(vision, () => as("kavis", "POST", "/api/studio/generate", { prepId: first.prepId }));
+    expect(gen.status).toBe(200);
+    expect(gen.json).toMatchObject({ prepId: first.prepId, brand: "Zara", size: "M", material: "100 % coton", fields: { brand: { source: "label" } } });
+    expect(gen.json.description).toMatch(/Mesures à plat : poitrine 50 cm, longueur 66 cm\./);
+    expect(vision.calls.length).toBe(callsBefore);
+    expect(await usageOf("kavis", "studio.listing")).toBe(1);
+    expect((await as("kavis", "GET", `/api/studio/preps/${first.prepId}`)).json.listingGeneratedAt).not.toBeNull();
+    // Réponses invalides : 400.
+    expect((await as("kavis", "POST", `/api/studio/preps/${second.prepId}/validate`, { measurements: { chest: -3 } })).status).toBe(400);
+    expect((await as("kavis", "GET", "/api/studio/preps/introuvable")).status).toBe(404);
+  });
+
+  it("validation : une lecture peu sûre ou un désaccord ne se valide pas en silence (409 prep_unconfirmed, champs listés) ; confirmée ou corrigée, la valeur devient « seller »", async () => {
+    if (!available) return;
+    const vision = new FakeStudioVision()
+      .respond("sortPhotos", { photos: [{ index: 0, role: "front", articleGroup: 1, confidence: 0.9 }, { index: 1, role: "label", articleGroup: 1, confidence: 0.9 }] })
+      .respond("readLabel", { brand: read("Sézane"), size: read("M", 0.62), material: null, reference: null, text: "SEZANE M" });
+    const res = await withVision(vision, () => as("kavis", "POST", "/api/studio/prepare", { photos: [photo("face"), photo("etiquette")], garmentKind: "top", hints: { brand: "Rouje" } }));
+    expect(res.status).toBe(201);
+    const a = res.json.articles[0];
+    // Marque lue avec certitude mais en désaccord avec le vendeur ; taille lue à 0,62 : deux réponses attendues.
+    expect(a.fields.brand).toMatchObject({ value: "Sézane", source: "label" });
+    expect(a.questions.map((q: { field: string; reason: string }) => [q.field, q.reason])).toEqual(expect.arrayContaining([["brand", "conflict"], ["size", "low_confidence"]]));
+    const silent = await as("kavis", "POST", `/api/studio/preps/${a.prepId}/validate`, { measurements: { chest: 50 } });
+    expect(silent.status).toBe(409);
+    expect(silent.json.error).toMatchObject({ code: "prep_unconfirmed" });
+    expect(silent.json.error.message).toMatch(/Confirmez d'abord/);
+    expect(silent.json.error.details.fields.map((f: { field: string }) => f.field).sort()).toEqual(["brand", "size"]);
+    expect((await as("kavis", "GET", `/api/studio/preps/${a.prepId}`)).json.status).toBe("draft");
+    expect((await as("kavis", "POST", "/api/studio/generate", { prepId: a.prepId })).json.error.code).toBe("prep_not_validated");
+    const ok = await as("kavis", "POST", `/api/studio/preps/${a.prepId}/validate`, { fields: { brand: "Sézane", size: "M" } });
+    expect(ok.status).toBe(200);
+    expect(ok.json.prep).toMatchObject({ status: "validated", fields: { brand: { value: "Sézane", source: "seller" }, size: { value: "M", source: "seller" } } });
+    expect(ok.json.prep.questions.some((q: { reason: string }) => q.reason === "low_confidence" || q.reason === "conflict")).toBe(false);
+  });
+
+  it("photos envoyées par clé de stockage : lues par l'API (même organisation seulement) ; sans stockage → 503", async () => {
+    if (!available) return;
+    const key = (org: string, name: string) => `org/${org}/studio-photo/${name}.png`;
+    expect((await as("kavis", "POST", "/api/studio/prepare", { photos: [{ id: "k1", key: key(orgs.kavis!, "face") }] })).json.error).toMatchObject({ code: "storage_unconfigured" });
+    const storage = { presignDownload: ({ key: k }: { key: string }) => ({ url: `https://stockage.test/${k}`, method: "GET" as const, expiresAt: "" }) };
+    const fetchImpl = (async (url: string | URL) => (String(url).includes("grande") ? new Response(png(3000, 2000), { status: 200 }) : new Response(png(900, 700), { status: 200, headers: { "content-type": "image/png" } }))) as typeof fetch;
+    const photos = new StoragePhotoStore(storage, { fetchImpl });
+    const vision = new FakeStudioVision();
+    const ok = await withVision(vision, () => as("kavis", "POST", "/api/studio/prepare", { photos: [{ id: "k1", key: key(orgs.kavis!, "face") }, { id: "k2", key: key(orgs.kavis!, "dos") }] }), { photos });
+    expect(ok.status).toBe(201);
+    expect(vision.calls[0]).toMatchObject({ method: "sortPhotos", images: 2 });
+    expect(ok.json.articles[0].prepId).toBeTruthy();
+    expect((await as("kavis", "GET", `/api/studio/preps/${ok.json.articles[0].prepId}`)).json.photos.map((p: { key: string }) => p.key)).toEqual([key(orgs.kavis!, "face"), key(orgs.kavis!, "dos")]);
+    // Clé d'une autre organisation : 403 ; photo stockée en pleine taille : 422 (lue puis refusée, jamais envoyée).
+    expect((await withVision(vision, () => as("kavis", "POST", "/api/studio/prepare", { photos: [{ id: "k3", key: key(orgs.other!, "face") }] }), { photos })).status).toBe(403);
+    const big = await withVision(vision, () => as("kavis", "POST", "/api/studio/prepare", { photos: [{ id: "k4", key: key(orgs.kavis!, "grande") }] }), { photos });
+    expect(big.status).toBe(422);
+    expect(big.json.error.details).toMatchObject({ photoId: "k4", reason: "too_large", photos: [{ photoId: "k4", reason: "too_large" }] });
+  });
+
+  it("base des références : import opérateur CSV / JSON sans donnée personnelle, tout ou rien ; mesures reprises par la référence lue (« reference_db »)", async () => {
+    if (!available) return;
+    const csv = ["brand;reference;size;category;waist_cm;inseam;rise", "Levi's;501-0115;W32 L32;bas;41;81,5;28", "Levi's;501-0115;W34 L34;bottom;43;86;29"].join("\n");
+    // Réservé aux opérateurs.
+    expect((await as("kavis", "POST", "/api/admin/size-references", csv, { "content-type": "text/csv" })).status).toBe(403);
+    // Colonne personnelle : fichier entier refusé ; colonne inconnue : refusée ; ligne invalide : rien n'est écrit.
+    const personal = await as("ops", "POST", "/api/admin/size-references", "brand;reference;size;category;chest;pseudo\nZara;ZR-1;M;top;52;vendeuse_42", { "content-type": "text/csv" });
+    expect(personal.status).toBe(400);
+    expect(personal.json.error).toMatchObject({ code: "import_rejected", details: { personalColumns: ["pseudo"] } });
+    expect(personal.json.error.message).toMatch(/colonne personnelle/);
+    const unknown = await as("ops", "POST", "/api/admin/size-references", { csv: "brand,reference,size,category,chest,couleur\nZara,ZR-1,M,top,52,bleu" });
+    expect(unknown.json.error).toMatchObject({ code: "import_rejected", details: { unknownColumns: ["couleur"] } });
+    const invalid = await as("ops", "POST", "/api/admin/size-references", `${csv}\nZara;ZR-1;M;top;;;\nZara;ZR-2;;top;52;;`, { "content-type": "text/csv" });
+    expect(invalid.status).toBe(400);
+    expect(invalid.json.error.details.errorCount).toBe(2);
+    expect(invalid.json.error.details.errors.map((e: { line: number }) => e.line)).toEqual([4, 5]);
+    expect(invalid.json.error.details.errors[1].message).toMatch(/taille \(size\) obligatoire/);
+    expect(Number((await owner!.query("select count(*)::int as n from size_references")).rows[0].n)).toBe(0);
+    // Vérification sans écriture, puis import.
+    const dry = await as("ops", "POST", "/api/admin/size-references?dryRun=true", csv, { "content-type": "text/csv" });
+    expect(dry.status).toBe(200);
+    expect(dry.json).toMatchObject({ dryRun: true, format: "csv", imported: 0, checked: 2, total: 0 });
+    const done = await as("ops", "POST", "/api/admin/size-references", csv, { "content-type": "text/csv" });
+    expect(done.status).toBe(201);
+    expect(done.json).toMatchObject({ dryRun: false, imported: 2, brands: 1, total: 2 });
+    const json = await as("ops", "POST", "/api/admin/size-references", { references: [{ brand: "Zara", reference: "ZR-0001", size: "M", category: "top", measurements: { chest: 52, length: 70 } }, { brand: "Longchamp", reference: "L1899", category: "sac", measurements: { length: 30 } }] });
+    expect(json.status).toBe(201);
+    expect(json.json).toMatchObject({ format: "json", imported: 2, total: 4 });
+    expect((await as("ops", "POST", "/api/admin/size-references", [{ brand: "Zara", reference: "ZR-9", size: "M", category: "top", chest: 52, email: "x@y.fr" }])).json.error.details.personalColumns).toEqual(["email"]);
+    const listed = await as("ops", "GET", "/api/admin/size-references?brand=levis");
+    expect(listed.json.total).toBe(4);
+    expect(listed.json.references.map((r: { size: string }) => r.size)).toEqual(["W32 L32", "W34 L34"]);
+    expect(listed.json.references[0]).toMatchObject({ brand: "Levi's", reference: "501-0115", category: "bottom", source: "provided", measurements: { waist: 41, inseam: 81.5, rise: 28 } });
+    expect(Object.keys(listed.json.references[0]).sort()).toEqual(["brand", "category", "createdAt", "id", "measurements", "reference", "size", "source", "updatedAt"]);
+    expect((await as("kavis", "GET", "/api/admin/size-references")).status).toBe(403);
+    const audit = await built.services.db.withOrg(orgs.ops!, (tx) => tx.query<{ action: string; meta: Record<string, unknown> }>("select action, meta from audit_logs where action like 'admin.size_references%' order by created_at"));
+    expect(audit.map((r) => r.action)).toEqual(["admin.size_references_checked", "admin.size_references_imported", "admin.size_references_imported"]);
+
+    // L'étiquette lue donne la marque et la référence : les mesures de la taille W32 L32 viennent de la base.
+    const vision = new FakeStudioVision()
+      .respond("sortPhotos", { photos: [{ index: 0, role: "front", articleGroup: 1, confidence: 0.9 }, { index: 1, role: "label", articleGroup: 1, confidence: 0.9 }] })
+      .respond("readLabel", { brand: read("LEVI'S"), size: read("W32 L32"), material: null, reference: read("501 0115"), text: "LEVI'S 501 0115 W32 L32" });
+    const res = await withVision(vision, () => as("kavis", "POST", "/api/studio/prepare", { photos: [photo("face"), photo("etiquette")], garmentKind: "bottom" }));
+    expect(res.status).toBe(201);
+    const a = res.json.articles[0];
+    expect(a.sizeReference).toEqual({ brand: "Levi's", reference: "501-0115", size: "W32 L32" });
+    expect(a.measurements.find((m: { name: string }) => m.name === "waist")).toMatchObject({ valueCm: 41, source: "reference_db" });
+    expect(a.measurements.find((m: { name: string }) => m.name === "inseam")).toMatchObject({ valueCm: 81.5, source: "reference_db" });
+  });
+
+  it("analyse d'import (pur) : séparateurs, colonnes personnelles par mot, bornes plausibles, doublons", () => {
+    expect(isPersonalColumn("pseudo")).toBe(true);
+    expect(isPersonalColumn("seller_name")).toBe(true);
+    expect(isPersonalColumn("photoUrl")).toBe(true);
+    expect(isPersonalColumn("id")).toBe(true);
+    for (const ok of ["brand", "reference", "size", "category", "garment_kind", "hips", "shoulders_cm", "inseam", "sole"]) expect(isPersonalColumn(ok)).toBe(false);
+    const tab = parseSizeReferenceImport("brand\treference\tsize\tcategory\tchest\nZara\tZR-1\tM\thaut\t52.5 cm");
+    expect(tab).toMatchObject({ ok: true, format: "csv", rows: [{ brand: "Zara", reference: "ZR-1", size: "M", category: "top", measurements: { chest: 52.5 } }] });
+    const implausible = parseSizeReferenceImport('brand,reference,size,category,chest\n"Zara, Inc",ZR-1,M,top,140');
+    expect(implausible.ok).toBe(false);
+    expect(!implausible.ok && implausible.errors[0]!.message).toMatch(/hors des bornes plausibles/);
+    const dup = parseSizeReferenceImport("brand;reference;size;category;chest\nZara;ZR-1;M;top;52\nZARA;zr 1;m;top;53");
+    expect(!dup.ok && dup.errors[0]).toMatchObject({ line: 3, message: expect.stringMatching(/doublon de la ligne 2/) });
+    expect(parseSizeReferenceImport("[]").ok).toBe(false);
+    expect(parseSizeReferenceImport("{pas du json").ok).toBe(false);
+  });
+
+  it("photos portées : file de nuit, fournisseur « noop », quota du plan puis 402, dépassement seulement réglage ouvert + accord explicite + carte, annulation qui rend le quota", async () => {
+    if (!available) return;
+    const key = (org: string, name = "face") => `org/${org}/studio-photo/${name}.jpg`;
+    // Starter : non inclus (402) ; clé invalide (400) ; clé d'une autre organisation (403).
+    const starter = await as("starter", "POST", "/api/studio/worn", { photoKey: key(orgs.starter!) });
+    expect(starter.status).toBe(402);
+    expect(starter.json.error).toMatchObject({ code: "quota_exceeded", details: { quota: 0, overageAvailable: false } });
+    expect((await as("worn", "POST", "/api/studio/worn", { photoKey: "https://exemple.test/photo.jpg" })).status).toBe(400);
+    expect((await as("worn", "POST", "/api/studio/worn", { photoKey: key(orgs.other!) })).status).toBe(403);
+
+    const first = await as("worn", "POST", "/api/studio/worn", { photoKey: key(orgs.worn!), pose: "three_quarter" });
+    expect(first.status).toBe(201);
+    expect(first.json).toMatchObject({ status: "queued", provider: "noop", pose: "three_quarter", overageCents: 0, billed: false, resultKey: null });
+    // Planifiée au début de la prochaine fenêtre de nuit (22 h – 6 h, heure de Paris), jamais dans le passé.
+    const scheduled = new Date(first.json.scheduledFor);
+    expect(scheduled.getTime()).toBeGreaterThanOrEqual(Date.now() - 60_000);
+    const parisHour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Paris", hour: "2-digit", hourCycle: "h23" }).formatToParts(scheduled).find((x) => x.type === "hour")!.value);
+    expect(parisHour >= 22 || parisHour < 6).toBe(true);
+    const list = await as("worn", "GET", "/api/studio/worn");
+    expect(list.status).toBe(200);
+    expect(list.json.jobs.map((j: { id: string }) => j.id)).toEqual([first.json.id]);
+    expect(list.json).toMatchObject({ quota: { used: 1, quota: 10, remaining: 9 }, provider: { name: "noop", configured: false }, overage: { enabled: false, unitCents: 25, proposal: true }, nightWindow: { startHour: 22, endHour: 6, timezone: "Europe/Paris" } });
+    expect(list.json.provider.message).toMatch(/aucun fournisseur configuré : décision à prendre/);
+    expect((await as("other", "GET", "/api/studio/worn")).json.jobs).toEqual([]);
+    expect((await as("other", "DELETE", `/api/studio/worn/${first.json.id}`)).status).toBe(404);
+
+    // Quota du mois atteint (10 en Pro) : 402, dépassement fermé par défaut.
+    await built.services.db.withOrg(orgs.worn!, async (tx) => { for (let i = 0; i < 9; i++) await dbRepos.usage.record(tx, "studio.worn_photo", { test: "quota" }); });
+    const over = await as("worn", "POST", "/api/studio/worn", { photoKey: key(orgs.worn!, "dos"), acceptOverage: true });
+    expect(over.status).toBe(402);
+    expect(over.json.error).toMatchObject({ code: "quota_exceeded", details: { quota: 10, used: 10, overageAvailable: false } });
+    const config = built.services.config!;
+    const saved = { ...config };
+    try {
+      config.wornOverageEnabled = true;
+      // Réglage ouvert : accord explicite exigé (0,25 €, proposition), puis abonnement payé par carte.
+      const consent = await as("worn", "POST", "/api/studio/worn", { photoKey: key(orgs.worn!, "dos") });
+      expect(consent.status).toBe(402);
+      expect(consent.json.error.details).toMatchObject({ overageAvailable: true, unitCents: 25, consentRequired: true });
+      expect(consent.json.error.message).toMatch(/0,25 €/);
+      const noCard = await as("worn", "POST", "/api/studio/worn", { photoKey: key(orgs.worn!, "dos"), acceptOverage: true });
+      expect(noCard.status).toBe(402);
+      expect(noCard.json.error.message).toMatch(/carte enregistrée/);
+      await setPlan("worn", "pro", { provider: "revolut", cardOnFile: true });
+      // L'accord vaut pour le prix affiché : sans prix accepté ou avec un autre prix, 409 et rien n'est enregistré.
+      const changed = await as("worn", "POST", "/api/studio/worn", { photoKey: key(orgs.worn!, "dos"), acceptOverage: true, acceptedUnitCents: 30 });
+      expect(changed.status).toBe(409);
+      expect(changed.json.error).toMatchObject({ code: "overage_price_changed", details: { unitCents: 25, acceptedUnitCents: 30, consentRequired: true } });
+      expect(changed.json.error.message).toMatch(/accord donné sur 0,30 €/);
+      expect((await as("worn", "POST", "/api/studio/worn", { photoKey: key(orgs.worn!, "dos"), acceptOverage: true })).status).toBe(409);
+      expect(await usageOf("worn", "studio.worn_photo")).toBe(10);
+      const paid = await as("worn", "POST", "/api/studio/worn", { photoKey: key(orgs.worn!, "dos"), acceptOverage: true, acceptedUnitCents: 25 });
+      expect(paid.status).toBe(201);
+      expect(paid.json).toMatchObject({ status: "queued", overageCents: 25 });
+      expect(paid.json.overageAcceptedAt).not.toBeNull();
+      // Annulation d'une demande en file : supprimée, quota rendu, jamais facturée ; une seconde fois : 404.
+      expect(await usageOf("worn", "studio.worn_photo")).toBe(11);
+      const cancelled = await as("worn", "DELETE", `/api/studio/worn/${paid.json.id}`);
+      expect(cancelled.status).toBe(200);
+      expect(cancelled.json).toEqual({ cancelled: true, id: paid.json.id });
+      expect(await usageOf("worn", "studio.worn_photo")).toBe(10);
+      expect((await as("worn", "DELETE", `/api/studio/worn/${paid.json.id}`)).status).toBe(404);
+    } finally {
+      Object.assign(config, saved);
+      await built.services.db.withOrg(orgs.worn!, (tx) => tx.query("delete from usage_events where kind = 'studio.worn_photo' and meta->>'test' = 'quota'"));
+    }
+    expect((await as("worn", "GET", "/api/studio/worn")).json.quota).toMatchObject({ used: 1, quota: 10 });
+    expect((await as("worn", "POST", "/api/studio/worn", { photoKey: key(orgs.worn!), pose: "assise" })).status).toBe(400);
   });
 });

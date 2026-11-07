@@ -78,5 +78,6 @@ packages/core    services serveur partagés API/worker           packages/demo-d
 - [docs/CLOUD.md](docs/CLOUD.md) (Selio Cloud, désactivé par défaut) · [docs/SAUVEGARDE.md](docs/SAUVEGARDE.md) (sauvegarde chiffrée, test de restauration, bascule sur le portable)
 - [docs/TRACK.md](docs/TRACK.md) (Selio Track : statistiques seulement, simulateur par défaut, lecture en direct à valider juridiquement) · [docs/PRIX.md](docs/PRIX.md) (estimation des prix : comparables et modèle quantile, `pnpm prix:eval`)
 - [docs/RADAR.md](docs/RADAR.md) (Selio Radar : lecture depuis le compte Achat via le Cloud, alertes sur le téléphone, « 1 clic » ; Radar Auto et achat réel désactivés par défaut, mesures et procédure de test)
+- [docs/STUDIO.md](docs/STUDIO.md) (Selio Studio façon Kavis : tri des photos, étiquette et mesures avec provenance, jamais de mesure inventée, OCR d'essai facultatif, base des références de tailles, précision « à mesurer » avec `pnpm studio:eval` ; photos portées en attente de décision)
 
 La charte (tokens, preset Tailwind, guidelines) est dans `brand/` et `packages/ui`.

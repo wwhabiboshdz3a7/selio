@@ -1,12 +1,13 @@
 # Selio — clés et configuration
 
-_Version du 4 novembre 2026 · branche `claude/gracious-wright-rf41nt`_
+_Version du 7 novembre 2026_
 
 ## En bref
 
 - **Démo sur Netlify : aucune clé.** Glissez le dossier de l'archive `livraison/selio-demo-netlify.zip` sur https://app.netlify.com/drop.
 - **Mode connecté** (vrais comptes, base de données) : un serveur Linux (API + worker), PostgreSQL 16 et Redis, avec les clés des sections 2 et 3.
 - **Votre IA** : la machine avec Ollama et ses trois modèles — « mon IA perso » (texte), le modèle des photos et le modèle des prix (section 4).
+- **Selio Studio** : aucune clé ; l'OCR d'essai des étiquettes est facultatif (section 4) et les photos portées restent sans fournisseur tant qu'Ibrahim n'a pas choisi (section 13).
 - Ce dont vous n'avez **pas** besoin : voir la section « Inutile ».
 
 ## 1. Site web sur Netlify (vitrine + application)
@@ -60,6 +61,7 @@ Le navigateur n'appelle jamais l'IA : seuls l'API et le worker parlent au serveu
 | `OLLAMA_MODEL` | Obligatoire | `nom donné à part par Ibrahim` | « Mon IA perso », la voix : réponses aux acheteurs, annonces, aide. La valeur de démarrage (qwen2.5:7b-instruct) est à remplacer par le modèle choisi. Installer : ollama pull <nom> |
 | `OLLAMA_VISION_MODEL` | Recommandé | `qwen3-vl:8b` (défaut si absent) | Modèle 1, les photos : Studio lit réellement les photos, lecture des étiquettes, contrôle des photos. Laissé vide, l'annonce est rédigée à partir des indications seulement (signalé à l'écran). Installer : ollama pull qwen3-vl:8b |
 | `OLLAMA_EMBED_MODEL` | Recommandé | `qwen3-embedding:0.6b` (défaut si absent) | NOUVEAU — modèle 2, les prix : vecteurs pour retrouver les ventes comparables et estimer un prix. Laissé vide, les embeddings sont désactivés (erreur explicite). Installer : ollama pull qwen3-embedding:0.6b |
+| `OLLAMA_OCR_MODEL` | Facultatif | `vide` (défaut) ou le nom d'un modèle OCR installé dans Ollama (GLM-OCR, nom exact à vérifier sur la machine) | NOUVEAU — OCR d'essai pour les étiquettes difficiles (Studio). Vide : rien ne change, les étiquettes sont lues par le modèle 1 seul et la santé n'est jamais dégradée. Défini : utilisé seulement en second recours sur l'image de l'étiquette, son texte étant relu par le modèle 1 ; jamais obligatoire. Même valeur côté API et worker. Détails : docs/STUDIO.md §4. |
 | `OLLAMA_AUTH_HEADER` | Facultatif | `Bearer xxxxx` | NOUVEAU — en-tête d'autorisation si une passerelle protège Ollama. |
 | `AI_HEALTH_TOKEN` | Recommandé | `jeton long (≥ 16 caractères)` | Protège l'URL de supervision /api/ai/health. |
 | `ALLOW_AI_FALLBACK` | Obligatoire | `false` | En production, jamais de texte simulé présenté comme venant du modèle. |
@@ -227,6 +229,21 @@ Fonctionnement et règles : [docs/TRACK.md](TRACK.md) et [docs/PRIX.md](PRIX.md)
 
 Aucune variable `VITE_` : le site ne parle qu'à l'API. Aucune clé pour l'extension : ses comparables passent par l'API avec le jeton d'extension (section « Réglages faits dans l'application »). L'évaluation d'une base (`pnpm prix:eval`) se lance à la main, sans variable (PRIX.md §11).
 
+## 13. Selio Studio : préparation d'annonce, base des références, photos portées
+
+Fonctionnement et règles : [docs/STUDIO.md](STUDIO.md). **Jamais de mesure inventée** : marque, taille, matière, référence et mesures portent leur provenance ou restent vides avec une question au vendeur ; la précision reste **« à mesurer »** tant que `pnpm studio:eval` n'a pas été lancé sur nos photos (STUDIO.md §6). **Photos portées : aucun modèle ni service choisi** (décision d'Ibrahim) : le fournisseur « noop » refuse proprement chaque demande, quota rendu, rien facturé. Aucune clé propre à Studio ; les photos passent par le stockage de la section 8 et par le modèle 1 de la section 4. Valeurs factices dans `apps/api/.env.example` et `apps/worker/.env.example`.
+
+| Variable | Où | Statut | Exemple / format | À quoi elle sert |
+|---|---|---|---|---|
+| `WORN_PHOTO_PROVIDER` | API et worker | Facultatif | `noop` (défaut) | Fournisseur des photos portées. `noop` : chaque demande est refusée proprement (« aucun fournisseur configuré : décision à prendre »), la nuit venue. `mock` : fournisseur de test (aucune image produite), **refusé en production**. Même valeur des deux côtés. |
+| `WORN_NIGHT_WINDOW` | API et worker | Facultatif | `22-6` (défaut ; `22:00-06:00` ou `22h-6h` acceptés) | File de nuit : les demandes sont traitées par le worker entre ces heures locales seulement, pour laisser la carte graphique aux annonces le jour. L'écran affiche le prochain créneau. |
+| `WORN_NIGHT_TIMEZONE` | API et worker | Facultatif | `Europe/Paris` (défaut) | Fuseau de la fenêtre de nuit (heure d'été comprise). |
+| `WORN_OVERAGE_ENABLED` | API et worker | Facultatif | `false` (défaut) | `false` : au-delà du quota du plan (10 photos en Pro, 30 en Agence), refus 402. `true` : une photo de plus avec l'**accord explicite** du client pour chaque photo, facturée au renouvellement comme ligne de dépassement de la facture Revolut. **À laisser à `false` tant qu'Ibrahim n'a pas fixé le prix.** |
+| `WORN_OVERAGE_CENTS` | API et worker | Facultatif | `25` (défaut = 0,25 €, 500 au plus) | Prix d'une photo au-delà du quota, en centimes : **PROPOSITION**, à confirmer. (L'ancien nom `WORN_OVERAGE_UNIT_CENTS` est encore lu si celui-ci est absent.) |
+| `CRON_STUDIO_WORN` | Worker | Facultatif | `*/10 * * * *` | Passage de la tâche « studio.worn » : demandes dont l'heure est venue, **dans la fenêtre de nuit seulement** ; hors fenêtre, seules les demandes interrompues sont closes. La rétention quotidienne (`CRON_RETENTION`) supprime les brouillons de préparation de plus de 30 jours. |
+
+Protocole de validation (`pnpm studio:eval`, à la main, sur la machine) : en mode direct, les variables de la section 4 (`AI_PROVIDER=ollama`, `OLLAMA_BASE_URL`, `OLLAMA_VISION_MODEL`, `OLLAMA_OCR_MODEL`) ; en mode `--mode api`, `STUDIO_EVAL_API_URL` (défaut `http://127.0.0.1:8787`), `STUDIO_EVAL_EMAIL` et `STUDIO_EVAL_PASSWORD` (compte de l'équipe sur une organisation de test ; variables d'environnement, jamais en argument). Les rapports vont dans `scripts/studio-eval/rapports/` (ignoré par Git) ; aucune photo n'entre dans le dépôt.
+
 ## Réglages faits dans l'application (pas des clés)
 
 - **Extension navigateur** : Pas de variable : dans Selio › Comptes Vinted › « Avancé — relier l'extension Selio », créez un jeton d'extension, puis collez l'adresse de l'API et le jeton dans les options de l'extension.
@@ -237,6 +254,7 @@ Aucune variable `VITE_` : le site ne parle qu'à l'API. Aucune clé pour l'exten
 - **Coût réel d'achat** : Page « Achat auto » : protection acheteurs = part fixe + pourcentage (par défaut 0,70 € + 5 %, modifiable).
 - **Dressing intelligent** : Republication conseillée après 7 jours (réglable : 5 à 30 jours).
 - **Assistant IA** : Paramètres › Assistant IA : ton, signature, validation avant envoi, quota mensuel.
+- **Selio Studio** : dans Studio, « Préparer » (tri des photos, étiquette, mesures) puis « Générer » ; les photos sont réduites dans le navigateur (1 024 px, JPEG 80) ; « partager anonymement la mesure » à la validation ; page « Photos portées » (file de nuit, quota, accord explicite pour un dépassement si le serveur l'ouvre). Base des références de tailles : import par l'opérateur (`POST /api/admin/size-references`, CSV ou JSON sans aucune colonne personnelle, STUDIO.md §5).
 
 ## Inutile
 
@@ -264,8 +282,8 @@ Aucune variable `VITE_` : le site ne parle qu'à l'API. Aucune clé pour l'exten
 ### Mode connecté (vrais comptes, base de données)
 
 1. Louer un serveur Linux (VPS) et y installer Docker.
-2. Cloner le dépôt, copier apps/api/.env.example vers deploy/.env et remplir les sections 2, 3 et 4 (puis 5 pour le paiement Revolut, 7 et 8 quand le service d'email et MinIO sont choisis, 11 pour les clés des notifications ; section 12 : rien à changer, Track reste sur le simulateur).
-3. docker compose -f deploy/docker-compose.prod.yml up -d --build (migrations comprises, jusqu'à la 0013 : paiement et factures, Selio Cloud, Selio Radar, Selio Track et estimation des prix).
+2. Cloner le dépôt, copier apps/api/.env.example vers deploy/.env et remplir les sections 2, 3 et 4 (puis 5 pour le paiement Revolut, 7 et 8 quand le service d'email et MinIO sont choisis, 11 pour les clés des notifications ; section 12 : rien à changer, Track reste sur le simulateur ; section 13 : rien à changer non plus, les photos portées restent sur « noop »).
+3. docker compose -f deploy/docker-compose.prod.yml up -d --build (migrations comprises, jusqu'à la 0014 : paiement et factures, Selio Cloud, Selio Radar, Selio Track et estimation des prix, Studio façon Kavis : références de tailles, préparations, photos portées).
 4. Mettre Caddy devant l'API (deploy/Caddyfile) pour le HTTPS, puis renseigner VITE_API_BASE_URL dans Netlify.
 5. Mettre en place la sauvegarde chiffrée de la nuit et le test de restauration mensuel (section 10, docs/SAUVEGARDE.md) avant d'accueillir de vrais clients.
 
@@ -273,7 +291,8 @@ Aucune variable `VITE_` : le site ne parle qu'à l'API. Aucune clé pour l'exten
 
 1. Sur la machine : installer Ollama, puis ollama pull <modèle de texte donné par Ibrahim>, ollama pull qwen3-vl:8b et ollama pull qwen3-embedding:0.6b ; régler OLLAMA_MAX_LOADED_MODELS=3 et OLLAMA_KEEP_ALIVE=30m (docs/OLLAMA-SETUP.md).
 2. Renseigner AI_PROVIDER=ollama, OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_VISION_MODEL, OLLAMA_EMBED_MODEL côté API et worker.
-3. Lancer pnpm ai:diagnose (les trois modèles doivent être « présent »), puis pnpm ai:bench, puis vérifier Paramètres › Assistant IA (« Opérationnel »).
+3. Lancer pnpm ai:diagnose (les trois modèles doivent être « présent » ; la ligne OCR peut rester « non configuré »), puis pnpm ai:bench, puis vérifier Paramètres › Assistant IA (« Opérationnel »).
+4. Pour Studio : lancer pnpm studio:eval sur nos photos (docs/STUDIO.md §6) et reporter le rapport ; tant que ce n'est pas fait, l'écran dit « précision à mesurer ».
 
 ## Sécurité
 
@@ -286,4 +305,5 @@ Aucune variable `VITE_` : le site ne parle qu'à l'API. Aucune clé pour l'exten
 - Selio Cloud : `CLOUD_ENABLED=false` tant que l'avocat n'a pas donné son avis ; `CLOUD_HEAVY_ACTIONS=false` tant qu'Ibrahim n'a pas décidé.
 - Selio Track : `TRACK_LIVE_ENABLED=false` et `TRACK_SELLER_ANALYSIS_ENABLED=false` tant que l'avocat n'a pas donné son avis (collecte de Track, usage des données issues de Vinted, RGPD). Aucun secret propre à Track ni au modèle de prix.
 - Selio Radar : `RADAR_AUTO_ENABLED=false` et `RADAR_REAL_PURCHASE=false` (D11) ; Radar Auto n'est pas activable pour les clients sur l'adresse partagée tant qu'Ibrahim n'a pas tranché. Pour un test de l'équipe, `RADAR_AUTO_ORG_IDS` limite Radar Auto à ses organisations (obligatoire en production), puis tout revient à `false`.
+- Selio Studio : `WORN_PHOTO_PROVIDER=noop` tant qu'Ibrahim n'a pas choisi un fournisseur de photos portées (`mock` est refusé en production) et `WORN_OVERAGE_ENABLED=false` tant que le prix du dépassement n'est pas fixé ; `OLLAMA_OCR_MODEL` vide tant que le modèle OCR d'essai n'a pas été vérifié sur la machine. Aucun secret propre à Studio.
 - `REVOLUT_MODE=live` sans `REVOLUT_LIVE_ALLOWED=true` arrête le démarrage : impossible d'encaisser de l'argent réel par inadvertance.
