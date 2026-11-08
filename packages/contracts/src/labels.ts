@@ -102,6 +102,8 @@ export const RULE_KIND_LABELS: Record<RuleKind, string> = {
   post_sale_message: "Message après-vente",
   relist_stale: "Remise en avant d'un article dormant",
   price_drop_stale: "Baisse de prix d'un article dormant",
+  follow_up_24h: "Relance après 24 h sans réponse",
+  keyword_situation: "Situation par mots-clés",
 };
 
 export const ROLE_LABELS: Record<Role, string> = {

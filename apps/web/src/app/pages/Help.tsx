@@ -6,7 +6,7 @@ import { useClient, useData } from "../../lib/data/provider";
 import { FaqBrowser, HelpAskPanel } from "../../components/help";
 
 const SHORTCUTS: { to: string; label: string; hint: string }[] = [
-  { to: "/app/onboarding", label: "Démarrage", hint: "Les six étapes de configuration" },
+  { to: "/app/onboarding", label: "Démarrage", hint: "Les étapes de configuration" },
   { to: "/app/accounts", label: "Comptes Vinted", hint: "Catégories et extension" },
   { to: "/app/settings/ai", label: "État de l'IA", hint: "Disponibilité et réglages" },
   { to: "/app/settings/billing", label: "Abonnement", hint: "Essai de 14 jours et offres" },

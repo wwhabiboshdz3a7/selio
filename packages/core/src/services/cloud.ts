@@ -10,7 +10,10 @@ import {
   type CloudLoginTicket, type CloudRunCode, type CloudSkipReason, type CloudStorageState, type Job, type Page, type PlanQuotas, type Schedule,
 } from "@selio/contracts";
 import { hashSecret, newSecret, repos, type Tx } from "@selio/db";
-import { PERSONAL_ACCOUNT_SKIP, isAutomatable, isWithinSchedule, renderTemplate, toCsv } from "@selio/domain";
+import { PERSONAL_ACCOUNT_SKIP, checkMessageDelay, followUpModeFor, isAutomatable, isWithinSchedule, recheckFollowUp, renderTemplate, toCsv } from "@selio/domain";
+import { PLAN_QUOTAS } from "@selio/demo-data";
+import { deliveredMessages, itemAvailableTx } from "./automation";
+import { effectiveLimitsTx, limitsContextFor } from "./negotiation";
 import { alertEmail } from "@selio/email";
 import { AppError, requireAction, sendEmail, webLink, withOrg, type OrgContext, type Services, type ServicesConfig } from "../context";
 
@@ -771,6 +774,8 @@ interface PreparedRun {
   account: CloudAccount;
   actionId: string;
   messageId: string | null;
+  /** Le message envoyé est le brouillon validé par le vendeur : rien de parti → il redevient brouillon. */
+  fromDraft?: boolean;
   input: CloudExecutorInput;
   detail: CloudActionDetail;
   connectionLabel: string;
@@ -807,6 +812,21 @@ async function recoverStaleTx(tx: Tx, now: Date): Promise<number> {
     n++;
   }
   return n;
+}
+
+/**
+ * Relance Cloud dont l'offre ne permet plus l'envoi automatique (Agence → Pro, ou relance retirée de
+ * l'offre) : remise en brouillon à valider dans Messages (tâche serveur), jamais envoyée par le Cloud.
+ */
+async function followUpBackToDraftTx(tx: Tx, job: Job, account: CloudAccount, nowIso: string): Promise<void> {
+  const convId = typeof job.payload.conversationId === "string" ? job.payload.conversationId : null;
+  const existing = typeof job.payload.draftMessageId === "string" ? await repos.messages.byId(tx, job.payload.draftMessageId).catch(() => null) : null;
+  const prepared = existing && (existing.status === "draft" || existing.status === "failed") ? existing : null;
+  const body = (prepared?.body ?? (typeof job.payload.body === "string" ? job.payload.body : "")).slice(0, 4000);
+  const draft = prepared ?? (convId && body.trim() ? await repos.messages.create(tx, { conversationId: convId, direction: "outbound", source: "automation", status: "draft", body, offerCents: null, ruleId: job.ruleId }) : null);
+  await repos.jobs.update(tx, job.id, { status: draft ? "awaiting_approval" : "skipped", runsIn: "server", startedAt: null, payload: { ...job.payload, followUpMode: "draft", ...(draft ? { draftMessageId: draft.id } : {}) }, result: { cloud: true, reason: "plan_changed" }, ...(draft ? {} : { finishedAt: nowIso }) });
+  const kind = cloudKindOf(job);
+  await repos.cloudActions.add(tx, { accountId: account.id, kind, level: CLOUD_ACTION_LEVEL_BY_KIND[kind], status: "skipped", jobId: job.id, detail: { reason: "plan_changed" }, createdAt: nowIso });
 }
 
 async function skipJobTx(tx: Tx, job: Job, account: CloudAccount | null, reason: CloudSkipReason, nowIso: string): Promise<void> {
@@ -918,6 +938,8 @@ export async function runDueCloudJobs(services: Services, orgId: string, executo
     });
     if (!decision.act) {
       skip(decision.reason);
+      // Relance alors que le Cloud n'est plus dans l'offre : brouillon à valider plutôt qu'une tâche qui expire.
+      if (decision.reason === "plan_unavailable" && job.payload.followUp === true) await services.db.withOrg(orgId, (tx) => followUpBackToDraftTx(tx, job, account, nowIso));
       // Niveau refusé : la tâche ne pourra pas s'exécuter, elle est écartée et journalisée.
       if (decision.reason === "heavy_disabled" || decision.reason === "level_not_allowed") await services.db.withOrg(orgId, (tx) => skipJobTx(tx, job, account, decision.reason, nowIso));
       // Compte « actif » sans session : incohérence, la connexion est à refaire.
@@ -1007,6 +1029,14 @@ async function prepareRunTx(services: Services, tx: Tx, job: Job, account: Cloud
     await repos.audit.add(tx, { actorUserId: null, action: "cloud.account.needs_login", targetType: "cloud_account", targetId: account.id, meta: { reason: "session_unreadable" } });
     return refuse("no_session");
   }
+  // Délai minimal entre deux messages dans la conversation (limites de Vinted, prudentes tant que non
+  // mesurées) : la tâche reste en file, reprise au prochain passage.
+  const preConvId = typeof job.payload.conversationId === "string" ? job.payload.conversationId : null;
+  if (preConvId) {
+    const org = await repos.orgs.byId(tx, account.orgId);
+    const limits = (await effectiveLimitsTx(tx, org)).limits;
+    if (!checkMessageDelay(limitsContextFor(await repos.messages.forConversation(tx, preConvId), limits, now)).allowed) return refuse("too_soon");
+  }
   const claimed = await repos.jobs.claimCloud(tx, job.id, nowIso);
   if (!claimed) return refuse("already_claimed");
   const connection = await repos.connections.byId(tx, account.connectionId).catch(() => null);
@@ -1025,16 +1055,55 @@ async function prepareRunTx(services: Services, tx: Tx, job: Job, account: Cloud
   const rule = job.ruleId ? await repos.rules.byId(tx, job.ruleId).catch(() => null) : null;
   const customer = await repos.customers.byId(tx, conv.customerId).catch(() => null);
   const item = conv.itemId ? await repos.items.byId(tx, conv.itemId).catch(() => null) : null;
-  const text = (typeof job.payload.body === "string" && job.payload.body.trim() ? job.payload.body : renderTemplate(rule?.config.template ?? "Bonjour {{prenom}}, merci pour votre message.", { prenom: customer?.displayName.split(" ")[0] ?? "", article: item?.title ?? "l'article" })).slice(0, 2000);
+  const msgs = await repos.messages.forConversation(tx, conv.id);
+  const draftId = typeof job.payload.draftMessageId === "string" ? job.payload.draftMessageId : null;
+  const prepared = draftId ? msgs.find((m) => m.id === draftId && (m.status === "draft" || m.status === "failed")) ?? null : null;
+  // Écartée au moment d'agir : journalisée, brouillon préparé supprimé, rien n'est envoyé.
+  const drop = async (reason: CloudSkipReason): Promise<PrepareResult> => {
+    await skipJobTx(tx, job, account, reason, nowIso);
+    if (prepared) await repos.messages.delete(tx, prepared.id);
+    return refuse(reason);
+  };
+  if (conv.status === "archived") return drop("conversation_archived");
+  if (job.payload.followUp === true) {
+    // La relance a pu attendre des heures la cadence du Cloud : l'acheteur a pu répondre, l'article être
+    // vendu, l'offre changer (Agence → Pro : la relance doit alors être validée dans Messages).
+    const delivered = deliveredMessages(msgs);
+    const lastDelivered = delivered[delivered.length - 1];
+    const lastInbound = [...msgs].reverse().find((m) => m.direction === "inbound");
+    const quotas = (await repos.subscriptions.get(tx))?.quotas ?? PLAN_QUOTAS.free;
+    const check = recheckFollowUp({
+      conversation: { status: conv.status, lastMessageDirection: lastDelivered?.direction ?? null, lastMessageAt: lastDelivered ? lastDelivered.sentAt ?? lastDelivered.createdAt : null },
+      jobCreatedAt: job.createdAt,
+      lastInboundAt: lastInbound?.createdAt ?? null,
+      itemAvailable: conv.itemId ? await itemAvailableTx(tx, item) : undefined,
+      mode: followUpModeFor({ followUp24h: quotas.followUp24h }),
+      requireMode: "auto",
+    });
+    if (!check.ok && check.code === "plan_changed") {
+      await followUpBackToDraftTx(tx, job, account, nowIso);
+      return refuse("plan_changed");
+    }
+    if (!check.ok) return drop(check.code === "archived" ? "conversation_archived" : check.code === "item_unavailable" ? "item_unavailable" : check.code === "buyer_replied" ? "buyer_replied" : "plan_unavailable");
+  }
+  // Brouillon validé puis supprimé ou déjà envoyé depuis Messages : rien à envoyer.
+  if (draftId && !prepared) return drop("follow_up_obsolete");
+  const hasBody = typeof job.payload.body === "string" && job.payload.body.trim().length > 0;
+  const templateRule = rule !== null && (rule.kind === "reply_on_new_message" || rule.kind === "follow_up_no_reply" || rule.kind === "post_sale_message");
+  // Jamais un remerciement générique à la place d'une réponse que le vendeur doit rédiger.
+  if (!prepared && !hasBody && (job.payload.handoff === true || !templateRule)) return drop("nothing_to_send");
+  const text = (prepared ? prepared.body : hasBody ? (job.payload.body as string) : renderTemplate(rule?.config.template ?? "Bonjour {{prenom}}, merci pour votre message.", { prenom: customer?.displayName.split(" ")[0] ?? "", article: item?.title ?? "l'article" })).slice(0, 2000);
   if (!text.trim()) return fail("empty_message", "Message vide : rien à envoyer.");
-  const message = await repos.messages.create(tx, { conversationId: conv.id, direction: "outbound", source: "automation", status: "pending", body: text, offerCents: typeof job.payload.offerCents === "number" ? job.payload.offerCents : null, ruleId: rule?.id ?? null });
+  const message = prepared
+    ? await repos.messages.update(tx, prepared.id, { status: "pending", body: text, error: null })
+    : await repos.messages.create(tx, { conversationId: conv.id, direction: "outbound", source: "automation", status: "pending", body: text, offerCents: typeof job.payload.offerCents === "number" ? job.payload.offerCents : null, ruleId: rule?.id ?? null });
   const detail: CloudActionDetail = { conversationRef: conv.externalRef, conversationId: conv.id, messageLength: text.length, ...(typeof job.payload.ruleName === "string" ? { ruleName: job.payload.ruleName.slice(0, 120) } : {}) };
   const action = await repos.cloudActions.add(tx, { accountId: account.id, kind, level, status: "running", jobId: job.id, detail, startedAt: nowIso, createdAt: nowIso });
   await repos.jobs.update(tx, job.id, { result: { cloud: true, cloudActionId: action.id, messageId: message.id } });
   return {
     ok: true,
     run: {
-      job: claimed, account, actionId: action.id, messageId: message.id, detail, connectionLabel: connection.label, sessionSavedAt: locked.sessionSavedAt,
+      job: claimed, account, actionId: action.id, messageId: message.id, fromDraft: prepared !== null, detail, connectionLabel: connection.label, sessionSavedAt: locked.sessionSavedAt,
       input: { accountId: account.id, session, action: { id: job.id, kind, level, conversationUrl, text } },
     },
   };
@@ -1068,7 +1137,8 @@ async function recordOutcomeTx(services: Services, tx: Tx, run: PreparedRun, out
   // Message : envoyé, retiré (rien n'est parti) ou en échec (résultat incertain).
   const settleMessage = async (error: string) => {
     if (!run.messageId) return;
-    if (nothingSent) await repos.messages.delete(tx, run.messageId);
+    if (nothingSent && run.fromDraft) await repos.messages.update(tx, run.messageId, { status: "draft", error: null });
+    else if (nothingSent) await repos.messages.delete(tx, run.messageId);
     else await repos.messages.update(tx, run.messageId, { status: "failed", error: `${error} ${UNCERTAIN}`.slice(0, 500) });
   };
 

@@ -18,6 +18,8 @@ import type { PricingModelView, StudioDraft, TrackTrendsView, TrackUsageView } f
 import type { StoredStudioPhoto, StudioGenerateFromPrepInput, StudioPrepAnswersInput, StudioPrepareOptions, StudioPrepareRequest, StudioPrepResultView, StudioPrepView, ValidatePrepResultView, WornPhotoRequestInput, WornPhotosView, WornPhotoStatusView, WornPhotoView } from "../data/types";
 import { buildUsageCounter, type GeneratorPhoto } from "@selio/contracts";
 import { buildTrackUsage } from "../track";
+import type { MigrationApplyInput, MigrationConvertInput, MigrationFileInput, VintedLimits, VintedLimitsMeasurementInput } from "@selio/contracts";
+import type { BundleSuggestionView, DeclarationThresholdsView, EndToEndMarginsView, MigrationApplyView, MigrationConversion, VintedLimitsView } from "../data/types";
 
 type Query = Record<string, string | number | boolean | undefined | null>;
 
@@ -366,6 +368,18 @@ export class ApiClient implements DataClient {
   async completeSimulatedCloudLogin(): Promise<CloudAccount> {
     throw new DataError("demo_only", "La connexion simulée n'existe qu'en démonstration : sur votre compte, connectez-vous dans la fenêtre sécurisée.", 409);
   }
+
+  // Négociation avancée (§5.12) : la mesure est datée et marquée « measured » par le serveur, jamais par le navigateur.
+  recordVintedLimits(input: VintedLimitsMeasurementInput) { return this.post<VintedLimits>("/api/org/vinted-limits", input); }
+  getVintedLimits() { return this.get<VintedLimitsView>("/api/negotiation/limits"); }
+  // Migration (§5.13) : le navigateur n'envoie que ce que le client colle, photographie ou importe ; l'API appelle mon IA perso.
+  convertMigration(input: MigrationConvertInput) { return this.post<MigrationConversion>("/api/migration/convert", input); }
+  importMigrationFile(input: MigrationFileInput) { return this.post<MigrationConversion>("/api/migration/file", input); }
+  applyMigration(input: MigrationApplyInput) { return this.post<MigrationApplyView>("/api/migration/apply", input); }
+  // Fonctions « que Bleam n'a pas » (§5.14)
+  suggestBundles() { return this.get<BundleSuggestionView[]>("/api/items/bundles"); }
+  getEndToEndMargins(period: PeriodPreset) { return this.get<EndToEndMarginsView>("/api/analytics/margins", { period }); }
+  getDeclarationThresholds() { return this.get<DeclarationThresholdsView>("/api/analytics/thresholds"); }
 
   async resetDemo() {
     throw new DataError("conflict", "La réinitialisation n'existe qu'en mode démonstration.", 409);

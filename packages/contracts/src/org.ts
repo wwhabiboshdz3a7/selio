@@ -137,6 +137,24 @@ export type PriceBand = z.infer<typeof priceBand>;
 const message = (fallback: string) => z.string().trim().max(600).default(fallback);
 
 /**
+ * Lots (négociation sur plusieurs articles, §5.12) : plafond de remise sur le total affiché du lot et
+ * nombre minimal d'articles. Le plancher du lot vaut « total affiché × (1 − remise maximale de lot) »,
+ * **jamais sous la somme des planchers réels** des articles (`evaluateBundleOffer`, @selio/domain) :
+ * la remise de lot ne crée jamais une vente à perte. Mêmes paliers et même approbation que l'article
+ * seul ; l'IA rédige, cette politique décide (D07). À ne pas confondre avec `lot` ci-dessous (la remise
+ * proposée spontanément à un acheteur qui ajoute un deuxième article) : ici, c'est la borne de ce que la
+ * politique accepte quand un acheteur fait une offre sur un lot.
+ */
+export const bundleOfferPolicy = z.object({
+  enabled: z.boolean().default(true),
+  /** Remise maximale sur le total affiché du lot (toujours bornée par la somme des planchers réels). */
+  maxDiscountRate: rate.default(0.25),
+  /** En dessous, ce n'est pas un lot : chaque article se négocie seul. */
+  minItems: z.number().int().min(2).max(20).default(2),
+});
+export type BundleOfferPolicy = z.infer<typeof bundleOfferPolicy>;
+
+/**
  * Négociation automatique, réglée étape par étape (Automatisation ›
  * Négociation automatique) : marge par tranche de prix, paliers de
  * réduction, lots, baisses de prix, messages et délais.
@@ -156,6 +174,8 @@ export const negotiationAutomation = z.object({
     twoItemsRate: rate.default(0.1),
     threePlusRate: rate.default(0.15),
   }).default({}),
+  /** Offre d'un acheteur sur un lot : bornes de la politique (`evaluateBundleOffer`). */
+  bundle: bundleOfferPolicy.default({}),
   priceDrops: z.object({
     enabled: z.boolean().default(false),
     afterDays: z.number().int().min(1).max(90).default(10),
@@ -172,6 +192,16 @@ export const negotiationAutomation = z.object({
     afterFinal: message("Si vous changez d'avis, l'offre à {prix} reste valable jusqu'à ce soir."),
     accepted: message("Parfait, c'est d'accord pour {prix} ! Je prépare le colis dès votre achat."),
     fallback: message("Je comprends, ce prix est trop bas pour moi. Ajoutez l'article en favori : je vous préviendrai en cas de baisse."),
+    /** Lot : contre-offre au-dessus du plancher du lot (formule neutre, D20). Variables : {prenom}, {prix}, {prix_initial}, {nb_articles}. */
+    bundleCounter: message("Pour le lot de {nb_articles} articles, je peux vous le faire à {prix}. Si cela vous convient, faites l'offre à ce montant."),
+    /** Lot : offre finale, au plancher du lot : seul gabarit de lot qui parle de « dernier prix ». */
+    bundleFinal: message("Pour le lot de {nb_articles} articles, je peux aller jusqu'à {prix}, c'est mon dernier prix pour ce lot. Si cela vous convient, faites l'offre à ce montant."),
+    bundleAccepted: message("Parfait, c'est d'accord pour le lot de {nb_articles} articles à {prix} ! Je prépare le colis dès votre achat."),
+    /**
+     * Relance après 24 h sans réponse (`follow_up_24h`) : courte, polie, sans pression, sans prix ni
+     * chiffre (la validation de l'IA refuse tout chiffre dans une relance). Variables : {prenom}, {article}.
+     */
+    followUp: message("Bonjour {prenom}, je me permets un petit message : « {article} » est toujours disponible. Si vous avez une question, je suis là."),
   }).default({}),
   timing: z.object({
     minDelayMinutes: z.number().int().min(0).max(240).default(2),
@@ -184,6 +214,84 @@ export const negotiationAutomation = z.object({
   }).default({}),
 });
 export type NegotiationAutomation = z.infer<typeof negotiationAutomation>;
+
+/**
+ * Situation personnalisée déclenchée par des mots-clés (§5.12). Les mots-clés sont comparés au message
+ * de l'acheteur après normalisation (accents, casse, ponctuation) ; le message reste une DONNÉE non
+ * fiable : il n'est jamais interprété, seulement comparé. La réponse est un gabarit, ou une rédaction
+ * par mon IA perso cadrée par `guidance` (une consigne du vendeur, transmise comme réglage, jamais
+ * comme texte libre). `decisionOverride: "escalate"` transmet la conversation au vendeur quelle que
+ * soit la décision de prix (ex. « défaut », « remboursement »).
+ */
+export const SITUATION_MATCH_MODES = ["any", "all"] as const;
+export const situationMatchMode = z.enum(SITUATION_MATCH_MODES);
+export type SituationMatchMode = z.infer<typeof situationMatchMode>;
+export const SITUATION_RESPONSE_KINDS = ["template", "ai"] as const;
+export const situationResponseKind = z.enum(SITUATION_RESPONSE_KINDS);
+export type SituationResponseKind = z.infer<typeof situationResponseKind>;
+export const SITUATION_DECISION_OVERRIDES = ["escalate"] as const;
+export const situationDecisionOverride = z.enum(SITUATION_DECISION_OVERRIDES);
+export type SituationDecisionOverride = z.infer<typeof situationDecisionOverride>;
+
+export const keywordSituation = z.object({
+  id: z.string().min(1).max(64),
+  name: z.string().trim().min(1).max(80),
+  /** Mots ou expressions (2 à 60 caractères), normalisés à la comparaison. */
+  keywords: z.array(z.string().trim().min(2).max(60)).min(1).max(20),
+  matchMode: situationMatchMode.default("any"),
+  response: z.object({
+    kind: situationResponseKind.default("template"),
+    /** Gabarit (variables {prenom}, {article}, {prix}) quand `kind` vaut « template ». */
+    template: z.string().trim().max(600).optional(),
+    tone: z.enum(["neutral", "friendly", "concise"]).optional(),
+    /** Consigne du vendeur pour mon IA perso (ton, contenu), 300 caractères au plus. Jamais une décision de prix. */
+    guidance: z.string().trim().max(300).optional(),
+  }).default({}),
+  decisionOverride: situationDecisionOverride.nullable().default(null),
+  enabled: z.boolean().default(true),
+});
+export type KeywordSituation = z.infer<typeof keywordSituation>;
+export type KeywordSituationInput = z.input<typeof keywordSituation>;
+
+/**
+ * Limites de Vinted sur la messagerie (contre-offres par conversation, durée d'une offre, délai entre
+ * deux messages). **INCONNUES tant qu'elles n'ont pas été mesurées sur un vrai compte** : les valeurs
+ * par défaut sont prudentes (`source: "default_conservative"`), jamais présentées comme vérifiées. Le
+ * protocole de mesure est dans `packages/domain/src/negotiation-limits.ts` et docs/NEGOCIATION.md ; les
+ * valeurs mesurées s'enregistrent avec leur date (`source: "measured"`, `measuredAt`).
+ */
+export const VINTED_LIMIT_SOURCES = ["default_conservative", "measured"] as const;
+export const vintedLimitSource = z.enum(VINTED_LIMIT_SOURCES);
+export type VintedLimitSource = z.infer<typeof vintedLimitSource>;
+
+/** Les trois valeurs mesurables, avec leurs bornes (sans valeur par défaut : une mesure se saisit en entier). */
+const vintedLimitValues = {
+  /** Contre-offres qu'un vendeur peut envoyer dans une même conversation. */
+  maxCounterOffersPerConversation: z.number().int().min(1).max(20),
+  /** Durée pendant laquelle une offre envoyée reste valable (heures). */
+  offerDurationHours: z.number().int().min(1).max(168),
+  /** Délai minimal entre deux messages sortants dans une conversation (secondes). */
+  minDelayBetweenMessagesSeconds: z.number().int().min(0).max(3600),
+};
+
+export const vintedLimits = z.object({
+  /** Valeur prudente : 3 contre-offres. */
+  maxCounterOffersPerConversation: vintedLimitValues.maxCounterOffersPerConversation.default(3),
+  /** Valeur prudente : 48 h. */
+  offerDurationHours: vintedLimitValues.offerDurationHours.default(48),
+  /** Valeur prudente : 60 s. */
+  minDelayBetweenMessagesSeconds: vintedLimitValues.minDelayBetweenMessagesSeconds.default(60),
+  /** Date de la dernière mesure sur un vrai compte (null : jamais mesuré). */
+  measuredAt: isoDate.nullable().default(null),
+  source: vintedLimitSource.default("default_conservative"),
+});
+export type VintedLimits = z.infer<typeof vintedLimits>;
+/** Valeurs prudentes par défaut, marquées « à mesurer ». */
+export const VINTED_LIMITS_DEFAULTS: VintedLimits = vintedLimits.parse({});
+
+/** Enregistrement d'une mesure (écran « Limites Vinted ») : les trois valeurs, obligatoires ; la source et la date sont fixées par le serveur. */
+export const vintedLimitsMeasurementInput = z.object(vintedLimitValues);
+export type VintedLimitsMeasurementInput = z.infer<typeof vintedLimitsMeasurementInput>;
 
 /** Onglet Automatisation : messages, négociation, après-vente et stock automatique. */
 export const automationSettings = z.object({
@@ -208,8 +316,12 @@ export const automationSettings = z.object({
       photos: z.boolean().default(false),
     }).default({}),
     awayMessage: message("Merci pour votre message ! Je vous réponds dès demain matin."),
+    /** Situations personnalisées par mots-clés (vide par défaut ; `SUGGESTED_KEYWORD_SITUATIONS` propose des exemples). */
+    situations: z.array(keywordSituation).max(50).default([]),
   }).default({}),
   negotiation: negotiationAutomation.default({}),
+  /** Limites de Vinted : valeurs prudentes « à mesurer » tant qu'aucune mesure n'est enregistrée. */
+  vintedLimits: vintedLimits.default({}),
   afterSale: z.object({
     autoLabels: z.boolean().default(true),
     autoPrint: z.boolean().default(false),
@@ -248,6 +360,41 @@ export const pricingSettings = z.object({
 });
 export type PricingSettings = z.infer<typeof pricingSettings>;
 
+/**
+ * Seuils de déclaration (§5.14) : à partir de 2026, les plateformes transmettent à l'administration
+ * les vendeurs qui dépassent, sur l'année, 30 ventes OU 2 000 € encaissés. Selio informe quand on s'en
+ * approche ; ce n'est jamais un conseil fiscal (« renseignez-vous auprès de l'administration »).
+ * Paramétrables au cas où les seuils changent ; `year` : année d'entrée en vigueur des valeurs par défaut.
+ */
+export const DECLARATION_THRESHOLDS_2026 = { salesCount: 30, revenueCents: 200_000, year: 2026 } as const;
+export const declarationThresholds = z.object({
+  /** Alerte affichée dans les analyses et le tableau de bord. */
+  enabled: z.boolean().default(true),
+  salesCount: z.number().int().min(1).max(100_000).default(DECLARATION_THRESHOLDS_2026.salesCount),
+  revenueCents: nonNegCents.min(100).default(DECLARATION_THRESHOLDS_2026.revenueCents),
+  /** Part du seuil à partir de laquelle on prévient (0,8 = 80 %). */
+  approachingRate: rate.min(0.1).max(0.99).default(0.8),
+});
+export type DeclarationThresholds = z.infer<typeof declarationThresholds>;
+
+/**
+ * Lots intelligents (§5.14) : propositions de lots à partir des signaux (même acheteur intéressé par
+ * plusieurs articles, même marque et taille, articles anciens). Les remises de lot restent celles de
+ * `automation.negotiation.lot` et ne descendent jamais sous le plancher de lot (somme des planchers).
+ */
+export const bundleSettings = z.object({
+  enabled: z.boolean().default(true),
+  /** Articles au plus dans une proposition. */
+  maxItems: z.number().int().min(2).max(6).default(4),
+  /** Un article est « ancien » au-delà de ce nombre de jours en ligne (sinon en stock). */
+  staleAfterDays: z.number().int().min(7).max(365).default(60),
+  /** Nombre d'articles d'un même acheteur à partir duquel on propose un lot. */
+  sameBuyerMinItems: z.number().int().min(2).max(6).default(2),
+  /** Propositions au plus par passage. */
+  maxSuggestions: z.number().int().min(1).max(50).default(10),
+});
+export type BundleSettings = z.infer<typeof bundleSettings>;
+
 export const orgSettings = z.object({
   currency: currency.default("EUR"),
   timezone: z.string().min(1).max(64).default("Europe/Paris"),
@@ -261,6 +408,8 @@ export const orgSettings = z.object({
   dressing: dressingSettings.default({}),
   automation: automationSettings.default({}),
   pricing: pricingSettings.default({}),
+  thresholds: declarationThresholds.default({}),
+  bundles: bundleSettings.default({}),
   retentionDays: z.object({
     messages: z.number().int().min(30).max(3650).default(730),
     auditLogs: z.number().int().min(90).max(3650).default(365),

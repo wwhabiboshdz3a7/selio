@@ -10,6 +10,7 @@ const STEPS = [
   { key: "account", title: "Compte et organisation", description: "Nom de l'organisation et de l'utilisateur." },
   { key: "preferences", title: "Préférences", description: "Devise, fuseau horaire, langue." },
   { key: "mode", title: "Démonstration ou connexion", description: "Choisir le mode de travail." },
+  { key: "migration", title: "Vous venez d'un autre outil ?", description: "Reprendre vos réglages (Bleam, Clemz…)." },
   { key: "extension", title: "Extension navigateur", description: "Créer un jeton et associer l'extension." },
   { key: "ai", title: "Règles IA et marge", description: "Plancher, marge minimale, validation." },
   { key: "checklist", title: "Checklist d'installation", description: "Vérifier que tout est prêt." },
@@ -34,7 +35,7 @@ export default function Onboarding() {
 
   return (
     <>
-      <PageHeader title="Démarrage" description="Six étapes courtes pour configurer Selio. Vous pouvez revenir ici à tout moment." actions={<Button variant="ghost" onClick={() => dismiss.mutate()} loading={dismiss.isPending}>Terminer plus tard</Button>} />
+      <PageHeader title="Démarrage" description={`${STEPS.length} étapes courtes pour configurer Selio. Vous pouvez revenir ici à tout moment.`} actions={<Button variant="ghost" onClick={() => dismiss.mutate()} loading={dismiss.isPending}>Terminer plus tard</Button>} />
       <ProgressBar value={completed.size} max={STEPS.length} label="Progression" className="mb-6 max-w-md" />
       <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
         <ol className="flex flex-col gap-1">
@@ -70,6 +71,16 @@ export default function Onboarding() {
               <div><Button onClick={() => complete.mutate(step.key)} loading={complete.isPending} iconRight={<ChevronRight />}>Continuer</Button></div>
             </div>
           ) : null}
+          {step.key === "migration" ? (
+            <div className="mt-4 flex flex-col gap-3 text-sm">
+              <p className="text-text-muted">Vous utilisiez Bleam, Clemz ou un autre outil ? Collez vos réglages, ajoutez des captures d'écran ou importez le fichier obtenu au titre de la portabilité RGPD : mon IA perso propose la correspondance, vous validez champ par champ.</p>
+              <p className="text-xs text-text-muted">Selio ne vous demande jamais vos identifiants d'un autre outil et ne s'y connecte jamais à votre place.</p>
+              <div className="flex flex-wrap gap-2">
+                <Link to="/app/settings/migration"><Button variant="secondary">Reprendre mes réglages</Button></Link>
+                <Button onClick={() => complete.mutate(step.key)} loading={complete.isPending} iconRight={<ChevronRight />}>{completed.has(step.key) ? "Continuer" : "Non, je commence avec Selio"}</Button>
+              </div>
+            </div>
+          ) : null}
           {step.key === "extension" ? (
             <div className="mt-4 flex flex-col gap-3 text-sm">
               <ol className="list-decimal pl-5 text-text-muted">
@@ -94,7 +105,7 @@ export default function Onboarding() {
           {step.key === "checklist" ? (
             <div className="mt-4 flex flex-col gap-3 text-sm">
               <ul className="flex flex-col gap-2">
-                {STEPS.slice(0, 5).map((s) => <li key={s.key} className="flex items-center gap-2"><span className={cn("size-2 rounded-full", completed.has(s.key) ? "bg-success" : "bg-gray-300")} aria-hidden />{s.title} — {completed.has(s.key) ? "fait" : "à faire"}</li>)}
+                {STEPS.slice(0, -1).map((s) => <li key={s.key} className="flex items-center gap-2"><span className={cn("size-2 rounded-full", completed.has(s.key) ? "bg-success" : "bg-gray-300")} aria-hidden />{s.title} — {completed.has(s.key) ? "fait" : "à faire"}</li>)}
                 <li className="flex items-center gap-2"><span className="size-2 rounded-full bg-success" aria-hidden />Règles de marge : {formatNumber(Math.round(session.org.settings.margin.minMarginRate * 100))} % minimum</li>
               </ul>
               <div className="flex gap-2"><Button onClick={() => { complete.mutate(step.key); dismiss.mutate(); }} loading={dismiss.isPending}>Terminer le démarrage</Button></div>

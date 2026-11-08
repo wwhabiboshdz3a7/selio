@@ -1,6 +1,6 @@
-import { bulkItemAction, inventoryItemCreate, inventoryItemUpdate, inventoryQuery, type InventoryEvent, type InventoryItem, type Page } from "@selio/contracts";
+import { bulkItemAction, inventoryItemCreate, inventoryItemUpdate, inventoryQuery, namedMeasurementField, photoRole, type InventoryEvent, type InventoryItem, type NamedMeasurementField, type Page, type PhotoRole } from "@selio/contracts";
 import { repos } from "@selio/db";
-import { ITEM_TRANSITIONS, canChangeItemStatus, diffItem, nextSku, toCsv, EXPORT_HEADERS, inventoryToCsvRow } from "@selio/domain";
+import { ITEM_TRANSITIONS, canChangeItemStatus, checkListing, diffItem, nextSku, toCsv, EXPORT_HEADERS, inventoryToCsvRow, type ListingCheck } from "@selio/domain";
 import { PLAN_QUOTAS } from "@selio/demo-data";
 import { AppError, nowIso, requireAction, withOrg, type OrgContext } from "../context";
 import type { Tx } from "@selio/db";
@@ -121,5 +121,49 @@ export function exportItemsCsv(ctx: OrgContext): Promise<string> {
     const all = await repos.items.all(tx);
     await repos.usage.record(tx, "export.csv", { kind: "items" });
     return toCsv([EXPORT_HEADERS, ...all.map((i) => inventoryToCsvRow(i))]);
+  });
+}
+
+// ---------------------------------------------------------------- contrôle des photos et des mesures (§5.14)
+
+/** Scores de netteté calculés par le navigateur (variance du laplacien sur une image réduite), un par photo. */
+function parsePhotoScores(raw: unknown): (number | null)[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 12).map((v) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null));
+}
+
+/**
+ * Avertissements NON BLOQUANTS d'une annonce : aucune photo ou trop peu, photo floue (scores fournis par
+ * le navigateur), pas de photo d'étiquette, mesures manquantes pour la famille de la pièce. Les mesures de
+ * Studio comptent seulement avec leur provenance (jamais une mesure inventée).
+ */
+export async function listingCheckTx(tx: Tx, item: InventoryItem, photoScores: unknown = []): Promise<ListingCheck> {
+  const prep = await tx.maybeOne<{ photos: unknown; measurements: unknown }>("select photos, measurements from studio_preps where org_id = $1 and item_id = $2 order by updated_at desc limit 1", [tx.orgId, item.id]);
+  const measurements: NamedMeasurementField[] = Array.isArray(prep?.measurements) ? prep.measurements.flatMap((m) => { const p = namedMeasurementField.safeParse(m); return p.success ? [p.data] : []; }) : [];
+  const prepPhotos = Array.isArray(prep?.photos) ? (prep.photos as { role?: unknown }[]) : [];
+  const roles: PhotoRole[] | null = prepPhotos.length > 0 && prepPhotos.length === item.photos.length ? prepPhotos.map((p) => { const r = photoRole.safeParse(p.role); return r.success ? r.data : "other"; }) : null;
+  return checkListing({ category: item.category, title: item.title, description: item.description, measurements, photos: item.photos.map((p) => ({ alt: p.alt })), photoRoles: roles }, parsePhotoScores(photoScores));
+}
+
+export function checkItem(ctx: OrgContext, id: string, photoScores: unknown = []): Promise<ListingCheck> {
+  requireAction(ctx, "items.read");
+  return withOrg(ctx, async (tx) => listingCheckTx(tx, await repos.items.byId(tx, id), photoScores));
+}
+
+/** Création avec contrôle : l'article est enregistré quoi qu'il arrive, les avertissements l'accompagnent. */
+export function createItemChecked(ctx: OrgContext, raw: unknown): Promise<InventoryItem & { listingCheck: ListingCheck }> {
+  requireAction(ctx, "items.write");
+  return withOrg(ctx, async (tx) => {
+    const item = await createItemTx(ctx, tx, raw);
+    return { ...item, listingCheck: await listingCheckTx(tx, item, (raw as { photoScores?: unknown } | null)?.photoScores) };
+  });
+}
+
+/** Modification avec contrôle (avertissements non bloquants). */
+export function updateItemChecked(ctx: OrgContext, id: string, raw: unknown): Promise<InventoryItem & { listingCheck: ListingCheck }> {
+  requireAction(ctx, "items.write");
+  return withOrg(ctx, async (tx) => {
+    const item = await updateItemTx(ctx, tx, id, raw);
+    return { ...item, listingCheck: await listingCheckTx(tx, item, (raw as { photoScores?: unknown } | null)?.photoScores) };
   });
 }

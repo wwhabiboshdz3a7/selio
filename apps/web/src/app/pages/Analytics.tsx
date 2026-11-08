@@ -10,6 +10,7 @@ import { downloadFile } from "../../lib/download";
 import { BarChart, HorizontalBars } from "../../components/charts";
 import { Delta, PeriodPicker, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { EndToEndMarginCard, ThresholdsBanner } from "../components/selling";
 
 export default function Analytics() {
   const client = useClient();
@@ -18,6 +19,7 @@ export default function Analytics() {
   const [channel, setChannel] = useState("");
   const filters = { period, category: category || undefined, channel: channel || undefined };
   const q = useQuery({ queryKey: ["analytics", filters], queryFn: () => client.getAnalytics(filters) });
+  const thresholds = useQuery({ queryKey: ["analytics", "thresholds"], queryFn: () => client.getDeclarationThresholds() });
   const exportCsv = useAppMutation(() => client.exportAnalyticsCsv(filters), { success: "Export généré", onSuccess: (csv) => downloadFile(`selio-analyses-${period}.csv`, csv) });
   return (
     <>
@@ -26,6 +28,7 @@ export default function Analytics() {
         <Select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Catégorie"><option value="">Toutes catégories</option>{ITEM_CATEGORIES.map((c) => <option key={c} value={c}>{ITEM_CATEGORY_LABELS[c]}</option>)}</Select>
         <Select value={channel} onChange={(e) => setChannel(e.target.value)} aria-label="Canal"><option value="">Tous canaux</option><option value="demo">Simulateur</option><option value="vinted">Vinted</option></Select>
       </div>
+      {thresholds.data?.enabled ? <div className="mb-4"><ThresholdsBanner t={thresholds.data} /></div> : null}
       <QueryBoundary query={q}>
         {(d) => (
           <div className="flex flex-col gap-6">
@@ -42,6 +45,7 @@ export default function Analytics() {
               <h2 className="text-md font-semibold">CA et marge brute</h2>
               <BarChart className="mt-4" data={d.series.map((s) => ({ label: s.label, primary: s.revenueCents, secondary: s.marginCents }))} primaryLabel="CA" secondaryLabel="Marge brute" />
             </Card>
+            <EndToEndMarginCard period={period} />
             <div className="grid gap-4 lg:grid-cols-3">
               <Card><h2 className="mb-3 text-md font-semibold">Par catégorie</h2>{d.byCategory.length ? <HorizontalBars rows={d.byCategory.map((r) => ({ label: ITEM_CATEGORY_LABELS[r.key as keyof typeof ITEM_CATEGORY_LABELS] ?? r.key, value: r.revenueCents, hint: `${r.orderCount} · marge ${formatPercent(r.marginRate)}` }))} /> : <p className="text-sm text-text-muted">Aucune vente.</p>}</Card>
               <Card><h2 className="mb-3 text-md font-semibold">Par canal</h2>{d.byChannel.length ? <HorizontalBars rows={d.byChannel.map((r) => ({ label: r.key === "demo" ? "Simulateur" : r.key, value: r.revenueCents, hint: `${r.orderCount} · marge ${formatPercent(r.marginRate)}` }))} /> : <p className="text-sm text-text-muted">Aucune vente.</p>}</Card>

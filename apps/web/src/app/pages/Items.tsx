@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Archive, CalendarClock, Download, LayoutGrid, List, Plus, Search, Sparkles, Upload } from "lucide-react";
+import { Archive, CalendarClock, Download, Layers, LayoutGrid, List, Plus, Search, Sparkles, Upload } from "lucide-react";
 import { ITEM_CATEGORY_LABELS, ITEM_CATEGORIES, type InventoryItem, type InventoryQuery, type ItemStatus } from "@selio/contracts";
 import { daysInStock, daysOnline, projectedMargin } from "@selio/domain";
-import { Button, Checkbox, ConfirmDialog, EmptyState, FilterChip, Input, Money, PageHeader, Pagination, Select, Table, TableEmpty, TableWrap, Td, Th, Tr, cn, formatCents, formatPercent } from "@selio/ui";
+import { Button, buttonClass, Checkbox, ConfirmDialog, EmptyState, FilterChip, Input, Money, PageHeader, Pagination, Select, Table, TableEmpty, TableWrap, Td, Th, Tr, cn, formatCents, formatPercent } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { downloadFile } from "../../lib/download";
 import { ItemStatusBadge, ItemThumb, QueryBoundary } from "../components/common";
@@ -57,6 +57,7 @@ export default function Items() {
         actions={
           <>
             <Button variant="secondary" icon={<Download />} onClick={() => exportCsv.mutate(undefined)} loading={exportCsv.isPending}>Exporter CSV</Button>
+            <Link to="/app/items/lots" className={buttonClass({ variant: "secondary" })}><Layers className="size-4" aria-hidden />Lots intelligents</Link>
             {canWrite ? <Link to="/app/items/import"><Button variant="secondary" icon={<Upload />}>Importer</Button></Link> : null}
             {canWrite ? <Link to="/app/items/new"><Button variant="secondary" icon={<Plus />}>Nouvel article</Button></Link> : null}
             {canWrite ? <Link to="/studio"><Button variant="brand" icon={<Sparkles />}>Générer avec l'IA</Button></Link> : null}

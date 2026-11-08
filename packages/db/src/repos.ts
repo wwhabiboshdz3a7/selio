@@ -509,6 +509,33 @@ export const jobs = {
     if (customerId) return tx.count("select count(*) from jobs where org_id = $1 and rule_id = $2 and created_at >= $3 and status <> 'cancelled' and payload->>'customerId' = $4", [tx.orgId, ruleId, since, customerId]);
     return tx.count("select count(*) from jobs where org_id = $1 and rule_id = $2 and created_at >= $3 and status = 'succeeded'", [tx.orgId, ruleId, since]);
   },
+  /** Tâches encore en cours (en file, en exécution ou à valider) de ces règles pour une conversation. */
+  async pendingForConversation(tx: Tx, ruleIds: readonly string[], conversationId: string): Promise<number> {
+    if (ruleIds.length === 0) return 0;
+    return tx.count("select count(*) from jobs where org_id = $1 and rule_id = any($2::text[]) and payload->>'conversationId' = $3 and status in ('queued', 'running', 'awaiting_approval')", [tx.orgId, [...ruleIds], conversationId]);
+  },
+  /**
+   * Tâches de ces règles pour une conversation créées depuis `since` (null : depuis toujours), QUEL QUE
+   * SOIT leur statut (annulée, échouée, réussie, en cours) : une relance refusée, supprimée ou au résultat
+   * incertain compte comme faite (jamais une deuxième relance sans réponse de l'acheteur).
+   */
+  async countForConversationSince(tx: Tx, ruleIds: readonly string[], conversationId: string, since: string | null): Promise<number> {
+    if (ruleIds.length === 0) return 0;
+    if (since === null) return tx.count("select count(*) from jobs where org_id = $1 and rule_id = any($2::text[]) and payload->>'conversationId' = $3", [tx.orgId, [...ruleIds], conversationId]);
+    return tx.count("select count(*) from jobs where org_id = $1 and rule_id = any($2::text[]) and payload->>'conversationId' = $3 and created_at >= $4", [tx.orgId, [...ruleIds], conversationId, since]);
+  },
+  /** Contre-offres encore à envoyer (en file, en cours ou à valider) pour une conversation. */
+  async pendingCounterOffers(tx: Tx, conversationId: string, excludeJobId?: string): Promise<number> {
+    return tx.count("select count(*) from jobs where org_id = $1 and kind = 'automation.send_message' and payload->>'conversationId' = $2 and payload->>'decision' = 'counter' and status in ('queued', 'running', 'awaiting_approval') and id <> $3", [tx.orgId, conversationId, excludeJobId ?? ""]);
+  },
+  /** Relances encore à envoyer (en file ou à valider) d'une conversation : l'acheteur vient de répondre. */
+  async pendingFollowUps(tx: Tx, conversationId: string): Promise<Job[]> {
+    return (await tx.query("select * from jobs where org_id = $1 and payload->>'conversationId' = $2 and payload->>'followUp' = 'true' and status in ('queued', 'awaiting_approval')", [tx.orgId, conversationId])).map((r) => parse(jobSchema, r));
+  },
+  /** Transmissions au vendeur encore ouvertes (situation, IA) d'une conversation. */
+  async openHandoffs(tx: Tx, conversationId: string): Promise<Job[]> {
+    return (await tx.query("select * from jobs where org_id = $1 and payload->>'conversationId' = $2 and payload->>'handoff' = 'true' and status = 'awaiting_approval'", [tx.orgId, conversationId])).map((r) => parse(jobSchema, r));
+  },
   /** Tâches serveur et navigateur échues ; les tâches Cloud ont leur propre planificateur (`dueCloud`). */
   async dueQueued(tx: Tx, limit = 50): Promise<Job[]> {
     return (await tx.query("select * from jobs where org_id = $1 and status = 'queued' and runs_in <> 'cloud' and scheduled_for <= now() order by scheduled_for limit $2", [tx.orgId, limit])).map((r) => parse(jobSchema, r));
@@ -2266,5 +2293,184 @@ export const wornPhotoJobs = {
   /** Demandes à exécuter, toutes organisations (fonction SECURITY DEFINER, identifiants seulement) : worker. */
   async due(tx: Tx, now: string, staleBefore: string, limit = 50): Promise<WornPhotoDue[]> {
     return (await tx.query<WornPhotoDue>("select * from app_worn_photo_due($1, $2, $3)", [now, staleBefore, limit])).map((r) => ({ orgId: r.orgId, id: r.id, status: r.status }));
+  },
+};
+
+// ---------------------------------------------------------------- 0015 : limites de Vinted mesurées
+
+/**
+ * Mesure des limites de Vinted (RLS : ses mesures et les mesures globales de l'équipe en lecture). Une
+ * mesure globale (`orgId` null) ne s'écrit que par `recordGlobal` (fonction SECURITY DEFINER, contrôle
+ * opérateur côté application). Historique : la plus récente s'applique, rien n'est modifié ni supprimé.
+ */
+export interface NegotiationLimitsRecord {
+  id: string;
+  orgId: string | null;
+  maxCounterOffersPerConversation: number;
+  offerDurationHours: number;
+  minDelayBetweenMessagesSeconds: number;
+  source: "default_conservative" | "measured";
+  measuredAt: string | null;
+  measuredBy: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface NegotiationLimitsInput {
+  maxCounterOffersPerConversation: number;
+  offerDurationHours: number;
+  minDelayBetweenMessagesSeconds: number;
+  measuredAt: string;
+  measuredBy?: string | null;
+  note?: string | null;
+}
+
+function toNegotiationLimits(r: Record<string, unknown>): NegotiationLimitsRecord {
+  return {
+    id: String(r.id),
+    orgId: (r.orgId as string | null) ?? null,
+    maxCounterOffersPerConversation: Number(r.maxCounterOffersPerConversation),
+    offerDurationHours: Number(r.offerDurationHours),
+    minDelayBetweenMessagesSeconds: Number(r.minDelayBetweenMessagesSeconds),
+    source: r.source === "measured" ? "measured" : "default_conservative",
+    measuredAt: r.measuredAt === null || r.measuredAt === undefined ? null : String(r.measuredAt),
+    measuredBy: (r.measuredBy as string | null) ?? null,
+    note: (r.note as string | null) ?? null,
+    createdAt: String(r.createdAt),
+  };
+}
+
+export const negotiationLimits = {
+  /** Mesure la plus récente de l'organisation (null : aucune). */
+  async latestForOrg(tx: Tx): Promise<NegotiationLimitsRecord | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>("select * from negotiation_limits where org_id = $1 order by created_at desc, id desc limit 1", [tx.orgId]);
+    return r ? toNegotiationLimits(r) : null;
+  },
+  /** Mesure globale la plus récente (équipe), lisible par toutes les organisations. */
+  async latestGlobal(tx: Tx): Promise<NegotiationLimitsRecord | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>("select * from negotiation_limits where org_id is null order by created_at desc, id desc limit 1");
+    return r ? toNegotiationLimits(r) : null;
+  },
+  /** Historique visible (ses mesures et les mesures globales), les plus récentes d'abord. */
+  async history(tx: Tx, limit = 20): Promise<NegotiationLimitsRecord[]> {
+    const rows = await tx.query<Record<string, unknown>>(
+      "select * from negotiation_limits where org_id is null or org_id = $1 order by created_at desc, id desc limit $2",
+      [tx.orgId, Math.min(100, Math.max(1, limit))],
+    );
+    return rows.map(toNegotiationLimits);
+  },
+  /** Mesure propre à l'organisation. */
+  async recordForOrg(tx: Tx, input: NegotiationLimitsInput): Promise<NegotiationLimitsRecord> {
+    return toNegotiationLimits(await tx.insert("negotiation_limits", { ...input, measuredBy: input.measuredBy ?? null, note: input.note ?? null, source: "measured", orgId: tx.orgId }));
+  },
+  /** Mesure globale de l'équipe (fonction SECURITY DEFINER) : le contrôle opérateur est fait par le service. */
+  async recordGlobal(tx: Tx, input: NegotiationLimitsInput): Promise<NegotiationLimitsRecord> {
+    const row = await tx.one<{ id: string }>("select * from app_negotiation_limits_record_global($1, $2, $3, $4, $5, $6)", [
+      input.maxCounterOffersPerConversation, input.offerDurationHours, input.minDelayBetweenMessagesSeconds, input.measuredAt, input.measuredBy ?? null, input.note ?? null,
+    ], "Mesure");
+    return toNegotiationLimits(await tx.one("select * from negotiation_limits where id = $1", [row.id], "Mesure"));
+  },
+};
+
+// ---------------------------------------------------------------- 0015 : migration des réglages
+
+export type MigrationMappingStatus = "draft" | "applied";
+export type MigrationInputKindRecord = "text" | "screenshot" | "rgpd_file";
+
+/**
+ * Correspondance « ancien → nouveau » (RLS). `rawInput` : texte collé ou fichier RGPD, gardé 7 jours au
+ * plus (`rawInputPurgeAt`) ; les captures d'écran ne sont jamais stockées (`screenshotCount` seulement).
+ */
+export interface MigrationMappingRecord {
+  id: string;
+  orgId: string;
+  source: string;
+  inputKind: MigrationInputKindRecord;
+  mapping: Record<string, unknown>;
+  status: MigrationMappingStatus;
+  rawInput: string | null;
+  rawInputPurgeAt: string | null;
+  screenshotCount: number;
+  appliedFieldIds: string[];
+  appliedResult: Record<string, unknown> | null;
+  createdBy: string | null;
+  appliedBy: string | null;
+  appliedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function toMigrationMapping(r: Record<string, unknown>): MigrationMappingRecord {
+  const iso = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
+  const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+  return {
+    id: String(r.id),
+    orgId: String(r.orgId),
+    source: String(r.source),
+    inputKind: r.inputKind as MigrationInputKindRecord,
+    mapping: obj(r.mapping),
+    status: r.status === "applied" ? "applied" : "draft",
+    rawInput: (r.rawInput as string | null) ?? null,
+    rawInputPurgeAt: iso(r.rawInputPurgeAt),
+    screenshotCount: Number(r.screenshotCount ?? 0),
+    appliedFieldIds: Array.isArray(r.appliedFieldIds) ? (r.appliedFieldIds as unknown[]).map(String) : [],
+    appliedResult: r.appliedResult && typeof r.appliedResult === "object" ? (r.appliedResult as Record<string, unknown>) : null,
+    createdBy: (r.createdBy as string | null) ?? null,
+    appliedBy: (r.appliedBy as string | null) ?? null,
+    appliedAt: iso(r.appliedAt),
+    createdAt: String(r.createdAt),
+    updatedAt: String(r.updatedAt),
+  };
+}
+
+export const migrationMappings = {
+  async create(tx: Tx, input: { source: string; inputKind: MigrationInputKindRecord; mapping: Record<string, unknown>; rawInput?: string | null; rawInputPurgeAt?: string | null; screenshotCount?: number; createdBy?: string | null; createdAt?: string }): Promise<MigrationMappingRecord> {
+    const rawInput = input.rawInput && input.rawInput.length > 0 ? input.rawInput : null;
+    return toMigrationMapping(await tx.insert("migration_mappings", {
+      ...input,
+      rawInput,
+      rawInputPurgeAt: rawInput ? input.rawInputPurgeAt ?? null : null,
+      screenshotCount: Math.max(0, Math.min(4, input.screenshotCount ?? 0)),
+      createdBy: input.createdBy ?? null,
+      orgId: tx.orgId,
+    }));
+  },
+  async byId(tx: Tx, id: string): Promise<MigrationMappingRecord | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>("select * from migration_mappings where org_id = $1 and id = $2", [tx.orgId, id]);
+    return r ? toMigrationMapping(r) : null;
+  },
+  /** Lit et verrouille la correspondance (application concurrente). */
+  async lock(tx: Tx, id: string): Promise<MigrationMappingRecord | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>("select * from migration_mappings where org_id = $1 and id = $2 for update", [tx.orgId, id]);
+    return r ? toMigrationMapping(r) : null;
+  },
+  async list(tx: Tx, limit = 20): Promise<MigrationMappingRecord[]> {
+    return (await tx.query<Record<string, unknown>>("select * from migration_mappings where org_id = $1 order by created_at desc, id desc limit $2", [tx.orgId, Math.min(100, Math.max(1, limit))])).map(toMigrationMapping);
+  },
+  /** Correction d'un brouillon (écran « ancien → nouveau ») : une correspondance appliquée ne change plus. */
+  async updateDraft(tx: Tx, id: string, patch: { mapping: Record<string, unknown>; source?: string }): Promise<MigrationMappingRecord | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>(
+      "update migration_mappings set mapping = $3, source = coalesce($4, source), updated_at = now() where org_id = $1 and id = $2 and status = 'draft' returning *",
+      [tx.orgId, id, JSON.stringify(patch.mapping), patch.source ?? null],
+    );
+    return r ? toMigrationMapping(r) : null;
+  },
+  async markApplied(tx: Tx, id: string, input: { appliedFieldIds: string[]; appliedResult: Record<string, unknown>; appliedBy: string | null; appliedAt: string; mapping?: Record<string, unknown> }): Promise<MigrationMappingRecord | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>(
+      `update migration_mappings set status = 'applied', applied_field_ids = $3, applied_result = $4, applied_by = $5, applied_at = $6,
+         mapping = coalesce($7::jsonb, mapping), updated_at = now()
+       where org_id = $1 and id = $2 and status = 'draft' returning *`,
+      [tx.orgId, id, JSON.stringify(input.appliedFieldIds), JSON.stringify(input.appliedResult), input.appliedBy, input.appliedAt, input.mapping ? JSON.stringify(input.mapping) : null],
+    );
+    return r ? toMigrationMapping(r) : null;
+  },
+  /** Rétention de l'organisation : efface l'entrée brute arrivée à échéance. */
+  async purgeRawInputs(tx: Tx, now: string): Promise<number> {
+    return (await tx.query("update migration_mappings set raw_input = null, raw_input_purge_at = null, updated_at = now() where org_id = $1 and raw_input is not null and raw_input_purge_at <= $2 returning id", [tx.orgId, now])).length;
+  },
+  /** Rétention, toutes organisations (fonction SECURITY DEFINER, nombre de lignes seulement) : worker. */
+  async purgeRawInputsAll(tx: Tx, now: string): Promise<number> {
+    const r = await tx.maybeOne<{ appMigrationPurgeRawInputs: number }>("select app_migration_purge_raw_inputs($1)", [now]);
+    return Number(r?.appMigrationPurgeRawInputs ?? 0);
   },
 };

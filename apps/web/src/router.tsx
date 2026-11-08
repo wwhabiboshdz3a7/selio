@@ -66,6 +66,8 @@ export const router = createBrowserRouter([
       { path: "items", lazy: lazy(() => import("./app/pages/Items")) },
       { path: "items/new", lazy: lazy(() => import("./app/pages/ItemForm")) },
       { path: "items/import", lazy: lazy(() => import("./app/pages/ItemImport")) },
+      // Lots intelligents : propositions de lots (même acheteur, même marque et taille, articles anciens).
+      { path: "items/lots", lazy: lazy(() => import("./app/pages/Bundles")) },
       { path: "items/:id", lazy: lazy(() => import("./app/pages/ItemDetail")) },
       { path: "items/:id/edit", lazy: lazy(() => import("./app/pages/ItemForm")) },
       { path: "selling-rules", element: <Navigate to="/app/automatisation/negociation" replace /> },
@@ -109,6 +111,8 @@ export const router = createBrowserRouter([
         { path: "notifications", lazy: lazy(() => import("./app/pages/settings/Notifications")) },
         { path: "security", lazy: lazy(() => import("./app/pages/settings/Security")) },
         { path: "data", lazy: lazy(() => import("./app/pages/settings/Data")) },
+        // Migration depuis un autre outil : texte collé, captures ou fichier RGPD ; jamais de connexion à leur service.
+        { path: "migration", lazy: lazy(() => import("./app/pages/settings/Migration")) },
         { path: "status", lazy: lazy(() => import("./app/pages/settings/Status")) },
       ] },
       { path: "*", element: <Navigate to="/app" replace /> },

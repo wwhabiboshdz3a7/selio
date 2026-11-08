@@ -1,5 +1,8 @@
 import { repos } from "@selio/db";
-import { PERIOD_PRESETS, breakdownBy, buildDashboard, buildDressing, comparablesFromSales, daysInStock, granularityFor, orderMargin, periodFromPreset, periodLabel, previousPeriod, salesKpis, salesSeries, stockKpis, toCsv, type PeriodPreset } from "@selio/domain";
+import {
+  PERIOD_PRESETS, breakdownBy, buildDashboard, buildDressing, comparablesFromSales, daysInStock, granularityFor, itemMargins, marginsByPeriod, marginTotals, orderMargin, periodFromPreset, periodLabel, previousPeriod, salesKpis, salesSeries, stockKpis, thresholdStatusForOrders, toCsv,
+  type EndToEndMargin, type MarginTotals, type MarginsByPeriod, type PeriodPreset, type ThresholdStatus,
+} from "@selio/domain";
 import { AppError, requireAction, withOrg, type OrgContext } from "../context";
 import type { AnalyticsData, AnalyticsFilters, OverviewData } from "../types-data";
 
@@ -32,6 +35,11 @@ export async function getOverview(ctx: OrgContext, rawPeriod: unknown): Promise<
     if (state.globalPaused) alerts.push({ id: "global-pause", tone: "warning", title: "Automatisations en arrêt global", description: "Aucune règle ne s'exécute tant que l'arrêt global est actif.", to: "/app/automations" });
     if (ai.status === "unavailable" || ai.status === "circuit_open") alerts.push({ id: "ai", tone: "warning", title: "Assistant IA indisponible", description: `${ai.message}. Les gabarits déterministes restent utilisables.`, to: "/app/settings/ai" });
     const org = await repos.orgs.byId(tx, ctx.orgId);
+    // Seuils de déclaration (30 ventes ou 2 000 € par an) : information factuelle, jamais un conseil fiscal.
+    if (org.settings.thresholds.enabled) {
+      const t = thresholdStatusForOrders(orders, org.settings.thresholds, now);
+      if (t.level !== "none") alerts.push({ id: "declaration-thresholds", tone: t.level === "reached" ? "warning" : "info", title: t.level === "reached" ? "Seuil de déclaration des plateformes atteint" : "Vous approchez d'un seuil de déclaration des plateformes", description: t.text, to: "/app/analytics" });
+    }
     const sales = comparablesFromSales(orders, new Map(items.map((i) => [i.id, i])));
     return {
       period, sales: salesKpis(orders, p), previousSales: salesKpis(orders, previousPeriod(p, period)), stock: stockKpis(items, now),
@@ -100,4 +108,88 @@ export function exportAnalyticsCsv(ctx: OrgContext, raw: Record<string, unknown>
 export function assertPeriod(v: unknown): PeriodPreset {
   if (!PRESETS.includes(v as PeriodPreset)) throw new AppError("validation", "Période inconnue", 400);
   return v as PeriodPreset;
+}
+
+// ---------------------------------------------------------------- marge de bout en bout et seuils (§5.14)
+
+export interface MarginItemView {
+  itemId: string;
+  title: string;
+  status: string;
+  /** Article acheté avec Selio Radar (prix d'achat reporté automatiquement). */
+  fromRadar: boolean;
+  at: string | null;
+  margin: EndToEndMargin;
+}
+
+export interface MarginRow {
+  itemId: string;
+  title: string;
+  status: "projected" | "realized";
+  /** Origine du prix d'achat : achat Radar ou saisie dans le stock. */
+  purchaseSource: "radar" | "manual";
+  at: string | null;
+  costCents: number;
+  revenueCents: number;
+  marginCents: number;
+  marginRate: number;
+  priceKnown: boolean;
+}
+
+export interface MarginData extends MarginsByPeriod {
+  /** Lignes à plat (forme de l'écran des analyses). */
+  rows: MarginRow[];
+  period: PeriodPreset;
+  periodLabel: string;
+  /** Vendus dans la période (marges réalisées) et stock actuel (marges projetées). */
+  totals: MarginsByPeriod;
+  /** Articles achetés avec Selio Radar : achat → revente. */
+  radar: MarginTotals;
+  items: MarginItemView[];
+  note: string;
+}
+
+/**
+ * Marge de bout en bout : du prix d'achat (Radar, achat assisté ou saisi) à la revente. Réalisée une fois
+ * la vente payée (prix de vente, frais et port à la charge du vendeur déduits), projetée sinon (prix affiché).
+ * Marge brute opérationnelle, pas un bénéfice net.
+ */
+export function getMargin(ctx: OrgContext, raw: Record<string, unknown> = {}): Promise<MarginData> {
+  requireAction(ctx, "analytics.read");
+  const period = preset(raw.period);
+  return withOrg(ctx, async (tx) => {
+    const now = ctx.services.now();
+    const p = periodFromPreset(period, now);
+    const items = await repos.items.all(tx);
+    const byId = new Map(items.map((i) => [i.id, i]));
+    // Mêmes règles que « CA et marge brute » (instantané de la commande) et que la marge projetée du Stock (frais attendus).
+    const org = await repos.orgs.byId(tx, ctx.orgId);
+    const entries = itemMargins(items, await repos.orders.all(tx), null, org.settings.margin);
+    const views: MarginItemView[] = entries.map((e) => {
+      const it = byId.get(e.itemId)!;
+      return { itemId: e.itemId, title: it.title, status: it.status, fromRadar: it.tags.includes("radar"), at: e.at, margin: e.margin };
+    });
+    const visible = views.filter((v) => v.margin.status === "projected" || (v.at !== null && new Date(v.at) >= p.from && new Date(v.at) < p.to));
+    const totals = marginsByPeriod(entries, p);
+    const sorted = [...visible].sort((a, b) => b.margin.marginCents - a.margin.marginCents).slice(0, 200);
+    return {
+      ...totals,
+      rows: sorted.map((v) => ({ itemId: v.itemId, title: v.title, status: v.margin.status, purchaseSource: v.fromRadar ? "radar" : "manual", at: v.at, costCents: v.margin.costCents, revenueCents: v.margin.revenueCents, marginCents: v.margin.marginCents, marginRate: v.margin.marginRate, priceKnown: v.margin.priceKnown })),
+      period, periodLabel: periodLabel(period, now),
+      totals,
+      radar: marginTotals(visible.filter((v) => v.fromRadar).map((v) => v.margin)),
+      items: sorted,
+      note: "Marge brute : prix de vente (ou prix affiché tant que l'article n'est pas vendu) moins prix d'achat, frais d'achat, frais et port à la charge du vendeur. Ni impôts ni cotisations.",
+    };
+  });
+}
+
+/** Seuils de déclaration des plateformes (30 ventes ou 2 000 € par an, paramétrables) : information, jamais un conseil fiscal. */
+export function getThresholds(ctx: OrgContext): Promise<ThresholdStatus & { enabled: boolean; approachingRate: number }> {
+  requireAction(ctx, "analytics.read");
+  return withOrg(ctx, async (tx) => {
+    const org = await repos.orgs.byId(tx, ctx.orgId);
+    const status = thresholdStatusForOrders(await repos.orders.all(tx), org.settings.thresholds, ctx.services.now());
+    return { ...status, enabled: org.settings.thresholds.enabled, approachingRate: org.settings.thresholds.approachingRate };
+  });
 }

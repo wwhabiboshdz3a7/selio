@@ -9,6 +9,8 @@ export const RULE_RUN_LOCATION: Record<RuleKind, { location: "server" | "browser
   post_sale_message: { location: "browser", explanation: "Message envoyé via l'extension après confirmation de vente." },
   relist_stale: { location: "browser", explanation: "La remise en avant se fait dans l'interface Vinted via l'extension." },
   price_drop_stale: { location: "server", explanation: "La baisse de prix dans Selio est calculée sur le serveur ; la répercussion sur Vinted exige l'extension." },
+  follow_up_24h: { location: "server", explanation: "Le brouillon de relance est préparé sur le serveur (à valider dans Messages) ; l'envoi passe par l'extension, ou par Selio Cloud en offre Agence." },
+  keyword_situation: { location: "browser", explanation: "La réponse à une situation reconnue est envoyée par l'extension ouverte sur Vinted." },
 };
 
 export type RuleGate =

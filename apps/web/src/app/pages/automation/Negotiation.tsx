@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { Plus, Trash2 } from "lucide-react";
-import type { MarginRules, NegotiationAutomation } from "@selio/contracts";
+import type { KeywordSituation, MarginRules, NegotiationAutomation } from "@selio/contracts";
 import { bandFor, bandLabels, can, droppedPrice, lotDiscountRate, lowestPrice, roundOffer, stepPrices } from "@selio/domain";
 import { Button, IconButton, PageHeader, Segmented, Toggle, buttonClass, formatCents } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../../lib/data/provider";
 import { useAppMutation } from "../../components/hooks";
+import { AdvancedNegotiation, situationProblems, wordingProblems } from "./NegotiationAdvanced";
 import { BUYER, ChatMock, HonestNote, InlineMoney, Journey, JourneyStep, NumberInput, PercentInput, PhoneCard, SAMPLE, SaveBar, Sentence, TemplateField, pct, sample, type ChatLine } from "./shared";
 
 const EXAMPLES = [800, 1500, 3000, 6000] as const;
@@ -26,10 +27,15 @@ export default function Negotiation() {
   const savedMargin = session.org.settings.margin;
   const [n, setN] = useState<NegotiationAutomation>(savedNego);
   const [margin, setMargin] = useState<MarginRules>(savedMargin);
+  const savedSituations = all.autoReply.situations;
+  const [situations, setSituations] = useState<KeywordSituation[]>(savedSituations);
   const [example, setExample] = useState<number>(1500);
   const editable = can(session.role, "org.update");
-  const dirty = JSON.stringify(n) !== JSON.stringify(savedNego) || margin.minMarginCents !== savedMargin.minMarginCents || margin.minMarginRate !== savedMargin.minMarginRate;
-  const save = useAppMutation(() => client.updateOrg({ settings: { automation: { ...all, negotiation: n }, margin } }), { invalidate: ["session", "conversation", "conversations", "items", "dressing"], success: "Négociation enregistrée" });
+  const dirty = JSON.stringify(n) !== JSON.stringify(savedNego) || JSON.stringify(situations) !== JSON.stringify(savedSituations) || margin.minMarginCents !== savedMargin.minMarginCents || margin.minMarginRate !== savedMargin.minMarginRate;
+  const problems = [...wordingProblems(n.messages), ...situationProblems(situations)];
+  const blocked = problems.length ? `À corriger avant d'enregistrer : ${problems.join(" ; ")}.` : null;
+  // Les situations vivent avec la réponse automatique (`automation.autoReply.situations`) : la section est renvoyée entière.
+  const save = useAppMutation(() => client.updateOrg({ settings: { automation: { ...all, negotiation: n, autoReply: { ...all.autoReply, situations } }, margin } }), { invalidate: ["session", "conversation", "conversations", "items", "dressing"], success: "Négociation enregistrée" });
   const set = <K extends keyof NegotiationAutomation>(k: K, v: NegotiationAutomation[K]) => setN((x) => ({ ...x, [k]: v }));
   const msg = (k: keyof NegotiationAutomation["messages"], v: string) => setN((x) => ({ ...x, messages: { ...x.messages, [k]: v } }));
 
@@ -272,7 +278,9 @@ export default function Negotiation() {
         </JourneyStep>
       </Journey>
 
-      <SaveBar dirty={dirty} editable={editable} pending={save.isPending} onSave={() => save.mutate(undefined)} onReset={() => { setN(savedNego); setMargin(savedMargin); }} savedText="Négociation enregistrée : elle s'applique à toutes les offres de vos comptes Vente." />
+      <AdvancedNegotiation n={n} set={set} msg={msg} margin={margin} situations={situations} setSituations={setSituations} editable={editable} price={price} />
+
+      <SaveBar dirty={dirty} editable={editable} pending={save.isPending} blocked={blocked} onSave={() => save.mutate(undefined)} onReset={() => { setN(savedNego); setMargin(savedMargin); setSituations(savedSituations); }} savedText="Négociation enregistrée : elle s'applique à toutes les offres de vos comptes Vente." />
       <HonestNote />
     </>
   );

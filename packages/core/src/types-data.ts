@@ -47,6 +47,13 @@ export interface ConversationDetail {
   item: InventoryItem | null;
   connection: MarketplaceConnection | null;
   lastOffer: { offerCents: number; evaluation: NegotiationResult } | null;
+  /**
+   * Offre de lot détectée dans le dernier message de l'acheteur (« les deux pour 40 € ») et décision de la
+   * politique de lot (plancher de lot, jamais sous la somme des planchers réels). Absent : pas d'offre de lot.
+   */
+  bundleOffer?: { offerCents: number; itemIds: string[]; /** Somme des coûts d'achat (prix et frais) des articles du lot. */ purchaseTotalCents: number; evaluation: NegotiationResult & { itemCount: number; listedTotalCents: number; floorSumCents: number; perItemAllocationCents: number[] } } | null;
+  /** Situation par mots-clés reconnue dans le dernier message de l'acheteur (réglage du vendeur). */
+  situation?: { id: string; name: string; matchedKeywords: string[]; escalate: boolean } | null;
 }
 export interface SuggestionResult {
   draft: Message;

@@ -31,14 +31,14 @@ export function useAutomationSection<K extends keyof AutomationSettings>(key: K)
 }
 
 /** Barre d'enregistrement : collée en bas de l'écran tant qu'il reste des modifications. */
-export function SaveBar({ dirty, editable, pending, onSave, onReset, savedText = "Réglages enregistrés : ils s'appliquent dès maintenant." }: { dirty: boolean; editable: boolean; pending: boolean; onSave: () => void; onReset: () => void; savedText?: string }) {
+export function SaveBar({ dirty, editable, pending, onSave, onReset, savedText = "Réglages enregistrés : ils s'appliquent dès maintenant.", blocked = null }: { dirty: boolean; editable: boolean; pending: boolean; onSave: () => void; onReset: () => void; savedText?: string; /** Raison qui empêche d'enregistrer (réglage invalide), affichée à la place du rappel. */ blocked?: string | null }) {
   if (!editable) return <p className="mt-6 rounded-lg border border-border bg-surface px-4 py-3 text-sm text-text-muted">Consultation : seuls le propriétaire et les administrateurs modifient ces réglages. Les exemples à droite restent utilisables.</p>;
   return (
     <div className={cn("mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-surface px-4 py-3", dirty ? "sticky bottom-4 z-10 border-accent/50 shadow-md" : "border-border")}>
-      <p className="text-sm text-text-muted">{dirty ? <><span className="font-semibold text-text">Modifications non enregistrées.</span> Les exemples les montrent déjà.</> : savedText}</p>
+      <p className="text-sm text-text-muted">{dirty ? <><span className="font-semibold text-text">Modifications non enregistrées.</span> {blocked ? <span className="text-danger">{blocked}</span> : "Les exemples les montrent déjà."}</> : savedText}</p>
       <div className="flex gap-2">
         {dirty ? <Button variant="ghost" onClick={onReset}>Annuler</Button> : null}
-        <Button onClick={onSave} loading={pending} disabled={!dirty}>Enregistrer</Button>
+        <Button onClick={onSave} loading={pending} disabled={!dirty || Boolean(blocked)}>Enregistrer</Button>
       </div>
     </div>
   );
@@ -137,10 +137,15 @@ export const TEMPLATE_VARS = [
   { key: "{article}", label: "Article" },
   { key: "{prix}", label: "Prix proposé" },
   { key: "{prix_initial}", label: "Prix affiché" },
+  { key: "{nb_articles}", label: "Nombre d'articles" },
+  { key: "{articles}", label: "Articles du lot" },
 ] as const;
 
+/** Variables des messages d'un article seul (le nombre d'articles ne sert qu'aux lots). */
+const ITEM_VARS: readonly string[] = ["{prenom}", "{article}", "{prix}", "{prix_initial}"];
+
 /** Modèle de message : zone de texte, variables à insérer d'un clic. */
-export function TemplateField({ label, hint, value, onChange, disabled, vars = TEMPLATE_VARS.map((v) => v.key) }: { label: string; hint?: string; value: string; onChange: (v: string) => void; disabled?: boolean; vars?: readonly string[] }) {
+export function TemplateField({ label, hint, value, onChange, disabled, vars = ITEM_VARS }: { label: string; hint?: string; value: string; onChange: (v: string) => void; disabled?: boolean; vars?: readonly string[] }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const insert = (token: string) => {
     const el = ref.current;

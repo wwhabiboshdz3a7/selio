@@ -10,6 +10,7 @@ import { dateInputToIso } from "../../lib/dates";
 import { MoneyInput, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
 import { PriceSuggestion } from "../components/pricing";
+import { ListingChecks, useBlurScores } from "../components/selling";
 
 const MAX_PHOTO_BYTES = 1_500_000;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -41,6 +42,8 @@ export default function ItemForm() {
   const pricing = { purchasePriceCents: form.purchasePriceCents ?? 0, purchaseFeesCents: form.purchaseFeesCents ?? 0, listedPriceCents: form.listedPriceCents ?? null, floorPriceCents: form.floorPriceCents ?? null };
   const margin = projectedMargin(pricing, rules);
   const check = form.listedPriceCents != null ? checkPrice(pricing, form.listedPriceCents, rules) : null;
+  // Contrôle des photos (flou calculé sur canvas, dans le navigateur) et des mesures attendues pour la catégorie.
+  const blurScores = useBlurScores(form.photos.map((p) => p.url));
 
   const save = useAppMutation(
     async (payload: InventoryItemCreate) => (editing ? client.updateItem(id!, payload) : client.createItem(payload)),
@@ -117,6 +120,9 @@ export default function ItemForm() {
             ) : null}
           </div>
           {photoError ? <p role="alert" className="mt-2 text-xs text-danger">{photoError}</p> : null}
+        </Card>
+        <Card>
+          <ListingChecks item={{ title: form.title, category: form.category ?? "other", description: form.description ?? "", photos: form.photos }} scores={blurScores} />
         </Card>
       </div>
       <div className="flex flex-col gap-4">

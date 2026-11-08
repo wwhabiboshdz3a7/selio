@@ -1,5 +1,5 @@
-import { LABEL_FIELDS, MEASUREMENT_NAMES, PHOTO_ROLES, type PhotoRole } from "@selio/contracts";
-import { hashString, seededRandom } from "@selio/domain";
+import { LABEL_FIELDS, MEASUREMENT_NAMES, MIGRATION_SOURCES, PHOTO_ROLES, type MigrationSource, type PhotoRole } from "@selio/contracts";
+import { hashString, parseSettingsText, seededRandom, suggestMappingFromCandidates, type MigrationCandidate } from "@selio/domain";
 import { AIError, extractJson, type AIProvider, type EmbedResult, type GenerateOptions, type GenerateRequest, type GenerateResult, type HealthResult, type OcrRequest, type OcrResult, type StructuredRequest, type StructuredResult } from "../types";
 
 export interface MockOptions {
@@ -145,6 +145,7 @@ export class MockAIProvider implements AIProvider {
     if (req.schemaName === "photo_sort") return mockPhotoSort(req.prompt);
     if (req.schemaName === "label_read") return mockLabelRead(req.prompt);
     if (req.schemaName === "measurements_read") return mockMeasurements(req.prompt);
+    if (req.schemaName === "settings_migration") return mockSettingsMigration(req.prompt);
     if (req.schemaName === "listing_description") {
       return {
         title: `${hints.brand ? hints.brand + " " : ""}${hints.title ?? "Article"}`.slice(0, 120),
@@ -156,6 +157,22 @@ export class MockAIProvider implements AIProvider {
     const name = hints.buyerName ? ` ${hints.buyerName}` : "";
     const price = hints.priceCents != null ? (hints.priceCents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" }) : null;
     const sig = hints.signature ? `\n${hints.signature}` : "";
+    // Relance après 24 h (indice [[followUp]] de buildFollowUpRequest) : aucun prix, aucun chiffre, aucune pression.
+    if (hints.followUp) {
+      return { reply: `Bonjour${name}, je me permets un petit message : l'article est toujours disponible. Si vous avez une question, je suis là.${sig}`, intent: "answer", proposedPriceCents: null, confidence: 0.9, notes: "Sortie simulée (MockAIProvider)" };
+    }
+    // Lot (indice [[bundle: N]]) : le prix cité est celui du lot entier ; « dernier prix » seulement au plancher du lot.
+    if (hints.bundle && hints.bundle >= 2 && (decision === "counter" || decision === "accept")) {
+      const lot = `le lot de ${hints.bundle} articles`;
+      const reply = decision === "accept"
+        ? `Bonjour${name}, c'est d'accord pour ${lot} à ${price ?? "ce prix"}. Je vous laisse faire l'offre sur l'annonce et j'accepte dès réception.${sig}`
+        : `Bonjour${name}, merci pour votre proposition. ${hints.priceCents != null && (hints.atFloor || hints.priceCents === hints.floorCents) ? `Pour ${lot}, je peux aller jusqu'à ${price}, c'est mon dernier prix pour ce lot.` : `Pour ${lot}, je peux vous le faire à ${price ?? "un prix intermédiaire"}.`} Si cela vous convient, faites l'offre à ce montant.${sig}`;
+      return { reply, intent: decision === "accept" ? "accept_offer" : "counter_offer", proposedPriceCents: hints.priceCents ?? null, confidence: 0.9, notes: "Sortie simulée (MockAIProvider)" };
+    }
+    // Situation par mots-clés transmise au vendeur (indice [[situation]]) : accusé de réception sans engagement.
+    if (hints.situation && (decision === "escalate" || decision === "hold")) {
+      return { reply: `Bonjour${name}, merci de me l'avoir signalé. Je regarde cela de près et je reviens vers vous rapidement.${sig}`, intent: "escalate", proposedPriceCents: null, confidence: 0.9, notes: "Sortie simulée (MockAIProvider)" };
+    }
     const map: Record<string, { reply: string; intent: string }> = {
       accept: { reply: `Bonjour${name}, c'est d'accord pour ${price ?? "ce prix"}. Je vous laisse faire l'offre sur l'annonce et j'accepte dès réception.${sig}`, intent: "accept_offer" },
       // « Dernier prix » seulement si la contre-offre est au plancher (indice [[atFloor]] émis par buildReplyRequest,
@@ -193,6 +210,12 @@ interface Hints {
   floorCents?: number;
   /** Contre-offre au plancher (indice émis par `buildReplyRequest`, sans révéler le plancher). */
   atFloor?: boolean;
+  /** Offre sur un lot de N articles (indice `[[bundle: N]]`). */
+  bundle?: number;
+  /** Situation par mots-clés reconnue (nom réglé par le vendeur). */
+  situation?: string;
+  /** Relance après 24 h (indice `[[followUp: 1]]`). */
+  followUp?: boolean;
   buyerName?: string;
   title?: string;
   brand?: string;
@@ -211,6 +234,8 @@ function readHints(prompt: string): Hints {
     if (key === "priceCents") out.priceCents = Number.parseInt(val, 10);
     else if (key === "floorCents") out.floorCents = Number.parseInt(val, 10);
     else if (key === "atFloor") out.atFloor = val === "1" || val === "true";
+    else if (key === "bundle") out.bundle = Number.parseInt(val, 10);
+    else if (key === "followUp") out.followUp = val === "1" || val === "true";
     else (out as Record<string, string>)[key] = val;
   }
   return out;
@@ -485,4 +510,33 @@ function mockMeasurements(prompt: string): Record<string, unknown> {
   });
   // [[tapeVisible: 0]] simule un modèle qui « mesure » sans ruban : la validation doit tout écarter.
   return { tapeVisible: h.tapeVisible !== "0", measurements };
+}
+
+// ---------------------------------------------------------------------------
+// Migration des réglages simulée (§5.13) : le simulateur applique le catalogue
+// déterministe des équivalences aux lignes « libellé : valeur » du texte collé
+// (bloc de données non fiables) et aux indices [[migration: label=value | …]]
+// (captures simulées). Sans texte ni indice : aucun champ, jamais une valeur
+// inventée ; les captures ne sont pas réellement lues par le simulateur.
+// ---------------------------------------------------------------------------
+
+function mockSettingsMigration(prompt: string): Record<string, unknown> {
+  const h = readRawHints(prompt);
+  const block = prompt.match(/<<<DONNÉES_NON_FIABLES:reglages_colles>>>\n([\s\S]*?)\n<<<FIN_DONNÉES_NON_FIABLES>>>/);
+  const candidates: MigrationCandidate[] = block ? parseSettingsText(block[1]!) : [];
+  for (const part of (h.migration ?? "").split("|")) {
+    const eq = part.indexOf("=");
+    if (eq <= 0) continue;
+    const sourceLabel = part.slice(0, eq).trim();
+    const sourceValue = part.slice(eq + 1).trim();
+    if (sourceLabel && sourceValue) candidates.push({ sourceLabel, sourceValue });
+  }
+  const text = simplify(block?.[1] ?? "");
+  const written = (["bleam", "clemz", "vtools"] as const).find((name) => new RegExp(`\\b${name === "vtools" ? "v ?tools" : name}\\b`).test(text));
+  const source: MigrationSource = (MIGRATION_SOURCES as readonly string[]).includes(h.migrationSource ?? "") ? (h.migrationSource as MigrationSource) : written ?? "unknown";
+  const mapping = suggestMappingFromCandidates(candidates, source);
+  const screenshots = Number.parseInt(h.screenshots ?? "0", 10) || 0;
+  const warnings = [...mapping.warnings];
+  if (screenshots > 0 && !h.migration) warnings.push("Simulateur : les captures d'écran ne sont pas lues (aucun modèle de vision réel) ; collez vos réglages en texte.");
+  return { source: mapping.source, fields: mapping.fields, unknownFields: mapping.unknownFields, warnings };
 }

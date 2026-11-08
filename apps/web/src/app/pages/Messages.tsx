@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Archive, Bot, Check, ChevronLeft, MessagesSquare, Package, Search, Send, ShieldCheck, Sparkles, Trash2, X, Zap } from "lucide-react";
+import { Archive, BellRing, Bot, Check, ChevronLeft, MessagesSquare, Package, Search, Send, ShieldCheck, Sparkles, Trash2, X, Zap } from "lucide-react";
 import type { Message } from "@selio/contracts";
 import type { NegotiationResult } from "@selio/domain";
 import { counterOfferWording } from "@selio/ai";
@@ -9,6 +9,7 @@ import { Alert, Avatar, Button, Dialog, IconButton, Input, Money, PageHeader, Se
 import { useClient, useData, useRequiredSession } from "../../lib/data/provider";
 import { ConnectorStatusBadge, ItemThumb, MessageStatusBadge, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { followUpRuleIds, isFollowUpMessage, mentionsBundle } from "../../lib/selling/negotiation";
 
 export default function Messages() {
   const { id } = useParams();
@@ -44,7 +45,7 @@ export default function Messages() {
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="flex items-baseline justify-between gap-2">
-                            <span className={cn("truncate text-sm", c.unreadCount > 0 ? "font-semibold text-text" : "font-medium text-text")}>{c.customer.displayName}</span>
+                            <span className={cn("flex min-w-0 items-center gap-1.5 truncate text-sm", c.unreadCount > 0 ? "font-semibold text-text" : "font-medium text-text")}><span className="truncate">{c.customer.displayName}</span>{mentionsBundle(c.lastMessagePreview) ? <BundleTag /> : null}</span>
                             <span className={cn("shrink-0 text-xs", c.unreadCount > 0 ? "font-medium text-accent" : "text-text-muted")}>{c.lastMessageAt ? formatRelative(c.lastMessageAt) : ""}</span>
                           </span>
                           <span className="block truncate text-xs text-text-muted">{c.item?.title ?? "Sans article"}{c.item?.listedPriceCents ? ` · ${(c.item.listedPriceCents / 100).toFixed(2).replace(".", ",")} €` : ""}</span>
@@ -72,6 +73,7 @@ function ConversationView({ id }: { id: string }) {
   const { mode } = useData();
   const navigate = useNavigate();
   const q = useQuery({ queryKey: ["conversation", id], queryFn: () => client.getConversation(id) });
+  const ruleList = useQuery({ queryKey: ["rules"], queryFn: () => client.listRules(), staleTime: 60_000 });
   const [draftText, setDraftText] = useState("");
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<{ source: string; model: string; validated: boolean; rejectionReason: string | null; evaluation: NegotiationResult | null } | null>(null);
@@ -112,6 +114,12 @@ function ConversationView({ id }: { id: string }) {
         const rules = session.org.settings.margin;
         const visible = messages.filter((m) => m.status !== "draft" && !(m.status === "failed" && m.id === activeDraftId));
         const firstName = customer.displayName.split(" ")[0] ?? "";
+        // Relance après 24 h : brouillon proposé par Selio (offre Pro), à relire et valider ici ; jamais deux par conversation.
+        const followIds = followUpRuleIds(ruleList.data ?? []);
+        const activeDraft = messages.find((m) => m.id === activeDraftId) ?? null;
+        const followUpDraft = activeDraft && activeDraft.status === "draft" && isFollowUpMessage(activeDraft, followIds) ? activeDraft : null;
+        const followUpSent = messages.some((m) => m.status === "sent" && isFollowUpMessage(m, followIds));
+        const isBundle = messages.some((m) => m.direction === "inbound" && mentionsBundle(m.body)) || mentionsBundle(conversation.lastMessagePreview);
         const insert = (text: string) => setDraftText((t) => (t.trim() ? `${t.trim()}\n${text}` : text));
         const fmt = (c: number) => (c / 100).toFixed(2).replace(".", ",") + " €";
         const quick = [
@@ -128,7 +136,7 @@ function ConversationView({ id }: { id: string }) {
                 <IconButton label="Retour à la liste" className="md:hidden" onClick={() => navigate("/app/messages")}><ChevronLeft /></IconButton>
                 <Avatar name={customer.displayName} size={36} />
                 <div className="min-w-0 flex-1">
-                  <Link to={`/app/customers/${customer.id}`} className="block truncate text-sm font-semibold hover:text-accent">{customer.displayName}{customer.handle ? <span className="font-normal text-text-muted"> · @{customer.handle}</span> : null}</Link>
+                  <span className="flex min-w-0 items-center gap-1.5"><Link to={`/app/customers/${customer.id}`} className="block truncate text-sm font-semibold hover:text-accent">{customer.displayName}{customer.handle ? <span className="font-normal text-text-muted"> · @{customer.handle}</span> : null}</Link>{isBundle ? <BundleTag /> : null}</span>
                   <span className="block truncate text-xs text-text-muted">{customer.city ? `${customer.city} · ` : ""}{connection ? connection.label : "Sans connexion"}</span>
                 </div>
                 {connection ? <span className="hidden sm:inline-flex"><ConnectorStatusBadge status={connection.status} /></span> : null}
@@ -164,6 +172,12 @@ function ConversationView({ id }: { id: string }) {
                       {suggestion.rejectionReason ? <p className="mt-1 text-text-muted">{suggestion.rejectionReason}</p> : <p className="mt-1 text-text-muted">Validée par le schéma et par vos règles de marge. Relisez avant d'envoyer.</p>}
                     </div>
                   ) : null}
+                  {followUpDraft ? (
+                    <div className="ai-suggestion mb-2 p-3 text-xs" role="status" aria-label="Brouillon de relance à valider">
+                      <p className="flex flex-wrap items-center gap-2 font-medium text-accent"><BellRing className="size-3.5" aria-hidden />Relance après 24 h : brouillon à valider</p>
+                      <p className="mt-1 text-text-muted">{firstName || "L'acheteur"} n'a pas répondu depuis plus de 24 h. Relisez, puis envoyez ; supprimez le brouillon pour ne pas relancer. Une seule relance par conversation, sans prix ni nouvelle offre.</p>
+                    </div>
+                  ) : followUpSent ? <p className="mb-2 text-xs text-text-muted">Relance déjà envoyée dans cette conversation : aucune autre ne partira.</p> : null}
                   {failed ? <Alert tone="danger" title="Échec de l'envoi" className="mb-2">{failed.error}</Alert> : null}
                   {sendBlocked ? <Alert tone="warning" className="mb-2" title="Envoi impossible depuis Selio">{!connection ? "Aucune connexion associée à cette conversation." : sendCap?.state === "unavailable" ? `Le connecteur « ${connection.label} » ne permet pas l'envoi automatique : préparez le brouillon ici, puis validez-le dans Vinted via l'extension.` : `La connexion « ${connection.label} » est ${connection.status === "expired" ? "expirée" : "déconnectée"}.`}</Alert> : null}
                   <div className="mb-2 flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-thin" aria-label="Réponses rapides">
@@ -232,6 +246,11 @@ function ConversationView({ id }: { id: string }) {
       }}
     </QueryBoundary>
   );
+}
+
+/** Badge « Lot » : l'acheteur parle de plusieurs articles (repère d'affichage ; la politique de lot décide du prix). */
+function BundleTag() {
+  return <span className="inline-flex h-5 shrink-0 items-center rounded-sm bg-surface-muted px-1.5 text-[11px] font-medium text-text-muted" title="L'acheteur parle d'un lot">Lot</span>;
 }
 
 function Bubble({ m, name }: { m: Message; name: string }) {

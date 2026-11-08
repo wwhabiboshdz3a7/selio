@@ -8,6 +8,7 @@ _Version du 7 novembre 2026_
 - **Mode connecté** (vrais comptes, base de données) : un serveur Linux (API + worker), PostgreSQL 16 et Redis, avec les clés des sections 2 et 3.
 - **Votre IA** : la machine avec Ollama et ses trois modèles — « mon IA perso » (texte), le modèle des photos et le modèle des prix (section 4).
 - **Selio Studio** : aucune clé ; l'OCR d'essai des étiquettes est facultatif (section 4) et les photos portées restent sans fournisseur tant qu'Ibrahim n'a pas choisi (section 13).
+- **Négociation avancée et migration** : aucune clé (section 14) ; les limites de Vinted restent « à mesurer » tant que la mesure sur un compte de l'équipe n'a pas été faite.
 - Ce dont vous n'avez **pas** besoin : voir la section « Inutile ».
 
 ## 1. Site web sur Netlify (vitrine + application)
@@ -244,6 +245,12 @@ Fonctionnement et règles : [docs/STUDIO.md](STUDIO.md). **Jamais de mesure inve
 
 Protocole de validation (`pnpm studio:eval`, à la main, sur la machine) : en mode direct, les variables de la section 4 (`AI_PROVIDER=ollama`, `OLLAMA_BASE_URL`, `OLLAMA_VISION_MODEL`, `OLLAMA_OCR_MODEL`) ; en mode `--mode api`, `STUDIO_EVAL_API_URL` (défaut `http://127.0.0.1:8787`), `STUDIO_EVAL_EMAIL` et `STUDIO_EVAL_PASSWORD` (compte de l'équipe sur une organisation de test ; variables d'environnement, jamais en argument). Les rapports vont dans `scripts/studio-eval/rapports/` (ignoré par Git) ; aucune photo n'entre dans le dépôt.
 
+## 14. Négociation avancée, migration depuis un autre outil, fonctions de vente
+
+Fonctionnement et règles : [docs/NEGOCIATION.md](NEGOCIATION.md), [docs/MESURES-VINTED.md](MESURES-VINTED.md) et [docs/MIGRATION.md](MIGRATION.md). **Aucune variable d'environnement, aucune clé, aucun service extérieur** : lots, relance après 24 h, situations par mots-clés, limites de Vinted, migration, marge de bout en bout, contrôle des photos, lots intelligents et seuils de déclaration se règlent **dans l'application** (section suivante) et tournent sur l'API, le worker et mon IA perso déjà configurés (section 4 ; les captures d'une migration exigent le modèle 1, `OLLAMA_VISION_MODEL`). La relance automatique de l'offre Agence passe par Selio Cloud (section 9) : sans Cloud actif, elle reste un brouillon à valider. La purge du texte collé et des fichiers de migration (7 jours) suit `CRON_RETENTION` (section 6). Seuls les tests utilisent des variables propres (`TEST_CORE_NEGOTIATION_DATABASE_URL[_APP]`, `TEST_WORKER_NEGOTIATION_DATABASE_URL[_APP]`, bases dédiées par défaut) ; rien à renseigner en production.
+
+**Limites de Vinted : rien à régler, tout à mesurer.** Les valeurs par défaut (3 contre-offres par conversation, offre de 48 h, 60 s entre deux messages) sont **prudentes et non vérifiées**. Les remplacer seulement par une mesure faite selon MESURES-VINTED.md, enregistrée dans l'application (jamais en variable, jamais en dur).
+
 ## Réglages faits dans l'application (pas des clés)
 
 - **Extension navigateur** : Pas de variable : dans Selio › Comptes Vinted › « Avancé — relier l'extension Selio », créez un jeton d'extension, puis collez l'adresse de l'API et le jeton dans les options de l'extension.
@@ -254,6 +261,9 @@ Protocole de validation (`pnpm studio:eval`, à la main, sur la machine) : en mo
 - **Coût réel d'achat** : Page « Achat auto » : protection acheteurs = part fixe + pourcentage (par défaut 0,70 € + 5 %, modifiable).
 - **Dressing intelligent** : Republication conseillée après 7 jours (réglable : 5 à 30 jours).
 - **Assistant IA** : Paramètres › Assistant IA : ton, signature, validation avant envoi, quota mensuel.
+- **Négociation avancée** : Automatisation › Négociation automatique : offres sur un lot (remise maximale de lot, 25 % par défaut, jamais sous la somme des planchers), relance après 24 h (proposée en Pro, automatique en Agence, rien en Starter), situations par mots-clés (exemples proposés, désactivés tant que vous ne les choisissez pas), étape « Limites de Vinted » (statut « À mesurer » et formulaire de mesure pour les administrateurs).
+- **Migration depuis un autre outil** : Paramètres › Migration : texte collé, captures ou fichier de portabilité RGPD, écran « ancien → nouveau », champs appliqués un par un. Aucun identifiant de l'autre outil n'est demandé.
+- **Fonctions de vente** : seuils de déclaration affichés dans Analyses (`settings.thresholds` : 30 ventes, 2 000 €, alerte à 80 % ; modifiables par `PATCH /api/org` si les seuils légaux changent, pas encore d'écran) ; lots intelligents (`settings.bundles`, Stock › Lots) ; marge de bout en bout dans Analyses ; contrôle des photos et des mesures sur la fiche d'un article.
 - **Selio Studio** : dans Studio, « Préparer » (tri des photos, étiquette, mesures) puis « Générer » ; les photos sont réduites dans le navigateur (1 024 px, JPEG 80) ; « partager anonymement la mesure » à la validation ; page « Photos portées » (file de nuit, quota, accord explicite pour un dépassement si le serveur l'ouvre). Base des références de tailles : import par l'opérateur (`POST /api/admin/size-references`, CSV ou JSON sans aucune colonne personnelle, STUDIO.md §5).
 
 ## Inutile
@@ -282,8 +292,8 @@ Protocole de validation (`pnpm studio:eval`, à la main, sur la machine) : en mo
 ### Mode connecté (vrais comptes, base de données)
 
 1. Louer un serveur Linux (VPS) et y installer Docker.
-2. Cloner le dépôt, copier apps/api/.env.example vers deploy/.env et remplir les sections 2, 3 et 4 (puis 5 pour le paiement Revolut, 7 et 8 quand le service d'email et MinIO sont choisis, 11 pour les clés des notifications ; section 12 : rien à changer, Track reste sur le simulateur ; section 13 : rien à changer non plus, les photos portées restent sur « noop »).
-3. docker compose -f deploy/docker-compose.prod.yml up -d --build (migrations comprises, jusqu'à la 0014 : paiement et factures, Selio Cloud, Selio Radar, Selio Track et estimation des prix, Studio façon Kavis : références de tailles, préparations, photos portées).
+2. Cloner le dépôt, copier apps/api/.env.example vers deploy/.env et remplir les sections 2, 3 et 4 (puis 5 pour le paiement Revolut, 7 et 8 quand le service d'email et MinIO sont choisis, 11 pour les clés des notifications ; section 12 : rien à changer, Track reste sur le simulateur ; section 13 : rien à changer non plus, les photos portées restent sur « noop » ; section 14 : aucune variable).
+3. docker compose -f deploy/docker-compose.prod.yml up -d --build (migrations comprises, jusqu'à la 0015 : paiement et factures, Selio Cloud, Selio Radar, Selio Track et estimation des prix, Studio façon Kavis : références de tailles, préparations, photos portées ; négociation avancée et migration : mesures des limites de Vinted, correspondances de migration).
 4. Mettre Caddy devant l'API (deploy/Caddyfile) pour le HTTPS, puis renseigner VITE_API_BASE_URL dans Netlify.
 5. Mettre en place la sauvegarde chiffrée de la nuit et le test de restauration mensuel (section 10, docs/SAUVEGARDE.md) avant d'accueillir de vrais clients.
 

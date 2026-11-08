@@ -151,6 +151,8 @@ export const CLOUD_ACTION_KIND_LABELS: Record<CloudActionKind, string> = {
 export const CLOUD_RULE_ACTIONS: Partial<Record<RuleKind, CloudActionKind>> = {
   reply_on_new_message: "reply",
   follow_up_no_reply: "follow_up",
+  /** Relance après 24 h en mode « auto » (offre Agence) : exécutée par le Cloud, action légère. */
+  follow_up_24h: "follow_up",
 };
 
 export const CLOUD_ACTION_STATUSES = ["queued", "running", "done", "failed", "skipped", "paused"] as const;
@@ -387,6 +389,13 @@ export const CLOUD_SKIP_REASONS = [
   "empty_message",
   "over_account_limit",
   "machine_paused",
+  // Revérifications au moment d'agir (relance, réponse) :
+  "buyer_replied",
+  "item_unavailable",
+  "conversation_archived",
+  "follow_up_obsolete",
+  "plan_changed",
+  "nothing_to_send",
 ] as const;
 export type CloudSkipReason = (typeof CLOUD_SKIP_REASONS)[number];
 
@@ -410,6 +419,12 @@ export const CLOUD_SKIP_REASON_LABELS: Record<CloudSkipReason, string> = {
   empty_message: "Message vide : rien à envoyer",
   over_account_limit: "Compte au-delà du nombre de comptes Cloud de l'offre",
   machine_paused: "Cloud suspendu sur la machine après un signal de Vinted (adresse partagée)",
+  buyer_replied: "L'acheteur a répondu depuis la planification : relance abandonnée",
+  item_unavailable: "Article vendu, réservé ou retiré : relance abandonnée",
+  conversation_archived: "Conversation archivée : rien envoyé",
+  follow_up_obsolete: "Brouillon de relance supprimé ou déjà envoyé : rien envoyé",
+  plan_changed: "L'offre a changé : relance remise en brouillon à valider dans Messages",
+  nothing_to_send: "Aucun texte préparé : situation transmise au vendeur, rien envoyé",
 };
 
 // ---------------------------------------------------------------- entrées

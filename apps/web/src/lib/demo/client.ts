@@ -53,6 +53,10 @@ import { NO_WORN_PROVIDER, isFromPrepInput, adjustToPrep, checkPrepareInput, dem
 import { STUDIO_MODEL_MAX_PHOTOS, WORN_OVERAGE_UNIT_CENTS, generatorPhoto as generatorPhotoSchema, type GeneratorPhoto } from "@selio/contracts";
 import type { StoredStudioPhoto, StudioGenerateFromPrepInput, StudioPrepAnswersInput, StudioPrepareOptions, StudioPrepareRequest, StudioPrepResultView, StudioPrepView, ValidatePrepResultView, WornPhotoRequestInput, WornPhotosView, WornPhotoView, WornPose } from "../data/types";
 import { WORN_NIGHT_DEFAULT, inNightWindow, nextNightWindow } from "../studio/prep";
+import { demoApplyMigration, demoBundles, demoConvertMigration, demoEndToEndMargins, demoImportMigrationFile, demoThresholds, planFollowUps } from "./selling";
+import { recordMeasuredLimits, vintedLimitsStatus } from "@selio/domain";
+import { vintedLimitsMeasurementInput, type MigrationApplyInput, type MigrationConvertInput, type MigrationFileInput, type VintedLimits, type VintedLimitsMeasurementInput } from "@selio/contracts";
+import type { BundleSuggestionView, DeclarationThresholdsView, EndToEndMarginsView, MigrationApplyView, MigrationConversion, VintedLimitsRecordView, VintedLimitsView } from "../data/types";
 import { completeCriteria, demoFingerprint, demoNicheScan, demoSalesFeed, demoTrends, seedDemoTrack, withReadTimes, type DemoTrackState } from "./track";
 
 function paginate<T>(items: T[], page = 1, pageSize = 25): Page<T> {
@@ -76,6 +80,10 @@ type Subsidiaries = Pick<UsageSummary, "studio" | "track" | "cloud">;
 type DemoBillingState = DemoState & { invoices?: Invoice[] };
 /** Selio Cloud de la démonstration : même principe, créé au premier accès (voir ./cloud.ts). */
 type DemoCloudHolder = DemoState & { cloud?: DemoCloudState };
+/** Mesures des limites de Vinted enregistrées dans la démonstration (comme la table negotiation_limits). */
+type DemoLimitsHolder = DemoState & { vintedLimitsHistory?: VintedLimitsRecordView[] };
+/** Correspondances de migration enregistrées par la conversion (comme migration_mappings) : une seule application chacune. */
+type DemoMigrationHolder = DemoState & { migrationDrafts?: { id: string; mapping: MigrationConversion["mapping"]; status: "draft" | "applied" }[] };
 /** Selio Radar de la démonstration (recherche « en direct » simulée, mesures fictives, abonnements) : voir ./radar.ts. */
 type DemoRadarHolder = DemoState & { radar?: DemoRadarState };
 /** Selio Track de la démonstration (filtres, scans, recherches par photo ; simulateur) : voir ./track.ts. */
@@ -132,6 +140,8 @@ export class DemoClient implements DataClient {
 
   constructor(private readonly storage: DemoStorage = new LocalDemoStorage(), private readonly clock: () => Date = () => new Date(), private readonly options: DemoClientOptions = {}) {
     this.state = storage.load();
+    // Une démo enregistrée avant l'arrivée d'un réglage (lots, situations, limites Vinted, seuils…) reçoit ses valeurs par défaut.
+    if (this.state) this.state.org = { ...this.state.org, settings: orgSettingsSchema.parse(this.state.org.settings) };
     this.ai = new AIService({ provider: new MockAIProvider({ latencyMs: 250 }), concurrency: 2, maxPending: 20, circuitFailures: 3, circuitCooldownMs: 30_000, timeoutMs: 5000, allowFallback: true });
     // Toute valeur renvoyée est un instantané : l'état interne est muté en place, le cache de
     // requêtes ne doit jamais en partager les références (sinon les changements sont invisibles).
@@ -302,7 +312,8 @@ export class DemoClient implements DataClient {
       buyerFees: { ...st.org.settings.buyerFees, ...(input.settings?.buyerFees ?? {}) },
       autoBuy: { ...st.org.settings.autoBuy, ...(input.settings?.autoBuy ?? {}) },
       dressing: { ...st.org.settings.dressing, ...(input.settings?.dressing ?? {}) },
-      automation: { ...st.org.settings.automation, ...(input.settings?.automation ?? {}) },
+      // Limites de Vinted : jamais par les réglages, seulement par une mesure enregistrée (comme le serveur).
+      automation: { ...st.org.settings.automation, ...(input.settings?.automation ?? {}), vintedLimits: st.org.settings.automation.vintedLimits },
       retentionDays: { ...st.org.settings.retentionDays, ...(input.settings?.retentionDays ?? {}) },
       onboarding: { ...st.org.settings.onboarding, ...(input.settings?.onboarding ?? {}) },
       // Anciennes démos enregistrées sans réglage « pricing » : valeur par défaut (partage désactivé).
@@ -594,6 +605,10 @@ export class DemoClient implements DataClient {
     const m = this.s.messages.find((x) => x.id === messageId);
     if (!m) return;
     if (m.status !== "draft" && m.status !== "failed") throw new DataError("conflict", "Seul un brouillon peut être supprimé.", 409);
+    // Comme le serveur : brouillon de relance supprimé → sa tâche est annulée (et compte comme relance faite).
+    for (const j of this.s.jobs) {
+      if ((j.status === "awaiting_approval" || j.status === "queued") && j.payload.draftMessageId === messageId) { j.status = "cancelled"; j.finishedAt = this.now(); j.updatedAt = j.finishedAt; }
+    }
     this.s.messages = this.s.messages.filter((x) => x.id !== messageId);
     this.persist();
   }
@@ -627,6 +642,10 @@ export class DemoClient implements DataClient {
       if (m.offerCents !== null && m.source !== "buyer") conv.negotiationRounds += 1;
       const customer = this.customerById(conv.customerId);
       customer.lastContactAt = m.sentAt;
+      // Brouillon de relance envoyé depuis la messagerie : la tâche qui l'attendait est close.
+      for (const j of this.s.jobs) {
+        if ((j.status === "awaiting_approval" || j.status === "queued") && j.payload.draftMessageId === m.id) { j.status = "succeeded"; j.result = { messageId: m.id, sentFromMessages: true }; j.finishedAt = this.now(); j.updatedAt = j.finishedAt; }
+      }
     } else {
       m.status = "failed";
       m.error = result.message;
@@ -938,6 +957,13 @@ export class DemoClient implements DataClient {
       job.updatedAt = job.finishedAt;
       return;
     }
+    if (job.runsIn === "cloud") {
+      // Exécutée par Selio Cloud (simulé dans la démonstration : rien ne touche Vinted), jamais ici.
+      job.status = "queued";
+      job.result = { ...(job.result ?? {}), awaitingCloud: true, note: "À exécuter par Selio Cloud." };
+      job.updatedAt = this.now();
+      return;
+    }
     job.status = "running";
     job.startedAt = this.now();
     job.attempts += 1;
@@ -949,8 +975,10 @@ export class DemoClient implements DataClient {
         const customer = this.customerById(conv.customerId);
         const item = conv.itemId ? this.s.items.find((i) => i.id === conv.itemId) : null;
         const body = typeof job.payload.body === "string" ? job.payload.body : renderTemplate(rule.config.template ?? "Bonjour {{prenom}}, merci pour votre message.", { prenom: customer.displayName.split(" ")[0], article: item?.title ?? "l'article" });
-        const draft: Message = { id: newId(), orgId: this.s.org.id, conversationId, direction: "outbound", source: "automation", status: "draft", body, offerCents: typeof job.payload.offerCents === "number" ? job.payload.offerCents : null, aiRequestId: null, ruleId: rule.id, externalRef: null, error: null, simulated: false, createdAt: this.now(), sentAt: null, readAt: null };
-        this.s.messages.push(draft);
+        // Brouillon déjà préparé (relance) : on envoie le texte tel que le vendeur l'a validé ou corrigé.
+        const prepared = typeof job.payload.draftMessageId === "string" ? this.s.messages.find((x) => x.id === job.payload.draftMessageId && x.conversationId === conversationId && (x.status === "draft" || x.status === "failed")) : undefined;
+        const draft: Message = prepared ?? { id: newId(), orgId: this.s.org.id, conversationId, direction: "outbound", source: "automation", status: "draft", body, offerCents: typeof job.payload.offerCents === "number" ? job.payload.offerCents : null, aiRequestId: null, ruleId: rule.id, externalRef: null, error: null, simulated: false, createdAt: this.now(), sentAt: null, readAt: null };
+        if (!prepared) this.s.messages.push(draft);
         const sent = await this.sendMessage(draft.id);
         if (sent.status !== "sent") throw new Error(sent.error ?? "Envoi refusé");
         job.result = { messageId: sent.id, simulated: sent.simulated };
@@ -986,6 +1014,7 @@ export class DemoClient implements DataClient {
     let evaluated = 0, created = 0;
     const targets: { targetId: string; payload: Record<string, unknown>; kind: Job["kind"] }[] = [];
     const personal = this.personalAccountIds();
+    if (rule.kind === "follow_up_24h") return this.runFollowUp24h(rule, now);
     if (rule.kind === "reply_on_new_message" || rule.kind === "follow_up_no_reply" || rule.kind === "auto_negotiate" || rule.kind === "post_sale_message") {
       for (const conv of st.conversations.filter((c) => c.status === "open")) {
         evaluated++;
@@ -1040,6 +1069,41 @@ export class DemoClient implements DataClient {
       actions++;
       lastActionAt = now;
       if (job.status === "queued") await this.executeJob(job);
+    }
+    rule.lastRunAt = this.now();
+    this.audit("rule.run", "automation_rule", rule.id, { evaluated, created });
+    this.persist();
+    return { evaluated, created, skipped: [...skipped.entries()].map(([reason, count]) => ({ reason, count })) };
+  }
+  /**
+   * Relance après 24 h (§5.12), comme le serveur : une seule par conversation sans réponse (toutes règles de
+   * relance, tâches de tout statut), aux heures actives de la règle, jamais sur un article vendu ; offre Pro,
+   * Agence sans Cloud actif, ou « validation avant envoi » → brouillon à valider (tâche « awaiting_approval »,
+   * `payload.draftMessageId`) ; Agence avec Cloud actif et sans validation → tâche confiée à Selio Cloud.
+   */
+  private runFollowUp24h(rule: AutomationRule, now: Date): { evaluated: number; created: number; skipped: { reason: string; count: number }[] } {
+    const st = this.s;
+    this.settleSubscription();
+    const gate = gateRule({ rule, globalPaused: st.automation.globalPaused, now, actionsToday: 0, lastActionAt: null });
+    if (!gate.allowed) return { evaluated: 0, created: 0, skipped: [{ reason: gate.reason, count: 1 }] };
+    const activeCloudConnections = new Set(this.cloud().accounts.filter((a) => a.status === "active" && a.hasSession).map((a) => a.connectionId));
+    const { planned, skipped, evaluated } = planFollowUps({
+      rule, conversations: st.conversations, messages: st.messages, customers: st.customers, items: st.items, orders: st.orders, rules: st.rules,
+      plan: st.subscription.plan, template: st.org.settings.automation.negotiation.messages.followUp, personal: this.personalAccountIds(),
+      jobs: st.jobs, activeCloudConnections, now,
+    });
+    let created = 0;
+    for (const p of planned.slice(0, rule.limits.maxPerDay)) {
+      const at = this.now();
+      const payload: Record<string, unknown> = { conversationId: p.conversationId, customerId: p.customerId, body: p.body, followUp: true, followUpMode: p.action === "cloud" ? (p.approval ? "cloud_after_approval" : "cloud") : "draft", reason: p.reason, ruleName: rule.name };
+      if (p.approval) {
+        const draft: Message = { id: newId(), orgId: st.org.id, conversationId: p.conversationId, direction: "outbound", source: "automation", status: "draft", body: p.body, offerCents: null, aiRequestId: null, ruleId: rule.id, externalRef: null, error: null, simulated: false, createdAt: at, sentAt: null, readAt: null };
+        st.messages.push(draft);
+        payload.draftMessageId = draft.id;
+      }
+      const job: Job = { id: newId(), orgId: st.org.id, kind: "automation.send_message", status: p.approval ? "awaiting_approval" : "queued", dedupeKey: p.dedupeKey, ruleId: rule.id, payload, result: null, error: null, attempts: 0, maxAttempts: 3, runsIn: p.action === "cloud" ? "cloud" : "server", scheduledFor: at, startedAt: null, finishedAt: null, createdAt: at, updatedAt: at };
+      st.jobs.unshift(job);
+      created++;
     }
     rule.lastRunAt = this.now();
     this.audit("rule.run", "automation_rule", rule.id, { evaluated, created });
@@ -2781,6 +2845,81 @@ export class DemoClient implements DataClient {
     this.audit("cloud.login.completed", "cloud_account", a.id, { loginSessionId, simulated: true });
     this.persist();
     return a;
+  }
+
+  // ---------- négociation avancée, migration, fonctions « que Bleam n'a pas » (§5.12 à §5.14) ----------
+  /** Limites appliquées, même ordre que le serveur : dernière mesure enregistrée, sinon les réglages (valeurs prudentes). */
+  private effectiveVintedLimits(): { limits: VintedLimits; origin: VintedLimitsView["origin"] } {
+    const last = ((this.s as DemoLimitsHolder).vintedLimitsHistory ?? [])[0];
+    if (!last) return { limits: this.s.org.settings.automation.vintedLimits, origin: "settings" };
+    return { limits: { maxCounterOffersPerConversation: last.maxCounterOffersPerConversation, offerDurationHours: last.offerDurationHours, minDelayBetweenMessagesSeconds: last.minDelayBetweenMessagesSeconds, measuredAt: last.measuredAt, source: last.source }, origin: "org_measured" };
+  }
+  async getVintedLimits(): Promise<VintedLimitsView> {
+    const eff = this.effectiveVintedLimits();
+    return { ...eff, status: vintedLimitsStatus(eff.limits), history: [...((this.s as DemoLimitsHolder).vintedLimitsHistory ?? [])], canRecord: { org: can(this.session().role, "org.update"), global: false } };
+  }
+  async recordVintedLimits(input: VintedLimitsMeasurementInput): Promise<VintedLimits> {
+    if (!can(this.session().role, "org.update")) throw new DataError("forbidden", "Seuls le propriétaire et les administrateurs enregistrent une mesure.", 403);
+    const parsed = vintedLimitsMeasurementInput.safeParse(input);
+    if (!parsed.success) throw new DataError("validation", parsed.error.issues.map((i) => i.message).join(", "), 400);
+    const limits = recordMeasuredLimits(this.effectiveVintedLimits().limits, parsed.data, this.clock());
+    const st = this.s as DemoLimitsHolder;
+    // Comme le serveur : une ligne d'historique datée par Selio, les réglages ne bougent pas.
+    const entry: VintedLimitsRecordView = { id: newId(), orgId: st.org.id, maxCounterOffersPerConversation: limits.maxCounterOffersPerConversation, offerDurationHours: limits.offerDurationHours, minDelayBetweenMessagesSeconds: limits.minDelayBetweenMessagesSeconds, source: "measured", measuredAt: limits.measuredAt, note: null, createdAt: this.now() };
+    st.vintedLimitsHistory = [entry, ...(st.vintedLimitsHistory ?? [])].slice(0, 20);
+    this.audit("negotiation.limits_measured", "negotiation_limits", entry.id, { ...parsed.data });
+    this.persist();
+    return limits;
+  }
+  /** Enregistre la correspondance d'une conversion (sans le texte collé) et rend son identifiant. */
+  private keepMigrationDraft(r: Omit<MigrationConversion, "id">): MigrationConversion {
+    const st = this.s as DemoMigrationHolder;
+    const id = newId();
+    st.migrationDrafts = [{ id, mapping: r.mapping, status: "draft" as const }, ...(st.migrationDrafts ?? [])].slice(0, 20);
+    this.persist();
+    return { ...r, id };
+  }
+  async convertMigration(input: MigrationConvertInput): Promise<MigrationConversion> {
+    if (!can(this.session().role, "org.update")) throw new DataError("forbidden", "Seuls le propriétaire et les administrateurs importent des réglages.", 403);
+    const r = await demoConvertMigration(input);
+    this.usage("ai.request", { kind: "settings_migration" });
+    return this.keepMigrationDraft(r);
+  }
+  async importMigrationFile(input: MigrationFileInput): Promise<MigrationConversion> {
+    if (!can(this.session().role, "org.update")) throw new DataError("forbidden", "Seuls le propriétaire et les administrateurs importent des réglages.", 403);
+    return this.keepMigrationDraft(demoImportMigrationFile(input));
+  }
+  async applyMigration(input: MigrationApplyInput): Promise<MigrationApplyView> {
+    if (!can(this.session().role, "org.update")) throw new DataError("forbidden", "Seuls le propriétaire et les administrateurs importent des réglages.", 403);
+    const st = this.s as DemoMigrationHolder;
+    // Comme le serveur : seule une correspondance enregistrée par la conversion s'applique, une seule fois.
+    const draft = (st.migrationDrafts ?? []).find((d) => d.id === input.mappingId);
+    if (!draft) throw new DataError("not_found", "Migration introuvable : convertissez d'abord vos réglages.", 404);
+    if (draft.status === "applied") throw new DataError("conflict", "Cette migration est déjà appliquée.", 409);
+    const r = demoApplyMigration(st.org.settings, draft.mapping, input);
+    draft.status = "applied";
+    st.org = { ...st.org, settings: r.settings, updatedAt: this.now() };
+    const rulesUpdated: MigrationApplyView["rulesUpdated"] = [];
+    for (const [kind, config] of Object.entries(r.ruleConfigs) as [AutomationRule["kind"], Partial<AutomationRule["config"]>][]) {
+      const existing = st.rules.find((x) => x.kind === kind);
+      if (existing) await this.updateRule(existing.id, { config: { ...existing.config, ...config } });
+      else await this.createRule({ name: "Relance importée", kind, enabled: false, config });
+      rulesUpdated.push(kind);
+    }
+    this.audit("settings.migrated", "organization", st.org.id, { applied: r.applied.length, skipped: r.skipped.length, source: r.mapping.source, mappingId: draft.id });
+    this.persist();
+    return { organization: st.org, applied: r.applied, skipped: r.skipped, rulesUpdated };
+  }
+  async suggestBundles(): Promise<BundleSuggestionView[]> {
+    const st = this.s;
+    return demoBundles({ items: st.items, conversations: st.conversations, customers: st.customers, settings: st.org.settings, now: this.clock() });
+  }
+  async getEndToEndMargins(period: PeriodPreset): Promise<EndToEndMarginsView> {
+    const st = this.s;
+    return demoEndToEndMargins({ items: st.items, orders: st.orders, purchases: st.purchases, period, now: this.clock(), rules: st.org.settings.margin });
+  }
+  async getDeclarationThresholds(): Promise<DeclarationThresholdsView> {
+    return demoThresholds(this.s.orders, this.s.org.settings, this.clock());
   }
 
   // ---------- démo ----------
