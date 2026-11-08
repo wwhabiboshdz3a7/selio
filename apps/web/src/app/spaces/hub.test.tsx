@@ -31,12 +31,15 @@ describe("accueil central des espaces", () => {
 
     expect(await screen.findByRole("heading", { name: "Selio et ses filiales" })).toBeTruthy();
     const card = (name: string) => screen.getByRole("article", { name });
-    for (const name of ["Selio", "Selio Studio", "Selio Agents", "Selio Track", "Selio Cloud", "Générateur de compte Vinted"]) expect(card(name)).toBeTruthy();
+    for (const name of ["Selio", "Selio Studio", "Selio Agents", "Selio Track", "Selio Cloud", "Selio Comptes"]) expect(card(name)).toBeTruthy();
     expect(screen.queryByRole("article", { name: "Selio Global" })).toBeNull();
     // États honnêtes.
     expect(within(card("Selio")).getByText("Disponible")).toBeTruthy();
     expect(within(card("Selio Agents")).getAllByText("Aperçu").length).toBeGreaterThan(0);
-    for (const name of ["Selio Track", "Générateur de compte Vinted"]) expect(within(card(name)).getByText("En développement")).toBeTruthy();
+    expect(within(card("Selio Track")).getByText("En développement")).toBeTruthy();
+    // Selio Comptes : disponible (checklist et textes), avec l'avancement de la checklist.
+    expect(within(card("Selio Comptes")).getByText("Disponible")).toBeTruthy();
+    expect(within(card("Selio Comptes")).getByText("Checklist").nextElementSibling?.textContent).toMatch(/^0\/\d+$/);
     // Selio Cloud : en aperçu, avec ses chiffres (comptes de la démonstration) et l'état de l'accord.
     const cloud = card("Selio Cloud");
     expect(within(cloud).getAllByText("Aperçu").length).toBeGreaterThan(0);

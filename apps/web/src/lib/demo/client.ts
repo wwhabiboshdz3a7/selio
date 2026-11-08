@@ -14,13 +14,16 @@ import { buildDemoState } from "@selio/demo-data";
 import { DEAL_ENTRIES, LocalDemoStorage, buildMarketObservations, type DemoState, type DemoStorage } from "@selio/demo-data";
 import { PLAN_QUOTAS } from "@selio/demo-data";
 import { DataError, type AdminOrgUsage, type AdminOverview, type AdminUsageReport, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type CheckoutOutcome, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
-import type { AiHealthData } from "../data/types";
+import type { AiHealthData, StudioDraftInput } from "../data/types";
 import { effectiveAiQuota, summarizeAiRequests } from "@selio/domain";
 import { PLANS, PLAN_LABELS, TRIAL_DAYS, buildUsageCounter, quotasForPlan, type PaidPlan, type PlanQuotas, type TrialDays, type UsageCounter } from "@selio/contracts";
 import { CARD_VERIFICATION_AMOUNT_CENTS, DATA_RETENTION_DAYS_AFTER_END, DEFAULT_VAT_RATE, PAID_PLANS, invoiceAmounts, type BillingCycle, type Invoice, type InvoiceView } from "@selio/contracts";
 import { CYCLE_LABELS, addCycle, inTrial as trialRunning, isRunning, periodLabel as invoicePeriodLabel, planPriceCents } from "../billing";
 import { helpAskInput, type HelpAnswer } from "@selio/contracts";
 import { can } from "@selio/domain";
+import { normalizeReferralCode, type Photo } from "@selio/contracts";
+import type { HealthDetailsView, ReferralView } from "../data/types";
+import { demoHealthDetails, demoReferralCode } from "./team";
 import { whiteLabelInput as whiteLabelInputSchema, type WhiteLabel, type WhiteLabelInput } from "@selio/contracts";
 import {
   CLOUD_ACTION_KIND_LABELS, CLOUD_ACTION_LEVEL_LABELS, CLOUD_ACTION_STATUS_LABELS, CLOUD_CONSENT_TEXT, CLOUD_CONSENT_VERSION, CLOUD_LOGIN_TTL_MINUTES, CLOUD_PAUSE_REASON_LABELS, CLOUD_RUN_CODE_LABELS, CLOUD_SKIP_REASON_LABELS,
@@ -78,6 +81,8 @@ type Subsidiaries = Pick<UsageSummary, "studio" | "track" | "cloud">;
  * simulé n'a eu lieu.
  */
 type DemoBillingState = DemoState & { invoices?: Invoice[] };
+/** Essai de rôle de la démonstration (« voir comme… ») : rangé à côté de l'état partagé. */
+type DemoRoleHolder = DemoState & { rolePreview?: Role | null };
 /** Selio Cloud de la démonstration : même principe, créé au premier accès (voir ./cloud.ts). */
 type DemoCloudHolder = DemoState & { cloud?: DemoCloudState };
 /** Mesures des limites de Vinted enregistrées dans la démonstration (comme la table negotiation_limits). */
@@ -184,7 +189,9 @@ export class DemoClient implements DataClient {
   private session(): Session {
     const st = this.s;
     const membership = st.memberships.find((m) => m.userId === st.user.id)!;
-    return { mode: "demo", user: st.user, org: st.org, role: membership.role, memberships: st.memberships.filter((m) => m.userId === st.user.id).map((m) => ({ ...m, orgName: st.org.name })) };
+    // Essai de rôle (démonstration) : l'application et les règles de la démo suivent ce rôle.
+    const role = (st as DemoRoleHolder).rolePreview ?? membership.role;
+    return { mode: "demo", user: st.user, org: st.org, role, memberships: st.memberships.filter((m) => m.userId === st.user.id).map((m) => ({ ...m, orgName: st.org.name })) };
   }
   private itemById(id: string): InventoryItem {
     const it = this.s.items.find((i) => i.id === id);
@@ -259,7 +266,7 @@ export class DemoClient implements DataClient {
     this.persist();
     return this.session();
   }
-  async register(input: { email: string; password: string; displayName: string; orgName: string; trialDays?: TrialDays }): Promise<Session> {
+  async register(input: { email: string; password: string; displayName: string; orgName: string; trialDays?: TrialDays; referralCode?: string }): Promise<Session> {
     await this.delay(200);
     this.state = buildDemoState(this.clock());
     this.state.user = { ...this.state.user, email: input.email, displayName: input.displayName };
@@ -270,7 +277,16 @@ export class DemoClient implements DataClient {
     const trialDays: TrialDays = TRIAL_DAYS;
     this.state.subscription = { ...this.state.subscription, plan: "pro", quotas: quotasForPlan("pro"), status: "trialing", cardOnFile: false, currentPeriodEnd: new Date(this.clock().getTime() + trialDays * 86_400_000).toISOString() };
     this.audit("auth.register", null, null, { mode: "demo", trialDays, requested: input.trialDays ?? trialDays });
+    // Parrainage : jamais bloquant ; en démonstration, le code est seulement noté (aucune marraine réelle).
+    const code = normalizeReferralCode(input.referralCode ?? "");
+    if (code) this.audit("referral.code_noted", "organization", this.state.org.id, { code, simulated: true });
     this.persist();
+    if (input.referralCode?.trim()) {
+      const message = code
+        ? `Démonstration : le code de parrainage ${code} est noté, mais aucun mois offert n'est accordé (le parrainage n'est pas encore ouvert).`
+        : "Ce code de parrainage n'a pas le bon format (6 lettres et chiffres) : il est ignoré, votre inscription continue.";
+      return { ...this.session(), referral: { applied: false, reason: code ? "disabled" : "invalid_code", message } };
+    }
     return this.session();
   }
   async logout(): Promise<void> {
@@ -357,6 +373,34 @@ export class DemoClient implements DataClient {
     this.audit("member.removed", "membership", membershipId, {});
     this.persist();
   }
+  /** Essai de rôle : la démonstration se voit (et se comporte) avec ce rôle ; null revient au sien. */
+  async previewRole(role: Role | null): Promise<Session> {
+    const st = this.s as DemoRoleHolder;
+    const own = st.memberships.find((m) => m.userId === st.user.id)!.role;
+    st.rolePreview = role === null || role === own ? null : role;
+    this.audit("demo.role_preview", "membership", null, { role: st.rolePreview });
+    this.persist();
+    return this.session();
+  }
+  /**
+   * Parrainage de la démonstration : affiché en « proposition » (côté serveur, REFERRAL_ENABLED est faux par
+   * défaut). Code fixe tiré de l'organisation, filleules d'exemple, aucun crédit réel.
+   */
+  async getReferral(): Promise<ReferralView> {
+    if (!can(this.session().role, "org.update")) throw new DataError("forbidden", "Seuls le titulaire et les administrateurs voient le parrainage.", 403);
+    const code = demoReferralCode(this.s.org.id);
+    const origin = typeof window !== "undefined" && window.location?.origin ? window.location.origin : "";
+    return {
+      enabled: true,
+      proposal: true,
+      code,
+      shareUrl: `${origin}/inscription?parrain=${code}`,
+      referred: { pending: 1, qualified: 1, credited: 0, refused: 0 },
+      creditsAvailable: 1,
+      creditsConsumed: 0,
+      referredBy: null,
+    };
+  }
   async completeOnboardingStep(step: string): Promise<Organization> {
     const steps = new Set(this.s.org.settings.onboarding.completedSteps);
     steps.add(step);
@@ -408,6 +452,19 @@ export class DemoClient implements DataClient {
     this.persist();
     return item;
   }
+  /** Brouillon du générateur : même règle que le serveur (« studio.generate », en stock, sans prix d'achat ni publication). */
+  async createStudioDraft(input: StudioDraftInput): Promise<InventoryItem> {
+    if (!can(this.session().role, "studio.generate")) throw new DataError("forbidden", "Action non autorisée pour ce rôle.", 403);
+    const title = input.title;
+    return this.createItem({
+      title: input.title, description: input.description ?? "", brand: input.brand ?? null, size: input.size ?? null,
+      ...(input.category ? { category: input.category } : {}), ...(input.condition ? { condition: input.condition } : {}),
+      listedPriceCents: input.listedPriceCents ?? null,
+      photos: (input.photos ?? []).map((p, position) => ({ id: p.id ?? newId(), url: p.url, alt: p.alt || title, position })),
+      purchasePriceCents: 0, purchaseFeesCents: 0, floorPriceCents: null, status: "in_stock", connectionId: null,
+      tags: ["générateur", "brouillon"], attributes: (input.attributes ?? {}) as InventoryItemCreate["attributes"],
+    } as InventoryItemCreate);
+  }
   async updateItem(id: string, input: InventoryItemUpdate): Promise<InventoryItem> {
     const parsed = inventoryItemUpdateSchema.safeParse(input);
     if (!parsed.success) throw new DataError("validation", "Modification invalide", 400, parsed.error.flatten());
@@ -441,6 +498,20 @@ export class DemoClient implements DataClient {
     this.s.itemEvents = this.s.itemEvents.filter((e) => e.itemId !== id);
     this.audit("item.deleted", "inventory_item", id, { title: it.title });
     this.persist();
+  }
+  /** Photos ajoutées seules (« items.photos.write ») : le contributeur photos ne touche à rien d'autre. */
+  async addItemPhotos(id: string, photos: Photo[]): Promise<InventoryItem> {
+    if (!can(this.session().role, "items.photos.write")) throw new DataError("forbidden", "Votre rôle ne permet pas d'ajouter des photos.", 403);
+    const before = this.itemById(id);
+    if (photos.length === 0) return before;
+    if (before.photos.length + photos.length > 12) throw new DataError("validation", "12 photos au plus par article.", 400);
+    const added = photos.map((p, i) => ({ ...p, position: before.photos.length + i }));
+    const after: InventoryItem = { ...before, photos: [...before.photos, ...added], updatedAt: this.now() };
+    this.s.items[this.s.items.findIndex((i) => i.id === id)] = after;
+    this.logEvent(id, "updated", { photos: { from: before.photos.length, to: after.photos.length } }, "Photos ajoutées");
+    this.audit("item.photos_added", "inventory_item", id, { count: added.length });
+    this.persist();
+    return after;
   }
   async bulkItems(action: BulkItemAction): Promise<{ affected: number }> {
     let affected = 0;
@@ -1741,7 +1812,8 @@ export class DemoClient implements DataClient {
     return prepById(this.studio(), prepId);
   }
   async validateStudioPrep(prepId: string, answers: StudioPrepAnswersInput): Promise<ValidatePrepResultView> {
-    if (!can(this.session().role, "ai.use")) throw new DataError("forbidden", "Votre rôle ne permet pas de valider une préparation.", 403);
+    // Générateur : « studio.generate » (contributeur photos compris), comme le prévoit la matrice des rôles.
+    if (!can(this.session().role, "studio.generate")) throw new DataError("forbidden", "Votre rôle ne permet pas de valider une préparation.", 403);
     const out = demoValidate(this.studio(), prepId, answers, this.now());
     this.audit("studio.prep_validated", "studio_prep", prepId, { shared: out.shared.done });
     if (out.shared.done) this.audit("studio.measurements_shared", "studio_prep", prepId, { brand: out.prep.fields.brand.value, reference: out.prep.fields.reference.value });
@@ -2570,7 +2642,12 @@ export class DemoClient implements DataClient {
   async adminListAudit(limit = 100): Promise<AuditLog[]> {
     if (!this.s.user.isOperator) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
     return this.s.audit.filter((a) => a.action.startsWith("admin.") || a.action.startsWith("auth.") || a.action.startsWith("token.") || a.action.startsWith("connection.")).slice(0, limit);
+  }  /** Supervision de la démonstration : exemple fixe (aucune vérification réelle, aucune alerte envoyée). */
+  async getHealthDetails(): Promise<HealthDetailsView> {
+    if (!this.s.user.isOperator) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+    return demoHealthDetails(this.clock());
   }
+
 
   // ---------- Selio Agents (aperçu) ----------
   async getWhiteLabel(): Promise<WhiteLabel | null> {

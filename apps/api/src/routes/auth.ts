@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { AppError, auth, org as orgService } from "@selio/core";
+import type { ReferralApplyOutcome } from "@selio/contracts";
+import { AppError, auth, org as orgService, referral } from "@selio/core";
 import { SESSION_COOKIE } from "../plugins/auth";
 
 export default async function authRoutes(app: FastifyInstance, opts: { cookieSecure: boolean; operatorEmails: string[] }) {
@@ -10,7 +11,11 @@ export default async function authRoutes(app: FastifyInstance, opts: { cookieSec
     const s = await auth.register(app.services, req.body, { ip: req.ip, userAgent: req.headers["user-agent"]?.slice(0, 200) ?? null, operatorEmails: opts.operatorEmails });
     reply.setCookie(SESSION_COOKIE, s.sessionId, cookieOpts);
     reply.status(201);
-    return bootstrapSession(app, req, s.orgId!, s);
+    // Code de parrainage facultatif (`referralCode`), appliqué une fois l'organisation créée : JAMAIS bloquant
+    // (code vide, mal formé, inconnu, le sien, parrainage fermé : ignoré avec un message ; incident : idem).
+    const referralOutcome = await applyReferralCode(app, s.orgId!, (req.body as { referralCode?: unknown } | null)?.referralCode, req);
+    const session = await bootstrapSession(app, req, s.orgId!, s);
+    return referralOutcome ? { ...session, referral: referralOutcome } : session;
   });
 
   app.post("/api/auth/login", { config: { rateLimit: { max: 20, timeWindow: "15 minutes" } } }, async (req, reply) => {
@@ -67,6 +72,21 @@ export default async function authRoutes(app: FastifyInstance, opts: { cookieSec
     reply.setCookie(SESSION_COOKIE, s.sessionId, cookieOpts);
     return bootstrapSession(app, req, s.orgId!, s);
   });
+}
+
+/**
+ * Applique le code de parrainage saisi à l'inscription ; null si aucun code n'a été saisi. Ne lève jamais.
+ * Rend seulement l'issue et le message : jamais l'identifiant ni une donnée de l'organisation marraine.
+ */
+async function applyReferralCode(app: FastifyInstance, orgId: string, code: unknown, req: Parameters<typeof app.requireCtx>[0]): Promise<Pick<ReferralApplyOutcome, "applied" | "reason" | "message"> | null> {
+  if (typeof code !== "string" || code.trim() === "") return null;
+  try {
+    const outcome = await referral.applyCodeAtSignup(app.services, orgId, code);
+    return { applied: outcome.applied, ...(outcome.reason ? { reason: outcome.reason } : {}), message: outcome.message };
+  } catch (err) {
+    req.log.warn({ err: err instanceof Error ? err.message : String(err) }, "parrainage : code non appliqué à l'inscription");
+    return { applied: false, message: "Le code de parrainage n'a pas pu être pris en compte pour le moment ; votre inscription continue." };
+  }
 }
 
 /** Construit le contexte juste après connexion (le hook onRequest a tourné avant la pose du cookie). */

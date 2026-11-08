@@ -70,7 +70,7 @@ function Options() {
           <li>Ne stocke ni mot de passe ni cookie Vinted ; le jeton Selio reste dans le stockage de l'extension et peut être révoqué depuis l'application.</li>
           <li>Permissions : stockage, onglet actif, vinted.fr/.be/.com, et l'origine de l'API que vous autorisez explicitement.</li>
         </ul>
-        <p className="mt-2 text-xs text-text-muted">Les adaptateurs sont construits sur des fixtures et restent expérimentaux tant qu'ils n'ont pas été validés sur le site réel. Outil indépendant, non affilié à Vinted.</p>
+        <p className="mt-2 text-xs text-text-muted">Les adaptateurs sont construits sur des fixtures et restent expérimentaux tant qu'ils n'ont pas été validés sur le site réel. Selio est indépendant de Vinted et n'est ni affilié, ni approuvé, ni sponsorisé par Vinted.</p>
       </div>
       <div className="card p-4 text-sm">
         <h2 className="text-md font-semibold">Diagnostics de compatibilité</h2>

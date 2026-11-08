@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { Alert, Button, Field, Input, Textarea } from "@selio/ui";
-import { usePageMeta } from "../../lib/seo";
+import { useMarketingMeta } from "../seo";
 import { MarketingSection } from "../components";
 
 export default function Contact() {
-  usePageMeta("Contact", "Contacter l'équipe Selio : question produit, demande de démonstration guidée, signalement.");
+  useMarketingMeta("/contact");
   const [sent, setSent] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", subject: "question", message: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});

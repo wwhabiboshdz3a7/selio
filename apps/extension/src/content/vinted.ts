@@ -108,9 +108,13 @@ function renderItem(body: HTMLElement, url: string) {
   const rows: [string, string][] = [["Titre", d.title], ["Marque", d.brand ?? "—"], ["Taille", d.size ?? "—"], ["État", d.condition ? ITEM_CONDITION_LABELS[d.condition] : "non reconnu"], ["Prix affiché", eur(d.priceCents)], ["Photos", String(d.photoUrls.length)], ["Référence", d.externalRef ?? "—"]];
   for (const [k, v] of rows) body.append(el("div", { className: "row" }, [el("span", { text: k }), el("span", { className: "num", text: v })]));
   if (result.warnings.length) body.append(el("ul", {}, result.warnings.map((w) => el("li", { text: w }))));
+  // Comparables : seulement au clic (jamais à l'ouverture du panneau ni à la navigation dans Vinted), comme
+  // l'annonce la politique de confidentialité (« rien ne part que lorsque vous cliquez sur une action »).
   const comparablesBox = el("div");
+  const comparablesBtn = el("button", { className: "btn", text: "Voir les comparables" });
+  comparablesBtn.addEventListener("click", () => void loadComparables(comparablesBox, { title: d.title, brand: d.brand, size: d.size, condition: d.condition, priceCents: d.priceCents }));
+  comparablesBox.append(comparablesBtn);
   body.append(comparablesBox);
-  void loadComparables(comparablesBox, { title: d.title, brand: d.brand, size: d.size, condition: d.condition, priceCents: d.priceCents });
   const price = el("input");
   price.placeholder = "Prix d'achat (€)";
   price.inputMode = "decimal";

@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { HELP_CATEGORIES, helpEntries } from "@selio/domain/help";
-import { usePageMeta } from "../../lib/seo";
+import { useMarketingMeta } from "../seo";
 import { useSession } from "../../lib/data/provider";
 import { CtaBand, MarketingSection } from "../components";
 import { FaqBrowser, HelpAskPanel, askFaqLocally } from "../../components/help";
@@ -11,7 +11,7 @@ import { FaqBrowser, HelpAskPanel, askFaqLocally } from "../../components/help";
  * (route réservée aux sessions, voir docs/DECISIONS.md D16).
  */
 export default function Faq() {
-  usePageMeta("Aide et FAQ", `Aide de Selio : ${helpEntries().length} questions et réponses (essai, comptes Vinted, extension, IA, dressing, achats, négociation, équipe, tarifs, données), recherche instantanée et assistant.`);
+  useMarketingMeta("/faq");
   const session = useSession();
   return (
     <>

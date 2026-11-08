@@ -5,7 +5,7 @@ import { TRIAL_DAYS } from "@selio/contracts";
 import { helpEntries } from "@selio/domain/help";
 import { Alert, Segmented, buttonClass, cn, formatCents, formatNumber } from "@selio/ui";
 import { PLAN_COMPARISON, PLAN_OFFERS, PRICING, TRIAL_OFFER, annualPriceCents, foundersMonthlyCents, monthlyPriceCents, type ComparisonValue, type OfferKey, type PlanOffer } from "@selio/demo-data";
-import { usePageMeta } from "../../lib/seo";
+import { useMarketingMeta } from "../seo";
 import { showIndicativePricing } from "../../lib/env";
 import { STUDIO_SLIDER, annualMonthlyEquivalentCents, studioQuote } from "../pricing";
 import { CheckList, Container, Eyebrow, MarketingSection } from "../components";
@@ -26,10 +26,9 @@ function perPhoto(cents: number): string {
   return showIndicativePricing ? perPhotoFormat.format(cents / 100) : "À définir";
 }
 
-const META = `Tarifs de Selio : essai gratuit de ${TRIAL_DAYS} jours (carte enregistrée, rien débité avant la fin), puis ${PLAN_OFFERS.map((p) => `${p.name} ${formatCents(p.indicativeMonthlyCents)}`).join(", ")} par mois ; annuel avec ${FREE_MONTHS} mois offerts, offre fondateurs ; Studio seul, Radar, Cloud et Selio Comptes. Montants indicatifs.`;
 
 export default function Pricing() {
-  usePageMeta("Tarifs", META);
+  useMarketingMeta("/tarifs");
   const [period, setPeriod] = useState<Period>("monthly");
   const faq = helpEntries().filter((e) => e.categoryId === "tarifs");
   return (

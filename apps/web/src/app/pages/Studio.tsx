@@ -1,3 +1,4 @@
+import { can } from "@selio/domain";
 import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -40,7 +41,10 @@ export default function Studio() {
   const { mode } = useData();
   const session = useRequiredSession();
   const navigate = useNavigate();
-  const connections = useQuery({ queryKey: ["connections"], queryFn: () => client.listConnections() });
+  // Contributeur photos : ni comptes Vinted (« connections.read »), ni publication ; il garde l'annonce en brouillon.
+  const canReadAccounts = can(session.role, "connections.read");
+  const canPublish = can(session.role, "items.write");
+  const connections = useQuery({ queryKey: ["connections"], queryFn: () => client.listConnections(), enabled: canReadAccounts });
   const [step, setStep] = useState<StudioStep>("photos");
   const [photos, setPhotos] = useState<StudioPhoto[]>([]);
   const [busyPhotos, setBusyPhotos] = useState(false);
@@ -62,7 +66,7 @@ export default function Studio() {
   const [series, setSeries] = useState<{ item: InventoryItem; published: boolean }[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
-  const canWrite = session.role !== "viewer";
+  const canWrite = can(session.role, "studio.generate");
   // Comptes Vente uniquement (Vinted d'abord), puis les comptes Perso, signalés ; jamais un compte Achat.
   const accounts = useMemo(() => listingAccounts(connections.data ?? []), [connections.data]);
   const account = accounts.find((c) => c.id === connectionId) ?? accounts[0] ?? null;
@@ -185,6 +189,13 @@ export default function Studio() {
     const purchase = hints.purchasePriceCents ?? 0;
     const floor = form.priceCents ? Math.min(form.priceCents, suggestFloorPrice({ purchasePriceCents: purchase, purchaseFeesCents: 0 }, session.org.settings.margin)) : null;
     const itemPhotos = articlePhotoIds.flatMap((id) => (byId.get(id) ? [byId.get(id)!] : []));
+    const description = [form.description.trim(), form.hashtags.length ? form.hashtags.join(" ") : ""].filter(Boolean).join("\n\n");
+    const attributes = { colors: form.colors.split(",").map((c) => c.trim()).filter(Boolean).slice(0, 3), material: form.material.trim() || null, generatedBy: draft?.source ?? "manual" };
+    if (!canPublish) {
+      // Brouillon du générateur (POST /api/studio/drafts) : en stock, sans prix d'achat, sans compte, jamais publié.
+      const item = await client.createStudioDraft({ title: form.title.trim(), description, brand: form.brand.trim() || null, size: form.size.trim() || null, category: form.category, condition: form.condition, listedPriceCents: form.priceCents, photos: itemPhotos.map((p) => ({ id: p.id, url: p.url, alt: p.alt || form.title })), attributes });
+      return { item, published: false };
+    }
     const item = await client.createItem({
       title: form.title.trim(),
       description: [form.description.trim(), form.hashtags.length ? form.hashtags.join(" ") : ""].filter(Boolean).join("\n\n"),
@@ -388,7 +399,7 @@ export default function Studio() {
           <div className="flex flex-col gap-3">
             {articleNav}
             {shareNote ? <Alert tone="info">{shareNote}</Alert> : null}
-            <DraftCard draft={draft} form={form} onForm={setForm} cover={byId.get(articlePhotoIds[0] ?? "")?.url ?? null} purchasePriceCents={hints.purchasePriceCents} account={account} mode={mode} canWrite={canWrite} onSave={(publish) => save.mutate(publish)} saving={save.isPending ? save.variables ?? null : null} />
+            <DraftCard draft={draft} form={form} onForm={setForm} cover={byId.get(articlePhotoIds[0] ?? "")?.url ?? null} purchasePriceCents={hints.purchasePriceCents} account={account} mode={mode} canWrite={canWrite} canPublish={canPublish} onSave={(publish) => save.mutate(publish)} saving={save.isPending ? save.variables ?? null : null} />
             <div className="flex justify-start"><Button variant="ghost" icon={<ArrowLeft />} onClick={() => setStep("measures")}>Revenir aux mesures</Button></div>
           </div>
         )

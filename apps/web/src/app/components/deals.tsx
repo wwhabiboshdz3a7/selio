@@ -2,7 +2,7 @@ import { Link } from "react-router";
 import { ArrowRight, CheckCircle2, Eye, EyeOff, Images, ShoppingCart, Star, Timer } from "lucide-react";
 import { ITEM_CONDITION_LABELS, type BuyerFees, type Opportunity } from "@selio/contracts";
 import { REVIEW_THRESHOLD, SCORE_BANDS, dealEconomics, scoreBand, type ScoreBand } from "@selio/domain";
-import { Button, Card, Tag, buttonClass, cn, formatCents, formatPercent, formatRelative } from "@selio/ui";
+import { Button, Card, GlassSurface, Tag, buttonClass, cn, formatCents, formatPercent, formatRelative } from "@selio/ui";
 import { ScoreRing, scoreTone } from "../../components/charts";
 import { useRequiredSession } from "../../lib/data/provider";
 import { detectionDelaySeconds, formatDuration } from "../../lib/radar";
@@ -100,12 +100,17 @@ export function ScoreBreakdown({ breakdown, reasons }: { breakdown: Opportunity[
 }
 
 /** Carte d'une affaire : photo, note, calcul complet, actions ; `to` : page « 1 clic » de l'affaire. */
-export function OpportunityCard({ o, canWrite, onBuy, buying, onStatus, compact = false, to }: { o: Opportunity; canWrite: boolean; onBuy: () => void; buying: boolean; onStatus: (s: Opportunity["status"]) => void; compact?: boolean; to?: string }) {
+/**
+ * Carte d'une affaire. `glass` (essai « verre liquide ») : la carte d'alerte passe sur une surface
+ * GlassSurface (repli opaque automatique) ; sans l'essai, c'est la carte habituelle, inchangée.
+ */
+export function OpportunityCard({ o, canWrite, onBuy, buying, onStatus, compact = false, to, glass = false }: { o: Opportunity; canWrite: boolean; onBuy: () => void; buying: boolean; onStatus: (s: Opportunity["status"]) => void; compact?: boolean; to?: string; glass?: boolean }) {
   const session = useRequiredSession();
   const good = o.score >= REVIEW_THRESHOLD;
   const delay = detectionDelaySeconds(o);
-  return (
-    <Card className="grid gap-4 md:grid-cols-[132px_minmax(0,1fr)]">
+  const layout = "grid gap-4 md:grid-cols-[132px_minmax(0,1fr)]";
+  const content = (
+    <>
       <div className="relative">
         {o.observed.photoUrl ? <img src={o.observed.photoUrl} alt={o.title} className="aspect-square w-full rounded-lg object-cover md:w-[132px]" loading="lazy" /> : <div className="flex aspect-square w-full items-center justify-center rounded-lg bg-surface-muted text-text-subtle md:w-[132px]"><Images className="size-7" aria-hidden /></div>}
         <span className="absolute -top-2 -left-2 rounded-full bg-surface p-0.5 shadow-sm"><ScoreRing score={o.score} size={52} stroke={5} /></span>
@@ -135,6 +140,9 @@ export function OpportunityCard({ o, canWrite, onBuy, buying, onStatus, compact 
           </div>
         ) : to ? <Link to={to} className={buttonClass({ variant: "ghost", size: "sm", className: "mt-3" })}>Ouvrir l'affaire<ArrowRight aria-hidden /></Link> : null}
       </div>
-    </Card>
+    </>
   );
+  return glass
+    ? <GlassSurface as="article" aria-label={`Affaire : ${o.title}`} data-testid="radar-alert-card" className="min-w-0" contentClassName={cn(layout, "p-4 md:p-5")}>{content}</GlassSurface>
+    : <Card className={layout}>{content}</Card>;
 }

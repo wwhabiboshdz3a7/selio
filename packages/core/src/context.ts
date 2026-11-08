@@ -3,7 +3,7 @@ import type { AIService } from "@selio/ai";
 import type { Db, SecretBox, Tx } from "@selio/db";
 import type { EmailMessage, EmailProvider } from "@selio/email";
 import type { PaymentProvider } from "@selio/connectors";
-import { can, type Action } from "@selio/domain";
+import { can, reasonsWithoutFinances, type Action } from "@selio/domain";
 import type { BillingOptions } from "./types";
 import type { CloudExecutor } from "./services/cloud";
 import type { PushSender } from "./services/alerts";
@@ -12,6 +12,7 @@ import type { PricingServices } from "./services/pricing";
 import type { TrackReader } from "./services/track";
 import type { StudioServices } from "./services/studio";
 import type { WornPhotoProvider } from "./services/worn-photos";
+import type { SupervisionServices } from "./services/supervision";
 
 export class AppError extends Error {
   constructor(public readonly code: string, message: string, public readonly status = 400, public readonly details?: unknown) {
@@ -80,6 +81,11 @@ export interface Services {
    * qui refuse chaque demande (« aucun fournisseur configuré : décision à prendre »).
    */
   wornPhotos?: WornPhotoProvider;
+  /**
+   * Supervision (worker) : HTTP injectable (`fetch`), destinataires des alertes (OPERATOR_EMAILS), seuil et
+   * rappel. Absent : fetch global, aucun destinataire (les pannes sont enregistrées et journalisées seulement).
+   */
+  supervision?: SupervisionServices;
   /** Réglages serveur lus dans l'environnement (`cloudConfigFromEnv`, `radarConfigFromEnv`, `trackConfigFromEnv`). Valeurs prudentes par défaut. */
   config?: ServicesConfig;
 }
@@ -129,6 +135,11 @@ export interface ServicesConfig {
   wornOverageUnitCents?: number;
   /** WORN_NIGHT_WINDOW / WORN_NIGHT_TIMEZONE : file de nuit des photos portées (22 h – 6 h, Europe/Paris par défaut). */
   wornNightWindow?: { startHour: number; endHour: number; timezone?: string };
+  /**
+   * REFERRAL_ENABLED : parrainage « un mois offert aux deux ». Faux par défaut : ni code, ni page, ni lien créé
+   * à l'inscription, ni crédit accordé. Les crédits déjà accordés restent consommés au renouvellement.
+   */
+  referralEnabled?: boolean;
 }
 
 /** Contexte d'une requête authentifiée dans une organisation. */
@@ -143,6 +154,77 @@ export interface OrgContext {
 
 export function requireAction(ctx: OrgContext, action: Action): void {
   if (!can(ctx.role, action)) throw new AppError("forbidden", `Action non autorisée pour le rôle ${ctx.role}.`, 403);
+}
+
+// ---------------------------------------------------------------- finances masquées (§5.15)
+
+/**
+ * Champs financiers d'une réponse : prix et frais d'achat, frais et coûts d'une vente, marges, chiffre
+ * d'affaires. Le prix de vente (`salePriceCents`) et le prix affiché restent visibles : ce sont les prix
+ * publiés sur Vinted, dont l'exécuteur a besoin pour répondre et expédier.
+ */
+export const FINANCE_FIELDS = [
+  "purchasePriceCents", "purchaseFeesCents", "platformFeeCents", "shippingCostCents", "otherCostsCents",
+  "costCents", "marginCents", "marginRate", "revenueCents", "profitCents", "totalRevenue", "cumulativeMargin",
+  "floorMarginCents", "targetMarginCents", "targetMarginRate",
+  // Indicateurs des analyses et du tableau de bord tirés du prix d'achat ou du chiffre d'affaires : coût
+  // d'acquisition, panier moyen, valeur du stock (au prix d'achat), marges projetées et par marque, marge à
+  // l'offre (négociation), coût d'un lot, CA de l'année et du mois (seuils, objectif mensuel), dépenses d'achat.
+  "acquisitionCents", "averageBasketCents", "stockValueCents", "stockValueByCategory", "projectedMarginCents", "projectedMarginRate",
+  "marginRateSeries", "brandMargin", "marginAtOfferCents", "marginRateAtOffer", "purchaseCents", "purchaseTotalCents",
+  "revenueThisYearCents", "revenueThisMonthCents", "achievedCents", "previousMonthCents", "purchasesSpentCents",
+  // Frais d'une période (frais plateforme + port), objectif du mois (CA du mois précédent × 1,1), montants de
+  // facturation (journal d'audit : paiement encaissé, paiement lancé) et prix payé d'un achat Radar.
+  "feesCents", "targetCents", "amountCents", "planAmountCents", "totalCents",
+] as const;
+export type FinanceField = (typeof FINANCE_FIELDS)[number];
+const FINANCE_FIELD_SET: ReadonlySet<string> = new Set(FINANCE_FIELDS);
+
+/** Valeur après masquage : chaque champ financier, à toute profondeur, peut valoir null. */
+export type Redacted<T> = T extends readonly (infer U)[]
+  ? Redacted<U>[]
+  : T extends object
+    ? { [K in keyof T]: K extends FinanceField ? T[K] | null : Redacted<T[K]> }
+    : T;
+
+/**
+ * Actions du journal d'audit qui relèvent des finances (facturation, parrainage et ses mois offerts,
+ * changement d'offre par l'équipe Selio) : retirées du journal pour un rôle sans « finances.read ».
+ */
+export function isFinanceAuditAction(action: string): boolean {
+  return action.startsWith("billing.") || action.startsWith("referral.") || action === "admin.plan_changed";
+}
+
+/** Vrai si le rôle voit les finances (chiffre d'affaires, marges, prix d'achat, factures, abonnement). */
+export function seesFinances(role: Role): boolean {
+  return can(role, "finances.read");
+}
+
+/**
+ * Masque les finances d'une réponse pour un rôle qui n'a pas « finances.read » (exécuteur, contributeur
+ * photos) : chaque champ de FINANCE_FIELDS vaut null, à toute profondeur (listes, objets imbriqués). Rendu
+ * tel quel (même référence) pour les autres rôles. Ne modifie jamais l'objet reçu. À appliquer aux
+ * articles (liste et fiche), commandes et analyses avant de répondre. Les objets imbriqués (`margin: { … }`
+ * d'une ligne d'analyse) gardent leur forme, seuls leurs montants passent à null : les réglages de
+ * l'organisation (`settings.margin`, règles de négociation) ne sont pas des finances et restent intacts.
+ */
+export function redactForRole<T>(role: Role, value: T): Redacted<T> {
+  if (seesFinances(role)) return value as Redacted<T>;
+  return redactFinances(value) as Redacted<T>;
+}
+
+function redactFinances(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactFinances);
+  if (value === null || typeof value !== "object" || value instanceof Date) return value;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (FINANCE_FIELD_SET.has(k)) out[k] = null;
+    // Raisons en texte libre d'une décision de négociation (« Marge conservée : 12,00 € (32 %) ») : réécrites
+    // sans montant de marge, où qu'elles soient (dernière offre d'une conversation, tâche, extension).
+    else if (k === "reasons" && Array.isArray(v) && v.every((x) => typeof x === "string")) out[k] = reasonsWithoutFinances(v as string[]);
+    else out[k] = redactFinances(v);
+  }
+  return out;
 }
 
 export function withOrg<T>(ctx: OrgContext, fn: (tx: Tx) => Promise<T>): Promise<T> {

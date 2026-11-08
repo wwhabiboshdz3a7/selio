@@ -1,3 +1,4 @@
+import { can } from "@selio/domain";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -103,7 +104,7 @@ function ConversationView({ id }: { id: string }) {
   const createOrder = useAppMutation((priceCents: number) => client.createOrder({ itemId: q.data!.item!.id, customerId: q.data!.customer.id, conversationId: id, salePriceCents: priceCents, status: "pending" }), { invalidate: [...invalidate, "orders", "items"], success: (r) => (r.created ? "Commande créée" : "Commande déjà existante : aucun doublon créé"), onSuccess: (r) => { setOrderDialog(null); navigate(`/app/orders/${r.order.id}`); } });
   const simulate = useAppMutation(() => client.simulateIncomingMessage(id, simText || undefined), { invalidate, success: "Message entrant simulé", onSuccess: () => setSimText("") });
 
-  const canSend = session.role !== "viewer";
+  const canSend = can(session.role, "messages.send");
   return (
     <QueryBoundary query={q} skeleton="spinner">
       {(d) => {

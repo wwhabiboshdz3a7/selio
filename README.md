@@ -2,7 +2,7 @@
 
 Plateforme de gestion pour revendeurs Vinted : vitrine, application web de gestion (responsive, installable), extension navigateur, API, worker et intégration IA prête à raccorder à un serveur Ollama.
 
-> Selio est un outil indépendant, sans affiliation avec Vinted. Vinted n'expose pas d'API publique pour les vendeurs : aucune compatibilité officielle n'est promise, aucun faux OAuth n'est implémenté.
+> Selio est indépendant de Vinted et n'est ni affilié, ni approuvé, ni sponsorisé par Vinted. Hors de l'API Vinted Pro Integrations (réservée aux comptes Pro admis par Vinted, accès à demander : connecteur préparé sans aucun appel), Vinted n'expose pas d'API publique pour les vendeurs : aucune compatibilité officielle n'est promise, aucun faux OAuth n'est implémenté.
 
 ## Modules
 
@@ -11,6 +11,9 @@ Plateforme de gestion pour revendeurs Vinted : vitrine, application web de gesti
 - **Analyse des revendeurs** : grands revendeurs, leur niche, marques, rotation, niches porteuses (inspiration ResellTrack).
 - **Bonnes affaires · À valider · Achat auto** : note /100 expliquée, coût réel (prix + port + protection acheteurs), revente, bénéfice et marge ; validation en un clic ; achat automatique au-dessus d'un seuil avec plafond par jour et délai d'annulation (simulé tant qu'aucun connecteur d'achat n'est autorisé).
 - Stock, messagerie, clients, commandes, analyses (galerie de graphiques personnalisable), automatisations, paramètres.
+- **Équipe** : titulaire, administrateur, exécuteur (sans les finances, masquées par le serveur), contributeur photos, lecture seule ; **parrainage** « un mois offert aux deux », fermé par défaut (`REFERRAL_ENABLED`).
+- **Filiales** : Selio Studio, Track, Radar, Cloud et Comptes, chacune avec sa page sur la vitrine (`/produits/…`, voir [docs/VITRINE.md](docs/VITRINE.md)).
+- **Supervision** : `/api/health` et `/api/ai/health` contrôlées chaque minute par le worker, alerte sur le téléphone des opérateurs ([docs/SUPERVISION.md](docs/SUPERVISION.md)).
 
 La démonstration utilise de **vraies annonces Vinted** (photos, titres, marques et prix issus du dépôt revendo, sans nom de compte) : `python3 packages/demo-data/scripts/import-revendo-photos.py <chemin/vers/revendo>` régénère `apps/web/public/demo/photos/` et `packages/demo-data/src/catalog.generated.ts`. Les statistiques (vues, ventes, clients) restent fictives.
 
@@ -40,7 +43,7 @@ pnpm dev:worker
 VITE_API_BASE_URL=http://127.0.0.1:8787 pnpm dev   # l'application propose alors « Compte connecté »
 ```
 
-Extension : `pnpm build:extension` puis chargement non empaqueté de `apps/extension/dist` (voir [docs/EXTENSION-INSTALL.md](docs/EXTENSION-INSTALL.md)).
+Extension : `pnpm build:extension` puis chargement non empaqueté de `apps/extension/dist` (voir [docs/EXTENSION-INSTALL.md](docs/EXTENSION-INSTALL.md)). Paquet pour le Chrome Web Store : `pnpm extension:pack` → `apps/extension/release/selio-extension-<version>.zip`, **sans rien publier** (compte développeur à valider par Ibrahim, [docs/WEB-STORE.md](docs/WEB-STORE.md)).
 
 ## Mise en ligne
 
@@ -55,6 +58,7 @@ pnpm lint && pnpm typecheck
 pnpm test                 # unitaires + intégration (les tests base/API/worker se désactivent si PostgreSQL local est absent)
 pnpm test:e2e             # Playwright sur l'application en démonstration (desktop, tablette, mobile)
 pnpm build                # web, API, worker, extension
+pnpm extension:pack       # paquet Chrome Web Store contrôlé (permissions, manifeste, archive)
 pnpm ai:diagnose          # diagnostic du provider IA configuré
 ```
 
@@ -80,5 +84,8 @@ packages/core    services serveur partagés API/worker           packages/demo-d
 - [docs/RADAR.md](docs/RADAR.md) (Selio Radar : lecture depuis le compte Achat via le Cloud, alertes sur le téléphone, « 1 clic » ; Radar Auto et achat réel désactivés par défaut, mesures et procédure de test)
 - [docs/STUDIO.md](docs/STUDIO.md) (Selio Studio façon Kavis : tri des photos, étiquette et mesures avec provenance, jamais de mesure inventée, OCR d'essai facultatif, base des références de tailles, précision « à mesurer » avec `pnpm studio:eval` ; photos portées en attente de décision)
 - [docs/NEGOCIATION.md](docs/NEGOCIATION.md) (négociation avancée : la politique décide, mon IA perso rédige ; lots, relance après 24 h, situations, limites de Vinted à mesurer selon [docs/MESURES-VINTED.md](docs/MESURES-VINTED.md)) · [docs/MIGRATION.md](docs/MIGRATION.md) (reprise des réglages de Bleam ou Clemz par texte collé, captures ou fichier RGPD, jamais de connexion à leurs services)
+
+- [docs/VITRINE.md](docs/VITRINE.md) (pages de la vitrine, référencement, mention d'indépendance, comparatifs en attente des textes d'Elias, pages légales en attente de l'avocat) · [docs/WEB-STORE.md](docs/WEB-STORE.md) (publication de l'extension : prêt, manquant, procédure)
+- [docs/SUPERVISION.md](docs/SUPERVISION.md) (cibles, seuils, alertes sur le téléphone, option externe) · [docs/LIQUID-GLASS.md](docs/LIQUID-GLASS.md) (essai « verre liquide » : replis, activation, captures, mesures et avis)
 
 La charte (tokens, preset Tailwind, guidelines) est dans `brand/` et `packages/ui`.

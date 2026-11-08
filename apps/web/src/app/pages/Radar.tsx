@@ -10,6 +10,7 @@ import type { AutoBuyStatus, RadarRunResult } from "../../lib/data/types";
 import { canAddPriority, formatDuration, priorityCount, type LiveReadiness } from "../../lib/radar";
 import { MoneyInput, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { useGlassExperiment } from "../../lib/glass";
 import { OpportunityCard, SCORE_CRITERIA, ScoreLegend } from "../components/deals";
 import { LiveReadinessNote, RADAR_KEYS, RadarMetricsPanel, SearchRhythm, SourceTag, useAutoBuyStatus, useLiveReadiness } from "../components/radar";
 
@@ -50,6 +51,8 @@ export default function Radar() {
   const setOpp = useAppMutation(({ id, s }: { id: string; s: Opportunity["status"] }) => client.setOpportunityStatus(id, s), { invalidate: ["opportunities", "nav-counts"] });
   const buy = useAppMutation((o: Opportunity) => client.quickBuy(o.id), { invalidate: [...RADAR_KEYS, "items"], success: (p) => (p.status === "blocked" ? "Achat bloqué par les contrôles (voir « À valider »)" : "Achat enregistré : prix d'achat reporté dans Manager") });
   const canWrite = can(session.role, "radar.write");
+  // Essai « verre liquide » : la carte d'alerte (affaire notée 75 et +) passe en verre ; rien ne change sinon.
+  const glass = useGlassExperiment(session.user.id).enabled;
   // Priorité (30 s) : visible seulement si Radar Auto est activable (verrou serveur ouvert).
   const priorityVisible = auto.data?.serverEnabled === true;
 
@@ -129,7 +132,7 @@ export default function Radar() {
           <QueryBoundary query={opps} empty={(d) => d.length === 0 ? <EmptyState icon={<RadarIcon />} title="Aucune affaire ici" description="Lancez « Analyser » sur une recherche, ou changez de filtre." /> : null}>
             {(list) => (
               <div className="flex flex-col gap-3">
-                {list.map((o) => <OpportunityCard key={o.id} o={o} to={`/app/radar/affaires/${o.id}`} canWrite={canWrite} onBuy={() => buy.mutate(o)} buying={buy.isPending && buy.variables?.id === o.id} onStatus={(s) => setOpp.mutate({ id: o.id, s })} />)}
+                {list.map((o) => <OpportunityCard key={o.id} o={o} to={`/app/radar/affaires/${o.id}`} glass={glass && o.score >= REVIEW_THRESHOLD} canWrite={canWrite} onBuy={() => buy.mutate(o)} buying={buy.isPending && buy.variables?.id === o.id} onStatus={(s) => setOpp.mutate({ id: o.id, s })} />)}
               </div>
             )}
           </QueryBoundary>

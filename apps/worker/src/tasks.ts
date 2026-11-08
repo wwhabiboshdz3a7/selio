@@ -1,7 +1,7 @@
 import { repos, type Db } from "@selio/db";
 import { getConnector } from "@selio/connectors";
 import { quotasForPlan } from "@selio/contracts";
-import { admin, automation, billing, cloud, connections as connectionsService, migration, pricing, radar, track, type OrgContext, type Services } from "@selio/core";
+import { admin, automation, billing, cloud, connections as connectionsService, migration, pricing, radar, supervision, track, type OrgContext, type Services, type SupervisionTarget } from "@selio/core";
 import { studioRetention } from "./studio";
 
 /** Contexte « système » : actions du worker, journalisées avec l'acteur `system`. */
@@ -215,4 +215,61 @@ export async function trackRetention(services: Services, log?: TaskLogger, now: 
   }
   if (summary.filtersDisabled > 0) log?.info({ filtersDisabled: summary.filtersDisabled }, "rétention track : filtres au-delà du quota du plan coupés");
   return summary;
+}
+
+export interface SupervisionTaskSummary {
+  checked: number;
+  up: number;
+  down: number;
+  alerts: number;
+  reminders: number;
+  recovered: number;
+  pushSent: number;
+  emailsSent: number;
+  /** Notifications (alerte, rappel, rétablissement) qui n'ont été délivrées à personne. */
+  undelivered: number;
+  /** Base de données injoignable pendant le passage (état tenu en mémoire, email seul). */
+  dbUnavailable: boolean;
+  /** Battement externe (SUPERVISION_HEARTBEAT_URL) : envoyé, en échec, ou non configuré / non envoyé (panne). */
+  heartbeat: "sent" | "failed" | "skipped";
+}
+
+/**
+ * « supervision.tick » (chaque minute) : contrôle des cibles, alerte des opérateurs après 3 échecs, rappel
+ * toutes les 60 min, rétablissement notifié (cœur : services/supervision.ts). Battement externe facultatif
+ * (désactivé par défaut) envoyé seulement si aucune cible n'est en panne. Journal : noms, statuts et
+ * erreurs tronquées — jamais l'adresse complète ni le jeton de santé.
+ */
+export async function supervisionTickTask(services: Services, log: TaskLogger, opts: { targets: SupervisionTarget[]; heartbeatUrl?: string }): Promise<SupervisionTaskSummary> {
+  const r = await supervision.supervisionTick(services, opts.targets);
+  let undelivered = 0;
+  for (const e of r.events) {
+    const res = r.results.find((x) => x.name === e.target);
+    const fields = { target: e.target, event: e.event, statusCode: res?.statusCode ?? null, error: res?.error ?? null, delivered: e.delivered, dbUnavailable: e.dbUnavailable };
+    if (e.delivered === 0) {
+      // Personne n'a été prévenu (email « noop » ou en échec, aucun appareil abonné) : jamais « envoyée ».
+      undelivered++;
+      log.error(fields, e.event === "recovered" ? "supervision : cible rétablie — notification NON délivrée" : "supervision : alerte NON délivrée (aucun canal n'a abouti) — nouvel essai au prochain passage");
+      continue;
+    }
+    if (e.event === "recovered") log.info(fields, "supervision : cible rétablie (notifiée)");
+    else log.error(fields, e.event === "alert" ? `supervision : cible en panne (alerte délivrée sur ${e.delivered} canal(aux))` : `supervision : cible toujours en panne (rappel délivré sur ${e.delivered} canal(aux))`);
+  }
+  if (r.dbUnavailable) log.error({}, "supervision : base de données injoignable — état tenu en mémoire du worker, alertes par email seulement");
+  let heartbeat: SupervisionTaskSummary["heartbeat"] = "skipped";
+  if (opts.heartbeatUrl && r.down === 0 && r.up === r.checked) {
+    const doFetch = services.supervision?.fetch ?? ((url: string, init: { method: "GET"; headers: Record<string, string>; signal: AbortSignal }) => fetch(url, init));
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10_000);
+    try {
+      const res = await doFetch(opts.heartbeatUrl, { method: "GET", headers: {}, signal: ctrl.signal });
+      heartbeat = res.status >= 200 && res.status < 300 ? "sent" : "failed";
+    } catch {
+      heartbeat = "failed";
+    } finally {
+      clearTimeout(timer);
+    }
+    if (heartbeat === "failed") log.warn({}, "supervision : battement externe en échec");
+  }
+  return { checked: r.checked, up: r.up, down: r.down, alerts: r.alerts, reminders: r.reminders, recovered: r.recovered, pushSent: r.pushSent, emailsSent: r.emailsSent, undelivered, dbUnavailable: r.dbUnavailable, heartbeat };
 }

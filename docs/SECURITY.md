@@ -7,7 +7,7 @@
 
 ## Isolation multi-tenant
 - Chaque requête métier ouvre une transaction `set local app.org_id = <org>` ; les tables métier ont une politique RLS **forcée** pour le rôle `selio_app` (non superuser, `NOBYPASSRLS`).
-- Les contrôles d'autorisation applicatifs (`can(role, action)`) s'ajoutent à la RLS : propriétaire / administrateur / opérateur / lecture.
+- Les contrôles d'autorisation applicatifs (`can(role, action)`) s'ajoutent à la RLS : titulaire, administrateur, exécuteur, contributeur photos, lecture seule (table explicite `ALLOWED` dans `packages/domain/src/permissions.ts`, chaque action testée contre chaque rôle). Le rang des rôles ne sert qu'à l'affichage, il ne donne aucun droit.
 - Tests d'accès inter-organisations : `packages/db/src/db.test.ts` (RLS sans filtre applicatif) et `apps/api/test/api.test.ts` (404 sur ressources d'une autre organisation).
 
 ## Secrets
@@ -101,6 +101,30 @@ Détails : NEGOCIATION.md, MESURES-VINTED.md, MIGRATION.md.
 - **Contrôle des photos** : la netteté est calculée **dans le navigateur** (variance du laplacien sur une image réduite) ; seuls des scores numériques sont envoyés. Les avertissements (photo floue, pas d'étiquette, mesures manquantes) ne bloquent jamais l'enregistrement et n'inventent aucune mesure.
 - **Seuils de déclaration** : information factuelle (30 ventes ou 2 000 € par an par défaut, paramétrables), calculée sur les commandes de l'organisation ; jamais un conseil fiscal, le texte renvoie vers l'administration.
 
+## Rôles d'équipe et finances masquées
+- **Finances = action `finances.read`** : titulaire, administrateur et lecture seule (le comptable). L'**exécuteur** (publie et répond) et le **contributeur photos** ne l'ont pas.
+- **Masquage côté serveur, pas dans l'interface** : pour un rôle sans `finances.read`, chaque réponse JSON de l'API passe par `redactForRole` (`apps/api/src/plugins/roles.ts`, `@selio/core`) : prix et frais d'achat, coûts, marges, chiffre d'affaires mis à `null` **à toute profondeur** (articles, commandes, analyses, et articles imbriqués d'une conversation, d'un client ou du dressing). Le prix affiché et le prix de vente restent visibles (il faut les connaître pour vendre). Exceptions limitées : la session, les réglages de l'organisation, les recherches et réglages de Radar (objectifs saisis, pas des comptes).
+- **403 explicite** (`finances_forbidden`) sur la facturation, les factures, le journal d'utilisation et la marge de bout en bout ; l'export des analyses (qui contient les prix d'achat) n'est plus permis à l'exécuteur (`analytics.export`) ; le tri « par marge » est ramené au tri par défaut (il révélerait l'ordre des marges). Côté web, les pages de facturation sont derrière `RequireFinances`.
+- **Contributeur photos : liste blanche de routes** (`PHOTOGRAPHER_ROUTES`) : lire les articles, ajouter des photos (téléversement signé), lancer le générateur ; toute autre route, y compris une route ajoutée plus tard, répond 403.
+- Invitations : un administrateur ne peut pas inviter un titulaire (403) ; le rôle de titulaire se transmet en changeant le rôle d'un membre, jamais par invitation.
+- La RLS ne connaît que l'organisation : les restrictions de rôle sont appliquées par l'application (documenté dans la migration 0016).
+
+## Parrainage (anti-abus)
+- **Fermé par défaut** (`REFERRAL_ENABLED=false`) : aucun code, aucune page, routes `/api/referral*` en 404, code saisi à l'inscription ignoré.
+- **Jamais bloquant** : un code vide, mal formé ou inconnu est ignoré avec un message ; l'inscription continue.
+- **Pas d'auto-parrainage** : refusé si le code appartient à la même organisation **ou** à une organisation qui partage un membre avec la nouvelle (contrainte en base en plus : pas de parrainage de soi-même) ; refus journalisé (`referral.self_referral_refused`).
+- **Un seul parrain** par organisation filleule (unicité en base) ; un code unique de 6 caractères par organisation.
+- **Crédit seulement sur un paiement réellement encaissé** : la vérification de carte de l'essai (autorisation de 1 € annulée) ne compte pas ; `qualify` est idempotent (un seul mois par côté, même si le paiement est rejoué) ; crédits isolés par organisation (`subscription_credits`, un crédit par organisation et par parrainage).
+- **Aucune donnée sur la filleule** n'est montrée au parrain au-delà du nombre de parrainages par état. Mois offert consommé au renouvellement (facture à 0 € « Mois offert — parrainage », aucun ordre de paiement) ; chaque étape est dans le journal d'audit (`referral.*`, `billing.referral_credit_applied`).
+
+## Extension et Chrome Web Store
+- Permissions minimales et justifiées (`apps/extension/store/justifications.md`) ; `pnpm extension:pack` **refuse** toute permission hors de `storage` et `activeTab`, tout accès permanent aux sites, un script de contenu hors de Vinted, une origine non chiffrée, une CSP qui autoriserait du code distant, et retire les origines `http://` de développement du paquet publié.
+- Politique de confidentialité de l'extension : ce qui est lu, envoyé (seulement au clic) et jamais collecté (`/extension/confidentialite`, `store/privacy-policy.md`).
+
+## Supervision
+- `/api/health` est public et ne dit rien de secret (états, version, durée de fonctionnement, sans message d'erreur ni adresse interne) ; le détail (`/api/health/details`) est réservé aux opérateurs.
+- Le jeton `AI_HEALTH_TOKEN` n'est joint qu'aux adresses `/api/ai/health` de `PUBLIC_API_URL` et n'est jamais enregistré ; adresses gardées sans identifiants ni requête ; erreurs tronquées ; notifications sans adresse interne (SUPERVISION.md).
+
 ## Journal d'audit
 Actions sensibles (connexion, membres, règles, jetons, connexions, exports, suppression, changements de plan par l'opérateur, Selio Cloud, Selio Radar et ses achats, filtres Track coupés par l'offre) dans `audit_logs`, sans contenu de message ni secret. Durées de conservation configurables par organisation ; nettoyage quotidien par le worker.
 
@@ -112,6 +136,8 @@ Procédure complète : SAUVEGARDE.md (scripts dans `scripts/sauvegarde/`).
 - Les sessions Cloud sont dans la sauvegarde, chiffrées. La clé `SECRETS_ENCRYPTION_KEY` et les `.env` ne le sont pas : copie chiffrée à part, à la main. Sans la clé, les secrets de connexion et les sessions Cloud sont irrécupérables (par conception : les clients se reconnectent).
 
 ## Limites connues
+- Parrainage : le worker ne lit pas encore `REFERRAL_ENABLED` ; un premier paiement encaissé par le worker (fin d'essai) ne qualifie donc pas le parrainage tant que ce n'est pas branché (CLES-ET-CONFIGURATION.md §15).
+- Supervision : sans option externe, une panne complète de la machine n'alerte personne (SUPERVISION.md).
 - Négociation avancée : limites de Vinted **jamais mesurées** (valeurs prudentes) ; relance Agence, réponses de situation et contre-offres de lot jamais exécutées contre Vinted ; une tâche de situation « réponse par mon IA perso » validée sans passer par Messages enverrait le gabarit de la règle (NEGOCIATION.md §9).
 - Migration : le fichier RGPD est gardé **en entier** pendant 7 jours, nettoyé des caractères de contrôle mais pas filtré (il peut contenir des données de tiers ou un identifiant) ; à trancher : ne garder que les lignes reconnues, ou rien (MIGRATION.md §8).
 - Pas de 2FA. Réinitialisation du mot de passe et invitations par email : jetons de 32 octets à usage unique dont seule l'empreinte SHA-256 est stockée (1 h / 7 jours), réponse de « mot de passe oublié » identique et à temps constant qu'un compte existe ou non, pages web qui retirent le jeton de l'adresse avant le rendu. Tant que `EMAIL_PROVIDER=noop` (défaut, signalé au démarrage en production), aucun email ne part : le service d'email reste à choisir.

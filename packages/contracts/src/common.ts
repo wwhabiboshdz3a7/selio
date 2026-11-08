@@ -34,11 +34,22 @@ export interface Page<T> {
 export const MODES = ["demo", "connected"] as const;
 export type Mode = (typeof MODES)[number];
 
-export const ROLES = ["owner", "admin", "operator", "viewer"] as const;
+/**
+ * Rôles d'équipe (§5.15) : titulaire (owner), administrateur (admin), exécuteur (operator : publie et répond,
+ * sans voir les finances), contributeur photos (photographer : ajoute des photos et lance le générateur, rien
+ * d'autre) et lecture seule (viewer : consulte, finances comprises). Les codes restent stables en base ; les
+ * libellés sont dans ROLE_LABELS, les droits dans @selio/domain (matrice explicite par action).
+ */
+export const ROLES = ["owner", "admin", "operator", "photographer", "viewer"] as const;
 export const role = z.enum(ROLES);
 export type Role = z.infer<typeof role>;
 
-export const PROVIDERS = ["vinted", "demo"] as const;
+/**
+ * Fournisseurs de connexion : « vinted » (extension navigateur), « demo » (simulateur) et « vinted_pro »
+ * (API officielle Vinted Pro Integrations, réservée aux comptes Pro admis par Vinted ; squelette tant que
+ * l'accès et la documentation n'ont pas été obtenus, voir packages/connectors/src/vinted-pro/README.md).
+ */
+export const PROVIDERS = ["vinted", "demo", "vinted_pro"] as const;
 export const provider = z.enum(PROVIDERS);
 export type Provider = z.infer<typeof provider>;
 

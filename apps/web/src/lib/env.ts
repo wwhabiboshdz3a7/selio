@@ -10,6 +10,8 @@ const schema = z.object({
   VITE_INVOICE_ISSUER_SIREN: optionalText,
   VITE_INVOICE_ISSUER_VAT: optionalText,
   VITE_INVOICE_ISSUER_EMAIL: optionalText,
+  /** Essai « verre liquide » (§6) activé par défaut : démo et captures seulement ; faux sinon. */
+  VITE_EXPERIMENT_GLASS: z.enum(["true", "false"]).optional().default("false"),
 });
 
 /** Configuration publique validée au démarrage (jamais de secret ici). */
@@ -21,6 +23,7 @@ export const env = schema.parse({
   VITE_INVOICE_ISSUER_SIREN: import.meta.env.VITE_INVOICE_ISSUER_SIREN,
   VITE_INVOICE_ISSUER_VAT: import.meta.env.VITE_INVOICE_ISSUER_VAT,
   VITE_INVOICE_ISSUER_EMAIL: import.meta.env.VITE_INVOICE_ISSUER_EMAIL,
+  VITE_EXPERIMENT_GLASS: import.meta.env.VITE_EXPERIMENT_GLASS,
 });
 
 export const apiBaseUrl = env.VITE_API_BASE_URL.replace(/\/+$/, "");

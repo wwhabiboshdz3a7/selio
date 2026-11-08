@@ -1,6 +1,6 @@
 # Selio — clés et configuration
 
-_Version du 7 novembre 2026_
+_Version du 8 novembre 2026_
 
 ## En bref
 
@@ -9,6 +9,9 @@ _Version du 7 novembre 2026_
 - **Votre IA** : la machine avec Ollama et ses trois modèles — « mon IA perso » (texte), le modèle des photos et le modèle des prix (section 4).
 - **Selio Studio** : aucune clé ; l'OCR d'essai des étiquettes est facultatif (section 4) et les photos portées restent sans fournisseur tant qu'Ibrahim n'a pas choisi (section 13).
 - **Négociation avancée et migration** : aucune clé (section 14) ; les limites de Vinted restent « à mesurer » tant que la mesure sur un compte de l'équipe n'a pas été faite.
+- **Parrainage** : fermé par défaut (`REFERRAL_ENABLED=false`, section 15), à ouvrir sur décision d'Ibrahim.
+- **Supervision** : alertes sur le téléphone des opérateurs quand l'API ou l'IA ne répondent plus (section 16), avec les clés VAPID de la section 11.
+- **Extension sur le Chrome Web Store** : aucune clé ; deux variables au moment de construire le paquet (section 17). Compte développeur (5 $) à valider par Ibrahim.
 - Ce dont vous n'avez **pas** besoin : voir la section « Inutile ».
 
 ## 1. Site web sur Netlify (vitrine + application)
@@ -24,6 +27,7 @@ _Version du 7 novembre 2026_
 | `VITE_INVOICE_ISSUER_SIREN` | Recommandé | `123 456 789` | SIREN de l'émetteur. Vide = « à compléter ». |
 | `VITE_INVOICE_ISSUER_VAT` | Recommandé | `FR12345678901` | Numéro de TVA intracommunautaire. Vide = « à compléter ». |
 | `VITE_INVOICE_ISSUER_EMAIL` | Recommandé | `facturation@votre-domaine.fr` | Contact imprimé sur les factures. Vide = « à compléter ». |
+| `VITE_EXPERIMENT_GLASS` | Facultatif (démo et captures seulement) | `true` ou `false` (défaut) | Essai « verre liquide » (dock mobile et carte d'alerte Radar) activé par défaut. Faux ou absent : l'essai reste désactivé tant que l'utilisateur ne l'active pas dans Paramètres › Apparence. **Ne pas mettre à `true` en production.** Voir docs/LIQUID-GLASS.md. |
 
 ## 2. Base de données et cache (serveur métier)
 
@@ -251,6 +255,42 @@ Fonctionnement et règles : [docs/NEGOCIATION.md](NEGOCIATION.md), [docs/MESURES
 
 **Limites de Vinted : rien à régler, tout à mesurer.** Les valeurs par défaut (3 contre-offres par conversation, offre de 48 h, 60 s entre deux messages) sont **prudentes et non vérifiées**. Les remplacer seulement par une mesure faite selon MESURES-VINTED.md, enregistrée dans l'application (jamais en variable, jamais en dur).
 
+## 15. Parrainage (« un mois offert aux deux »)
+
+| Variable | Statut | Exemple / format | À quoi elle sert |
+|---|---|---|---|
+| `REFERRAL_ENABLED` | Facultatif (API ; **et worker**, voir ci-dessous) | `false` (défaut) ou `true` | Seul `true` ouvre le parrainage. Fermé : ni code, ni page (Paramètres › Parrainage masqué), ni lien ; les routes `/api/referral*` répondent 404 ; un code saisi à l'inscription est ignoré avec un message, **l'inscription n'est jamais bloquée**. Ouvert : un code par organisation (titulaire et administrateurs), un mois offert à la filleule et à la marraine **après le premier paiement réellement encaissé** (la vérification de carte de l'essai ne compte pas), consommé au renouvellement suivant (facture à 0 € « Mois offert — parrainage »). |
+
+À décider par Ibrahim avant d'ouvrir : l'activation elle-même, le sort d'un mois offert quand l'essai se termine sans carte (aujourd'hui : le crédit est gardé pour plus tard), et le texte définitif des conditions du parrainage (après l'avocat). **Point ouvert :** le premier paiement d'une fin d'essai est encaissé par le worker (`billing.renew`) ; le worker doit donc lire `REFERRAL_ENABLED` lui aussi (`referralConfigFromEnv`), sinon le parrainage ne se qualifie pas dans ce cas. Règles anti-abus : docs/SECURITY.md.
+
+## 16. Supervision (alertes sur le téléphone)
+
+Variables du **worker** ; détail du fonctionnement : [docs/SUPERVISION.md](SUPERVISION.md).
+
+| Variable | Statut | Exemple / format | À quoi elle sert |
+|---|---|---|---|
+| `OPERATOR_EMAILS` | Recommandé | `vous@domaine.fr` | Mêmes adresses que l'API : destinataires des alertes (Web Push sur leurs appareils, et email). Vide : les pannes sont enregistrées, personne n'est prévenu. |
+| `PUBLIC_API_URL` | Recommandé | `https://api.votre-domaine.fr` (défaut `http://127.0.0.1:8787`) | Base des cibles par défaut : `/api/health` et `/api/ai/health`. |
+| `AI_HEALTH_TOKEN` | Recommandé | même valeur que l'API | Joint seulement aux adresses `/api/ai/health` de `PUBLIC_API_URL`. Absent : l'IA n'est pas contrôlée. |
+| `CRON_SUPERVISION` | Facultatif | `* * * * *` | Cadence des vérifications. |
+| `SUPERVISION_TARGETS` | Facultatif | `[{"name":"api","url":"https://…/api/health"}]` | Cibles explicites (20 au plus, noms uniques, aucun en-tête) ; vide = cibles par défaut. |
+| `SUPERVISION_FAILURES_BEFORE_ALERT` | Facultatif | `3` | Échecs consécutifs avant l'alerte (1 à 60). |
+| `SUPERVISION_REMINDER_MINUTES` | Facultatif | `60` | Rappel tant que la panne dure (5 à 1 440). |
+| `SUPERVISION_TIMEOUT_MS` | Facultatif | `10000` | Délai d'une vérification (1 000 à 60 000). |
+| `SUPERVISION_HEARTBEAT_URL` | Facultatif (désactivé) | `https://…` | Option externe : battement envoyé quand toutes les cibles répondent ; le service externe alerte quand il cesse. Service gratuit à choisir avec Ibrahim. |
+
+Les notifications utilisent les clés VAPID de la section 11 ; les emails, le fournisseur de la section 7.
+
+## 17. Extension : paquet pour le Chrome Web Store
+
+Rien à mettre sur un serveur : deux variables **au moment de construire le paquet** (`pnpm extension:pack`). Procédure : [docs/WEB-STORE.md](WEB-STORE.md).
+
+| Variable | Statut | Exemple / format | À quoi elle sert |
+|---|---|---|---|
+| `VITE_DEFAULT_API_BASE_URL` | Recommandé pour la publication | `https://api.votre-domaine.fr` | Adresse d'API proposée par défaut dans les options de l'extension (sinon `http://127.0.0.1:8787`, signalé par le paquet). |
+| `EXTENSION_API_ORIGIN` | Recommandé pour la publication | `https://api.votre-domaine.fr` (origine HTTPS, sans chemin) | Réduit l'autorisation facultative de la version publiée à cette seule origine (sinon `https://*/*`, examen approfondi probable). |
+| `EXTENSION_ALLOW_LOCAL_API` | Tests seulement | `true` | Garde les origines `http://` locales dans le paquet ; le contrôle le refuse alors : jamais pour une publication. |
+
 ## Réglages faits dans l'application (pas des clés)
 
 - **Extension navigateur** : Pas de variable : dans Selio › Comptes Vinted › « Avancé — relier l'extension Selio », créez un jeton d'extension, puis collez l'adresse de l'API et le jeton dans les options de l'extension.
@@ -260,6 +300,8 @@ Fonctionnement et règles : [docs/NEGOCIATION.md](NEGOCIATION.md), [docs/MESURES
 - **Notifications sur le téléphone** : Paramètres › Notifications, appareil par appareil (sur iPhone, Selio ajouté à l'écran d'accueil). Exige les clés VAPID (section 11).
 - **Coût réel d'achat** : Page « Achat auto » : protection acheteurs = part fixe + pourcentage (par défaut 0,70 € + 5 %, modifiable).
 - **Dressing intelligent** : Republication conseillée après 7 jours (réglable : 5 à 30 jours).
+- **Rôles d'équipe** : Paramètres › Comptes et accès : titulaire, administrateur, exécuteur (publie et répond, **sans les finances**), contributeur photos (consulte les articles, ajoute des photos, lance le générateur), lecture seule (le comptable).
+- **Essai « verre liquide »** : Paramètres › Apparence, désactivé par défaut, par utilisateur et par appareil (docs/LIQUID-GLASS.md).
 - **Assistant IA** : Paramètres › Assistant IA : ton, signature, validation avant envoi, quota mensuel.
 - **Négociation avancée** : Automatisation › Négociation automatique : offres sur un lot (remise maximale de lot, 25 % par défaut, jamais sous la somme des planchers), relance après 24 h (proposée en Pro, automatique en Agence, rien en Starter), situations par mots-clés (exemples proposés, désactivés tant que vous ne les choisissez pas), étape « Limites de Vinted » (statut « À mesurer » et formulaire de mesure pour les administrateurs).
 - **Migration depuis un autre outil** : Paramètres › Migration : texte collé, captures ou fichier de portabilité RGPD, écran « ancien → nouveau », champs appliqués un par un. Aucun identifiant de l'autre outil n'est demandé.
@@ -268,7 +310,7 @@ Fonctionnement et règles : [docs/NEGOCIATION.md](NEGOCIATION.md), [docs/MESURES
 
 ## Inutile
 
-- Aucune clé Vinted : Vinted ne propose pas d'API publique pour les vendeurs. La lecture et l'aide à la publication passent par l'extension Selio, dans votre navigateur, avec votre session. Selio Cloud ne demande pas non plus de mot de passe Vinted : le client se connecte lui-même dans la fenêtre sécurisée. Selio Radar lit avec cette même session, celle du compte Achat.
+- Aucune clé Vinted aujourd'hui : hors de l'API Vinted Pro Integrations (réservée aux comptes Pro admis par Vinted, accès à demander, connecteur `vinted_pro` préparé sans aucun appel — docs/CONNECTORS.md), Vinted ne propose pas d'API publique pour les vendeurs. La lecture et l'aide à la publication passent par l'extension Selio, dans votre navigateur, avec votre session. Selio Cloud ne demande pas non plus de mot de passe Vinted : le client se connecte lui-même dans la fenêtre sécurisée. Selio Radar lit avec cette même session, celle du compte Achat.
 - Aucune clé OpenAI ou autre IA payante : Selio est prévu pour votre modèle personnel (Ollama).
 - Aucun secret dans Netlify : seules les variables VITE_ ci-dessus, qui sont publiques (adresse de l'API, tarifs indicatifs, mentions des factures).
 - Aucune autre clé de paiement : tout passe par Revolut (section 5), et seul le serveur détient la clé secrète. Le navigateur ne reçoit que le jeton public d'une commande, consommé par le formulaire Revolut.

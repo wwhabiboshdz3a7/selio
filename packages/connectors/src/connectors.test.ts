@@ -17,6 +17,9 @@ import {
 } from "./vinted/adapters/v1-catalog";
 import { CHECKOUT_SELECTORS, parseCheckoutDocument, parseCheckoutPage, readItemPurchaseState } from "./vinted/adapters/v1-checkout";
 import { describeConnectors, getConnector } from "./registry";
+import { VINTED_PRO_ACCESS_NOTE, VintedProConnector, vintedProReadiness, type VintedProFetch } from "./vinted-pro";
+import { effectiveStatus } from "./types";
+import { normalizeVintedProBaseUrl } from "@selio/contracts";
 
 const fixture = (name: string) => readFileSync(new URL(`./vinted/fixtures/${name}`, import.meta.url), "utf8");
 function load(html: string) {
@@ -102,7 +105,8 @@ describe("adaptateur DOM Vinted v1 (fixtures)", () => {
 
 describe("registre", () => {
   it("expose les connecteurs et leurs capacités", () => {
-    expect(describeConnectors().map((d) => d.provider).sort()).toEqual(["demo", "vinted"]);
+    expect(describeConnectors().map((d) => d.provider).sort()).toEqual(["demo", "vinted", "vinted_pro"]);
+    expect(getConnector("vinted_pro")).toBeInstanceOf(VintedProConnector);
     expect(getConnector("demo")).toBe(getConnector("demo"));
   });
 });
@@ -362,5 +366,72 @@ describe("adaptateur de paiement v1 (fixtures)", () => {
   it("aucun sélecteur de champ de saisie bancaire (code, carte) : rien n'est jamais saisi à la place du client", () => {
     const all = Object.values(CHECKOUT_SELECTORS).flat().join(" ");
     expect(all).not.toMatch(/otp|cvc|cvv|card-number|cardnumber|password|sms|input\[type="(?:text|tel|number|password)"\]/i);
+  });
+});
+
+describe("VintedProConnector (squelette, accès à obtenir)", () => {
+  /** HTTP simulé : enregistre chaque appel ; le squelette ne doit en faire aucun. */
+  function recordingFetch() {
+    const calls: string[] = [];
+    const fetch: VintedProFetch = async (url) => {
+      calls.push(url);
+      return { status: 200, text: async () => "{}" };
+    };
+    return { calls, fetch };
+  }
+
+  it("se décrit honnêtement : serveur, expérimental, capacités indisponibles annotées", () => {
+    const d = new VintedProConnector().describe();
+    expect(d).toMatchObject({ provider: "vinted_pro", transport: "server", experimental: true });
+    expect(d.capabilities).toHaveLength(6);
+    for (const c of d.capabilities) {
+      expect(c.state).toBe("unavailable");
+      expect(c.note).toContain(VINTED_PRO_ACCESS_NOTE);
+    }
+    // Identifiant de compte Pro et clé fournie par Vinted ; jamais de mot de passe.
+    expect(d.configFields.map((f) => f.key)).toEqual(["proAccountId", "apiBaseUrl", "apiKey"]);
+    expect(d.configFields.find((f) => f.key === "apiKey")).toMatchObject({ secret: true });
+    expect(d.configFields.find((f) => f.key === "apiKey")!.label).toContain("fournie par Vinted");
+    expect(JSON.stringify(d.configFields).toLowerCase()).not.toMatch(/password/);
+    expect(d.configFields.some((f) => f.key.toLowerCase().includes("password"))).toBe(false);
+  });
+
+  it("test() : statut d'accès « needs_access » avec ce qui manque, sans aucun appel réseau", async () => {
+    const http = recordingFetch();
+    const c = new VintedProConnector({ fetch: http.fetch });
+    const empty = await c.test(ctx);
+    expect(empty).toMatchObject({ ok: false, status: "not_configured", accessStatus: "needs_access", simulated: false });
+    expect(effectiveStatus(empty)).toBe("needs_access");
+    expect(empty.message).toContain("identifiant de compte Pro");
+    expect(empty.message).toContain("clé API fournie par Vinted");
+    expect(empty.message).toContain("adresse de l'API remise par Vinted");
+    // Tout renseigné : toujours « needs_access » (rien n'est branché), toujours aucun appel.
+    const full = await c.test({ ...ctx, config: { proAccountId: "pro-42", apiBaseUrl: "https://api.vinted.com/" }, secret: "cle-factice-de-test" });
+    expect(full.accessStatus).toBe("needs_access");
+    expect(full.message).toContain("pas encore branchée");
+    expect(full.message).not.toContain("cle-factice-de-test");
+    expect(http.calls).toEqual([]);
+  });
+
+  it("aucune adresse inventée : vide par défaut, HTTPS sous vinted.com seulement", () => {
+    expect(vintedProReadiness({ config: {} })).toMatchObject({ baseUrl: null, invalidBaseUrl: false, hasKey: false });
+    expect(vintedProReadiness({ config: { apiBaseUrl: "http://pro.vinted.com" } })).toMatchObject({ baseUrl: null, invalidBaseUrl: true });
+    expect(vintedProReadiness({ config: { apiBaseUrl: "https://evil.example/vinted.com" } }).invalidBaseUrl).toBe(true);
+    expect(normalizeVintedProBaseUrl("https://pro.vinted.com.evil.example")).toBeNull();
+    expect(normalizeVintedProBaseUrl("https://user:pw@pro.vinted.com")).toBeNull();
+    expect(normalizeVintedProBaseUrl("https://pro.vinted.com:8443")).toBeNull();
+    expect(normalizeVintedProBaseUrl("https://pro.vinted.com/v1/?x=1")).toBeNull();
+    expect(normalizeVintedProBaseUrl("https://Sandbox.Vinted.com/api/")).toBe("https://sandbox.vinted.com/api");
+  });
+
+  it("lecture des articles et des commandes : « unsupported », jamais simulée", async () => {
+    const http = recordingFetch();
+    const c = new VintedProConnector({ fetch: http.fetch });
+    const items = await c.readItems();
+    const orders = await c.syncOrders();
+    expect(items).toMatchObject({ ok: false, code: "unsupported", retryable: false });
+    expect(orders).toMatchObject({ ok: false, code: "unsupported", retryable: false });
+    expect("readConversations" in c).toBe(false);
+    expect(http.calls).toEqual([]);
   });
 });

@@ -217,3 +217,29 @@ export function buildDashboard(items: InventoryItem[], orders: Order[], period: 
     orderStatus: [...statusCount.entries()].map(([k, v]) => ({ key: k, label: k, value: v })).sort((a, b) => b.value - a.value),
   };
 }
+
+/**
+ * Vue d'ensemble sans finances (§5.15), pour un rôle sans « finances.read » (exécuteur, contributeur photos).
+ * Construite côté service, sans compter sur une liste de clés : chaque agrégat tiré du chiffre d'affaires, des
+ * marges ou du prix d'achat est vidé (bénéfice cumulé, taux de marge, panier moyen, CA par catégorie, marge par
+ * marque, valeur du stock, achat vs vente, objectif du mois). Restent les comptes (ventes par jour de la
+ * semaine en NOMBRE de ventes, heures, ancienneté du stock en nombre d'articles, délai de vente, tranches de
+ * prix publiés, taux d'écoulement, commandes par statut) : ce sont des données d'activité, pas des comptes.
+ */
+export function dashboardWithoutFinances(d: DashboardData): DashboardData {
+  return {
+    ...d,
+    cumulativeMargin: [],
+    marginRateSeries: [],
+    basketSeries: [],
+    // `value` = nombre de ventes (et non plus le CA du jour) ; `secondary` retiré.
+    weekday: d.weekday.map((w) => ({ key: w.key, label: w.label, value: w.secondary ?? 0 })),
+    categoryMix: [],
+    brandMargin: [],
+    // Nombre d'articles par ancienneté ; la valeur d'achat (`secondary`) est retirée.
+    stockAging: d.stockAging.map((b) => ({ key: b.key, label: b.label, value: b.value })),
+    stockValueByCategory: [],
+    buyVsSell: [],
+    monthlyGoal: { targetCents: 0, achievedCents: 0, previousMonthCents: 0, daysElapsed: d.monthlyGoal.daysElapsed, daysInMonth: d.monthlyGoal.daysInMonth },
+  };
+}

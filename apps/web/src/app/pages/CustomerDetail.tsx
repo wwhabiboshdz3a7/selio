@@ -6,6 +6,8 @@ import { Avatar, Button, Card, DescriptionList, Dialog, Field, Input, Money, Pag
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { OrderStatusBadge, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { can } from "@selio/domain";
+import { Finance } from "../components/finance";
 
 export default function CustomerDetail() {
   const { id = "" } = useParams();
@@ -20,7 +22,7 @@ export default function CustomerDetail() {
   useEffect(() => { if (q.data) { setNotes(q.data.customer.notes); setTags(q.data.customer.tags.join(", ")); } }, [q.data]);
   const save = useAppMutation(() => client.updateCustomer(id, { notes, tags: tags.split(",").map((t) => t.trim()).filter(Boolean) }), { invalidate: ["customer", "customers"], success: "Fiche enregistrée" });
   const merge = useAppMutation(() => client.mergeCustomers(id, mergeId), { invalidate: ["customer", "customers", "conversations", "orders"], success: "Clients fusionnés", onSuccess: () => setMergeOpen(false) });
-  const canWrite = session.role !== "viewer";
+  const canWrite = can(session.role, "customers.write");
   return (
     <QueryBoundary query={q} skeleton="spinner">
       {(d) => (
@@ -30,8 +32,8 @@ export default function CustomerDetail() {
             <div className="flex flex-col gap-4">
               <div className="grid gap-4 sm:grid-cols-3">
                 <Card padding="sm"><p className="text-sm text-text-muted">Commandes</p><p className="num mt-1 text-lg font-semibold">{d.totals.orders}</p></Card>
-                <Card padding="sm"><p className="text-sm text-text-muted">Chiffre d'affaires</p><p className="num mt-1 text-lg font-semibold"><Money cents={d.totals.revenueCents} /></p></Card>
-                <Card padding="sm"><p className="text-sm text-text-muted">Marge brute</p><p className="num mt-1 text-lg font-semibold"><Money cents={d.totals.marginCents} signed /> <span className="text-xs font-normal text-text-muted">{d.totals.revenueCents ? formatPercent(d.totals.marginCents / d.totals.revenueCents) : ""}</span></p></Card>
+                <Card padding="sm"><p className="text-sm text-text-muted">Chiffre d'affaires</p><p className="num mt-1 text-lg font-semibold"><Finance><Money cents={d.totals.revenueCents} /></Finance></p></Card>
+                <Card padding="sm"><p className="text-sm text-text-muted">Marge brute</p><p className="num mt-1 text-lg font-semibold"><Finance><Money cents={d.totals.marginCents} signed /> <span className="text-xs font-normal text-text-muted">{d.totals.revenueCents ? formatPercent(d.totals.marginCents / d.totals.revenueCents) : ""}</span></Finance></p></Card>
               </div>
               <Card>
                 <h2 className="mb-3 text-md font-semibold">Historique</h2>

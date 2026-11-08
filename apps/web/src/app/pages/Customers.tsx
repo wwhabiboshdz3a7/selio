@@ -7,6 +7,8 @@ import { Avatar, Button, Dialog, EmptyState, Field, Input, Money, PageHeader, Pa
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { can } from "@selio/domain";
+import { Finance } from "../components/finance";
 
 export default function Customers() {
   const client = useClient();
@@ -21,7 +23,7 @@ export default function Customers() {
   const create = useAppMutation(() => client.createCustomer({ displayName: form.displayName, handle: form.handle || null, city: form.city || null, notes: form.notes, provider: "demo" }), { invalidate: ["customers"], success: "Client créé", onSuccess: (c) => { setOpen(false); navigate(`/app/customers/${c.id}`); } });
   return (
     <>
-      <PageHeader title="Clients" description="Fiches minimales : pseudo, ville facultative, notes et tags. Aucune donnée superflue." actions={session.role !== "viewer" ? <Button icon={<Plus />} onClick={() => setOpen(true)}>Nouveau client</Button> : undefined} />
+      <PageHeader title="Clients" description="Fiches minimales : pseudo, ville facultative, notes et tags. Aucune donnée superflue." actions={can(session.role, "customers.write") ? <Button icon={<Plus />} onClick={() => setOpen(true)}>Nouveau client</Button> : undefined} />
       <div className="mb-4 grid gap-2 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Input placeholder="Rechercher nom, pseudo, ville…" prefix={<Search />} value={query.q ?? ""} onChange={(e) => set("q", e.target.value)} aria-label="Recherche" />
         <Select value={query.sort} onChange={(e) => set("sort", e.target.value)} aria-label="Tri"><option value="last_contact_desc">Dernier contact</option><option value="name_asc">Nom A→Z</option><option value="orders_desc">Commandes</option></Select>
@@ -39,7 +41,7 @@ export default function Customers() {
                       <Td><span className="flex flex-wrap gap-1">{c.tags.map((t) => <Tag key={t}>{t}</Tag>)}</span></Td>
                       <Td className="hide-mobile text-text-muted">{c.city ?? "—"}</Td>
                       <Td numeric>{c.orderCount}</Td>
-                      <Td numeric><Money cents={c.revenueCents} /></Td>
+                      <Td numeric><Finance><Money cents={c.revenueCents} /></Finance></Td>
                       <Td className="text-text-muted">{c.lastContactAt ? formatRelative(c.lastContactAt) : "—"}</Td>
                     </Tr>
                   ))}

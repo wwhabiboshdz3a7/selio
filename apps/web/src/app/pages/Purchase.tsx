@@ -1,3 +1,4 @@
+import { can } from "@selio/domain";
 import { useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -24,7 +25,7 @@ export default function Purchase() {
   const watch = useAppMutation((id: string) => client.setOpportunityStatus(id, "watching"), { invalidate: ["opportunities", "nav-counts"], success: "Affaire suivie" });
   const confirmMut = useAppMutation((id: string) => client.confirmPurchaseRequest(id), { invalidate: [...RADAR_KEYS, "items"], success: (p) => (p.status === "simulated" ? "Achat simulé de bout en bout (aucun paiement réel)" : p.status === "blocked" ? "Achat bloqué par les contrôles" : "Demande traitée"), onSuccess: () => setConfirm(null) });
   const cancel = useAppMutation((id: string) => client.cancelPurchaseRequest(id), { invalidate: ["purchases", "opportunities"], success: "Demande annulée" });
-  const canBuy = session.role !== "viewer";
+  const canBuy = can(session.role, "purchase.simulate");
   const fees = session.org.settings.buyerFees;
   // Compte Vinted « Achat » utilisé par la validation en un clic (jamais un compte Perso).
   const connections = useQuery({ queryKey: ["connections"], queryFn: () => client.listConnections() });

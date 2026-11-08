@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
 import { MarketingLayout } from "./marketing/layout";
 import { AppLayout, RequireSession, RequireOperator } from "./app/layout";
 import { RouteError } from "./components/RouteError";
+import { RequireFinances } from "./app/components/finance";
 
 const lazy = (loader: () => Promise<{ default: React.ComponentType }>) => async () => {
   const mod = await loader();
@@ -28,6 +29,14 @@ export const router = createBrowserRouter([
       }) },
       { path: "fonctionnalites", lazy: lazy(() => import("./marketing/pages/Features")) },
       { path: "extension", lazy: lazy(() => import("./marketing/pages/Extension")) },
+      // Politique de confidentialité de l'extension (adresse donnée au Chrome Web Store).
+      { path: "extension/confidentialite", lazy: lazy(() => import("./marketing/pages/ExtensionPrivacy")) },
+      // Une page par filiale, sous /produits (les adresses /studio, /track, /cloud… sont celles de l'application).
+      { path: "produits", element: <Navigate to="/plateforme" replace /> },
+      { path: "produits/:slug", lazy: lazy(() => import("./marketing/pages/Product")) },
+      // Comparatifs : textes d'Elias attendus, non référencés tant que COMPARISON_READY est faux (marketing/seo.ts).
+      { path: "selio-ou-bleam", lazy: lazy(() => import("./marketing/pages/SelioOrBleam")) },
+      { path: "alternative-bleam", lazy: lazy(() => import("./marketing/pages/AlternativeBleam")) },
       { path: "assistant-ia", lazy: lazy(() => import("./marketing/pages/Assistant")) },
       { path: "tarifs", lazy: lazy(() => import("./marketing/pages/Pricing")) },
       { path: "plateforme", lazy: lazy(() => import("./marketing/pages/Platform")) },
@@ -68,6 +77,9 @@ export const router = createBrowserRouter([
       { path: "items/import", lazy: lazy(() => import("./app/pages/ItemImport")) },
       // Lots intelligents : propositions de lots (même acheteur, même marque et taille, articles anciens).
       { path: "items/lots", lazy: lazy(() => import("./app/pages/Bundles")) },
+      // Contributeur photos : liste des articles à photographier et ajout de photos seulement (« items.photos.write »).
+      { path: "items/photos", lazy: lazy(() => import("./app/pages/ItemPhotos")) },
+      { path: "items/:id/photos", lazy: lazy(() => import("./app/pages/ItemPhotos").then((m) => ({ default: m.ItemPhotosDetail }))) },
       { path: "items/:id", lazy: lazy(() => import("./app/pages/ItemDetail")) },
       { path: "items/:id/edit", lazy: lazy(() => import("./app/pages/ItemForm")) },
       { path: "selling-rules", element: <Navigate to="/app/automatisation/negociation" replace /> },
@@ -95,17 +107,25 @@ export const router = createBrowserRouter([
       // Alerte « Radar en pause » : le compte Achat se reprend dans l'espace Cloud.
       { path: "cloud", element: <Navigate to="/cloud/comptes" replace /> },
       { path: "settings", lazy: lazy(() => import("./app/pages/Settings")), children: [
-        { index: true, element: <Navigate to="organisation" replace /> },
+        // Organisation, ou Apparence pour la vue réduite du contributeur photos.
+        { index: true, lazy: lazy(() => import("./app/pages/Settings").then((m) => ({ default: m.SettingsHome }))) },
         { path: "organisation", lazy: lazy(() => import("./app/pages/settings/Organisation")) },
         { path: "access", lazy: lazy(() => import("./app/pages/settings/Access")) },
         { path: "members", element: <Navigate to="/app/settings/access" replace /> },
         // Les comptes Vinted ont leur propre menu (« Comptes ») : l'ancienne adresse y redirige.
         { path: "connections", element: <Navigate to="/app/accounts" replace /> },
         { path: "ai", lazy: lazy(() => import("./app/pages/settings/Ai")) },
-        { path: "billing", lazy: lazy(() => import("./app/pages/settings/Billing")) },
-        // Factures : liste, puis vue imprimable (window.print) d'une facture.
-        { path: "invoices", lazy: lazy(() => import("./app/pages/settings/Invoices")) },
-        { path: "invoices/:id", lazy: lazy(() => import("./app/pages/settings/InvoiceDetail")) },
+        // Thème et essai « verre liquide » (désactivé par défaut).
+        { path: "apparence", lazy: lazy(() => import("./app/pages/settings/Appearance")) },
+        // Parrainage : masqué tant que REFERRAL_ENABLED est faux (proposition dans la démonstration).
+        { path: "parrainage", lazy: lazy(() => import("./app/pages/settings/Referral")) },
+        // Abonnement et factures : finances, réservées aux rôles qui les voient (pas l'exécuteur).
+        { element: <RequireFinances />, children: [
+          { path: "billing", lazy: lazy(() => import("./app/pages/settings/Billing")) },
+          // Factures : liste, puis vue imprimable (window.print) d'une facture.
+          { path: "invoices", lazy: lazy(() => import("./app/pages/settings/Invoices")) },
+          { path: "invoices/:id", lazy: lazy(() => import("./app/pages/settings/InvoiceDetail")) },
+        ] },
         // « Mon utilisation » : une jauge par compteur du mois, alerte à 80 %, date de remise à zéro.
         { path: "usage", lazy: lazy(() => import("./app/pages/settings/Usage")) },
         { path: "notifications", lazy: lazy(() => import("./app/pages/settings/Notifications")) },
@@ -118,7 +138,7 @@ export const router = createBrowserRouter([
       { path: "*", element: <Navigate to="/app" replace /> },
     ]),
   },
-  // Filiales : Selio Studio, Selio Agents (aperçu), Selio Track, Selio Cloud (aperçu) et le générateur de compte (en développement).
+  // Filiales : Selio Studio, Selio Agents (aperçu), Selio Track, Selio Cloud (aperçu) et Selio Comptes.
   {
     path: "/studio",
     element: (
@@ -191,7 +211,8 @@ export const router = createBrowserRouter([
     ]),
   },
   {
-    path: "/generateur",
+    // Selio Comptes : checklist et textes à copier, sans aucune action à la place du client.
+    path: "/comptes",
     element: (
       <RequireSession>
         <AppLayout />
@@ -199,10 +220,13 @@ export const router = createBrowserRouter([
     ),
     errorElement: <RouteError />,
     children: guarded([
-      { index: true, lazy: lazy(() => import("./app/spaces/pages/SpaceDevelopment")) },
-      { path: "*", element: <Navigate to="/generateur" replace /> },
+      { index: true, lazy: lazy(() => import("./app/spaces/pages/Comptes")) },
+      { path: "*", element: <Navigate to="/comptes" replace /> },
     ]),
   },
+  // L'ancien « générateur de compte » est devenu Selio Comptes.
+  { path: "/generateur", element: <Navigate to="/comptes" replace /> },
+  { path: "/generateur/*", element: <Navigate to="/comptes" replace /> },
   // Anciennes adresses : Selio Agence est devenu Selio Agents ; Selio Global (nom de l'entreprise) n'est plus un espace.
   { path: "/agence", element: <Navigate to="/agents/clients" replace /> },
   { path: "/agence/equipe", element: <Navigate to="/agents" replace /> },
@@ -222,6 +246,8 @@ export const router = createBrowserRouter([
     errorElement: <RouteError />,
     children: guarded([
       { index: true, lazy: lazy(() => import("./app/pages/Admin")) },
+      // Supervision : /api/health et /api/ai/health vérifiées chaque minute, alertes sur le téléphone.
+      { path: "supervision", lazy: lazy(() => import("./app/pages/AdminSupervision")) },
       // Comptes et accès : aussi dans Paramètres ; ici, à portée de l'opérateur.
       { path: "acces", lazy: lazy(() => import("./app/pages/settings/Access")) },
     ]),

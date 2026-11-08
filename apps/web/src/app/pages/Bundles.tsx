@@ -1,3 +1,4 @@
+import { can } from "@selio/domain";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -20,7 +21,7 @@ export default function Bundles() {
   const client = useClient();
   const session = useRequiredSession();
   const q = useQuery({ queryKey: ["bundles"], queryFn: () => client.suggestBundles() });
-  const canWrite = session.role !== "viewer";
+  const canWrite = can(session.role, "items.write");
   const lot = session.org.settings.automation.negotiation.lot;
   return (
     <>

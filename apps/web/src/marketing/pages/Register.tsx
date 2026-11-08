@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { PLAN_LABELS, TRIAL_DAYS, registerInput } from "@selio/contracts";
 import { Alert, Button, Field, Input, Segmented } from "@selio/ui";
 import { TRIAL_OFFER } from "@selio/demo-data";
@@ -9,12 +9,17 @@ import { useData } from "../../lib/data/provider";
 import { connectedModeAvailable } from "../../lib/env";
 import { errorMessage } from "../../lib/errors";
 import type { Mode } from "../../lib/data/types";
+import { ReferralCodeField } from "../../app/components/referral";
+import { referralCodeForSignup, referralCodeFromSearch } from "../../lib/referral";
 
 export default function Register() {
   usePageMeta("Inscription", "Créer un compte Selio et une organisation.", { noindex: true });
   const { client, mode, setMode } = useData();
   const navigate = useNavigate();
+  const location = useLocation();
   const [form, setForm] = useState({ displayName: "", orgName: "", email: "", password: "" });
+  // Lien partagé « /inscription?parrain=CODE » : le code préremplit le champ (facultatif, jamais bloquant).
+  const [referral, setReferral] = useState(() => referralCodeFromSearch(location.search));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -32,8 +37,10 @@ export default function Register() {
     setError(null);
     setLoading(true);
     try {
-      await client.register(parsed.data);
-      navigate("/app/onboarding", { replace: true });
+      const session = await client.register({ ...parsed.data, referralCode: referralCodeForSignup(referral) });
+      // Réponse du serveur sur le code (enregistré, ignoré, refusé) : affichée à l'arrivée dans l'application.
+      const referralMessage = session.referral?.message;
+      navigate("/app/onboarding", { replace: true, state: typeof referralMessage === "string" ? { referralMessage } : undefined });
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -56,6 +63,7 @@ export default function Register() {
           <Field label="Nom de l'organisation" required error={errors.orgName} hint="Votre boutique, votre atelier, votre nom de vendeur.">{(p) => <Input id={p.id} invalid={p.invalid} aria-describedby={p.describedBy} value={form.orgName} onChange={(e) => setForm({ ...form, orgName: e.target.value })} autoComplete="organization" />}</Field>
           <Field label="Email" required error={errors.email}>{(p) => <Input id={p.id} type="email" invalid={p.invalid} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" />}</Field>
           <Field label="Mot de passe" required error={errors.password} hint="Dix caractères minimum.">{(p) => <Input id={p.id} type="password" invalid={p.invalid} aria-describedby={p.describedBy} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="new-password" />}</Field>
+          <ReferralCodeField value={referral} onChange={setReferral} />
           <div className="rounded-md bg-surface-muted px-3 py-2.5" data-testid="trial-terms">
             <p className="text-sm font-medium text-text">{TRIAL_DAYS} jours d'essai, carte enregistrée, rien n'est débité avant la fin.</p>
             <p className="mt-0.5 text-xs text-text-muted">Toutes les fonctions du plan {PLAN_LABELS[TRIAL_OFFER.plan]} pendant l'essai ; ensuite Starter, Pro ou Agence au choix, ou vous arrêtez sans frais. <Link to="/tarifs" className="underline underline-offset-2">Voir les tarifs</Link></p>

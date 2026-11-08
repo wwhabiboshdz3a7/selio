@@ -131,3 +131,32 @@ export function extractOfferCents(text: string): Cents | null {
   if (!Number.isFinite(value) || value <= 0) return null;
   return Math.round(value * 100);
 }
+
+/**
+ * Raisons d'une décision de négociation sans montant ni taux de marge (§5.15), pour un rôle sans
+ * « finances.read » (exécuteur) : la marge conservée et la marge minimale révèlent le prix d'achat
+ * (offre − frais − marge). Le prix plancher, lui, reste visible : l'exécuteur négocie et doit savoir
+ * jusqu'où il peut descendre ; c'est une règle de prix, déjà dévoilée par toute contre-proposition au
+ * plancher (décision consignée dans docs/DECISIONS.md).
+ */
+export const MARGIN_HIDDEN_REASON = "Marge insuffisante à ce prix selon vos règles (le détail des marges est réservé au titulaire et aux administrateurs).";
+
+export function reasonsWithoutFinances(reasons: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const r of reasons) {
+    // « Marge conservée : 12,00 € (32 %) » : l'offre est acceptée, la phrase précédente le dit déjà.
+    if (/^Marge conservée/i.test(r)) continue;
+    // « Marge absolue insuffisante (X € < Y €) », « Taux de marge insuffisant (X % < Y %) ».
+    if (/^(Marge absolue insuffisante|Taux de marge insuffisant)/i.test(r)) {
+      if (!out.includes(MARGIN_HIDDEN_REASON)) out.push(MARGIN_HIDDEN_REASON);
+      continue;
+    }
+    // Toute autre phrase qui chiffre une marge (en euros ou en pourcentage) : remplacée, jamais recopiée.
+    if (/marge/i.test(r) && /\d/.test(r) && /(€|%)/.test(r)) {
+      if (!out.includes(MARGIN_HIDDEN_REASON)) out.push(MARGIN_HIDDEN_REASON);
+      continue;
+    }
+    out.push(r);
+  }
+  return out;
+}

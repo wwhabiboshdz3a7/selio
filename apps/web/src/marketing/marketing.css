@@ -418,3 +418,51 @@
 .mk-spaces-halo[data-tone="gold"] { fill: color-mix(in oklab, var(--gold-300) 16%, transparent); }
 .mk-spaces-label { fill: var(--ink); font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
 .mk-spaces-sub { fill: var(--ink-muted); font-size: 11px; }
+
+/* ---- Emplacements de texte à fournir (Elias, avocat) ------------------------
+   Filet pointillé neutre et texte atténué : visibles, jamais pris pour un texte
+   définitif. Aucune couleur de statut (ce n'est pas une erreur). */
+.mk-placeholder {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+.mk-placeholder-block {
+  display: block;
+  padding: 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* ---- Capture d'une filiale (pages /produits/*) ------------------------------ */
+.mk-product-shot {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-muted);
+}
+.mk-product-shot img { width: 100%; height: auto; }
+
+/* Tableau comparatif : texte lisible, pas de filet vertical (charte §6). */
+.mk-compare { width: 100%; border-collapse: collapse; font-size: 14px; }
+.mk-compare th, .mk-compare td { padding: 12px 16px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.mk-compare thead th { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+.mk-compare tbody th { font-weight: 500; color: var(--text); width: 28%; }
+.mk-compare td { color: var(--text); }
+.mk-compare .mk-source { display: block; margin-top: 4px; font-size: 12px; color: var(--text-muted); }
+/* Petit écran : une carte par critère (Selio puis Bleam), libellé de colonne au-dessus. */
+@media (max-width: 639px) {
+  .mk-compare thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .mk-compare tr { display: block; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .mk-compare tbody th, .mk-compare td { display: block; width: auto; padding: 4px 0; border: 0; }
+  .mk-compare tbody th { font-weight: 600; padding-bottom: 8px; }
+  .mk-compare td::before { content: attr(data-label); display: block; font-size: 12px; font-weight: 500; color: var(--text-muted); }
+}

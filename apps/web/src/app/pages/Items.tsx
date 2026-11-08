@@ -3,11 +3,12 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Archive, CalendarClock, Download, Layers, LayoutGrid, List, Plus, Search, Sparkles, Upload } from "lucide-react";
 import { ITEM_CATEGORY_LABELS, ITEM_CATEGORIES, type InventoryItem, type InventoryQuery, type ItemStatus } from "@selio/contracts";
-import { daysInStock, daysOnline, projectedMargin } from "@selio/domain";
+import { can, daysInStock, daysOnline, projectedMargin } from "@selio/domain";
 import { Button, buttonClass, Checkbox, ConfirmDialog, EmptyState, FilterChip, Input, Money, PageHeader, Pagination, Select, Table, TableEmpty, TableWrap, Td, Th, Tr, cn, formatCents, formatPercent } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { downloadFile } from "../../lib/download";
 import { ItemStatusBadge, ItemThumb, QueryBoundary } from "../components/common";
+import { Finance, FinanceMaskedNote, useSeesFinances } from "../components/finance";
 import { useAppMutation } from "../components/hooks";
 
 export default function Items() {
@@ -45,7 +46,10 @@ export default function Items() {
   const bulk = useAppMutation((action: "archive" | "delete" | "list") => client.bulkItems(action === "list" ? { ids: [...selected], action: "set_status", status: "listed" } : { ids: [...selected], action }), { invalidate: ["items", "overview"], success: (r) => `${r.affected} article(s) modifié(s)`, onSuccess: () => { setSelected(new Set()); setConfirm(null); } });
   const exportCsv = useAppMutation(() => client.exportItemsCsv(), { success: "Export CSV généré", onSuccess: (csv) => downloadFile(`selio-articles-${new Date().toISOString().slice(0, 10)}.csv`, csv) });
   const rules = session.org.settings.margin;
-  const canWrite = session.role !== "viewer";
+  const canWrite = can(session.role, "items.write");
+  // Export : contient les prix d'achat (finances) ; réservé au titulaire et aux administrateurs.
+  const canExport = can(session.role, "analytics.export");
+  const finances = useSeesFinances();
   const allIds = useMemo(() => q.data?.items.map((i) => i.id) ?? [], [q.data]);
   const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
 
@@ -56,7 +60,7 @@ export default function Items() {
         description="Tout votre stock en un coup d'œil : brouillons, articles en vente, réservés et vendus. Prix d'achat, prix affiché, plancher et marge projetée sont calculés avec vos règles."
         actions={
           <>
-            <Button variant="secondary" icon={<Download />} onClick={() => exportCsv.mutate(undefined)} loading={exportCsv.isPending}>Exporter CSV</Button>
+            {canExport ? <Button variant="secondary" icon={<Download />} onClick={() => exportCsv.mutate(undefined)} loading={exportCsv.isPending}>Exporter CSV</Button> : null}
             <Link to="/app/items/lots" className={buttonClass({ variant: "secondary" })}><Layers className="size-4" aria-hidden />Lots intelligents</Link>
             {canWrite ? <Link to="/app/items/import"><Button variant="secondary" icon={<Upload />}>Importer</Button></Link> : null}
             {canWrite ? <Link to="/app/items/new"><Button variant="secondary" icon={<Plus />}>Nouvel article</Button></Link> : null}
@@ -64,6 +68,7 @@ export default function Items() {
           </>
         }
       />
+      <FinanceMaskedNote />
       <div role="tablist" aria-label="Statut" className="mb-4 flex gap-1 overflow-x-auto pb-1 scrollbar-thin">
         {([["", "Tous actifs"], ["in_stock", "Brouillons / en stock"], ["listed", "En vente"], ["reserved", "Réservés"], ["sold", "Vendus"], ["archived", "Archivés"]] as const).map(([value, label]) => (
           <FilterChip key={value || "all"} role="tab" active={(query.status ?? "") === value} onClick={() => set("status", value)} count={counts.data ? counts.data[value || "all"] ?? 0 : null}>{label}</FilterChip>
@@ -92,7 +97,7 @@ export default function Items() {
           <option value="title_asc">Titre A→Z</option>
           <option value="price_desc">Prix décroissant</option>
           <option value="price_asc">Prix croissant</option>
-          <option value="margin_desc">Marge projetée</option>
+          {finances ? <option value="margin_desc">Marge projetée</option> : null}
         </Select>
         <div className="inline-flex rounded-md border border-border bg-surface p-0.5" role="radiogroup" aria-label="Affichage">
           <button type="button" role="radio" aria-checked={view === "grid"} aria-label="Grille" title="Grille" onClick={() => setView("grid")} className={cn("inline-flex h-8 w-9 items-center justify-center rounded-sm", view === "grid" ? "bg-accent-soft text-accent" : "text-text-muted hover:text-text")}><LayoutGrid className="size-4" /></button>
@@ -172,10 +177,10 @@ function Row({ item, rules, selected, canWrite, onSelect, onOpen }: { item: Inve
       </Td>
       <Td><ItemStatusBadge status={item.status} /></Td>
       <Td className="hide-mobile text-text-muted">{item.size ?? "—"}</Td>
-      <Td numeric><Money cents={item.purchasePriceCents + item.purchaseFeesCents} /></Td>
+      <Td numeric><Finance><Money cents={item.purchasePriceCents + item.purchaseFeesCents} /></Finance></Td>
       <Td numeric>{item.listedPriceCents === null ? <span className="text-text-muted">—</span> : <Money cents={item.listedPriceCents} />}</Td>
       <Td numeric>{item.floorPriceCents === null ? <span className="text-text-muted">—</span> : <Money cents={item.floorPriceCents} />}</Td>
-      <Td numeric>{m ? <span className="inline-flex flex-col items-end"><Money cents={m.marginCents} signed /><span className="text-xs text-text-muted">{formatPercent(m.marginRate)}</span></span> : <span className="text-text-muted">—</span>}</Td>
+      <Td numeric><Finance>{m ? <span className="inline-flex flex-col items-end"><Money cents={m.marginCents} signed /><span className="text-xs text-text-muted">{formatPercent(m.marginRate)}</span></span> : <span className="text-text-muted">—</span>}</Finance></Td>
     </Tr>
   );
 }
@@ -197,9 +202,9 @@ function ItemCard({ item, rules, selected, canWrite, onSelect }: { item: Invento
         <p className="truncate text-xs text-text-muted">{[item.brand, item.size, item.sku].filter(Boolean).join(" · ")}</p>
         <div className="mt-auto flex items-end justify-between gap-2 pt-2">
           <span className="num text-base font-semibold">{item.listedPriceCents !== null ? formatCents(item.listedPriceCents) : <span className="text-sm font-normal text-text-muted">Sans prix</span>}</span>
-          {m ? <span className={cn("num text-xs font-medium", m.marginCents >= 0 ? "text-success" : "text-danger")}>{m.marginCents >= 0 ? "+" : ""}{formatCents(m.marginCents)} · {formatPercent(m.marginRate)}</span> : null}
+          <Finance fallback={null}>{m ? <span className={cn("num text-xs font-medium", m.marginCents >= 0 ? "text-success" : "text-danger")}>{m.marginCents >= 0 ? "+" : ""}{formatCents(m.marginCents)} · {formatPercent(m.marginRate)}</span> : null}</Finance>
         </div>
-        <p className="num text-[11px] text-text-muted">Achat <Money cents={item.purchasePriceCents + item.purchaseFeesCents} /> · {daysInStock(item, now)} j en stock</p>
+        <p className="num text-[11px] text-text-muted"><Finance fallback={null}>Achat <Money cents={item.purchasePriceCents + item.purchaseFeesCents} /> · </Finance>{daysInStock(item, now)} j en stock</p>
       </div>
     </article>
   );

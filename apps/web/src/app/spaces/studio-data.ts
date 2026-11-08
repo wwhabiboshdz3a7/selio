@@ -47,9 +47,11 @@ export function useAllSales() {
 }
 
 /** Note du dressing (sur 100) des annonces en ligne, par article. */
-export function useDressingScores() {
+export function useDressingScores(opts: { enabled?: boolean } = {}) {
   const client = useClient();
   return useQuery({
+    // Désactivé pour la vue réduite (contributeur photos) : le dressing lui répond 403.
+    enabled: opts.enabled ?? true,
     queryKey: ["dressing", "studio-scores"],
     queryFn: async () => new Map<string, ListingPerformance>((await client.getDressing({ filter: "all" })).listings.map((l) => [l.item.id, l.performance])),
   });

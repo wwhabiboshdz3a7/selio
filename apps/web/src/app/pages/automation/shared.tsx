@@ -34,7 +34,7 @@ export function useAutomationSection<K extends keyof AutomationSettings>(key: K)
 export function SaveBar({ dirty, editable, pending, onSave, onReset, savedText = "Réglages enregistrés : ils s'appliquent dès maintenant.", blocked = null }: { dirty: boolean; editable: boolean; pending: boolean; onSave: () => void; onReset: () => void; savedText?: string; /** Raison qui empêche d'enregistrer (réglage invalide), affichée à la place du rappel. */ blocked?: string | null }) {
   if (!editable) return <p className="mt-6 rounded-lg border border-border bg-surface px-4 py-3 text-sm text-text-muted">Consultation : seuls le propriétaire et les administrateurs modifient ces réglages. Les exemples à droite restent utilisables.</p>;
   return (
-    <div className={cn("mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-surface px-4 py-3", dirty ? "sticky bottom-4 z-10 border-accent/50 shadow-md" : "border-border")}>
+    <div className={cn("mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-surface px-4 py-3", dirty ? "sticky bottom-[calc(var(--dock-offset,0px)+1rem)] z-10 border-accent/50 shadow-md" : "border-border")}>
       <p className="text-sm text-text-muted">{dirty ? <><span className="font-semibold text-text">Modifications non enregistrées.</span> {blocked ? <span className="text-danger">{blocked}</span> : "Les exemples les montrent déjà."}</> : savedText}</p>
       <div className="flex gap-2">
         {dirty ? <Button variant="ghost" onClick={onReset}>Annuler</Button> : null}

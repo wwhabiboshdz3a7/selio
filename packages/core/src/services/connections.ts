@@ -10,6 +10,15 @@ import { stopForConnectionTx } from "./cloud";
 export const describe = () => describeConnectors();
 export const listConnections = (ctx: OrgContext) => withOrg(ctx, (tx) => repos.connections.list(tx));
 
+/**
+ * Statut à la création : le simulateur est connecté d'emblée ; Vinted Pro (API officielle) reste « non
+ * configuré » tant que l'accès n'est pas obtenu (statut d'accès « needs_access » rendu par le test) ; le reste
+ * (extension) est « prêt » en attendant l'extension.
+ */
+function initialStatus(provider: MarketplaceConnection["provider"]): MarketplaceConnection["status"] {
+  return provider === "demo" ? "connected" : provider === "vinted_pro" ? "not_configured" : "ready";
+}
+
 export function createConnection(ctx: OrgContext, raw: unknown): Promise<MarketplaceConnection> {
   requireAction(ctx, "connections.manage");
   const parsed = connectionCreate.safeParse(raw);
@@ -22,7 +31,7 @@ export function createConnection(ctx: OrgContext, raw: unknown): Promise<Marketp
     const desc = getConnector(parsed.data.provider).describe();
     const id = newSecret(12);
     const c = await repos.connections.create(tx, {
-      id, provider: parsed.data.provider, label: parsed.data.label, usage: parsed.data.usage ?? "sale", status: parsed.data.provider === "demo" ? "connected" : "ready", capabilities: desc.capabilities, config: parsed.data.config ?? {}, transport: desc.transport,
+      id, provider: parsed.data.provider, label: parsed.data.label, usage: parsed.data.usage ?? "sale", status: initialStatus(parsed.data.provider), capabilities: desc.capabilities, config: parsed.data.config ?? {}, transport: desc.transport,
       secretCiphertext: parsed.data.secret ? ctx.services.secrets.encrypt(parsed.data.secret, id) : null,
     });
     await repos.audit.add(tx, { actorUserId: ctx.userId, action: "connection.created", targetType: "marketplace_connection", targetId: c.id, meta: { provider: c.provider, usage: c.usage }, ip: ctx.ip });
@@ -56,7 +65,10 @@ export function testConnection(ctx: OrgContext, id: string): Promise<ConnectionT
   requireAction(ctx, "connections.manage");
   return withOrg(ctx, async (tx) => {
     const c = await repos.connections.byId(tx, id);
-    const res = await getConnector(c.provider).test({ orgId: ctx.orgId, connectionId: c.id, config: c.config, now: ctx.services.now() });
+    // Secret déchiffré côté serveur seulement (clé fournie par Vinted Pro…), jamais rendu au client.
+    const blob = c.hasSecret ? await repos.connections.secret(tx, id) : null;
+    const secret = blob ? ctx.services.secrets.decrypt(blob, c.id) : null;
+    const res = await getConnector(c.provider).test({ orgId: ctx.orgId, connectionId: c.id, config: c.config, secret, now: ctx.services.now() });
     await repos.connections.update(tx, id, { status: c.status === "disconnected" ? "disconnected" : res.status, lastTestAt: res.testedAt, lastError: res.ok ? null : res.message, capabilities: res.capabilities });
     await repos.audit.add(tx, { actorUserId: ctx.userId, action: "connection.tested", targetType: "marketplace_connection", targetId: id, meta: { status: res.status }, ip: ctx.ip });
     return res;

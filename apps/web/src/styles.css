@@ -205,3 +205,12 @@ tr[tabindex]:focus-visible {
     border-radius: 0;
   }
 }
+
+/* Dock en verre (essai §6, mobile seulement) : espace qu'il occupe en bas de l'écran (60 px + marge 12 px +
+   marge visuelle, zone de sécurité comprise). Lu par la barre « Enregistrer » collante et les notifications ;
+   vaut 0 sans dock ou à partir de md, où le dock n'existe pas. */
+@media (max-width: 767.98px) {
+  :root[data-dock="on"] {
+    --dock-offset: calc(88px + env(safe-area-inset-bottom));
+  }
+}

@@ -1,0 +1,274 @@
+/* ==========================================================================
+   Selio — Verre liquide (essai §6 « Liquid Glass »), styles du composant GlassSurface.
+   Aucune couleur en dur : uniquement les rôles et les tokens --glass-* de tokens.css.
+
+   Principe : AMÉLIORATION PROGRESSIVE. Par défaut, la surface est opaque
+   (var(--surface), filet var(--border)) ; le verre n'est activé que si :
+     - le navigateur gère backdrop-filter (ou -webkit-backdrop-filter) ET color-mix() ;
+     - le composant est en mode verre (data-glass="glass", décidé par useGlassCapabilities) ;
+     - ni prefers-reduced-transparency, ni prefers-contrast: more, ni forced-colors.
+   Ces replis sont écrits en CSS (@supports, @media) : ils tiennent même si le JS se trompe.
+
+   Couches (de bas en haut) :
+     ::before            verre : fond translucide, flou, liseré clair ;
+     .glass-surface__rim réfraction des bords (Chromium seulement, filtre SVG) ;
+     ::after             reflet en dégradé en haut + reflet lent (désactivé si reduced-motion) ;
+     .glass-surface__content  contenu, posé sur sa sous-couche (« scrim ») 4,5:1.
+   ========================================================================== */
+
+@layer components {
+  .glass-surface {
+    /* Valeurs locales : ton « auto » = rôles de la page. */
+    --_glass-surface: var(--surface);
+    --_glass-text: var(--text);
+    --_glass-muted: var(--text-muted);
+    --_glass-edge: var(--border);
+    --_glass-bg: var(--glass-bg);
+    --_glass-border: var(--glass-border);
+    --_glass-highlight: var(--glass-highlight);
+    --_glass-sheen: var(--glass-sheen);
+    --_glass-shadow: var(--glass-shadow);
+    --_glass-scrim: var(--glass-scrim);
+    --_glass-accent: var(--glass-accent);
+    --_glass-success: var(--glass-success);
+    --_glass-danger: var(--glass-danger);
+    --_glass-warning: var(--glass-warning);
+    --_glass-blur: 18px;
+    --_glass-saturate: 160%;
+
+    position: relative;
+    z-index: 0; /* contexte d'empilement local (ne crée pas de « backdrop root ») */
+    border-radius: var(--radius-xl);
+    color: var(--_glass-text);
+    box-shadow: var(--_glass-shadow);
+  }
+
+  /* Tons forcés : indépendants du thème de la page (ex. dock sombre sur page claire).
+     Les rôles de texte sont redéfinis localement pour que les enfants (text-text…) suivent. */
+  .glass-surface[data-glass-tone="light"] {
+    --_glass-surface: var(--glass-light-surface);
+    --_glass-text: var(--glass-light-text);
+    --_glass-muted: var(--glass-light-muted);
+    --_glass-edge: var(--glass-light-edge);
+    --_glass-bg: color-mix(
+      in srgb,
+      var(--glass-light-surface) var(--glass-light-alpha),
+      transparent
+    );
+    --_glass-border: var(--glass-light-border);
+    --_glass-highlight: var(--glass-light-highlight);
+    --_glass-sheen: var(--glass-light-sheen);
+    --_glass-shadow: var(--glass-light-shadow);
+    --_glass-scrim: var(--glass-light-scrim);
+    --_glass-accent: var(--glass-light-accent);
+    --_glass-success: var(--glass-light-success);
+    --_glass-danger: var(--glass-light-danger);
+    --_glass-warning: var(--glass-light-warning);
+    --surface: var(--_glass-surface);
+    --text: var(--_glass-text);
+    --text-muted: var(--_glass-muted);
+    --border: var(--_glass-edge);
+  }
+  .glass-surface[data-glass-tone="dark"] {
+    --_glass-surface: var(--glass-dark-surface);
+    --_glass-text: var(--glass-dark-text);
+    --_glass-muted: var(--glass-dark-muted);
+    --_glass-edge: var(--glass-dark-edge);
+    --_glass-bg: color-mix(in srgb, var(--glass-dark-surface) var(--glass-dark-alpha), transparent);
+    --_glass-border: var(--glass-dark-border);
+    --_glass-highlight: var(--glass-dark-highlight);
+    --_glass-sheen: var(--glass-dark-sheen);
+    --_glass-shadow: var(--glass-dark-shadow);
+    --_glass-scrim: var(--glass-dark-scrim);
+    --_glass-accent: var(--glass-dark-accent);
+    --_glass-success: var(--glass-dark-success);
+    --_glass-danger: var(--glass-dark-danger);
+    --_glass-warning: var(--glass-dark-warning);
+    --surface: var(--_glass-surface);
+    --text: var(--_glass-text);
+    --text-muted: var(--_glass-muted);
+    --border: var(--_glass-edge);
+  }
+
+  /* Intensité « douce » : moins de flou, fond plus couvrant. */
+  .glass-surface[data-glass-intensity="soft"] {
+    --_glass-bg: var(--glass-bg-soft);
+    --_glass-blur: 12px;
+    --_glass-saturate: 140%;
+  }
+  .glass-surface[data-glass-tone="light"][data-glass-intensity="soft"] {
+    --_glass-bg: color-mix(
+      in srgb,
+      var(--glass-light-surface) var(--glass-light-alpha-soft),
+      transparent
+    );
+  }
+  .glass-surface[data-glass-tone="dark"][data-glass-intensity="soft"] {
+    --_glass-bg: color-mix(
+      in srgb,
+      var(--glass-dark-surface) var(--glass-dark-alpha-soft),
+      transparent
+    );
+  }
+
+  /* ---- Repli par défaut : surface opaque ------------------------------- */
+  .glass-surface::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: inherit;
+    background-color: var(--_glass-surface);
+    border: 1px solid var(--_glass-edge);
+    pointer-events: none;
+  }
+  .glass-surface::after {
+    content: none;
+  }
+  .glass-surface__content {
+    position: relative;
+    z-index: 1;
+    border-radius: inherit;
+  }
+  .glass-surface__rim {
+    display: none;
+  }
+  /* Pas de display: none sur le SVG : certains moteurs ignorent alors les filtres qu'il définit. */
+  .glass-surface__filters {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  /* ---- Verre : seulement si backdrop-filter ET color-mix() sont gérés ---- */
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) and
+    (background-color: color-mix(in srgb, currentColor 50%, transparent)) {
+    .glass-surface[data-glass="glass"]::before {
+      background-color: var(--_glass-bg);
+      border-color: var(--_glass-border);
+      -webkit-backdrop-filter: blur(var(--_glass-blur)) saturate(var(--_glass-saturate));
+      backdrop-filter: blur(var(--_glass-blur)) saturate(var(--_glass-saturate));
+    }
+
+    /* Reflet : dégradé clair en haut + reflet diagonal qui glisse lentement. */
+    .glass-surface[data-glass="glass"]::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      background-image: var(--_glass-highlight), var(--_glass-sheen);
+      background-size:
+        100% 100%,
+        260% 100%;
+      background-position:
+        0 0,
+        100% 0;
+      background-repeat: no-repeat;
+    }
+    .glass-surface[data-glass="glass"][data-glass-motion="on"]::after {
+      animation: selio-glass-sheen 14s var(--ease) infinite alternate;
+    }
+
+    /* Sous-couche du texte : opacité calculée pour 4,5:1 sur blanc ET noir.
+       Les rôles atténués sont ramenés au rôle principal : un gris moyen ne peut
+       pas tenir 4,5:1 sur un verre translucide sans le rendre opaque.
+       Les rôles colorés (accent, succès, erreur, avertissement) passent à leur
+       variante « verre » (tokens --glass-*-accent…), calculée pour le même seuil ;
+       --on-accent suit la surface pour les boutons pleins (bg-accent). */
+    .glass-surface[data-glass="glass"] > .glass-surface__content {
+      background-color: color-mix(in srgb, var(--_glass-surface) var(--_glass-scrim), transparent);
+      --text-muted: var(--_glass-text);
+      --text-subtle: var(--_glass-text);
+      --accent: var(--_glass-accent);
+      --accent-hover: var(--_glass-accent);
+      --on-accent: var(--_glass-surface);
+      --success: var(--_glass-success);
+      --danger: var(--_glass-danger);
+      --warning: var(--_glass-warning);
+    }
+
+    /* Réfraction des bords (Chromium) : un anneau qui déplace l'arrière-plan
+       par le filtre SVG feDisplacementMap référencé dans --_glass-refraction. */
+    @supports (backdrop-filter: url(#selio-glass)) {
+      .glass-surface[data-glass="glass"][data-glass-refraction="on"] > .glass-surface__rim {
+        display: block;
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        padding: 7px;
+        border-radius: inherit;
+        pointer-events: none;
+        backdrop-filter: var(--_glass-refraction) saturate(var(--_glass-saturate));
+        -webkit-mask:
+          linear-gradient(black, black) content-box,
+          linear-gradient(black, black);
+        -webkit-mask-composite: xor;
+        mask:
+          linear-gradient(black, black) content-box exclude,
+          linear-gradient(black, black);
+      }
+    }
+  }
+
+  /* ---- Replis d'accessibilité (prioritaires sur le verre) --------------- */
+  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    .glass-surface[data-glass="glass"]::before {
+      background-color: var(--_glass-surface);
+      border-color: var(--_glass-edge);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .glass-surface[data-glass="glass"]::after {
+      content: none;
+    }
+    .glass-surface[data-glass="glass"] > .glass-surface__content {
+      background-color: transparent;
+    }
+    .glass-surface[data-glass="glass"] > .glass-surface__rim {
+      display: none;
+    }
+  }
+  @media (prefers-contrast: more) {
+    .glass-surface::before,
+    .glass-surface[data-glass="glass"]::before {
+      border-color: var(--text);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .glass-surface[data-glass="glass"]::after,
+    .glass-surface[data-glass="glass"][data-glass-motion="on"]::after {
+      animation: none;
+    }
+  }
+  /* Contraste élevé de Windows : couleurs système, aucune transparence. */
+  @media (forced-colors: active) {
+    .glass-surface::before,
+    .glass-surface[data-glass="glass"]::before {
+      background-color: Canvas;
+      border-color: CanvasText;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .glass-surface[data-glass="glass"]::after,
+    .glass-surface[data-glass="glass"] > .glass-surface__rim {
+      display: none;
+    }
+  }
+}
+
+@keyframes selio-glass-sheen {
+  from {
+    background-position:
+      0 0,
+      100% 0;
+  }
+  to {
+    background-position:
+      0 0,
+      0% 0;
+  }
+}

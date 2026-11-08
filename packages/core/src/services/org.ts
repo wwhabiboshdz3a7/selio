@@ -1,7 +1,7 @@
 import { ROLES, inviteInput, orgSettings as orgSettingsSchema, orgUpdate, type Membership, type Organization, type Role, type User } from "@selio/contracts";
 import { repos, hashPassword, hashSecret, newSecret } from "@selio/db";
 import { PLAN_QUOTAS } from "@selio/demo-data";
-import { can } from "@selio/domain";
+import { can, canAssignRole } from "@selio/domain";
 import { invitationEmail } from "@selio/email";
 import { AppError, requireAction, sendEmail, webLink, withOrg, type OrgContext } from "../context";
 import type { Session } from "../types";
@@ -79,7 +79,11 @@ export async function inviteMember(ctx: OrgContext, raw: unknown): Promise<Membe
   requireAction(ctx, "members.manage");
   const parsed = inviteInput.safeParse(raw);
   if (!parsed.success) throw new AppError("validation", "Invitation invalide", 400, parsed.error.flatten());
-  if (parsed.data.role === "owner") throw new AppError("validation", "Le rôle propriétaire ne s'attribue pas par invitation.", 400);
+  // Rôles d'équipe (§5.15) : administrateur, exécuteur, contributeur photos, lecture seule. Le titulaire ne
+  // s'attribue jamais par invitation ; un administrateur ne peut pas le donner du tout (403), le titulaire le
+  // transmet par un changement de rôle d'un membre existant.
+  if (!canAssignRole(ctx.role, parsed.data.role)) throw new AppError("forbidden", "Un administrateur ne peut pas inviter un titulaire.", 403);
+  if (parsed.data.role === "owner") throw new AppError("validation", "Le rôle titulaire ne s'attribue pas par invitation.", 400);
   const quotas = (await withOrg(ctx, (tx) => repos.subscriptions.get(tx)))?.quotas ?? PLAN_QUOTAS.free;
   const token = newSecret(TOKEN_BYTES);
   // 1) Transaction courte : compte, appartenance, jeton, audit. Validée avant tout réseau.
@@ -128,7 +132,7 @@ export async function updateMemberRole(ctx: OrgContext, membershipId: string, ro
     const m = await repos.memberships.byId(tx, membershipId);
     if (m.orgId !== ctx.orgId) throw new AppError("not_found", "Membre introuvable", 404);
     if (m.userId === ctx.userId && role !== "owner") throw new AppError("validation", "Impossible de rétrograder votre propre rôle.", 400);
-    if ((role === "owner" || m.role === "owner") && ctx.role !== "owner") throw new AppError("forbidden", "Seul un propriétaire peut nommer ou changer un propriétaire.", 403);
+    if ((role === "owner" || m.role === "owner") && ctx.role !== "owner") throw new AppError("forbidden", "Seul un titulaire peut nommer ou changer un titulaire.", 403);
     await repos.memberships.setRole(tx, membershipId, role);
     await tx.query("select set_config('app.org_id', $1, true)", [ctx.orgId]);
     // Rôle qui ne voit plus Radar : ses appareils ne reçoivent plus les alertes.
@@ -143,7 +147,7 @@ export async function removeMember(ctx: OrgContext, membershipId: string): Promi
     const m = await repos.memberships.byId(tx, membershipId);
     if (m.orgId !== ctx.orgId) throw new AppError("not_found", "Membre introuvable", 404);
     if (m.userId === ctx.userId) throw new AppError("validation", "Vous ne pouvez pas vous retirer vous-même.", 400);
-    if (m.role === "owner" && ctx.role !== "owner") throw new AppError("forbidden", "Seul un propriétaire peut retirer un propriétaire.", 403);
+    if (m.role === "owner" && ctx.role !== "owner") throw new AppError("forbidden", "Seul un titulaire peut retirer un titulaire.", 403);
     await repos.memberships.delete(tx, membershipId);
     await repos.sessions.deleteForUser(tx, m.userId);
     await tx.query("select set_config('app.org_id', $1, true)", [ctx.orgId]);

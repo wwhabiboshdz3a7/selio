@@ -16,6 +16,11 @@ export interface EmailMessage {
 
 export interface EmailProvider {
   send(message: EmailMessage): Promise<{ id: string }>;
+  /**
+   * Faux pour un fournisseur qui n'envoie rien (« noop » : journalise seulement). Absent ou vrai : le message
+   * part réellement. Sert à ne pas compter une alerte « envoyée » alors que personne ne la reçoit.
+   */
+  readonly delivers?: boolean;
 }
 
 /** Sous-ensemble d'un logger pino (Fastify `app.log`) : jamais le contenu complet d'un email. */

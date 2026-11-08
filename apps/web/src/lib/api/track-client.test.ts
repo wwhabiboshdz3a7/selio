@@ -70,7 +70,9 @@ describe("ApiClient : Selio Track et estimation des prix", () => {
           notices: ["mention"],
         });
       }
-      if (url === "/api/billing/subscription") return json(subscription("pro"));
+      // Offre et quotas lus sur /api/org/plan (ouvert à tout membre) : l'exécuteur reçoit 403 sur l'abonnement.
+      if (url === "/api/org/plan") return json(subscription("pro"));
+      if (url === "/api/billing/subscription") return json({ error: { code: "finances_forbidden", message: "Réservé" } }, 403);
       return json({}, 404);
     });
     const u = await new ApiClient(BASE).trackUsage();
@@ -84,7 +86,8 @@ describe("ApiClient : Selio Track et estimation des prix", () => {
   it("402 « compris à partir de Pro » : vue « indisponible » construite depuis l'abonnement, autres erreurs remontées", async () => {
     stubFetch((url) => {
       if (url === "/api/track/usage") return json({ error: { code: "track_unavailable", message: TRACK_UNAVAILABLE_MESSAGE } }, 402);
-      if (url === "/api/billing/subscription") return json(subscription("starter"));
+      if (url === "/api/org/plan") return json(subscription("starter"));
+      if (url === "/api/billing/subscription") return json({ error: { code: "finances_forbidden", message: "Réservé" } }, 403);
       if (url === "/api/billing/usage") {
         const zero = buildUsageCounter(0, 0);
         return json({ period: { from: "2026-11-01T00:00:00.000Z", to: "2026-11-04T12:00:00.000Z" }, track: { scans: zero, photoSearches: zero, filtersFollowed: zero } });

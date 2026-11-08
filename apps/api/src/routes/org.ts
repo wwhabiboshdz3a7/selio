@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { orgUpdate, type Role } from "@selio/contracts";
+import { PLAN_LABELS, orgUpdate, quotasForPlan, type Role } from "@selio/contracts";
 import { repos } from "@selio/db";
 import { AppError, org as orgService, radar, requireAction, withOrg } from "@selio/core";
 
@@ -34,6 +34,17 @@ export default async function orgRoutes(app: FastifyInstance) {
     reply.status(204);
   });
   app.get("/api/org/members", async (req) => orgService.listMembers(app.requireCtx(req)));
+  /**
+   * Offre de l'organisation pour tous les membres (fonctions et quotas disponibles), SANS donnée de paiement :
+   * ni carte, ni client Revolut, ni échéance, ni échec de débit. L'abonnement complet (`/api/billing/subscription`)
+   * est réservé aux rôles qui voient les finances.
+   */
+  app.get("/api/org/plan", async (req) => {
+    const ctx = app.requireCtx(req);
+    const sub = await withOrg(ctx, (tx) => repos.subscriptions.get(tx));
+    const plan = sub?.plan ?? "free";
+    return { plan, planLabel: PLAN_LABELS[plan], status: sub?.status ?? "none", trial: sub?.status === "trialing", quotas: sub?.quotas ?? quotasForPlan("free") };
+  });
   // Invitation : chaque appel envoie un email (aller-retour SMTP hors transaction) → 20 par quart d'heure et par adresse IP.
   app.post("/api/org/members", { config: { rateLimit: { max: 20, timeWindow: "15 minutes" } } }, async (req, reply) => { reply.status(201); return orgService.inviteMember(app.requireCtx(req), req.body); });
   app.patch<{ Params: { id: string } }>("/api/org/members/:id", async (req, reply) => {

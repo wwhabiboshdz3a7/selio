@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { ArrowRight, MessageSquare, Package, ShoppingBag, Sparkles, TrendingUp } from "lucide-react";
-import { usePageMeta } from "../../lib/seo";
+import { useMarketingMeta } from "../seo";
 import { CheckList, Container, CtaBand, Eyebrow, Lead, MarketingSection, PlannedList } from "../components";
 import { ConstellationHero } from "../constellation/ConstellationHero";
 import { SPACES, SpaceShowcaseCard } from "../spaces";
@@ -52,7 +52,7 @@ function ProductShowcase() {
 }
 
 export default function Home() {
-  usePageMeta("Selio — Gestion pour revendeurs Vinted", "Stock, conversations, clients, commandes et marges des revendeurs Vinted au même endroit. Règles de marge, assistant de rédaction, automatisations transparentes.");
+  useMarketingMeta("/");
   return (
     <>
       <ConstellationHero />
@@ -71,7 +71,7 @@ export default function Home() {
         </ol>
       </MarketingSection>
 
-      <MarketingSection reveal id="espaces" className="scroll-mt-14 border-t border-border" eyebrow="Une plateforme, puis des filiales" title="Selio et ses filiales, une seule IA" lead="Selio gère votre activité au quotidien, du sourcing à la remise en ligne. Sur ses données : Studio écrit les annonces, Agents organise l'équipe et les accès, Track montre où sourcer ; Cloud et le générateur de compte Vinted sont en développement.">
+      <MarketingSection reveal id="espaces" className="scroll-mt-14 border-t border-border" eyebrow="Une plateforme, puis des filiales" title="Selio et ses filiales, une seule IA" lead="Selio gère votre activité au quotidien, du sourcing à la remise en ligne. Sur ses données : Studio écrit les annonces, Agents organise l'équipe et les accès, Track montre où sourcer, Comptes aide à ouvrir une boutique ; Cloud est en développement.">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {SPACES.map((s) => <SpaceShowcaseCard key={s.id} space={s} compact />)}
         </div>
@@ -91,7 +91,7 @@ export default function Home() {
           <div className="rounded-xl border border-border bg-bg p-6" data-reveal="">
             <h3 className="text-md font-semibold text-text">En préparation ou à valider</h3>
             <div className="mt-4">
-              <PlannedList items={["Lecture et envoi via l'extension sur le site Vinted : construit sur des fixtures, à valider dans un navigateur réel", "Assistant IA sur mon modèle perso, hébergé sur un serveur dédié : intégration prête, matériel à raccorder", "Achat réel (à valider et achat auto) : désactivé, simulation de bout en bout disponible", "Abonnements : adaptateur de paiement en mode test uniquement", "Vinted ne propose pas d'API publique pour les vendeurs : Selio ne promet aucune compatibilité officielle"]} />
+              <PlannedList items={["Lecture et envoi via l'extension sur le site Vinted : construit sur des fixtures, à valider dans un navigateur réel", "Assistant IA sur mon modèle perso, hébergé sur un serveur dédié : intégration prête, matériel à raccorder", "Achat réel (à valider et achat auto) : désactivé, simulation de bout en bout disponible", "Abonnements : adaptateur de paiement en mode test uniquement", "API officielle Vinted Pro Integrations : réservée aux comptes Pro admis par Vinted ; accès à demander, connecteur Selio en préparation. Ailleurs, aucune compatibilité officielle n'est promise"]} />
             </div>
           </div>
         </div>

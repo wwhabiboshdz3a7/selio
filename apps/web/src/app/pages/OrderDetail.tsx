@@ -3,11 +3,13 @@ import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { FileText } from "lucide-react";
 import { ORDER_STATUS_LABELS, type OrderStatus } from "@selio/contracts";
-import { ORDER_TRANSITIONS, orderMargin } from "@selio/domain";
+import { ORDER_TRANSITIONS, can, orderMargin } from "@selio/domain";
 import { Alert, Button, Card, DescriptionList, Field, Input, Money, PageHeader, Tag, formatDateTime, formatPercent } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { ItemThumb, MoneyInput, OrderStatusBadge, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { MaskedAmount } from "../components/finance";
+import { seesFinances } from "../../lib/roles";
 
 export default function OrderDetail() {
   const { id = "" } = useParams();
@@ -22,7 +24,9 @@ export default function OrderDetail() {
   const saveCosts = useAppMutation(() => client.updateOrder(id, costs), { invalidate: inv, success: "Frais enregistrés" });
   const saveShip = useAppMutation(() => client.updateShipment(id, { carrier: ship.carrier || null, trackingNumber: ship.trackingNumber || null }), { invalidate: inv, success: "Expédition enregistrée" });
   const doc = useAppMutation(() => client.requestShippingDocument(id), { invalidate: inv, success: "Document demandé au connecteur" });
-  const canWrite = session.role !== "viewer";
+  const canWrite = can(session.role, "orders.write");
+  // Exécuteur : prix de vente visible (il répond et expédie), frais, coût d'acquisition et marge masqués.
+  const finances = seesFinances(session.role);
   return (
     <QueryBoundary query={q} skeleton="spinner">
       {({ order, item, customer, shipment }) => {
@@ -34,17 +38,20 @@ export default function OrderDetail() {
             <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
               <div className="flex flex-col gap-4">
                 <Card>
-                  <h2 className="mb-3 text-md font-semibold">Marge brute</h2>
-                  <DescriptionList columns={2} items={[
+                  <h2 className="mb-3 text-md font-semibold">{finances ? "Marge brute" : "Vente"}</h2>
+                  {!finances ? <DescriptionList columns={2} items={[
+                    { label: "Prix de vente", value: <Money cents={order.salePriceCents} />, numeric: true },
+                    { label: "Frais, coûts et marge", value: <MaskedAmount />, numeric: true },
+                  ]} /> : <DescriptionList columns={2} items={[
                     { label: "Prix de vente", value: <Money cents={order.salePriceCents} />, numeric: true },
                     { label: "Frais plateforme vendeur", value: <Money cents={-order.platformFeeCents} />, numeric: true },
                     { label: "Port à charge vendeur", value: <Money cents={-order.shippingCostCents} />, numeric: true },
                     { label: "Autres coûts", value: <Money cents={-order.otherCostsCents} />, numeric: true },
                     { label: "Coût d'acquisition (figé)", value: <Money cents={-(order.purchasePriceCents + order.purchaseFeesCents)} />, numeric: true },
                     { label: "Marge brute", value: <><Money cents={m.marginCents} signed /> <span className="text-text-muted">({formatPercent(m.marginRate)})</span></>, numeric: true },
-                  ]} />
-                  <p className="mt-3 text-xs text-text-muted">Marge brute = vente − frais plateforme − port vendeur − autres coûts − coût d'acquisition. Ce n'est pas un bénéfice net comptable.</p>
-                  {canWrite && order.status !== "cancelled" && order.status !== "refunded" ? (
+                  ]} />}
+                  {finances ? <p className="mt-3 text-xs text-text-muted">Marge brute = vente − frais plateforme − port vendeur − autres coûts − coût d'acquisition. Ce n'est pas un bénéfice net comptable.</p> : null}
+                  {canWrite && finances && order.status !== "cancelled" && order.status !== "refunded" ? (
                     <div className="mt-4 grid gap-3 sm:grid-cols-3">
                       <Field label="Frais plateforme">{(p) => <MoneyInput id={p.id} value={costs.platformFeeCents} onChange={(v) => setCosts({ ...costs, platformFeeCents: v ?? 0 })} allowEmpty={false} />}</Field>
                       <Field label="Port vendeur">{(p) => <MoneyInput id={p.id} value={costs.shippingCostCents} onChange={(v) => setCosts({ ...costs, shippingCostCents: v ?? 0 })} allowEmpty={false} />}</Field>

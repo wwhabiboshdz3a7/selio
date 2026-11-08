@@ -55,7 +55,7 @@ export function ProvenanceSummary({ draft, className }: { draft: StudioDraft; cl
 }
 
 /** Annonce proposée : titre, description, attributs, prix conseillé ; brouillon ou mise en vente. */
-export function DraftCard({ draft, form, onForm, cover, purchasePriceCents, account, mode, canWrite, onSave, saving }: {
+export function DraftCard({ draft, form, onForm, cover, purchasePriceCents, account, mode, canWrite, canPublish = true, onSave, saving }: {
   draft: StudioDraft;
   form: DraftForm;
   onForm: (f: DraftForm) => void;
@@ -64,12 +64,14 @@ export function DraftCard({ draft, form, onForm, cover, purchasePriceCents, acco
   account: MarketplaceConnection | null;
   mode: "demo" | "connected";
   canWrite: boolean;
+  /** Faux pour le contributeur photos : brouillon seulement, la publication revient à l'équipe. */
+  canPublish?: boolean;
   onSave: (publish: boolean) => void;
   saving: boolean | null;
 }) {
   const client = useClient();
   // État du modèle de prix (« modèle non entraîné », « données de démonstration ») affiché avec l'estimation.
-  const priceModel = useQuery({ queryKey: ["pricing-model"], queryFn: () => client.pricingModelStatus(), staleTime: 60_000 });
+  const priceModel = useQuery({ queryKey: ["pricing-model"], queryFn: () => client.pricingModelStatus(), staleTime: 60_000, enabled: canPublish });
   const copy = (text: string) => { void navigator.clipboard?.writeText(text); };
   const titleLen = form.title.length;
   const setForm = onForm;
@@ -135,10 +137,14 @@ export function DraftCard({ draft, form, onForm, cover, purchasePriceCents, acco
         </section>
       ) : null}
       <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="flex items-center gap-1.5 text-xs text-text-muted"><Info className="size-3.5" aria-hidden />{account ? `Compte : ${account.label}` : "Aucun compte sélectionné"}{account?.provider === "vinted" && mode === "connected" ? " · publication via l'extension Selio" : ""}</p>
+        {canPublish ? (
+          <p className="flex items-center gap-1.5 text-xs text-text-muted"><Info className="size-3.5" aria-hidden />{account ? `Compte : ${account.label}` : "Aucun compte sélectionné"}{account?.provider === "vinted" && mode === "connected" ? " · publication via l'extension Selio" : ""}</p>
+        ) : (
+          <p className="flex items-center gap-1.5 text-xs text-text-muted" data-testid="draft-only-note"><Info className="size-3.5" aria-hidden />Le brouillon rejoint le stock (« En stock »), sans prix d'achat ni compte : l'équipe le complète et le publie.</p>
+        )}
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={() => onSave(false)} loading={saving === false} disabled={!canWrite || form.title.trim().length < 3}>Enregistrer en brouillon</Button>
-          <Button variant="accent" icon={<Send />} onClick={() => onSave(true)} loading={saving === true} disabled={!canWrite || form.title.trim().length < 3 || !form.priceCents}>Publier directement</Button>
+          {canPublish ? <Button variant="accent" icon={<Send />} onClick={() => onSave(true)} loading={saving === true} disabled={!canWrite || form.title.trim().length < 3 || !form.priceCents}>Publier directement</Button> : null}
         </div>
       </div>
     </Card>

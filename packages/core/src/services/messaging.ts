@@ -1,4 +1,4 @@
-import { conversationQuery, draftCreate, type AiRequest, type Conversation, type Message, type Organization } from "@selio/contracts";
+import { conversationQuery, draftCreate, type AiRequest, type Conversation, type Message, type Organization, type Provider } from "@selio/contracts";
 import { repos, type Tx } from "@selio/db";
 import { getConnector } from "@selio/connectors";
 import { applyLimitsToDecision, applySituationOverride, evaluateOffer, extractOfferCents, sanitizeUntrustedText, scanForInjection, situationEscalates, situationPromptContext, type NegotiationResult } from "@selio/domain";
@@ -148,6 +148,10 @@ export function sendMessage(ctx: OrgContext, messageId: string): Promise<Message
 }
 
 export function evaluateConversationOffer(ctx: OrgContext, conversationId: string, offerCents: number): Promise<NegotiationResult> {
+  // Simulation d'offre : réservée à qui rédige les réponses (la lecture seule n'en a pas besoin). Pour un rôle
+  // sans « finances.read », la marge à l'offre et les raisons chiffrées sont masquées à la sortie de l'API
+  // (redactForRole → reasonsWithoutFinances) ; le plancher reste visible (règle de prix, voir DECISIONS).
+  requireAction(ctx, "messages.draft");
   if (!Number.isInteger(offerCents) || offerCents < 0) throw new AppError("validation", "Offre invalide", 400);
   return withOrg(ctx, async (tx) => {
     const conv = await repos.conversations.byId(tx, conversationId);
@@ -217,7 +221,7 @@ export async function suggestReply(ctx: OrgContext, conversationId: string, sign
 }
 
 /** Ingestion d'un message entrant (connecteur, extension ou simulateur). Idempotent par référence externe. */
-export async function ingestInboundTx(ctx: OrgContext, tx: Tx, input: { connectionId: string | null; provider: "demo" | "vinted"; conversationRef: string | null; buyerHandle: string; buyerName?: string | null; itemId?: string | null; itemExternalRef?: string | null; body: string; externalRef?: string | null; at?: string }): Promise<Conversation> {
+export async function ingestInboundTx(ctx: OrgContext, tx: Tx, input: { connectionId: string | null; provider: Provider; conversationRef: string | null; buyerHandle: string; buyerName?: string | null; itemId?: string | null; itemExternalRef?: string | null; body: string; externalRef?: string | null; at?: string }): Promise<Conversation> {
   const now = input.at ?? nowIso(ctx);
   const text = sanitizeUntrustedText(input.body, 2000);
   let customer = await repos.customers.byHandle(tx, input.provider, input.buyerHandle);

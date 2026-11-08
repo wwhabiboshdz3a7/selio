@@ -875,4 +875,61 @@ describe("base de données", () => {
     expect(mine?.aiSettings).toMatchObject({ monthlyRequestQuota: 7 });
     expect(usage.find((r) => r.id === quoted.id)).toMatchObject({ aiRequestsMonth: 0, aiSettings: {} });
   });
+
+  it("0016 : rôles élargis (contributeur photos), codes et liens de parrainage globaux, mois offerts isolés par RLS et accordés une fois", async () => {
+    if (!available) return;
+    const { r1, r2, u } = await owner.withGlobal(async (tx) => {
+      const u = await repos.users.create(tx, { email: "photos-0016@test.local", displayName: "Photos", passwordHash: "x", passwordSalt: "y" });
+      const r1 = await repos.orgs.create(tx, { name: "Org Marraine", slug: "org-ref-1", settings: {} });
+      const r2 = await repos.orgs.create(tx, { name: "Org Filleule", slug: "org-ref-2", settings: {} });
+      return { r1, r2, u };
+    });
+    // Contributeur photos accepté ; un rôle inconnu reste refusé par la contrainte.
+    const m = await app.withGlobal((tx) => repos.memberships.create(tx, { orgId: r1.id, userId: u.id, role: "photographer" }));
+    expect(m.role).toBe("photographer");
+    await expect(app.withGlobal((tx) => tx.query("update memberships set role = 'superadmin' where id = $1", [m.id]))).rejects.toBeInstanceOf(Error);
+    // Codes : un par organisation, unique, alphabet lisible imposé par la base.
+    expect(await app.withGlobal((tx) => repos.referralCodes.create(tx, r1.id, "AB3K7Q"))).toBe("AB3K7Q");
+    expect(await app.withGlobal((tx) => repos.referralCodes.create(tx, r2.id, "AB3K7Q"))).toBeNull();
+    expect(await app.withGlobal((tx) => repos.referralCodes.create(tx, r1.id, "ZZ9ZZ9"))).toBeNull();
+    await expect(app.withGlobal((tx) => repos.referralCodes.create(tx, r2.id, "AB0OIL"))).rejects.toBeInstanceOf(Error);
+    expect(await app.withGlobal((tx) => repos.referralCodes.byCode(tx, "AB3K7Q"))).toEqual({ orgId: r1.id, code: "AB3K7Q" });
+    expect(await app.withGlobal((tx) => repos.referralCodes.byOrg(tx, r2.id))).toBeNull();
+    // Lien : une filleule une seule fois, jamais soi-même.
+    const link = await app.withGlobal((tx) => repos.referrals.create(tx, { code: "AB3K7Q", referrerOrgId: r1.id, referredOrgId: r2.id }));
+    expect(link).toMatchObject({ status: "pending", referrerOrgId: r1.id, referredOrgId: r2.id, qualifiedAt: null, creditedAt: null });
+    expect(await app.withGlobal((tx) => repos.referrals.create(tx, { code: "AB3K7Q", referrerOrgId: r1.id, referredOrgId: r2.id }))).toBeNull();
+    await expect(app.withGlobal((tx) => repos.referrals.create(tx, { code: "AB3K7Q", referrerOrgId: r1.id, referredOrgId: r1.id }))).rejects.toBeInstanceOf(Error);
+    expect(await app.withGlobal((tx) => repos.referrals.countByStatus(tx, r1.id))).toEqual({ pending: 1, qualified: 0, credited: 0, refused: 0 });
+    // Qualification conditionnelle : une seule fois.
+    const at = "2026-11-08T10:00:00.000Z";
+    expect((await app.withGlobal((tx) => repos.referrals.markQualified(tx, link!.id, at)))?.status).toBe("qualified");
+    expect(await app.withGlobal((tx) => repos.referrals.markQualified(tx, link!.id, at))).toBeNull();
+    // Crédits : sous RLS (contexte de l'organisation exigé), un par organisation et par parrainage.
+    const grant = (orgId: string) => app.withOrg(orgId, (tx) => repos.subscriptionCredits.grant(tx, { orgId, kind: "referral", months: 1, sourceReferralId: link!.id }));
+    const c1 = await grant(r1.id);
+    expect(c1).toMatchObject({ orgId: r1.id, kind: "referral", months: 1, consumedAt: null });
+    expect(await grant(r1.id)).toBeNull();
+    const c2 = await grant(r2.id);
+    await expect(app.withOrg(r1.id, (tx) => repos.subscriptionCredits.grant(tx, { orgId: r2.id, kind: "referral", months: 1, sourceReferralId: null }))).rejects.toBeInstanceOf(Error);
+    expect(await app.withGlobal((tx) => tx.query("select id from subscription_credits"))).toHaveLength(0);
+    expect(await app.withOrg(r1.id, (tx) => repos.subscriptionCredits.list(tx, r1.id))).toHaveLength(1);
+    expect(await app.withOrg(r1.id, (tx) => repos.subscriptionCredits.list(tx, r2.id))).toHaveLength(0);
+    // Tant qu'un crédit reste à consommer, le parrainage reste « qualified » ; consommés tous les deux : « credited ».
+    const invoiceFor = (orgId: string) => app.withOrg(orgId, (tx) => repos.invoices.create(tx, { plan: "pro", cycle: "monthly", amountCents: 0, vatRate: 20, vatNotice: null, periodStart: at, periodEnd: "2026-12-08T10:00:00.000Z", orderId: null, issuedAt: at, extraLines: [{ kind: "credit", product: "referral_month", label: "Mois offert — parrainage", quantity: 1, unitCents: 0, amountCents: 0 }] }));
+    const inv1 = await invoiceFor(r1.id);
+    expect(inv1.extraLines?.[0]).toMatchObject({ kind: "credit", product: "referral_month" });
+    await app.withOrg(r1.id, async (tx) => {
+      const taken = await repos.subscriptionCredits.takeAvailable(tx, r1.id);
+      expect(taken?.id).toBe(c1!.id);
+      expect((await repos.subscriptionCredits.consume(tx, taken!.id, inv1.id, at))?.invoiceId).toBe(inv1.id);
+      expect(await repos.subscriptionCredits.consume(tx, taken!.id, inv1.id, at)).toBeNull();
+      expect(await repos.subscriptionCredits.countAvailable(tx, r1.id)).toBe(0);
+    });
+    expect(await app.withGlobal((tx) => repos.referrals.settle(tx, link!.id, at))).toBe("qualified");
+    const inv2 = await invoiceFor(r2.id);
+    await app.withOrg(r2.id, (tx) => repos.subscriptionCredits.consume(tx, c2!.id, inv2.id, at));
+    expect(await app.withGlobal((tx) => repos.referrals.settle(tx, link!.id, at))).toBe("credited");
+    expect(await app.withGlobal((tx) => repos.referrals.byReferred(tx, r2.id))).toMatchObject({ status: "credited", creditedAt: at });
+  });
 });

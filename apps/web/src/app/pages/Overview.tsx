@@ -9,6 +9,7 @@ import { useClient, useRequiredSession } from "../../lib/data/provider";
 import type { OverviewData } from "../../lib/data/types";
 import { AreaChart, BarChart, ColumnChart, DonutChart, Gauge, HorizontalBars, ScoreRing, Sparkline, StackedBar, scoreTone } from "../../components/charts";
 import { Delta, OrderStatusBadge, PeriodPicker, QueryBoundary } from "../components/common";
+import { MaskedAmount, FinanceMaskedNote, useSeesFinances } from "../components/finance";
 import { useNavCounts } from "../layout";
 
 type WidgetId = "sales" | "cumulative" | "goal" | "categoryMix" | "weekday" | "hours" | "stockAging" | "daysToSell" | "brandMargin" | "priceBands" | "buyVsSell" | "sellThrough" | "stockValue" | "marginRate" | "basket" | "dressing" | "orderStatus" | "stale";
@@ -19,20 +20,22 @@ interface WidgetDef {
   description: string;
   icon: ReactNode;
   wide?: boolean;
+  /** Montre des finances (chiffre d'affaires, marges, prix d'achat) : masqué pour l'exécuteur. */
+  finance?: true;
   render: (d: OverviewData) => ReactNode;
 }
 
 const pct = (v: number) => formatPercent(v);
 const WIDGETS: WidgetDef[] = [
-  { id: "sales", title: "Ventes et marge brute", description: "Chiffre d'affaires et marge par jour, semaine ou mois.", icon: <BarChart3 />, wide: true,
+  { id: "sales", finance: true, title: "Ventes et marge brute", description: "Chiffre d'affaires et marge par jour, semaine ou mois.", icon: <BarChart3 />, wide: true,
     render: (d) => d.series.some((s) => s.revenueCents > 0) ? <BarChart data={d.series.map((s) => ({ label: s.label, primary: s.revenueCents, secondary: s.marginCents }))} primaryLabel="CA" secondaryLabel="Marge brute" /> : <Empty text="Aucune vente sur la période." /> },
-  { id: "cumulative", title: "Bénéfice cumulé", description: "La marge brute qui s'additionne vente après vente.", icon: <TrendingUp />, wide: true,
+  { id: "cumulative", finance: true, title: "Bénéfice cumulé", description: "La marge brute qui s'additionne vente après vente.", icon: <TrendingUp />, wide: true,
     render: (d) => <AreaChart data={d.dashboard.cumulativeMargin.map((x) => ({ label: x.label, value: x.value }))} label="Bénéfice cumulé" /> },
-  { id: "goal", title: "Objectif du mois", description: "CA du mois en cours face à l'objectif (mois précédent + 10 %).", icon: <Target />,
+  { id: "goal", finance: true, title: "Objectif du mois", description: "CA du mois en cours face à l'objectif (mois précédent + 10 %).", icon: <Target />,
     render: (d) => { const g = d.dashboard.monthlyGoal; const pace = g.daysElapsed / Math.max(1, g.daysInMonth); return <div className="flex flex-col items-center"><Gauge value={g.achievedCents} max={g.targetCents} label={`${formatCents(g.achievedCents, { compact: true })} sur ${formatCents(g.targetCents, { compact: true })}`} sublabel={`Jour ${g.daysElapsed}/${g.daysInMonth} · rythme attendu ${Math.round(pace * 100)} %`} tone={g.achievedCents >= g.targetCents ? "var(--gold)" : "var(--accent-vivid)"} /><p className="mt-2 text-xs text-text-muted">Mois précédent : {formatCents(g.previousMonthCents, { compact: true })}</p></div>; } },
-  { id: "categoryMix", title: "Ventes par catégorie", description: "Part de chaque catégorie dans le chiffre d'affaires.", icon: <PieChart />,
+  { id: "categoryMix", finance: true, title: "Ventes par catégorie", description: "Part de chaque catégorie dans le chiffre d'affaires.", icon: <PieChart />,
     render: (d) => d.dashboard.categoryMix.length ? <DonutChart rows={d.dashboard.categoryMix.map((r) => ({ label: r.label, value: r.value }))} centerLabel="de CA" /> : <Empty text="Aucune vente." /> },
-  { id: "weekday", title: "Meilleurs jours de vente", description: "Chiffre d'affaires par jour de la semaine.", icon: <CalendarDays />,
+  { id: "weekday", finance: true, title: "Meilleurs jours de vente", description: "Chiffre d'affaires par jour de la semaine.", icon: <CalendarDays />,
     render: (d) => <ColumnChart rows={d.dashboard.weekday.map((w) => ({ label: w.label, value: w.value }))} formatValue={(v) => formatCents(v, { compact: true })} /> },
   { id: "hours", title: "Heures des ventes", description: "À quelle heure vos articles partent (heure de Paris).", icon: <Clock />,
     render: (d) => <ColumnChart rows={d.dashboard.hours.map((h) => ({ label: h.label, value: h.value }))} /> },
@@ -40,19 +43,19 @@ const WIDGETS: WidgetDef[] = [
     render: (d) => <ColumnChart rows={d.dashboard.stockAging.map((b) => ({ label: b.label, value: b.value }))} /> },
   { id: "daysToSell", title: "Délai de vente", description: "En combien de jours vos ventes de la période sont parties.", icon: <Clock />,
     render: (d) => <ColumnChart rows={d.dashboard.daysToSell.map((b) => ({ label: b.label, value: b.value }))} /> },
-  { id: "brandMargin", title: "Marques les plus rentables", description: "Marge brute cumulée par marque.", icon: <Trophy />,
+  { id: "brandMargin", finance: true, title: "Marques les plus rentables", description: "Marge brute cumulée par marque.", icon: <Trophy />,
     render: (d) => d.dashboard.brandMargin.length ? <HorizontalBars rows={d.dashboard.brandMargin.map((r) => ({ label: r.label, value: r.value }))} /> : <Empty text="Aucune vente." /> },
-  { id: "priceBands", title: "Ventes par tranche de prix", description: "Où se situent vos prix de vente.", icon: <Tags />,
+  { id: "priceBands", finance: true, title: "Ventes par tranche de prix", description: "Où se situent vos prix de vente.", icon: <Tags />,
     render: (d) => <ColumnChart rows={d.dashboard.priceBands.map((b) => ({ label: b.label, value: b.value }))} /> },
-  { id: "buyVsSell", title: "Achat vs vente par catégorie", description: "Prix d'achat moyen comparé au prix de vente moyen.", icon: <Coins />, wide: true,
+  { id: "buyVsSell", finance: true, title: "Achat vs vente par catégorie", description: "Prix d'achat moyen comparé au prix de vente moyen.", icon: <Coins />, wide: true,
     render: (d) => d.dashboard.buyVsSell.length ? <BarChart data={d.dashboard.buyVsSell.map((r) => ({ label: r.label, primary: r.secondary ?? 0, secondary: r.value }))} primaryLabel="Vente moyenne" secondaryLabel="Achat moyen" height={200} /> : <Empty text="Aucune vente." /> },
   { id: "sellThrough", title: "Taux d'écoulement par catégorie", description: "Vendus / (vendus + en stock).", icon: <GaugeIcon />,
     render: (d) => <HorizontalBars rows={d.dashboard.sellThroughByCategory.map((r) => ({ label: r.label, value: r.value }))} formatValue={pct} /> },
-  { id: "stockValue", title: "Valeur du stock", description: "Valeur d'achat du stock actif par catégorie.", icon: <Wallet />,
+  { id: "stockValue", finance: true, title: "Valeur du stock", description: "Valeur d'achat du stock actif par catégorie.", icon: <Wallet />,
     render: (d) => d.dashboard.stockValueByCategory.length ? <DonutChart rows={d.dashboard.stockValueByCategory.map((r) => ({ label: r.label, value: r.value }))} centerLabel="en stock" /> : <Empty text="Stock vide." /> },
-  { id: "marginRate", title: "Taux de marge", description: "Marge brute / chiffre d'affaires, dans le temps.", icon: <LineChart />, wide: true,
+  { id: "marginRate", finance: true, title: "Taux de marge", description: "Marge brute / chiffre d'affaires, dans le temps.", icon: <LineChart />, wide: true,
     render: (d) => <AreaChart data={d.dashboard.marginRateSeries.map((x) => ({ label: x.label, value: Math.round(x.value * 1000) }))} formatValue={(v) => `${Math.round(v / 10)} %`} label="Taux de marge" /> },
-  { id: "basket", title: "Panier moyen", description: "Montant moyen d'une vente dans le temps.", icon: <ShoppingBag />, wide: true,
+  { id: "basket", finance: true, title: "Panier moyen", description: "Montant moyen d'une vente dans le temps.", icon: <ShoppingBag />, wide: true,
     render: (d) => <AreaChart data={d.dashboard.basketSeries.map((x) => ({ label: x.label, value: x.value }))} label="Panier moyen" /> },
   { id: "dressing", title: "Rendement du dressing", description: "Note moyenne des annonces et annonces à republier.", icon: <Shirt />,
     render: (d) => <div className="flex flex-col gap-3"><div className="flex items-center gap-4"><ScoreRing score={d.dressing.averageScore} size={72} stroke={6} scale="listing" /><div><p className="num text-lg font-semibold">{d.dressing.toRepublish} à republier</p><p className="text-xs text-text-muted">{d.dressing.listed} annonces · {d.dressing.viewsPerDay.toFixed(1).replace(".", ",")} vues/jour · {pct(d.dressing.favoriteRate)} de favoris</p></div></div><StackedBar rows={[{ label: "Excellentes", value: d.dressing.byBand.excellent, tone: scoreTone(80, "listing") }, { label: "Bonnes", value: d.dressing.byBand.good, tone: scoreTone(60, "listing") }, { label: "À améliorer", value: d.dressing.byBand.improve, tone: scoreTone(40, "listing") }, { label: "Faibles", value: d.dressing.byBand.weak, tone: scoreTone(0, "listing") }]} /><Link to="/app/dressing" className="text-sm font-medium text-accent">Ouvrir le dressing →</Link></div> },
@@ -98,10 +101,13 @@ export default function Overview() {
   const counts = useNavCounts();
   const market = useQuery({ queryKey: ["market", "overview"], queryFn: () => client.getMarketInsights({ windowDays: 30 }) });
   const [widgets, setWidgets] = useWidgets(session.org.id);
+  // Exécuteur : aucun graphique financier, chiffres d'affaires et marges masqués.
+  const finances = useSeesFinances();
+  const available = useMemo(() => (finances ? WIDGETS : WIDGETS.filter((w) => !w.finance)), [finances]);
   const [gallery, setGallery] = useState(false);
   const [showAlerts, setShowAlerts] = useState(false);
   const first = session.user.displayName.split(" ")[0];
-  const active = useMemo(() => widgets.map((id) => WIDGETS.find((w) => w.id === id)!).filter(Boolean), [widgets]);
+  const active = useMemo(() => widgets.map((id) => available.find((w) => w.id === id)!).filter(Boolean), [widgets, available]);
   const toggle = (id: WidgetId) => setWidgets(widgets.includes(id) ? widgets.filter((x) => x !== id) : [...widgets, id]);
 
   return (
@@ -112,6 +118,7 @@ export default function Overview() {
         actions={<><PeriodPicker value={period} onChange={setPeriod} /><Button variant="secondary" icon={<LayoutGrid />} onClick={() => setGallery(true)}>Personnaliser</Button></>}
       />
 
+      <FinanceMaskedNote />
       <nav aria-label="Raccourcis" className="mb-8 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border xl:grid-cols-4">
         <FeatureTile to="/studio" icon={<Sparkles />} title="Générer une annonce" text="Vos photos → annonce rédigée par l'IA, en brouillon ou publiée." cta="Commencer" primary />
         <FeatureTile to="/app/dressing?filter=due" icon={<Shirt />} title="Dressing intelligent" text={q.data ? `Note moyenne ${q.data.dressing.averageScore}/100 · ${counts.data?.dressingDue ?? q.data.dressing.toRepublish} annonce(s) à republier` : "Notes et rendement de vos annonces"} cta="Republier" />
@@ -125,10 +132,10 @@ export default function Overview() {
             <StatStrip
               className="grid-cols-2 lg:grid-cols-5"
               items={[
-                { label: "Chiffre d'affaires", value: formatCents(d.sales.revenueCents), sub: <Delta current={d.sales.revenueCents} previous={d.previousSales.revenueCents} format={(v) => formatCents(v)} />, extra: <Spark values={d.series.map((s) => s.revenueCents)} /> },
-                { label: "Bénéfice (marge brute)", value: formatCents(d.sales.marginCents), sub: <span className={d.sales.marginCents >= 0 ? "text-success" : "text-danger"}>{formatPercent(d.sales.marginRate)} du CA</span>, extra: <Spark values={d.dashboard.cumulativeMargin.map((x) => x.value)} /> },
-                { label: "Ventes", value: formatNumber(d.sales.orderCount), sub: <>Panier moyen {formatCents(d.sales.averageBasketCents)}</>, extra: <Spark values={d.series.map((s) => s.orderCount)} /> },
-                { label: "Stock actif", value: formatNumber(d.stock.activeCount), sub: <>{formatNumber(d.stock.listedCount)} en vente · {formatCents(d.stock.stockValueCents, { compact: true })} investis</> },
+                { label: "Chiffre d'affaires", value: finances ? formatCents(d.sales.revenueCents) : <MaskedAmount />, sub: !finances ? undefined : <Delta current={d.sales.revenueCents} previous={d.previousSales.revenueCents} format={(v) => formatCents(v)} />, extra: finances ? <Spark values={d.series.map((s) => s.revenueCents)} /> : undefined },
+                { label: "Bénéfice (marge brute)", value: finances ? formatCents(d.sales.marginCents) : <MaskedAmount />, sub: !finances ? undefined : <span className={d.sales.marginCents >= 0 ? "text-success" : "text-danger"}>{formatPercent(d.sales.marginRate)} du CA</span>, extra: finances ? <Spark values={d.dashboard.cumulativeMargin.map((x) => x.value)} /> : undefined },
+                { label: "Ventes", value: formatNumber(d.sales.orderCount), sub: finances ? <>Panier moyen {formatCents(d.sales.averageBasketCents)}</> : undefined, extra: <Spark values={d.series.map((s) => s.orderCount)} /> },
+                { label: "Stock actif", value: formatNumber(d.stock.activeCount), sub: <>{formatNumber(d.stock.listedCount)} en vente{finances ? <> · {formatCents(d.stock.stockValueCents, { compact: true })} investis</> : null}</> },
                 { label: "À traiter", value: formatNumber(d.counts.unreadMessages + d.counts.pendingOrders + d.counts.jobsAwaiting), sub: <>{d.counts.unreadMessages} message(s) · {d.counts.pendingOrders} commande(s) · {d.counts.jobsAwaiting} action(s)</> },
               ]}
             />
@@ -161,7 +168,7 @@ export default function Overview() {
                 ))}
                 <button type="button" onClick={() => setGallery(true)} className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border-strong text-sm font-medium text-text-muted transition-colors hover:border-accent hover:text-accent">
                   <Plus className="size-5" aria-hidden />Ajouter un graphique
-                  <span className="text-xs font-normal">{WIDGETS.length - active.length} disponible(s)</span>
+                  <span className="text-xs font-normal">{available.length - active.length} disponible(s)</span>
                 </button>
               </div>
             )}
@@ -197,7 +204,7 @@ export default function Overview() {
 
       <Dialog open={gallery} onClose={() => setGallery(false)} size="lg" title="Galerie de graphiques" description="Ajoutez ou retirez un graphique d'une simple touche. Votre sélection est mémorisée sur cet appareil." footer={<><Button variant="ghost" onClick={() => setWidgets(DEFAULT_WIDGETS)}>Rétablir par défaut</Button><Button onClick={() => setGallery(false)}>Terminé</Button></>}>
         <ul className="grid gap-2.5 sm:grid-cols-2">
-          {WIDGETS.map((w) => {
+          {available.map((w) => {
             const on = widgets.includes(w.id);
             return (
               <li key={w.id}>

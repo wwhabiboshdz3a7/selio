@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { FileCheck2, ListChecks, ShieldAlert } from "lucide-react";
-import { usePageMeta } from "../../lib/seo";
+import { useMarketingMeta } from "../seo";
 import { CheckList, Container, CtaBand, Eyebrow, FeatureCard, MarketingSection, NightSky, PlannedList, useFx } from "../components";
 
 /** Le trajet d'une réponse : une petite constellation, de l'offre à votre validation. */
@@ -44,7 +44,7 @@ function ResponseConstellation() {
 }
 
 export default function Assistant() {
-  usePageMeta("Assistant IA", "L'assistant Selio rédige, vos règles décident : prix plancher, marge minimale, horaires et limites par acheteur restent déterministes. Fonctionne avec mon modèle perso, hébergé sur un serveur privé.");
+  useMarketingMeta("/assistant-ia");
   return (
     <>
       <MarketingSection level={1} reveal eyebrow="Assistant IA" title="L'IA propose un texte. Vos règles décident." lead="Avant toute suggestion, une politique déterministe évalue l'offre : au-dessus du plancher, dans la remise autorisée, dans les horaires, sous la limite par acheteur. L'assistant ne fait que rédiger la réponse correspondant à cette décision, puis cette réponse est vérifiée.">
