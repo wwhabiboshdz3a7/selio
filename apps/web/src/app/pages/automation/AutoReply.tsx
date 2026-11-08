@@ -50,6 +50,7 @@ export default function AutoReply() {
               </li>
             ))}
           </ul>
+          <p className="text-xs text-text-muted">Un défaut signalé, une demande de remboursement ? Réglez des <Link to="/app/automatisation/negociation" className="font-medium text-accent hover:underline">situations par mots-clés</Link> : réponse par gabarit, consigne pour mon IA perso, ou conversation transmise à vous.</p>
         </JourneyStep>
         <JourneyStep n={3} level="Avancé" title="Message d'absence" last done intro={<>En dehors de vos horaires (de {timing.activeFrom} h à {timing.activeTo} h, réglés dans la négociation), un message d'attente <strong className="text-text">rassure l'acheteur</strong> ; la vraie réponse part à la reprise.</>}
           illustration={<ChatMock priceCents={2000} caption="Envoyé une fois, hors horaires." lines={[

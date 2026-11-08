@@ -1,7 +1,7 @@
 import { repos, type Db } from "@selio/db";
 import { getConnector } from "@selio/connectors";
 import { quotasForPlan } from "@selio/contracts";
-import { admin, automation, billing, cloud, connections as connectionsService, pricing, radar, track, type OrgContext, type Services } from "@selio/core";
+import { admin, automation, billing, cloud, connections as connectionsService, migration, pricing, radar, track, type OrgContext, type Services } from "@selio/core";
 import { studioRetention } from "./studio";
 
 /** Contexte « système » : actions du worker, journalisées avec l'acteur `system`. */
@@ -80,6 +80,8 @@ export async function connectorSyncTick(services: Services, log: TaskLogger): Pr
  * Selio Track : historique selon le plan (3 mois en Pro, 12 en Agence, rien sans Track), instantanés
  * partagés selon le plan le plus long des organisations qui suivent l'empreinte, filtres au-delà du
  * quota coupés. Selio Studio : brouillons de préparation jamais validés supprimés après 30 jours.
+ * Migration depuis un autre outil : texte collé et fichier RGPD effacés 7 jours après la conversion
+ * (la correspondance reste ; les captures ne sont jamais stockées).
  */
 export async function retentionTick(services: Services, log?: TaskLogger) {
   const base = await admin.retentionCleanup(services);
@@ -100,7 +102,13 @@ export async function retentionTick(services: Services, log?: TaskLogger) {
   }
   const trackResult = await trackRetention(services, log);
   const studioResult = await studioRetention(services, log);
-  return { ...base, cloud: cloudResult, radar: radarResult, track: trackResult, studio: studioResult };
+  let migrationInputs = 0;
+  try {
+    migrationInputs = await migration.purgeRawInputs(services);
+  } catch (err) {
+    log?.error({ error: err instanceof Error ? err.name : "Error" }, "rétention : purge des entrées de migration en échec");
+  }
+  return { ...base, cloud: cloudResult, radar: radarResult, track: trackResult, studio: studioResult, migration: { rawInputsPurged: migrationInputs } };
 }
 
 export interface RenewalSummary {

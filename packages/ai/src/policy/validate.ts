@@ -2,13 +2,25 @@ import { LABEL_FIELDS, MEASUREMENT_NAMES, STUDIO_MEASUREMENT_TOLERANCE_CM, STUDI
 import type { HelpAnswerOutput, LabelReadOutput, MeasurementName, MeasurementsOutput, PhotoDescription, PhotoSortOutput, ReplySuggestion, SellerQuestion, SortedPhoto, StudioQuestionField, StudioQuestionReason } from "@selio/contracts";
 import { helpTokens, normalizeHelpText, sanitizeUntrustedText, scanForInjection, simplifyText, studioQuestion, type NegotiationResult } from "@selio/domain";
 import { STUDIO_EXAMPLE_BRAND, STUDIO_EXAMPLE_MEASUREMENT } from "../prompts";
+import type { MigrationMapping, MigrationMappingOutput, MigrationSource, MigrationUnknownField } from "@selio/contracts";
+import { looksLikeSecret, mentionsSecret, normalizeMigrationMapping } from "@selio/domain";
+import { MIGRATION_EXAMPLE_FIELD } from "../prompts";
 
 export interface ValidationContext {
+  /** Décision imposée : celle de l'article, ou celle du lot (`evaluateBundleOffer`) pour une offre de lot. */
   decision: NegotiationResult | null;
   offerCents: number | null;
+  /** Plancher de l'article, ou plancher du lot. */
   floorPriceCents: number;
   purchasePriceCents: number;
+  /** Prix affiché (article ou total du lot) : seul prix qu'une simple réponse peut citer. */
   listedPriceCents: number | null;
+  /** Relance après 24 h : aucun prix, aucun chiffre (hors titre de l'article et signature), intent « answer ». */
+  followUp?: boolean;
+  /** Titre de l'article : ses chiffres (« Levi's 501 ») sont tolérés dans une relance. */
+  itemTitle?: string | null;
+  /** Signature du vendeur : ses chiffres sont tolérés dans une relance. */
+  signature?: string | null;
 }
 
 export type ValidationOutcome = { ok: true; suggestion: ReplySuggestion } | { ok: false; reason: string; code: string };
@@ -32,6 +44,7 @@ export function validateReplySuggestion(s: ReplySuggestion, ctx: ValidationConte
   if (/https?:\/\/|www\./i.test(reply)) return { ok: false, code: "link", reason: "La réponse contient un lien." };
   const scan = scanForInjection(reply);
   if (scan.suspicious) return { ok: false, code: "injection_echo", reason: `La réponse reprend un motif suspect (${scan.matches[0]}).` };
+  if (ctx.followUp) return validateFollowUpText(reply, s, ctx);
 
   const decision = ctx.decision?.decision ?? null;
   if (decision && !(EXPECTED_INTENT[decision] ?? []).includes(s.intent)) {
@@ -72,7 +85,45 @@ export function validateReplySuggestion(s: ReplySuggestion, ctx: ValidationConte
   if (mentioned.includes(ctx.floorPriceCents) && ctx.floorPriceCents !== imposed && ctx.floorPriceCents !== ctx.listedPriceCents) {
     return { ok: false, code: "leak_floor", reason: "Le texte révèle le prix plancher." };
   }
+  // Aucun prix absent de la décision (D07) : le texte ne peut citer que le prix imposé, le prix affiché
+  // (public) et l'offre de l'acheteur (qu'il connaît). Un autre montant (prix par article d'un lot, remise
+  // improvisée) serait une décision de prix prise par l'IA seule.
+  const allowed = new Set([imposed, ctx.listedPriceCents, ctx.offerCents].filter((c): c is number => typeof c === "number"));
+  const foreign = mentioned.find((c) => !allowed.has(c));
+  if (foreign !== undefined) return { ok: false, code: "price_not_in_decision", reason: `Le texte cite un prix (${(foreign / 100).toFixed(2)} €) qu'aucune décision n'a fixé.` };
   return { ok: true, suggestion: { ...s, reply } };
+}
+
+/**
+ * Relance après 24 h : intent « answer » (ou question), aucun prix proposé, aucun chiffre dans le texte
+ * (une relance ne fait jamais de nouvelle offre ni ne fixe de délai), hors chiffres du titre de l'article
+ * et de la signature ; jamais « meilleur prix » ni « dernier prix ».
+ */
+function validateFollowUpText(reply: string, s: ReplySuggestion, ctx: ValidationContext): ValidationOutcome {
+  if (s.intent !== "answer" && s.intent !== "ask_question") return { ok: false, code: "follow_up_intent", reason: `Intention « ${s.intent} » : une relance ne décide rien.` };
+  if (s.proposedPriceCents !== null) return { ok: false, code: "follow_up_price", reason: "Une relance ne propose aucun prix." };
+  if (/meilleur prix|dernier prix/i.test(reply)) return { ok: false, code: "false_last_price", reason: "Une relance ne parle pas de « meilleur » ni de « dernier » prix." };
+  let stripped = reply;
+  for (const allowed of [ctx.itemTitle, ctx.signature]) {
+    const clean = typeof allowed === "string" ? sanitizeUntrustedText(allowed, 200).trim() : "";
+    if (clean.length > 0) stripped = stripped.split(clean).join(" ");
+  }
+  if (/\d/.test(stripped)) return { ok: false, code: "follow_up_number", reason: "Une relance ne contient aucun chiffre (ni prix, ni délai, ni remise)." };
+  return { ok: true, suggestion: { ...s, reply, intent: s.intent, proposedPriceCents: null } };
+}
+
+/** Validation d'une relance (raccourci de `validateReplySuggestion` avec `followUp: true`). */
+export function validateFollowUpSuggestion(s: ReplySuggestion, ctx: { itemTitle?: string | null; signature?: string | null }): ValidationOutcome {
+  return validateReplySuggestion(s, { decision: null, offerCents: null, floorPriceCents: 0, purchasePriceCents: 0, listedPriceCents: null, followUp: true, itemTitle: ctx.itemTitle ?? null, signature: ctx.signature ?? null });
+}
+
+/** Relance déterministe sans IA : courte, polie, sans pression, sans chiffre (hors titre et signature). */
+export function fallbackFollowUp(ctx: { buyerName: string | null; itemTitle: string; signature: string }): ReplySuggestion {
+  const name = ctx.buyerName ? ` ${sanitizeUntrustedText(ctx.buyerName, 40)}` : "";
+  const title = sanitizeUntrustedText(ctx.itemTitle, 120).trim();
+  const sig = ctx.signature ? `\n${ctx.signature}` : "";
+  const about = title.length > 0 ? `« ${title} » est toujours disponible` : "l'article est toujours disponible";
+  return { reply: `Bonjour${name}, je me permets un petit message : ${about}. Si vous avez une question, je suis là.${sig}`, intent: "answer", proposedPriceCents: null, confidence: 1, notes: "Gabarit sans IA" };
 }
 
 export function extractAllPricesCents(text: string): number[] {
@@ -434,4 +485,117 @@ export function validateMeasurements(raw: MeasurementsOutput): MeasurementsValid
   const order = new Map(MEASUREMENT_NAMES.map((n, i) => [n, i]));
   const measurements = [...kept.values()].sort((a, b) => order.get(a.name)! - order.get(b.name)!);
   return { output: { tapeVisible: true, measurements }, questions, rejected };
+}
+
+// ---------------------------------------------------------------- migration des réglages (§5.13)
+// Le modèle propose, la validation écarte, le client décide : un champ dont la valeur n'est pas dans le
+// texte collé a été inventé ; un champ qui ressemble à un identifiant ou un secret n'est jamais conservé ;
+// HTML, lien ou motif d'injection écartent le champ ; les textes migrés sont la valeur lue, jamais une
+// réécriture. La normalisation (@selio/domain) convertit ensuite les valeurs, applique D20 aux messages et
+// range le reste dans les champs inconnus.
+
+export interface MigrationRejection {
+  sourceLabel: string;
+  code: "unsafe" | "secret_like" | "not_in_source" | "example_echo";
+  reason: string;
+}
+
+export interface MigrationValidation {
+  mapping: MigrationMapping;
+  rejected: MigrationRejection[];
+  warnings: string[];
+}
+
+export interface MigrationValidationContext {
+  /** Texte collé par le vendeur : chaque valeur proposée doit s'y trouver. */
+  sourceText?: string | null;
+  /** Des captures ont été lues : sans texte, rien ne peut être corroboré, le vendeur vérifie tout. */
+  fromImages?: boolean;
+  /** Outil déclaré par le vendeur : il prime sur ce que le modèle croit reconnaître. */
+  declaredSource?: MigrationSource | null;
+}
+
+const digitsOf = (s: string) => [...s.matchAll(/\d+(?:[.,]\d+)?/g)].map((m) => m[0].replace(",", ".").replace(/^0+(?=\d)/, ""));
+
+/** La valeur lue est-elle dans le texte collé ? Texte : comparaison sans accents ni casse ; nombre : chaque chiffre doit y figurer. */
+export function migrationValueInSource(value: string, sourceText: string): boolean {
+  const v = value.trim();
+  if (v.length === 0) return false;
+  if (appearsInText(v, sourceText)) return true;
+  const digits = digitsOf(v);
+  if (digits.length === 0) return false;
+  const known = new Set(digitsOf(sourceText));
+  return digits.every((d) => known.has(d));
+}
+
+export function validateMigrationMapping(raw: MigrationMappingOutput, ctx: MigrationValidationContext = {}): MigrationValidation {
+  const rejected: MigrationRejection[] = [];
+  // Avertissements du modèle : jamais gardés s'ils citent un secret (le mot de passe qu'il dit ignorer…).
+  const modelWarnings = raw.warnings.filter((w) => !unsafeText(w));
+  const warnings: string[] = modelWarnings.filter((w) => !mentionsSecret(w));
+  if (warnings.length < modelWarnings.length) warnings.push("Un avertissement du modèle a été écarté : il semblait citer un identifiant, un mot de passe ou un contact.");
+  const sourceText = typeof ctx.sourceText === "string" ? sanitizeUntrustedText(ctx.sourceText, 20_000) : "";
+  const fields: MigrationMappingOutput["fields"] = [];
+  const unknownFields: MigrationUnknownField[] = [];
+  const reject = (sourceLabel: string, code: MigrationRejection["code"], reason: string) => rejected.push({ sourceLabel: sourceLabel.slice(0, 120), code, reason });
+
+  for (const f of raw.fields) {
+    const texts = [f.sourceLabel, f.sourceValue, f.note, typeof f.targetValue === "string" ? f.targetValue : ""];
+    const unsafe = texts.map(unsafeMigrationText).find(Boolean);
+    if (unsafe) {
+      reject(f.sourceLabel, "unsafe", `Champ écarté (${unsafe}).`);
+      continue;
+    }
+    if (looksLikeSecret(f.sourceLabel, f.sourceValue)) {
+      reject(f.sourceLabel, "secret_like", "Identifiant, mot de passe ou contact : jamais migré ni conservé.");
+      continue;
+    }
+    if (simplifyText(f.sourceLabel) === simplifyText(MIGRATION_EXAMPLE_FIELD.sourceLabel) && simplifyText(f.sourceValue) === simplifyText(MIGRATION_EXAMPLE_FIELD.sourceValue)) {
+      reject(f.sourceLabel, "example_echo", "Champ recopié de l'exemple du prompt : rien n'a été lu.");
+      continue;
+    }
+    if (sourceText.length > 0 && !migrationValueInSource(f.sourceValue, sourceText)) {
+      reject(f.sourceLabel, "not_in_source", `Valeur « ${f.sourceValue.slice(0, 40)} » absente du texte collé : réglage inventé, écarté.`);
+      continue;
+    }
+    // Un texte migré est la valeur lue, jamais une réécriture du modèle.
+    const targetValue = typeof f.targetValue === "string" && f.target && /^(messages\.|autoReply\.awayMessage|favorites\.message|afterSale\.|ai\.signature|followUp\.template)/.test(f.target) ? f.sourceValue : f.targetValue;
+    fields.push({ ...f, targetValue });
+  }
+  for (const u of raw.unknownFields) {
+    const unsafe = [u.sourceLabel, u.sourceValue, u.note].map(unsafeMigrationText).find(Boolean);
+    if (unsafe) {
+      reject(u.sourceLabel, "unsafe", `Champ inconnu écarté (${unsafe}).`);
+      continue;
+    }
+    if (looksLikeSecret(u.sourceLabel, u.sourceValue)) {
+      reject(u.sourceLabel, "secret_like", "Identifiant, mot de passe ou contact : jamais conservé.");
+      continue;
+    }
+    // Valeur d'un réglage inconnu : jamais conservée (normalisation) ; vérifiée seulement si le modèle en cite une.
+    if (sourceText.length > 0 && u.sourceValue.trim().length > 0 && !migrationValueInSource(u.sourceValue, sourceText)) {
+      reject(u.sourceLabel, "not_in_source", `Valeur « ${u.sourceValue.slice(0, 40)} » absente du texte collé : écartée.`);
+      continue;
+    }
+    unknownFields.push(u);
+  }
+  if (rejected.some((r) => r.code === "secret_like")) warnings.push("Des champs ressemblant à un identifiant, un mot de passe ou un contact ont été ignorés : Selio ne les migre jamais.");
+  if (rejected.some((r) => r.code === "not_in_source")) warnings.push("Des champs absents de votre texte ont été écartés : seul ce que vous avez collé est repris.");
+  if (ctx.fromImages && sourceText.length === 0) warnings.push("Champs lus sur des captures d'écran : vérifiez chaque valeur avant de l'accepter.");
+  let source = raw.source;
+  if (ctx.declaredSource && ctx.declaredSource !== raw.source) {
+    if (raw.source !== "unknown") warnings.push(`Outil reconnu par le modèle (${raw.source}) différent de celui déclaré (${ctx.declaredSource}) : l'outil déclaré est retenu.`);
+    source = ctx.declaredSource;
+  }
+  const mapping = normalizeMigrationMapping({ source, fields, unknownFields, warnings });
+  return { mapping, rejected, warnings: mapping.warnings };
+}
+
+function unsafeMigrationText(text: string): string | null {
+  if (!text) return null;
+  if (/<[a-z!/][^>]*>/i.test(text)) return "HTML";
+  if (/https?:\/\/|www\./i.test(text)) return "lien";
+  const scan = scanForInjection(text);
+  if (scan.suspicious) return `motif suspect (${scan.matches[0]})`;
+  return null;
 }

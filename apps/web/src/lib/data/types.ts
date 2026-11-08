@@ -13,6 +13,9 @@ import type { StudioSimulatorHints } from "@selio/ai";
 import type { PriceEstimate, PriceEstimateInput, PriceModelStatus, TrackSource, TrackBrandShare, TrackFilter, TrackFilterCreate, TrackFilterUpdate, TrackPhotoSearch, TrackPhotoSearchInput, TrackSalesFeed, TrackScan, TrackScanInput, TrackTrends } from "@selio/contracts";
 import type { AccountStats, AiHealthSummary, BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
 
+import type { BundleSuggestion, MarginsByPeriod, MarginTotals, ThresholdStatus } from "@selio/domain";
+import type { MigrationApplyInput, MigrationConvertInput, MigrationFileInput, MigrationMapping, RuleKind, VintedLimits, VintedLimitsMeasurementInput } from "@selio/contracts";
+
 export type VariantLeaderboardRow = ReturnType<typeof variantLeaderboard>[number];
 
 export type Mode = "demo" | "connected";
@@ -568,6 +571,99 @@ export interface StoredStudioPhoto {
   readUrl: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Négociation avancée et fonctions « que Bleam n'a pas » (§5.12 à §5.14)
+// ---------------------------------------------------------------------------
+
+/** Champ écarté par la validation de la sortie du modèle (valeur absente du texte, secret, lien…). */
+export interface MigrationRejectedField {
+  sourceLabel: string;
+  code: string;
+  reason: string;
+}
+
+/**
+ * Résultat d'une conversion « ancien → nouveau » (texte collé, captures, fichier RGPD) : la correspondance
+ * proposée, jamais appliquée tant que le client n'a pas coché les champs à reprendre.
+ */
+export interface MigrationConversion {
+  /** Identifiant de la correspondance enregistrée par la conversion : seul ce brouillon peut être appliqué, une fois. */
+  id: string;
+  mapping: MigrationMapping;
+  rejected: MigrationRejectedField[];
+  /** Ce qui a servi : mon IA perso (texte, captures) ou la lecture du fichier (catalogue, sans IA). */
+  via: "ai" | "file";
+  /** Format du fichier importé (JSON, CSV, texte) ; null pour un texte collé ou des captures. */
+  fileFormat: "json" | "csv" | "text" | "empty" | null;
+  /** Démonstration : simulateur (captures non lues). */
+  simulated: boolean;
+}
+
+/** Application des seuls champs cochés. */
+export interface MigrationApplyView {
+  organization: Organization;
+  applied: { id: string; target: string; value: number | string | boolean }[];
+  skipped: { id: string; reason: string }[];
+  /** Règles d'automatisation mises à jour (relance…). */
+  rulesUpdated: RuleKind[];
+}
+
+/** Lot intelligent, avec ses articles, l'acheteur et sa conversation (pour préparer le brouillon). */
+export interface BundleSuggestionView extends BundleSuggestion {
+  items: Pick<InventoryItem, "id" | "title" | "brand" | "size" | "listedPriceCents" | "photos">[];
+  customer: Pick<Customer, "id" | "displayName"> | null;
+  /** Conversation ouverte avec cet acheteur (brouillon d'offre de lot) ; null : texte à copier. */
+  conversationId: string | null;
+}
+
+/** Une ligne « achat → revente » de la marge de bout en bout. */
+export interface EndToEndMarginRow {
+  itemId: string;
+  title: string;
+  status: "projected" | "realized";
+  /** Origine du prix d'achat : achat Radar (demande d'achat) ou saisie dans le stock. */
+  purchaseSource: "radar" | "manual";
+  at: string | null;
+  costCents: number;
+  revenueCents: number;
+  marginCents: number;
+  marginRate: number;
+  priceKnown: boolean;
+}
+
+/** Marge de bout en bout : vendus sur la période (réalisée) et stock (projetée). */
+export interface EndToEndMarginsView extends MarginsByPeriod {
+  period: PeriodPreset;
+  /** Achats passés par Radar parmi les lignes. */
+  radar: MarginTotals;
+  rows: EndToEndMarginRow[];
+}
+
+export type DeclarationThresholdsView = ThresholdStatus & { enabled: boolean };
+
+/** Une mesure des limites de Vinted enregistrée (organisation, ou équipe : `orgId` null). */
+export interface VintedLimitsRecordView {
+  id: string;
+  orgId: string | null;
+  maxCounterOffersPerConversation: number;
+  offerDurationHours: number;
+  minDelayBetweenMessagesSeconds: number;
+  source: "default_conservative" | "measured";
+  measuredAt: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
+/** Limites appliquées et leur origine (GET /api/negotiation/limits). */
+export interface VintedLimitsView {
+  limits: VintedLimits;
+  /** Mesure de l'organisation, mesure de l'équipe Selio, ou réglages (valeurs prudentes « à mesurer »). */
+  origin: "org_measured" | "global_measured" | "settings";
+  status: { measured: boolean; label: string };
+  history: VintedLimitsRecordView[];
+  canRecord: { org: boolean; global: boolean };
+}
+
 export interface DataClient {
   readonly mode: Mode;
   // Session
@@ -828,6 +924,22 @@ export interface DataClient {
   cancelCloudLogin(loginSessionId: string): Promise<void>;
   /** Démonstration seulement : la connexion simulée aboutit (aucune saisie, rien ne touche Vinted). */
   completeSimulatedCloudLogin(loginSessionId: string): Promise<CloudAccount>;
+  // Négociation avancée (§5.12)
+  /** Enregistre une mesure des limites de Vinted faite à la main sur un compte de l'équipe (source et date fixées par le serveur). */
+  recordVintedLimits(input: VintedLimitsMeasurementInput): Promise<VintedLimits>;
+  /** Limites de Vinted RÉELLEMENT appliquées (mesure de l'organisation, de l'équipe, ou valeurs prudentes), avec l'historique. */
+  getVintedLimits(): Promise<VintedLimitsView>;
+  // Migration depuis un autre outil (§5.13) : texte collé, captures ou fichier RGPD, jamais de connexion à leur service
+  convertMigration(input: MigrationConvertInput): Promise<MigrationConversion>;
+  importMigrationFile(input: MigrationFileInput): Promise<MigrationConversion>;
+  applyMigration(input: MigrationApplyInput): Promise<MigrationApplyView>;
+  // Fonctions « que Bleam n'a pas » (§5.14)
+  /** Lots intelligents : propositions (même acheteur, même marque et taille, articles anciens). */
+  suggestBundles(): Promise<BundleSuggestionView[]>;
+  /** Marge de bout en bout (prix d'achat Radar ou saisi → revente). */
+  getEndToEndMargins(period: PeriodPreset): Promise<EndToEndMarginsView>;
+  /** Où en est l'année face aux seuils de transmission des plateformes (information, jamais un conseil fiscal). */
+  getDeclarationThresholds(): Promise<DeclarationThresholdsView>;
   // Démo
   resetDemo(): Promise<void>;
   // Usage (pour la page Consommation)

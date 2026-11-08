@@ -12,6 +12,7 @@ const ITEMS = [
   { to: "usage", label: "Utilisation" },
   { to: "notifications", label: "Notifications" },
   { to: "security", label: "Sécurité" },
+  { to: "migration", label: "Migration" },
   { to: "data", label: "Export et suppression" },
   { to: "status", label: "Statut des services" },
 ];

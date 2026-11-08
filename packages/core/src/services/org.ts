@@ -31,7 +31,10 @@ export async function updateOrg(ctx: OrgContext, raw: unknown): Promise<Organiza
       buyerFees: { ...org.settings.buyerFees, ...(input.buyerFees ?? {}) },
       autoBuy: { ...org.settings.autoBuy, ...(input.autoBuy ?? {}) },
       dressing: { ...org.settings.dressing, ...(input.dressing ?? {}) },
-      automation: { ...org.settings.automation, ...(input.automation ?? {}) },
+      // Limites de Vinted : jamais écrites par les réglages. Une mesure ne s'enregistre que par
+      // `negotiation.recordLimits` (date fixée par le serveur, audit) : un patch ne peut pas faire passer
+      // des valeurs pour « mesurées ».
+      automation: { ...org.settings.automation, ...(input.automation ?? {}), vintedLimits: org.settings.automation.vintedLimits },
       retentionDays: { ...org.settings.retentionDays, ...(input.retentionDays ?? {}) },
       onboarding: { ...org.settings.onboarding, ...(input.onboarding ?? {}) },
       pricing: { ...org.settings.pricing, ...(input.pricing ?? {}) },

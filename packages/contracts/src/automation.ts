@@ -8,6 +8,20 @@ export const RULE_KINDS = [
   "post_sale_message",
   "relist_stale",
   "price_drop_stale",
+  /**
+   * Relance après 24 h sans réponse (§5.12) : dernier message sortant depuis `config.delayHours` (24 par
+   * défaut), aucune réponse, **une seule relance par conversation** (clé `followUp24hDedupeKey`). Le mode
+   * vient du quota `followUp24h` de l'offre (`decideFollowUp`, @selio/domain) : « suggested » (Pro) crée
+   * un brouillon à valider dans Messages (tâche serveur en attente de validation), « auto » (Agence) une
+   * tâche exécutée par Selio Cloud aux heures actives et dans ses plafonds, « none » : règle inactive.
+   */
+  "follow_up_24h",
+  /**
+   * Situation personnalisée par mots-clés (§5.12) : le message de l'acheteur correspond à une situation
+   * réglée par le vendeur (`config.situationId`, ou toutes les situations actives) ; réponse par gabarit
+   * ou par mon IA perso cadrée par la consigne du vendeur, décision éventuellement transmise au vendeur.
+   */
+  "keyword_situation",
 ] as const;
 export const ruleKind = z.enum(RULE_KINDS);
 export type RuleKind = z.infer<typeof ruleKind>;
@@ -48,8 +62,14 @@ export const ruleConfig = z.object({
   counterStepRate: rate.optional(),
   maxRounds: z.number().int().min(0).max(10).optional(),
   useAi: z.boolean().optional(),
+  /** `keyword_situation` : situation visée (absente : toutes les situations actives de l'organisation). */
+  situationId: z.string().min(1).max(64).optional(),
 });
 export type RuleConfig = z.infer<typeof ruleConfig>;
+
+/** Relance après 24 h : délai par défaut avant relance, et âge au-delà duquel on ne relance plus (7 jours). */
+export const FOLLOW_UP_24H_DEFAULT_DELAY_HOURS = 24;
+export const FOLLOW_UP_24H_MAX_AGE_HOURS = 24 * 7;
 
 export const automationRule = z.object({
   id,

@@ -35,6 +35,8 @@ import pushRoutes from "./routes/push";
 import trackRoutes from "./routes/track";
 import pricingRoutes from "./routes/pricing";
 import adminRoutes from "./routes/admin";
+import negotiationRoutes from "./routes/negotiation";
+import migrationRoutes from "./routes/migration";
 import { StoragePhotoStore } from "./studio-photos";
 import { MAINTENANCE_QUEUE, RADAR_QUEUE, createQueues, type QueueHandle } from "./queue";
 import { PRICE_MODEL_REFRESH_MS, createApiPricingServices, refreshPriceModel, schedulePriceModelRefresh } from "./pricing";
@@ -143,6 +145,9 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(orderRoutes);
   await app.register(analyticsRoutes);
   await app.register(automationRoutes);
+  // Négociation avancée (limites de Vinted, situations, lots) et migration depuis un autre outil (sans connexion à celui-ci).
+  await app.register(negotiationRoutes);
+  await app.register(migrationRoutes);
   // Reprise d'un achat après la validation 3-D Secure : le navigateur tenu ouvert vit dans le worker (file « selio-radar »).
   await app.register(radarRoutes, { radarQueue: queues.queues.get(RADAR_QUEUE) ?? null });
   await app.register(connectionRoutes);

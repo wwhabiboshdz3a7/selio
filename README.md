@@ -79,5 +79,6 @@ packages/core    services serveur partagés API/worker           packages/demo-d
 - [docs/TRACK.md](docs/TRACK.md) (Selio Track : statistiques seulement, simulateur par défaut, lecture en direct à valider juridiquement) · [docs/PRIX.md](docs/PRIX.md) (estimation des prix : comparables et modèle quantile, `pnpm prix:eval`)
 - [docs/RADAR.md](docs/RADAR.md) (Selio Radar : lecture depuis le compte Achat via le Cloud, alertes sur le téléphone, « 1 clic » ; Radar Auto et achat réel désactivés par défaut, mesures et procédure de test)
 - [docs/STUDIO.md](docs/STUDIO.md) (Selio Studio façon Kavis : tri des photos, étiquette et mesures avec provenance, jamais de mesure inventée, OCR d'essai facultatif, base des références de tailles, précision « à mesurer » avec `pnpm studio:eval` ; photos portées en attente de décision)
+- [docs/NEGOCIATION.md](docs/NEGOCIATION.md) (négociation avancée : la politique décide, mon IA perso rédige ; lots, relance après 24 h, situations, limites de Vinted à mesurer selon [docs/MESURES-VINTED.md](docs/MESURES-VINTED.md)) · [docs/MIGRATION.md](docs/MIGRATION.md) (reprise des réglages de Bleam ou Clemz par texte collé, captures ou fichier RGPD, jamais de connexion à leurs services)
 
 La charte (tokens, preset Tailwind, guidelines) est dans `brand/` et `packages/ui`.

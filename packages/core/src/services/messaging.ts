@@ -1,11 +1,12 @@
-import { conversationQuery, draftCreate, type AiRequest, type Conversation, type Message } from "@selio/contracts";
+import { conversationQuery, draftCreate, type AiRequest, type Conversation, type Message, type Organization } from "@selio/contracts";
 import { repos, type Tx } from "@selio/db";
 import { getConnector } from "@selio/connectors";
-import { evaluateOffer, extractOfferCents, sanitizeUntrustedText, scanForInjection, type NegotiationResult } from "@selio/domain";
+import { applyLimitsToDecision, applySituationOverride, evaluateOffer, extractOfferCents, sanitizeUntrustedText, scanForInjection, situationEscalates, situationPromptContext, type NegotiationResult } from "@selio/domain";
 import { AIError } from "@selio/ai";
 import { PLAN_QUOTAS } from "@selio/demo-data";
 import { AppError, nowIso, requireAction, withOrg, type OrgContext } from "../context";
 import type { ConversationDetail, SuggestionResult } from "../types-data";
+import { effectiveLimitsTx, escalationFor, evaluateConversationBundleTx, limitsContextFor, situationFor } from "./negotiation";
 
 export function listConversations(ctx: OrgContext, raw: unknown) {
   const q = conversationQuery.safeParse(raw ?? {});
@@ -13,15 +14,44 @@ export function listConversations(ctx: OrgContext, raw: unknown) {
   return withOrg(ctx, (tx) => repos.conversations.list(tx, q.data));
 }
 
-async function lastOfferTx(tx: Tx, ctx: OrgContext, conv: Conversation): Promise<ConversationDetail["lastOffer"]> {
+async function lastOfferTx(tx: Tx, ctx: OrgContext, conv: Conversation, msgs: Message[]): Promise<ConversationDetail["lastOffer"]> {
   if (!conv.itemId) return null;
   const item = await repos.items.byId(tx, conv.itemId).catch(() => null);
   if (!item) return null;
-  const msgs = await repos.messages.forConversation(tx, conv.id);
   const lastInbound = [...msgs].reverse().find((m) => m.direction === "inbound" && m.offerCents);
   if (!lastInbound?.offerCents) return null;
   const org = await repos.orgs.byId(tx, ctx.orgId);
-  return { offerCents: lastInbound.offerCents, evaluation: evaluateOffer({ item, offerCents: lastInbound.offerCents, rules: org.settings.margin, roundsSoFar: conv.negotiationRounds, now: ctx.services.now() }) };
+  const evaluation = evaluateOffer({ item, offerCents: lastInbound.offerCents, rules: org.settings.margin, roundsSoFar: conv.negotiationRounds, now: ctx.services.now() });
+  // Une situation réglée « transmettre au vendeur » (défaut, remboursement…) l'emporte sur la décision de prix,
+  // puis les limites de Vinted (au-delà des contre-offres : vendeur), comme pour la négociation automatique.
+  return { offerCents: lastInbound.offerCents, evaluation: await limitedTx(tx, org, conv, msgs, ctx.services.now(), applySituationOverride(evaluation, escalationFor(org, lastInbound.body))) };
+}
+
+/**
+ * Limites de Vinted appliquées à une décision montrée dans Messages ou transmise à mon IA perso : au-delà
+ * du nombre de contre-offres, plus de contre-proposition. Le délai entre deux messages n'est pas appliqué
+ * ici (c'est le vendeur qui enverra) : il l'est au moment de l'envoi automatique.
+ */
+async function limitedTx<T extends NegotiationResult>(tx: Tx, org: Organization, conv: Conversation, msgs: Message[], now: Date, ev: T): Promise<T> {
+  const limits = (await effectiveLimitsTx(tx, org)).limits;
+  const limited = applyLimitsToDecision(ev, { ...limitsContextFor(msgs, limits, now, await repos.jobs.pendingCounterOffers(tx, conv.id)), lastOutboundAt: null });
+  const { limits: _l, deferUntil: _d, ...rest } = limited;
+  return rest as unknown as T;
+}
+
+/** Offre de lot et situation reconnues dans le dernier message de l'acheteur (politique déterministe, jamais l'IA). */
+async function negotiationExtrasTx(tx: Tx, ctx: OrgContext, conv: Conversation, msgs: Message[]): Promise<Pick<ConversationDetail, "bundleOffer" | "situation">> {
+  const lastInbound = [...msgs].reverse().find((m) => m.direction === "inbound");
+  if (!lastInbound) return { bundleOffer: null, situation: null };
+  const org = await repos.orgs.byId(tx, ctx.orgId);
+  // Transmission : toute situation « transmettre au vendeur » qui correspond, même moins spécifique qu'une autre.
+  const escalation = escalationFor(org, lastInbound.body);
+  const match = escalation ?? situationFor(org, lastInbound.body);
+  const bundle = lastInbound.offerCents ? await evaluateConversationBundleTx(tx, org, conv, lastInbound, { roundsSoFar: conv.negotiationRounds, now: ctx.services.now() }) : null;
+  return {
+    bundleOffer: bundle ? { offerCents: bundle.signal.offerCents, itemIds: bundle.items.map((i) => i.id), purchaseTotalCents: bundle.items.reduce((sum, i) => sum + i.purchasePriceCents + i.purchaseFeesCents, 0), evaluation: await limitedTx(tx, org, conv, msgs, ctx.services.now(), applySituationOverride(bundle.result, escalation)) } : null,
+    situation: match ? { id: match.situation.id, name: match.situation.name, matchedKeywords: match.matchedKeywords, escalate: situationEscalates(match) } : null,
+  };
 }
 
 export function getConversation(ctx: OrgContext, id: string): Promise<ConversationDetail> {
@@ -31,7 +61,7 @@ export function getConversation(ctx: OrgContext, id: string): Promise<Conversati
     const customer = await repos.customers.byId(tx, conversation.customerId);
     const item = conversation.itemId ? await repos.items.byId(tx, conversation.itemId).catch(() => null) : null;
     const connection = conversation.connectionId ? await repos.connections.byId(tx, conversation.connectionId).catch(() => null) : null;
-    return { conversation, messages, customer, item, connection, lastOffer: await lastOfferTx(tx, ctx, conversation) };
+    return { conversation, messages, customer, item, connection, lastOffer: await lastOfferTx(tx, ctx, conversation, messages), ...(await negotiationExtrasTx(tx, ctx, conversation, messages)) };
   });
 }
 
@@ -74,6 +104,9 @@ export function deleteDraft(ctx: OrgContext, messageId: string): Promise<void> {
   return withOrg(ctx, async (tx) => {
     const m = await repos.messages.byId(tx, messageId);
     if (m.status !== "draft" && m.status !== "failed") throw new AppError("conflict", "Seul un brouillon peut être supprimé.", 409);
+    // Brouillon de relance supprimé (à valider, ou validé et en file pour Selio Cloud) : sa tâche est
+    // annulée, et la relance n'est jamais refaite (une tâche annulée compte comme relance faite).
+    await tx.query("update jobs set status = 'cancelled', finished_at = $3 where org_id = $1 and status in ('awaiting_approval', 'queued') and payload->>'draftMessageId' = $2", [ctx.orgId, messageId, nowIso(ctx)]);
     await repos.messages.delete(tx, messageId);
   });
 }
@@ -99,6 +132,12 @@ export async function sendMessageTx(ctx: OrgContext, tx: Tx, messageId: string):
   const sent = await repos.messages.update(tx, messageId, { status: "sent", sentAt: result.data.sentAt, externalRef: result.data.externalRef, simulated: result.simulated, error: null });
   await repos.conversations.update(tx, conv.id, { lastMessageAt: sent.sentAt, lastMessagePreview: sent.body.slice(0, 120), negotiationRounds: sent.offerCents !== null ? conv.negotiationRounds + 1 : conv.negotiationRounds });
   await repos.customers.update(tx, conv.customerId, { lastContactAt: sent.sentAt });
+  // Brouillon de relance envoyé depuis Messages : la tâche qui l'attendait est close (jamais renvoyé une seconde fois).
+  await tx.query("update jobs set status = 'succeeded', result = $3, finished_at = $4 where org_id = $1 and status in ('awaiting_approval', 'queued') and payload->>'draftMessageId' = $2", [ctx.orgId, messageId, JSON.stringify({ messageId, sentFromMessages: true }), nowIso(ctx)]);
+  // Le vendeur a répondu lui-même : les transmissions ouvertes de la conversation (situation, IA) sont closes.
+  if (m.source !== "automation") {
+    for (const h of await repos.jobs.openHandoffs(tx, conv.id)) await repos.jobs.update(tx, h.id, { status: "succeeded", result: { ...(h.result ?? {}), answeredInMessages: true, messageId }, finishedAt: nowIso(ctx) });
+  }
   await repos.audit.add(tx, { actorUserId: ctx.userId, action: "message.sent", targetType: "message", targetId: messageId, meta: { simulated: sent.simulated }, ip: ctx.ip });
   return sent;
 }
@@ -119,6 +158,14 @@ export function evaluateConversationOffer(ctx: OrgContext, conversationId: strin
   });
 }
 
+function situationContext(org: Organization, detail: ConversationDetail): { name: string; guidance: string | null } | null {
+  const lastInbound = [...detail.messages].reverse().find((m) => m.direction === "inbound");
+  const match = lastInbound ? escalationFor(org, lastInbound.body) ?? situationFor(org, lastInbound.body) : null;
+  if (!match) return null;
+  const c = situationPromptContext(match);
+  return { name: c.name, guidance: c.guidance };
+}
+
 export async function suggestReply(ctx: OrgContext, conversationId: string, signal?: AbortSignal): Promise<SuggestionResult> {
   requireAction(ctx, "ai.use");
   const detail = await getConversation(ctx, conversationId);
@@ -133,19 +180,25 @@ export async function suggestReply(ctx: OrgContext, conversationId: string, sign
     return repos.aiRequests.create(tx, { kind: "reply_suggestion", provider: ctx.services.ai.provider.name, model: ctx.services.ai.provider.model, status: "running", conversationId, itemId: detail.item?.id ?? null });
   });
   const suspicious = detail.messages.some((m) => m.direction === "inbound" && scanForInjection(m.body).suspicious);
+  const lot = detail.bundleOffer ?? null;
   const started = Date.now();
   let result;
   try {
     result = await ctx.services.ai.suggestReply(ctx.orgId, {
       buyerName: detail.customer.displayName.split(" ")[0] ?? null,
       itemTitle: detail.item?.title ?? "l'article",
-      listedPriceCents: detail.item?.listedPriceCents ?? null,
-      floorPriceCents: detail.item?.floorPriceCents ?? 0,
-      purchasePriceCents: detail.item?.purchasePriceCents ?? 0,
-      decision: detail.lastOffer?.evaluation ?? null,
-      offerCents: detail.lastOffer?.offerCents ?? null,
+      // Lot : la décision, le prix affiché, le plancher et le coût sont ceux du lot entier (la validation de la
+      // sortie porte alors sur le lot : aucun prix par article, aucun prix que la politique n'a pas fixé).
+      listedPriceCents: lot ? lot.evaluation.listedTotalCents : detail.item?.listedPriceCents ?? null,
+      floorPriceCents: lot ? lot.evaluation.floorCents : detail.item?.floorPriceCents ?? 0,
+      purchasePriceCents: lot ? lot.purchaseTotalCents : detail.item?.purchasePriceCents ?? 0,
+      decision: lot ? lot.evaluation : detail.lastOffer?.evaluation ?? null,
+      offerCents: detail.bundleOffer?.offerCents ?? detail.lastOffer?.offerCents ?? null,
       messages: detail.messages.map((m) => ({ direction: m.direction, body: m.body })),
       settings: { tone: org.settings.ai.tone, signature: org.settings.ai.signature },
+      // Lot : la décision de lot est la décision imposée ; situation : nom et consigne du vendeur, bornés (données).
+      bundle: detail.bundleOffer ? { count: detail.bundleOffer.evaluation.itemCount, totalListedCents: detail.bundleOffer.evaluation.listedTotalCents, decision: detail.bundleOffer.evaluation } : null,
+      situation: situationContext(org, detail),
     }, { signal, allowFallback: ctx.services.allowAiFallback });
   } catch (err) {
     const e = err instanceof AIError ? err : null;
@@ -181,6 +234,14 @@ export async function ingestInboundTx(ctx: OrgContext, tx: Tx, input: { connecti
     if (dup) return conv;
   }
   await repos.messages.create(tx, { conversationId: conv.id, direction: "inbound", source: "buyer", status: "received", body: text, offerCents: extractOfferCents(text), externalRef: input.externalRef ?? null, simulated: input.provider === "demo", createdAt: now });
+  // L'acheteur a répondu : les relances encore à envoyer (en file pour le Cloud, ou brouillon à valider)
+  // n'ont plus lieu d'être. Elles sont écartées et leur brouillon supprimé.
+  for (const j of await repos.jobs.pendingFollowUps(tx, conv.id)) {
+    await repos.jobs.update(tx, j.id, { status: "skipped", result: { ...(j.result ?? {}), reason: "L'acheteur a répondu : relance abandonnée.", code: "buyer_replied" }, finishedAt: nowIso(ctx) });
+    const draftId = typeof j.payload.draftMessageId === "string" ? j.payload.draftMessageId : null;
+    const draft = draftId ? await repos.messages.byId(tx, draftId).catch(() => null) : null;
+    if (draft && draft.status === "draft") await repos.messages.delete(tx, draft.id);
+  }
   await repos.customers.update(tx, customer.id, { lastContactAt: now });
   return repos.conversations.update(tx, conv.id, { unreadCount: conv.unreadCount + 1, lastMessageAt: now, lastMessagePreview: text.slice(0, 120), status: "open", itemId: conv.itemId ?? itemId });
 }

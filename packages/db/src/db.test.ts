@@ -767,6 +767,66 @@ describe("base de données", () => {
     expect(await app.withGlobal((tx) => repos.sizeReferences.count(tx))).toBe(2);
   });
 
+  it("0015 : limites de Vinted mesurées (globales en lecture, écriture globale par fonction) et migrations isolées par RLS, entrée brute purgée", async () => {
+    if (!available) return;
+    await owner.pool.query("delete from negotiation_limits");
+    const { orgA, orgB } = await owner.withGlobal(async (tx) => ({
+      orgA: await repos.orgs.create(tx, { name: "Org Nego A", slug: "org-nego-a", settings: {} }),
+      orgB: await repos.orgs.create(tx, { name: "Org Nego B", slug: "org-nego-b", settings: {} }),
+    }));
+    const measure = { maxCounterOffersPerConversation: 2, offerDurationHours: 24, minDelayBetweenMessagesSeconds: 90, measuredAt: "2026-11-06T10:00:00.000Z" };
+
+    // Aucune mesure : rien (l'application garde alors les valeurs prudentes « à mesurer »).
+    expect(await app.withOrg(orgA.id, (tx) => repos.negotiationLimits.latestForOrg(tx))).toBeNull();
+    expect(await app.withOrg(orgA.id, (tx) => repos.negotiationLimits.latestGlobal(tx))).toBeNull();
+    // Mesure propre à A : invisible de B ; aucune écriture pour une autre organisation ni globale en direct.
+    const own = await app.withOrg(orgA.id, (tx) => repos.negotiationLimits.recordForOrg(tx, { ...measure, measuredBy: "u-1", note: "Compte équipe" }));
+    expect(own).toMatchObject({ orgId: orgA.id, source: "measured", maxCounterOffersPerConversation: 2, measuredAt: "2026-11-06T10:00:00.000Z" });
+    expect(await app.withOrg(orgB.id, (tx) => repos.negotiationLimits.latestForOrg(tx))).toBeNull();
+    expect(await app.withOrg(orgB.id, (tx) => tx.query("select id from negotiation_limits"))).toHaveLength(0);
+    await expect(app.withOrg(orgB.id, (tx) => tx.query("insert into negotiation_limits (org_id, max_counter_offers_per_conversation, offer_duration_hours, min_delay_between_messages_seconds, measured_at) values ($1, 1, 1, 1, now())", [orgA.id]))).rejects.toBeInstanceOf(Error);
+    await expect(app.withOrg(orgB.id, (tx) => tx.query("insert into negotiation_limits (org_id, max_counter_offers_per_conversation, offer_duration_hours, min_delay_between_messages_seconds, measured_at) values (null, 1, 1, 1, now())"))).rejects.toBeInstanceOf(Error);
+    // Historique : ni modification ni suppression par le rôle applicatif.
+    await expect(app.withOrg(orgA.id, (tx) => tx.query("update negotiation_limits set offer_duration_hours = 1 where id = $1", [own.id]))).rejects.toBeInstanceOf(Error);
+    await expect(app.withOrg(orgA.id, (tx) => tx.query("delete from negotiation_limits where id = $1", [own.id]))).rejects.toBeInstanceOf(Error);
+    // Mesure sans date, ou hors bornes : refusée par la base.
+    await expect(app.withOrg(orgA.id, (tx) => tx.query("insert into negotiation_limits (org_id, max_counter_offers_per_conversation, offer_duration_hours, min_delay_between_messages_seconds, source) values ($1, 3, 48, 60, 'measured')", [orgA.id]))).rejects.toMatchObject({ code: "validation" });
+    await expect(app.withOrg(orgA.id, (tx) => repos.negotiationLimits.recordForOrg(tx, { ...measure, maxCounterOffersPerConversation: 0 }))).rejects.toMatchObject({ code: "validation" });
+    // Mesure globale (équipe) par la fonction : lisible par toutes les organisations.
+    const global = await app.withGlobal((tx) => repos.negotiationLimits.recordGlobal(tx, { ...measure, maxCounterOffersPerConversation: 4, measuredBy: "ops" }));
+    expect(global).toMatchObject({ orgId: null, source: "measured", maxCounterOffersPerConversation: 4 });
+    expect(await app.withOrg(orgB.id, (tx) => repos.negotiationLimits.latestGlobal(tx))).toMatchObject({ id: global.id });
+    expect((await app.withOrg(orgB.id, (tx) => repos.negotiationLimits.history(tx))).map((h) => h.id)).toEqual([global.id]);
+    expect((await app.withOrg(orgA.id, (tx) => repos.negotiationLimits.history(tx))).map((h) => h.id).sort()).toEqual([global.id, own.id].sort());
+
+    // Migrations : isolées par RLS ; brouillon corrigeable, appliqué une seule fois ; captures jamais stockées.
+    const mapping = { source: "bleam", fields: [{ id: "f1", sourceLabel: "Remise max", sourceValue: "20 %", target: "marginRules.maxDiscountRate", targetValue: 0.2, confidence: 0.9, note: "" }], unknownFields: [], warnings: [] };
+    const m = await app.withOrg(orgA.id, (tx) => repos.migrationMappings.create(tx, { source: "bleam", inputKind: "text", mapping, rawInput: "Remise max : 20 %", rawInputPurgeAt: "2026-11-13T10:00:00.000Z", screenshotCount: 0, createdBy: "u-1", createdAt: "2026-11-06T10:00:00.000Z" }));
+    expect(m).toMatchObject({ status: "draft", rawInput: "Remise max : 20 %", rawInputPurgeAt: "2026-11-13T10:00:00.000Z", screenshotCount: 0 });
+    expect(await app.withOrg(orgB.id, (tx) => repos.migrationMappings.byId(tx, m.id))).toBeNull();
+    await expect(app.withOrg(orgB.id, (tx) => tx.query("insert into migration_mappings (org_id, input_kind, mapping) values ($1, 'text', '{}')", [orgA.id]))).rejects.toBeInstanceOf(Error);
+    await expect(app.withOrg(orgA.id, (tx) => tx.query("insert into migration_mappings (org_id, input_kind, mapping, screenshot_count) values ($1, 'screenshot', '{}', 5)", [orgA.id]))).rejects.toMatchObject({ code: "validation" });
+    // Entrée brute sans échéance de purge : refusée.
+    await expect(app.withOrg(orgA.id, (tx) => tx.query("insert into migration_mappings (org_id, input_kind, mapping, raw_input) values ($1, 'text', '{}', 'x')", [orgA.id]))).rejects.toMatchObject({ code: "validation" });
+    const corrected = await app.withOrg(orgA.id, (tx) => repos.migrationMappings.updateDraft(tx, m.id, { mapping: { ...mapping, warnings: ["corrigé"] } }));
+    expect(corrected?.mapping).toMatchObject({ warnings: ["corrigé"] });
+    const applied = await app.withOrg(orgA.id, (tx) => repos.migrationMappings.markApplied(tx, m.id, { appliedFieldIds: ["f1"], appliedResult: { applied: 1 }, appliedBy: "u-1", appliedAt: "2026-11-06T10:05:00.000Z" }));
+    expect(applied).toMatchObject({ status: "applied", appliedFieldIds: ["f1"], appliedAt: "2026-11-06T10:05:00.000Z" });
+    expect(await app.withOrg(orgA.id, (tx) => repos.migrationMappings.markApplied(tx, m.id, { appliedFieldIds: [], appliedResult: {}, appliedBy: "u-1", appliedAt: "2026-11-06T10:06:00.000Z" }))).toBeNull();
+    expect(await app.withOrg(orgA.id, (tx) => repos.migrationMappings.updateDraft(tx, m.id, { mapping }))).toBeNull();
+    // Rétention : avant l'échéance rien ne part ; après, l'entrée brute est effacée (la correspondance reste).
+    const b = await app.withOrg(orgB.id, (tx) => repos.migrationMappings.create(tx, { source: "clemz", inputKind: "rgpd_file", mapping, rawInput: "{\"discount\": \"20 %\"}", rawInputPurgeAt: "2026-11-20T10:00:00.000Z" }));
+    expect(await app.withGlobal((tx) => repos.migrationMappings.purgeRawInputsAll(tx, "2026-11-10T00:00:00.000Z"))).toBe(0);
+    expect(await app.withGlobal((tx) => repos.migrationMappings.purgeRawInputsAll(tx, "2026-11-14T00:00:00.000Z"))).toBe(1);
+    expect((await app.withOrg(orgA.id, (tx) => repos.migrationMappings.byId(tx, m.id)))).toMatchObject({ rawInput: null, rawInputPurgeAt: null, status: "applied" });
+    expect((await app.withOrg(orgB.id, (tx) => repos.migrationMappings.byId(tx, b.id)))?.rawInput).not.toBeNull();
+    expect(await app.withOrg(orgB.id, (tx) => repos.migrationMappings.purgeRawInputs(tx, "2026-11-21T00:00:00.000Z"))).toBe(1);
+    // L'organisation supprimée emporte ses mesures et ses migrations, pas la mesure globale.
+    await owner.withGlobal((tx) => tx.query("delete from organizations where id = any($1)", [[orgA.id, orgB.id]]));
+    expect(await owner.withGlobal((tx) => tx.count("select count(*) from negotiation_limits"))).toBe(1);
+    expect(await owner.withGlobal((tx) => tx.count("select count(*) from migration_mappings"))).toBe(0);
+  });
+
   it("limite le débit par fenêtre", async () => {
     if (!available) return;
     const a = await app.withGlobal((tx) => repos.rateLimits.hit(tx, "test:ip", 60_000));

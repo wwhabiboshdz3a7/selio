@@ -19,3 +19,4 @@ export * from "./vinted-domains";
 export * from "./cloud";
 export * from "./pricing";
 export * from "./track";
+export * from "./migration";

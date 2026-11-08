@@ -11,6 +11,7 @@ import { ItemStatusBadge, OrderStatusBadge, QueryBoundary } from "../components/
 import { useAppMutation } from "../components/hooks";
 import { PriceEstimateView } from "../components/pricing";
 import { itemPriceFeatures } from "../../lib/track";
+import { ListingChecks, useBlurScores } from "../components/selling";
 
 export default function ItemDetail() {
   const { id = "" } = useParams();
@@ -78,6 +79,7 @@ export default function ItemDetail() {
                     </div>
                   </div>
                 </Card>
+                {it.status !== "sold" && it.status !== "archived" ? <ItemChecksCard item={it} /> : null}
                 <Card>
                   <h2 className="mb-3 text-md font-semibold">Conversations liées</h2>
                   {convs.data?.items.length ? (
@@ -162,6 +164,17 @@ export default function ItemDetail() {
     if (Array.isArray(v)) return v.join(", ");
     return String(v);
   }
+}
+
+/** Contrôle des photos (flou calculé sur canvas, dans le navigateur) et des mesures manquantes pour la catégorie. */
+function ItemChecksCard({ item }: { item: InventoryItem }) {
+  const scores = useBlurScores(item.photos.map((p) => p.url));
+  return (
+    <Card>
+      <ListingChecks item={item} scores={scores} />
+      <Link to={`/app/items/${item.id}/edit`} className="mt-2 inline-block text-xs font-medium text-accent hover:underline">Compléter les photos ou la description</Link>
+    </Card>
+  );
 }
 
 /**
