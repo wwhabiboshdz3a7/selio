@@ -1,5 +1,8 @@
 export { cn } from "./lib/cn";
 export * from "./lib/format";
+export * from "./lib/contrast";
+export * from "./lib/glass";
+export * from "./hooks/useGlassCapabilities";
 export * from "./components/Button";
 export * from "./components/Card";
 export * from "./components/Badge";
@@ -16,3 +19,4 @@ export * from "./components/Brand";
 export * from "./components/Menu";
 export * from "./components/Layout";
 export * from "./components/Money";
+export * from "./components/GlassSurface";

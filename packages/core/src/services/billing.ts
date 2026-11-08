@@ -1,6 +1,6 @@
 import {
-  CARD_ONLY_ORDER_KINDS, CARD_VERIFICATION_AMOUNT_CENTS, DATA_RETENTION_DAYS_AFTER_END, DEFAULT_VAT_RATE, PAID_PLANS, PLAN_LABELS, VAT_FRANCHISE_NOTICE, buildUsageCounter, extraLinesTotal, invoiceAmounts, nextChargeDelayDays, quotasForPlan,
-  type BillingCycle, type CheckoutResult, type Invoice, type InvoiceView, type PaidPlan, type PaymentOrder, type Plan, type PlanQuotas, type Subscription, type SubsidiaryUsage, type UsageCounter,
+  CARD_ONLY_ORDER_KINDS, CARD_VERIFICATION_AMOUNT_CENTS, DATA_RETENTION_DAYS_AFTER_END, DEFAULT_VAT_RATE, PAID_PLANS, PLAN_LABELS, REFERRAL_CREDIT_LINE_LABEL, VAT_FRANCHISE_NOTICE, buildUsageCounter, extraLinesTotal, invoiceAmounts, nextChargeDelayDays, quotasForPlan,
+  type BillingCycle, type CheckoutResult, type Invoice, type InvoiceExtraLine, type InvoiceView, type PaidPlan, type PaymentOrder, type Plan, type PlanQuotas, type Subscription, type SubsidiaryUsage, type UsageCounter,
 } from "@selio/contracts";
 import { PRICING } from "@selio/demo-data";
 import { repos } from "@selio/db";
@@ -10,6 +10,7 @@ import { PaymentApiError, type PaymentState, type PaymentWebhookEvent, type Save
 import { AppError, requireAction, sendEmail, webLink, withOrg, type OrgContext, type Services } from "../context";
 import type { UsageSummary } from "../types-data";
 import { markWornOverageBilled, wornOverageLines } from "./worn-photos";
+import { qualify as qualifyReferral } from "./referral";
 
 export { USAGE_WARNING_RATE, buildUsageCounter, usagePercent } from "@selio/contracts";
 
@@ -447,7 +448,7 @@ export async function completePaidOrder(services: Services, orgId: string, po: P
   if (!plan) throw new AppError("conflict", "Commande de paiement sans offre payante.", 409);
   const method = po.kind === "checkout" ? await resolvePaymentMethod(services, before.revolutCustomerId, po.orderId) : null;
   const { vatRate, vatNotice } = vatFor(services);
-  return services.db.withOrg(orgId, async (tx) => {
+  const done = await services.db.withOrg(orgId, async (tx) => {
     const closed = await repos.paymentOrders.complete(tx, po.id);
     if (!closed) return { invoice: null, subscription: (await repos.subscriptions.get(tx)) ?? before };
     const sub = (await repos.subscriptions.get(tx)) ?? before;
@@ -480,6 +481,19 @@ export async function completePaidOrder(services: Services, orgId: string, po: P
     await repos.audit.add(tx, { actorUserId: null, action: "billing.payment_completed", targetType: "invoice", targetId: invoice.id, meta: { plan, cycle: po.cycle, amountCents: po.amountCents, orderId: po.orderId, kind: po.kind, invoiceNumber: invoice.number, periodStart: start.toISOString(), periodEnd: end.toISOString(), extendedPaidPeriod: paidUntil !== null, lateCompletion: po.state === "failed", method: methodMeta(method) } });
     return { invoice, subscription };
   });
+  // Parrainage : un paiement réellement encaissé (formulaire hors essai, premier débit après l'essai,
+  // renouvellement) qualifie le lien en attente de la filleule ; le premier suffit, les suivants ne font rien.
+  // Hors transaction et au mieux : un incident ici ne défait jamais un paiement ; le paiement suivant retente.
+  if (done.invoice && po.amountCents > 0) await qualifyAfterPayment(services, orgId);
+  return done;
+}
+
+async function qualifyAfterPayment(services: Services, orgId: string): Promise<void> {
+  try {
+    await qualifyReferral(services, orgId);
+  } catch (err) {
+    await services.db.withOrg(orgId, (tx) => repos.audit.add(tx, { actorUserId: null, action: "referral.qualify_failed", targetType: "organization", targetId: orgId, meta: { error: (err instanceof Error ? err.message : String(err)).slice(0, 300) } })).catch(() => undefined);
+  }
 }
 
 /**
@@ -602,6 +616,8 @@ export async function releaseStaleAuthorisations(services: Services, orgId: stri
  *   perdue) ; avec carte → premier débit ;
  * - abonnement Revolut échu (ou relance due) → commande + débit du moyen enregistré, à
  *   l'initiative du marchand ; succès → période prolongée et facture ; échec → relance ;
+ * - mois offert disponible (parrainage) → consommé à la place du débit : facture à 0 € avec la ligne
+ *   « Mois offert — parrainage », période prolongée d'un mois, aucune commande créée ;
  * - résiliation demandée → fin à l'échéance, accès de base, données conservées 30 jours.
  * Une commande de renouvellement encore ouverte est relue chez le fournisseur avant toute
  * nouvelle tentative (jamais deux débits pour une même échéance).
@@ -663,9 +679,51 @@ async function endSubscription(services: Services, orgId: string, sub: Subscript
   });
 }
 
+/**
+ * Échéance couverte par un mois offert (parrainage) : aucun débit, facture à 0 € avec la ligne « Mois offert —
+ * parrainage », période prolongée d'un mois à partir de l'échéance (essai terminé, renouvellement ou relance),
+ * relances remises à zéro. Atomique : le crédit est verrouillé, consommé conditionnellement et lié à la facture
+ * dans la même transaction (deux passages concurrents n'en consomment qu'un et n'émettent qu'une facture).
+ * Le dépassement éventuel (photos portées) n'est pas facturé ici : il reste dû au prochain débit.
+ * Retourne null s'il n'y a aucun crédit disponible.
+ */
+async function applyCreditForRenewal(services: Services, orgId: string, plan: PaidPlan): Promise<RenewalOutcome | null> {
+  const now = services.now();
+  const { vatRate, vatNotice } = vatFor(services);
+  const applied = await services.db.withOrg(orgId, async (tx) => {
+    const credit = await repos.subscriptionCredits.takeAvailable(tx, orgId);
+    if (!credit) return null;
+    const sub = (await repos.subscriptions.get(tx))!;
+    const start = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : now;
+    const end = addMonthsUtc(start, credit.months);
+    const line: InvoiceExtraLine = { kind: "credit", product: "referral_month", label: REFERRAL_CREDIT_LINE_LABEL, quantity: credit.months, unitCents: 0, amountCents: 0 };
+    const invoice = await repos.invoices.create(tx, { plan, cycle: sub.cycle, amountCents: 0, vatRate, vatNotice, periodStart: start.toISOString(), periodEnd: end.toISOString(), orderId: null, issuedAt: now.toISOString(), extraLines: [line] });
+    const consumed = await repos.subscriptionCredits.consume(tx, credit.id, invoice.id, now.toISOString());
+    if (!consumed) throw new AppError("conflict", "Mois offert déjà consommé.", 409);
+    await repos.subscriptions.upsert(tx, {
+      plan,
+      quotas: quotasForPlan(plan),
+      status: "active",
+      currentPeriodEnd: end.toISOString(),
+      pendingPlan: null,
+      chargeAttempts: 0,
+      nextChargeAt: null,
+      lastChargeError: null,
+      dataRetentionUntil: null,
+    });
+    await repos.audit.add(tx, { actorUserId: null, action: "billing.referral_credit_applied", targetType: "invoice", targetId: invoice.id, meta: { plan, cycle: sub.cycle, creditId: credit.id, referralId: credit.sourceReferralId, months: credit.months, invoiceNumber: invoice.number, periodStart: start.toISOString(), periodEnd: end.toISOString(), previousStatus: sub.status } });
+    return { invoice, referralId: credit.sourceReferralId };
+  });
+  if (!applied) return null;
+  // Les deux mois offerts consommés : le parrainage passe « credited » (au mieux, sans effet sur l'échéance).
+  if (applied.referralId) {
+    const referralId = applied.referralId;
+    await services.db.withGlobal((tx) => repos.referrals.settle(tx, referralId, now.toISOString())).catch(() => null);
+  }
+  return { action: "renewed", reason: "referral_credit", invoiceNumber: applied.invoice.number };
+}
+
 async function chargeDue(services: Services, orgId: string, sub: Subscription): Promise<RenewalOutcome> {
-  const payments = services.payments;
-  if (!payments) return { action: "skipped", reason: "payments_unconfigured" };
   const plan = isPaidPlan(sub.pendingPlan) ? sub.pendingPlan : isPaidPlan(sub.plan) ? sub.plan : null;
   if (!plan) return { action: "skipped", reason: "no_paid_plan" };
   const cycle = sub.cycle;
@@ -673,7 +731,15 @@ async function chargeDue(services: Services, orgId: string, sub: Subscription): 
 
   // Une commande de renouvellement déjà ouverte : on la relit plutôt que d'en créer une seconde.
   const open = await services.db.withOrg(orgId, (tx) => repos.paymentOrders.latest(tx, "renewal"));
-  if (open && RETRYING_STATES.includes(open.state)) {
+  const openRetrying = open !== null && RETRYING_STATES.includes(open.state);
+  // Mois offert (parrainage) disponible et aucun débit en cours : consommé à la place du débit.
+  if (!openRetrying) {
+    const credited = await applyCreditForRenewal(services, orgId, plan);
+    if (credited) return credited;
+  }
+  const payments = services.payments;
+  if (!payments) return { action: "skipped", reason: "payments_unconfigured" };
+  if (open && openRetrying) {
     let fresh;
     try {
       fresh = await payments.getOrder(open.orderId);
@@ -824,7 +890,9 @@ export function invoiceView(invoice: Invoice, customer: { orgName: string; email
     customer,
     lines: [
       { kind: "plan", label: `Abonnement Selio ${PLAN_LABELS[invoice.plan]} — ${cycleLabel(invoice.cycle)}`, periodLabel: `du ${formatDateFr(start)} au ${formatDateFr(end)}`, amountCents: baseCents },
-      ...extra.map((l) => ({ kind: "overage" as const, label: l.label, periodLabel: `produites avant le ${formatDateFr(start)}`, amountCents: l.amountCents, quantity: l.quantity, unitCents: l.unitCents })),
+      ...extra.map((l) => l.kind === "credit"
+        ? { kind: "credit" as const, label: l.label, periodLabel: `du ${formatDateFr(start)} au ${formatDateFr(end)}`, amountCents: l.amountCents, quantity: l.quantity, unitCents: l.unitCents }
+        : { kind: "overage" as const, label: l.label, periodLabel: `produites avant le ${formatDateFr(start)}`, amountCents: l.amountCents, quantity: l.quantity, unitCents: l.unitCents }),
     ],
     totals: { ...totals, vatRate: invoice.vatRate },
     paymentProvider: invoice.orderId ? "revolut" : null,

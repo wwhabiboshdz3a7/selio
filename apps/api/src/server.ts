@@ -10,9 +10,10 @@ import { wornPhotos, type Services } from "@selio/core";
 import { createPaymentProvider, loadPaymentConfig } from "@selio/connectors";
 import { createEmailProvider, loadEmailConfig, type EmailLogger } from "@selio/email";
 import { createStorageClient, loadStorageConfig } from "@selio/storage";
-import { cloudServicesConfig, radarServicesConfig, startupNotices, studioServicesConfig, trackServicesConfig, type ApiEnv } from "./config";
+import { cloudServicesConfig, radarServicesConfig, referralServicesConfig, startupNotices, studioServicesConfig, trackServicesConfig, type ApiEnv } from "./config";
 import { errorHandler } from "./errors";
 import authPlugin from "./plugins/auth";
+import rolesPlugin from "./plugins/roles";
 import authRoutes from "./routes/auth";
 import orgRoutes from "./routes/org";
 import itemRoutes from "./routes/items";
@@ -37,6 +38,8 @@ import pricingRoutes from "./routes/pricing";
 import adminRoutes from "./routes/admin";
 import negotiationRoutes from "./routes/negotiation";
 import migrationRoutes from "./routes/migration";
+import referralRoutes from "./routes/referral";
+import comptesRoutes from "./routes/comptes";
 import { StoragePhotoStore } from "./studio-photos";
 import { MAINTENANCE_QUEUE, RADAR_QUEUE, createQueues, type QueueHandle } from "./queue";
 import { PRICE_MODEL_REFRESH_MS, createApiPricingServices, refreshPriceModel, schedulePriceModelRefresh } from "./pricing";
@@ -80,7 +83,7 @@ export function buildServices(env: ApiEnv, overrides: Partial<Services> = {}, lo
     // d'un vendeur). Aucun navigateur dans l'API : `cloud`, `radar` et `track` restent absents (sauf
     // injection par les tests), seul le worker lit et achète.
     // Studio : dépassement des photos portées fermé par défaut, 0,25 € la photo (proposition), file de nuit 22 h – 6 h.
-    config: overrides.config ?? { ...cloudServicesConfig(env), ...radarServicesConfig(env), ...trackServicesConfig(env), ...studioServicesConfig(env) },
+    config: overrides.config ?? { ...cloudServicesConfig(env), ...radarServicesConfig(env), ...trackServicesConfig(env), ...studioServicesConfig(env), ...referralServicesConfig(env) },
     // Modèle de prix : chargé depuis `price_models` (jamais entraîné ici) ; les tests injectent le leur.
     pricing: overrides.pricing ?? createApiPricingServices(now),
     // Photos portées : AUCUN fournisseur choisi (décision d'Ibrahim) ; « noop » refuse proprement, « mock » pour les
@@ -132,6 +135,8 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   // WebSocket de la fenêtre de connexion du Cloud : messages d'entrée courts (4 Kio au plus).
   await app.register(websocket, { options: { maxPayload: 4096 } });
   await app.register(authPlugin, { services, operatorEmails: env.OPERATOR_EMAILS.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean) });
+  // Rôles d'équipe : contributeur photos limité à sa liste de routes, finances masquées pour qui ne les voit pas.
+  await app.register(rolesPlugin);
   app.setErrorHandler(errorHandler);
   app.setNotFoundHandler((req, reply) => reply.status(404).send({ error: { code: "not_found", message: `Route inconnue : ${req.method} ${req.url}` } }));
 
@@ -170,6 +175,9 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(pricingRoutes, { maintenanceQueue: queues.queues.get(MAINTENANCE_QUEUE) ?? null, minReferences: env.PRICING_MIN_REFERENCES });
   // Administration de la base des références de tailles (Studio) : import CSV / JSON par un opérateur, sans donnée personnelle.
   await app.register(adminRoutes);
+  // Parrainage (404 tant que REFERRAL_ENABLED est faux) et Selio Comptes (checklists et textes, aucune action sur Vinted).
+  await app.register(referralRoutes);
+  await app.register(comptesRoutes);
 
   // Modèle de prix actif : chargé au démarrage (jamais bloquant), puis rechargé toutes les heures (nouvel
   // entraînement du worker le dimanche).

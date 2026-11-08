@@ -5,6 +5,8 @@
 @import "tailwindcss";
 @import "./tokens.css";
 @import "./theme.css";
+/* Verre liquide (essai §6) : classes .glass-surface, sans effet tant que GlassSurface n'est pas utilisé. */
+@import "./glass.css";
 
 @layer base {
   body {

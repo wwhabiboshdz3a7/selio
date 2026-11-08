@@ -4,7 +4,7 @@ import type { NavGroup } from "../layout";
 
 /**
  * Selio et ses filiales. Selio est l'outil de gestion (l'application
- * historique, /app) ; Studio, Agents, Track, Cloud et le générateur de compte
+ * historique, /app) ; Studio, Agents, Track, Cloud et Selio Comptes
  * s'appuient sur ses données. Chaque espace a son menu et une teinte
  * d'identité discrète (styles.css, [data-space]) ; l'accueil central
  * (/app/espaces) les présente tous. « Selio Global » est le nom de
@@ -77,12 +77,14 @@ export const SPACES: readonly SpaceDef[] = [
     does: ["Répondre aux messages, relancer après 24 h", "Jusqu'à 10 comptes Vinted, pause en un clic", "Journal des actions gardé 90 jours"],
   },
   {
-    id: "generateur", name: "Générateur de compte Vinted", short: "Générateur", tagline: "Un nouveau compte vendeur prêt en quelques minutes",
-    description: "Un assistant pour préparer un nouveau compte vendeur : pseudo, présentation, photo de profil, réglages d'envoi et premières annonces. Le compte est créé par vous, à votre nom.",
+    // Identifiant historique « generateur » gardé (teinte, vitrine) ; l'espace s'appelle Selio Comptes (§5.15).
+    id: "generateur", name: "Selio Comptes", short: "Comptes", tagline: "Ouvrir sa boutique Vinted, étape par étape",
+    description: "Une checklist à suivre vous-même dans Vinted pour ouvrir et préparer un compte vendeur, et les textes prêts à copier : présentation, règles d'envoi, réponses types. Selio ne crée aucun compte à votre place.",
     forWhom: "Pour ouvrir une nouvelle boutique",
-    home: "/generateur", icon: <UserPlus />, state: "development",
-    does: ["Pseudo et présentation rédigés par l'IA", "Photo de profil et réglages d'envoi", "Premières annonces depuis votre stock"],
+    home: "/comptes", icon: <UserPlus />, state: "available",
+    does: ["Checklist à cocher, de l'inscription aux premières annonces", "Présentation et règles d'envoi rédigées à partir de vos réponses", "Réponses types à copier dans Vinted"],
   },
+
 ];
 
 export function spaceById(id: SpaceId): SpaceDef {
@@ -156,8 +158,11 @@ export const SPACE_GROUPS: Record<Exclude<SpaceArea, "selio">, NavGroup[]> = {
     SETTINGS,
   ],
   generateur: [
-    { title: "Générateur de compte", items: [{ to: "/generateur", label: "Présentation", icon: <UserPlus />, end: true }] },
-    { title: "Dans Selio", items: [{ to: "/app/accounts", label: "Comptes Vinted", icon: <Users /> }] },
+    { title: "Selio Comptes", items: [{ to: "/comptes", label: "Checklist et textes", icon: <UserPlus />, end: true, hint: "À suivre vous-même dans Vinted" }] },
+    { title: "Dans Selio", items: [
+      { to: "/studio", label: "Selio Studio", icon: <Sparkles />, hint: "Les premières annonces à partir de vos photos" },
+      { to: "/app/accounts", label: "Comptes Vinted", icon: <Users /> },
+    ] },
     SETTINGS,
   ],
 };

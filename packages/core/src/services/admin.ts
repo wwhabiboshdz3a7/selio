@@ -1,4 +1,4 @@
-import { PLANS, aiSettings, buildUsageCounter, isPlan, quotasForPlan, resolveQuotas, type Plan, type PlanQuotas, type SubsidiaryUsage, type UsageCounter } from "@selio/contracts";
+import { PLANS, PROVIDERS, aiSettings, buildUsageCounter, isPlan, quotasForPlan, resolveQuotas, type Plan, type PlanQuotas, type SubsidiaryUsage, type UsageCounter } from "@selio/contracts";
 import { repos } from "@selio/db";
 import { effectiveAiQuota } from "@selio/domain";
 import { AppError, type OrgContext, type Services } from "../context";
@@ -136,7 +136,7 @@ export async function adminOverview(ctx: OrgContext, deps: { queues: QueueStatsP
   const metrics = services.ai.metrics.snapshot();
   const byOrg: AdminOverview["ai"]["byOrg"] = [];
   const errors: AdminOverview["errors"] = [];
-  const connectorsCount: Record<string, { connections: number; byStatus: Record<string, number> }> = { demo: { connections: 0, byStatus: {} }, vinted: { connections: 0, byStatus: {} } };
+  const connectorsCount: Record<string, { connections: number; byStatus: Record<string, number> }> = Object.fromEntries(PROVIDERS.map((p) => [p, { connections: 0, byStatus: {} }]));
   let requests24h = 0, failures24h = 0, tokens24h = 0;
   for (const o of orgs) {
     await services.db.withOrg(o.id, async (tx) => {
@@ -146,7 +146,7 @@ export async function adminOverview(ctx: OrgContext, deps: { queues: QueueStatsP
       tokens24h += reqs.reduce((s, r) => s + r.promptTokens + r.outputTokens, 0);
       byOrg.push({ orgId: o.id, orgName: o.name, requests: reqs.length });
       for (const j of await repos.jobs.recentErrors(tx, 5)) errors.push({ at: j.updatedAt, source: `job ${j.kind}`, message: j.error!, orgId: o.id });
-      for (const c of await repos.connections.list(tx)) { const e = connectorsCount[c.provider]!; e.connections++; e.byStatus[c.status] = (e.byStatus[c.status] ?? 0) + 1; }
+      for (const c of await repos.connections.list(tx)) { const e = (connectorsCount[c.provider] ??= { connections: 0, byStatus: {} }); e.connections++; e.byStatus[c.status] = (e.byStatus[c.status] ?? 0) + 1; }
     });
   }
   return {

@@ -5,6 +5,7 @@ import { STUDIO_EXAMPLE_BRAND, STUDIO_EXAMPLE_MEASUREMENT } from "../prompts";
 import type { MigrationMapping, MigrationMappingOutput, MigrationSource, MigrationUnknownField } from "@selio/contracts";
 import { looksLikeSecret, mentionsSecret, normalizeMigrationMapping } from "@selio/domain";
 import { MIGRATION_EXAMPLE_FIELD } from "../prompts";
+import { ACCOUNT_HASHTAGS_MAX, ACCOUNT_HASHTAG_RE, ACCOUNT_STYLE_DESCRIPTIONS, accountTextsOutput, type AccountStyle, type AccountTextsOutput, type AccountTone } from "@selio/contracts";
 
 export interface ValidationContext {
   /** Décision imposée : celle de l'article, ou celle du lot (`evaluateBundleOffer`) pour une offre de lot. */
@@ -598,4 +599,127 @@ function unsafeMigrationText(text: string): string | null {
   const scan = scanForInjection(text);
   if (scan.suspicious) return `motif suspect (${scan.matches[0]})`;
   return null;
+}
+
+// ---------------------------------------------------------------- Selio Comptes (§5.15)
+
+export type AccountTextsValidation = { ok: true; output: AccountTextsOutput; warnings: string[] } | { ok: false; code: string; reason: string };
+
+/**
+ * Affirmations sur la personne que mon IA perso ne doit jamais inventer (aucune donnée personnelle ne lui est
+ * fournie) : prénom, âge, lieu de vie, famille, métier, ancienneté.
+ */
+const PERSONAL_CLAIMS: readonly RegExp[] = [
+  /\bje m['’]appelle\b/i,
+  /\bmon (pr[ée]nom|nom) est\b/i,
+  /\bj['’]ai \S+ ans\b/i,
+  /\b(je suis|en tant que) (une |un )?(maman|papa|m[èe]re|p[èe]re|[ée]tudiante?|retrait[ée]e?|infirmi[èe]re?|professeure?|styliste|cr[ée]atrice|cr[ée]ateur)\b/i,
+  /\bj['’]habite\b|\bje (vis|vit|r[ée]side)\b/i,
+  // Lieu de vie (« basée à Lyon ») : majuscule exigée, sans drapeau i.
+  /\b[Bb]as[ée]e? [àa] [A-ZÉÈ]/,
+  /\bmon (mari|[ée]poux|compagnon|copain|fils|enfant)\b|\bma (femme|[ée]pouse|compagne|copine|fille)\b|\bmes (enfants|filles|fils)\b/i,
+  /\bdepuis (des |de nombreuses |plusieurs )?ann[ée]es\b|\bpassionn[ée]e? depuis\b/i,
+];
+
+/** Paiement, échange ou contact hors de Vinted (interdit dans les textes d'une boutique). */
+const OFF_PLATFORM = /\b(whatsapp|telegram|t[ée]l[ée]gram|snapchat|instagram|insta|facebook|tiktok|messenger|paypal|lydia|virement|esp[èe]ces|cash|hors (de )?vinted|en dehors de vinted|par sms|mon num[ée]ro|me contacter (sur|par))\b/i;
+
+/** Promesses et affiliations interdites (D… : jamais « zéro risque », « 100 % », « partenaire Vinted »). */
+const PROMISES = /garanti|100\s?%|z[ée]ro risque|sans (aucun )?risque|à coup s[ûu]r|partenaire|officiel(le)?|certifi[ée]e?|approuv[ée]e? par|sponsoris[ée]e?|affili[ée]e?/i;
+
+function unsafeAccountText(text: string, allowedNumbers: ReadonlySet<string>): { code: string; reason: string } | null {
+  if (/<[a-z!/][^>]*>/i.test(text)) return { code: "html", reason: "Le texte contient du HTML." };
+  if (/[^\s@]+@[^\s@]+\.[a-z]{2,}/i.test(text)) return { code: "contact", reason: "Le texte contient une adresse email." };
+  if (/https?:\/\/|www\.|\]\(/i.test(text) || domainsIn(text).length > 0) return { code: "link", reason: "Le texte contient un lien ou une adresse web." };
+  if (/(^|\s)@[A-Za-z0-9_.]{2,}/.test(text)) return { code: "contact", reason: "Le texte cite un pseudo ou un compte (« @… »)." };
+  if (OFF_PLATFORM.test(text)) return { code: "off_platform", reason: `Le texte renvoie hors de Vinted (${text.match(OFF_PLATFORM)![0]}).` };
+  if (PROMISES.test(text)) return { code: "promise", reason: `Le texte promet un résultat ou une affiliation (${text.match(PROMISES)![0]}).` };
+  const scan = scanForInjection(text);
+  if (scan.suspicious) return { code: "injection_echo", reason: `Le texte reprend un motif suspect (${scan.matches[0]}).` };
+  const claim = PERSONAL_CLAIMS.find((re) => re.test(text));
+  if (claim) return { code: "personal_claim", reason: `Le texte invente une information sur la personne (${text.match(claim)![0]}).` };
+  if (extractAllPricesCents(text).length > 0) return { code: "price", reason: "Le texte cite un prix." };
+  const invented = [...numbersIn(text)].find((n) => !allowedNumbers.has(n));
+  if (invented) return { code: "invented_number", reason: `Chiffre inventé : ${invented} (aucun délai, prix ni nombre n'est fourni).` };
+  if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(text)) return { code: "emoji", reason: "Le texte contient un emoji." };
+  return null;
+}
+
+/** Mot-dièse normalisé (minuscules, sans espace), ou null s'il ne peut pas en être un. */
+export function normalizeHashtag(raw: string): string | null {
+  const tag = `#${raw.trim().replace(/^#+/, "").toLowerCase().replace(/[\s-]+/g, "")}`;
+  return ACCOUNT_HASHTAG_RE.test(tag) ? tag : null;
+}
+
+/**
+ * Les textes de boutique rédigés par mon IA perso ne sont montrés que s'ils restent sûrs : ni HTML, ni lien,
+ * ni coordonnée, ni renvoi hors de Vinted, ni promesse ou affiliation, ni motif d'injection, ni affirmation
+ * inventée sur la personne, ni chiffre (seuls ceux du nom de la boutique sont permis). Les mots-dièse sont
+ * normalisés (les invalides retirés, signalés en avertissement), les réponses types bornées à 3 à 5.
+ */
+export function validateAccountTexts(raw: AccountTextsOutput, ctx: { shopName?: string | null } = {}): AccountTextsValidation {
+  const parsed = accountTextsOutput.safeParse(raw);
+  if (!parsed.success) return { ok: false, code: "schema", reason: parsed.error.issues[0]?.message ?? "Forme invalide." };
+  const out = parsed.data;
+  const allowed = numbersIn(ctx.shopName ?? "");
+  const clean = (s: string) => s.replace(/\s+/g, " ").trim();
+  const fields: [string, string][] = [
+    ["presentation", out.presentation],
+    ["shippingRules", out.shippingRules],
+    ...out.cannedReplies.flatMap((r, i): [string, string][] => [[`cannedReplies.${i}.situation`, r.situation], [`cannedReplies.${i}.text`, r.text]]),
+  ];
+  for (const [field, text] of fields) {
+    const bad = unsafeAccountText(text, allowed);
+    if (bad) return { ok: false, code: bad.code, reason: `${field} : ${bad.reason}` };
+  }
+  const warnings: string[] = [];
+  const hashtags: string[] = [];
+  for (const h of out.hashtags) {
+    const tag = normalizeHashtag(h);
+    if (!tag || unsafeAccountText(tag, allowed)) { warnings.push(`Mot-dièse écarté : ${sanitizeUntrustedText(h, 31)}`); continue; }
+    if (!hashtags.includes(tag)) hashtags.push(tag);
+  }
+  return {
+    ok: true,
+    output: {
+      presentation: clean(out.presentation),
+      shippingRules: clean(out.shippingRules),
+      cannedReplies: out.cannedReplies.map((r) => ({ situation: clean(r.situation), text: clean(r.text) })),
+      hashtags: hashtags.slice(0, ACCOUNT_HASHTAGS_MAX),
+    },
+    warnings,
+  };
+}
+
+const ACCOUNT_TEMPLATE_OPENING: Record<AccountTone, string> = {
+  friendly: "Bienvenue dans ma boutique !",
+  neutral: "Bienvenue dans ma boutique.",
+  concise: "Bienvenue.",
+};
+
+/**
+ * Gabarit sans IA (IA désactivée, quota atteint, panne ou sortie écartée) : mêmes règles que la sortie de mon
+ * IA perso (aucun chiffre, aucune donnée sur la personne), signalé « gabarit » à l'écran. Déterministe.
+ */
+export function fallbackAccountTexts(input: { style: AccountStyle; tone: AccountTone; shopName?: string | null }): AccountTextsOutput {
+  const s = ACCOUNT_STYLE_DESCRIPTIONS[input.style];
+  const shop = input.shopName ? sanitizeUntrustedText(input.shopName, 40).replace(/[<>{}[\]]/g, "").trim() : "";
+  const opening = shop ? `${ACCOUNT_TEMPLATE_OPENING[input.tone].replace(/[.!]$/, "")} chez ${shop}${input.tone === "friendly" ? " !" : "."}` : ACCOUNT_TEMPLATE_OPENING[input.tone];
+  const concise = input.tone === "concise";
+  return {
+    presentation: concise
+      ? `${opening} Je vends ${s.articles} : ${s.care}. Questions bienvenues.`
+      : `${opening} Vous y trouverez ${s.articles}, avec ${s.care}. Chaque défaut est signalé dans l'annonce. N'hésitez pas à me poser vos questions avant d'acheter.`,
+    shippingRules: concise
+      ? "Envoi avec les modes proposés par Vinted, emballage soigné, article vérifié avant le départ."
+      : "Les envois se font uniquement avec les modes proposés par Vinted, dans un emballage soigné. Chaque article est vérifié avant le départ et je garde la preuve de dépôt. Le colis part rapidement après la vente.",
+    cannedReplies: [
+      { situation: "Article encore disponible ?", text: "Bonjour, oui, l'article est toujours disponible. N'hésitez pas si vous avez une question." },
+      { situation: "Demande de mesures ou de photos", text: "Bonjour, je vous envoie les mesures et une photo de plus dès que possible. Merci pour votre intérêt." },
+      { situation: "Offre trop basse", text: "Bonjour, merci pour votre proposition. Je ne peux pas descendre aussi bas, mais vous pouvez me faire une autre offre sur l'annonce." },
+      { situation: "Plusieurs articles", text: "Bonjour, avec plaisir : ajoutez les articles qui vous intéressent à un lot et faites-moi une offre groupée sur Vinted." },
+      { situation: "Remerciement après l'achat", text: "Merci pour votre achat ! Je prépare votre colis avec soin et vous préviens dès qu'il est envoyé." },
+    ],
+    hashtags: [...s.hashtags],
+  };
 }

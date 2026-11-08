@@ -3,55 +3,65 @@ import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { ITEM_CATEGORIES, ITEM_CATEGORY_LABELS } from "@selio/contracts";
-import type { PeriodPreset } from "@selio/domain";
+import { can, type PeriodPreset } from "@selio/domain";
 import { Button, Card, Money, PageHeader, StatStrip, Select, Table, TableWrap, Td, Th, Tr, formatCents, formatNumber, formatPercent } from "@selio/ui";
-import { useClient } from "../../lib/data/provider";
+import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { downloadFile } from "../../lib/download";
 import { BarChart, HorizontalBars } from "../../components/charts";
 import { Delta, PeriodPicker, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { FinanceMaskedNote, MaskedAmount, useSeesFinances } from "../components/finance";
 import { EndToEndMarginCard, ThresholdsBanner } from "../components/selling";
 
 export default function Analytics() {
   const client = useClient();
+  const session = useRequiredSession();
+  // Exécuteur : analyses sans finances (nombre de ventes, rotation) ; export réservé (prix d'achat).
+  const finances = useSeesFinances();
+  const canExport = can(session.role, "analytics.export");
   const [period, setPeriod] = useState<PeriodPreset>("90d");
   const [category, setCategory] = useState("");
   const [channel, setChannel] = useState("");
   const filters = { period, category: category || undefined, channel: channel || undefined };
   const q = useQuery({ queryKey: ["analytics", filters], queryFn: () => client.getAnalytics(filters) });
-  const thresholds = useQuery({ queryKey: ["analytics", "thresholds"], queryFn: () => client.getDeclarationThresholds() });
+  const thresholds = useQuery({ queryKey: ["analytics", "thresholds"], queryFn: () => client.getDeclarationThresholds(), enabled: finances });
   const exportCsv = useAppMutation(() => client.exportAnalyticsCsv(filters), { success: "Export généré", onSuccess: (csv) => downloadFile(`selio-analyses-${period}.csv`, csv) });
   return (
     <>
-      <PageHeader title="Analyses" description="Chaque indicateur est calculé depuis vos commandes et votre stock. Les conventions sont affichées en bas de page." actions={<><PeriodPicker value={period} onChange={setPeriod} /><Button variant="secondary" icon={<Download />} onClick={() => exportCsv.mutate()} loading={exportCsv.isPending}>Exporter CSV</Button></>} />
+      <PageHeader title="Analyses" description="Chaque indicateur est calculé depuis vos commandes et votre stock. Les conventions sont affichées en bas de page." actions={<><PeriodPicker value={period} onChange={setPeriod} />{canExport ? <Button variant="secondary" icon={<Download />} onClick={() => exportCsv.mutate()} loading={exportCsv.isPending}>Exporter CSV</Button> : null}</>} />
       <div className="mb-4 grid gap-2 sm:grid-cols-2 md:max-w-lg">
         <Select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Catégorie"><option value="">Toutes catégories</option>{ITEM_CATEGORIES.map((c) => <option key={c} value={c}>{ITEM_CATEGORY_LABELS[c]}</option>)}</Select>
         <Select value={channel} onChange={(e) => setChannel(e.target.value)} aria-label="Canal"><option value="">Tous canaux</option><option value="demo">Simulateur</option><option value="vinted">Vinted</option></Select>
       </div>
-      {thresholds.data?.enabled ? <div className="mb-4"><ThresholdsBanner t={thresholds.data} /></div> : null}
+      <FinanceMaskedNote />
+      {finances && thresholds.data?.enabled ? <div className="mb-4"><ThresholdsBanner t={thresholds.data} /></div> : null}
       <QueryBoundary query={q}>
         {(d) => (
           <div className="flex flex-col gap-6">
             <StatStrip
               className="grid-cols-2 xl:grid-cols-4"
-              items={[
+              items={!finances ? [
+                { label: "Ventes", value: formatNumber(d.sales.orderCount), sub: <Delta current={d.sales.orderCount} previous={d.previousSales.orderCount} format={formatNumber} /> },
+                { label: "Chiffre d'affaires et marge", value: <MaskedAmount /> },
+                { label: "Rotation du stock", value: d.stock.averageDaysToSell === null ? "—" : `${d.stock.averageDaysToSell} j`, sub: <>Taux d'écoulement {formatPercent(d.stock.sellThroughRate)}</> },
+              ] : [
                 { label: "Chiffre d'affaires", value: formatCents(d.sales.revenueCents), sub: <Delta current={d.sales.revenueCents} previous={d.previousSales.revenueCents} format={formatCents} /> },
                 { label: "Marge brute", value: formatCents(d.sales.marginCents), sub: <Delta current={d.sales.marginCents} previous={d.previousSales.marginCents} format={formatCents} /> },
                 { label: "Panier moyen", value: formatCents(d.sales.averageBasketCents), sub: <>{formatNumber(d.sales.orderCount)} vente(s)</> },
                 { label: "Rotation du stock", value: d.stock.averageDaysToSell === null ? "—" : `${d.stock.averageDaysToSell} j`, sub: <>Taux d'écoulement {formatPercent(d.stock.sellThroughRate)}</> },
               ]}
             />
-            <Card>
+            {finances ? <><Card>
               <h2 className="text-md font-semibold">CA et marge brute</h2>
               <BarChart className="mt-4" data={d.series.map((s) => ({ label: s.label, primary: s.revenueCents, secondary: s.marginCents }))} primaryLabel="CA" secondaryLabel="Marge brute" />
             </Card>
-            <EndToEndMarginCard period={period} />
+            <EndToEndMarginCard period={period} /></> : null}
             <div className="grid gap-4 lg:grid-cols-3">
-              <Card><h2 className="mb-3 text-md font-semibold">Par catégorie</h2>{d.byCategory.length ? <HorizontalBars rows={d.byCategory.map((r) => ({ label: ITEM_CATEGORY_LABELS[r.key as keyof typeof ITEM_CATEGORY_LABELS] ?? r.key, value: r.revenueCents, hint: `${r.orderCount} · marge ${formatPercent(r.marginRate)}` }))} /> : <p className="text-sm text-text-muted">Aucune vente.</p>}</Card>
-              <Card><h2 className="mb-3 text-md font-semibold">Par canal</h2>{d.byChannel.length ? <HorizontalBars rows={d.byChannel.map((r) => ({ label: r.key === "demo" ? "Simulateur" : r.key, value: r.revenueCents, hint: `${r.orderCount} · marge ${formatPercent(r.marginRate)}` }))} /> : <p className="text-sm text-text-muted">Aucune vente.</p>}</Card>
-              <Card><h2 className="mb-3 text-md font-semibold">Par marque</h2>{d.byBrand.length ? <HorizontalBars rows={d.byBrand.map((r) => ({ label: r.key, value: r.marginCents, hint: `${r.orderCount} vente(s)` }))} /> : <p className="text-sm text-text-muted">Aucune vente.</p>}<p className="mt-2 text-xs text-text-muted">Classé par marge brute.</p></Card>
+              <Card><h2 className="mb-3 text-md font-semibold">Par catégorie</h2>{d.byCategory.length ? <HorizontalBars rows={d.byCategory.map((r) => ({ label: ITEM_CATEGORY_LABELS[r.key as keyof typeof ITEM_CATEGORY_LABELS] ?? r.key, value: finances ? r.revenueCents : r.orderCount, hint: finances ? `${r.orderCount} · marge ${formatPercent(r.marginRate)}` : `${r.orderCount} vente(s)` }))} formatValue={finances ? undefined : formatNumber} /> : <p className="text-sm text-text-muted">Aucune vente.</p>}</Card>
+              <Card><h2 className="mb-3 text-md font-semibold">Par canal</h2>{d.byChannel.length ? <HorizontalBars rows={d.byChannel.map((r) => ({ label: r.key === "demo" ? "Simulateur" : r.key, value: finances ? r.revenueCents : r.orderCount, hint: finances ? `${r.orderCount} · marge ${formatPercent(r.marginRate)}` : `${r.orderCount} vente(s)` }))} formatValue={finances ? undefined : formatNumber} /> : <p className="text-sm text-text-muted">Aucune vente.</p>}</Card>
+              {finances ? <Card><h2 className="mb-3 text-md font-semibold">Par marque</h2>{d.byBrand.length ? <HorizontalBars rows={d.byBrand.map((r) => ({ label: r.key, value: r.marginCents, hint: `${r.orderCount} vente(s)` }))} /> : <p className="text-sm text-text-muted">Aucune vente.</p>}<p className="mt-2 text-xs text-text-muted">Classé par marge brute.</p></Card> : null}
             </div>
-            <Card padding="none">
+            {finances ? <Card padding="none">
               <h2 className="px-4 pt-4 text-md font-semibold md:px-5">Meilleures marges de la période</h2>
               <TableWrap className="mt-3 rounded-none border-0 border-t">
                 <Table dense>
@@ -59,7 +69,7 @@ export default function Analytics() {
                   <tbody>{d.topItems.length === 0 ? <tr><td colSpan={4} className="h-16 px-4 text-center text-sm text-text-muted">Aucune vente sur la période.</td></tr> : d.topItems.map((t) => <Tr key={t.order.id}><Td><Link to={`/app/orders/${t.order.id}`} className="hover:text-accent">{t.item.title}</Link></Td><Td className="text-text-muted">{t.item.brand ?? "—"}</Td><Td numeric><Money cents={t.order.salePriceCents} /></Td><Td numeric><Money cents={t.marginCents} signed /></Td></Tr>)}</tbody>
                 </Table>
               </TableWrap>
-            </Card>
+            </Card> : null}
             <Card>
               <h2 className="text-md font-semibold">Conventions de calcul</h2>
               <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-sm text-text-muted">

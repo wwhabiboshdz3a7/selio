@@ -15,6 +15,9 @@ export * as bundles from "./services/bundles";
 export * as radar from "./services/radar";
 export * as connections from "./services/connections";
 export * as billing from "./services/billing";
+export * as referral from "./services/referral";
+export * as comptes from "./services/comptes";
+export { referralConfigFromEnv } from "./services/referral";
 export * as admin from "./services/admin";
 export * as studio from "./services/studio";
 export * as dressing from "./services/dressing";
@@ -45,3 +48,6 @@ export type { CheckedPhoto, GenerateFromPrepInput, ImageReducer, StudioListingDr
 export { FakeStudioVision, studioVisionOf, visionFromAI } from "./services/studio";
 export type { NightWindow, WornPhotoOutcome, WornPhotoProvider, WornPhotoRequest, WornPhotoRequestInput, WornPhotoView, WornPose, WornRunSummary, WornSettings } from "./services/worn-photos";
 export { FakeWornPhotoProvider, NO_WORN_PROVIDER_MESSAGE, NoopWornPhotoProvider, createWornPhotoProvider, inNightWindow, nextNightWindow, wornConfigFromEnv } from "./services/worn-photos";
+export * as supervision from "./services/supervision";
+export type { CheckResult, HealthReport, SupervisionCheckRow, SupervisionEvent, SupervisionFetch, SupervisionServices, SupervisionTarget, SupervisionTickSummary, TargetState } from "./services/supervision";
+export { SUPERVISION_FAILURES_BEFORE_ALERT, SUPERVISION_REMINDER_MINUTES } from "./services/supervision";

@@ -9,14 +9,14 @@
 - [ ] `SECRETS_ENCRYPTION_KEY` générée, stockée hors Git et sauvegardée séparément.
 - [ ] TLS devant l'API (Caddy/Nginx), `TRUST_PROXY=true`, `COOKIE_SECURE=true`, `NODE_ENV=production`.
 - [ ] `CORS_ORIGINS` et `PUBLIC_WEB_URL` = domaine Netlify ; `VITE_API_BASE_URL` côté Netlify.
-- [ ] Supervision : `/api/health`, `/api/ai/health` (jeton), alertes sur les journaux d'erreur.
+- [ ] Supervision (SUPERVISION.md) : worker avec `OPERATOR_EMAILS`, `PUBLIC_API_URL`, `AI_HEALTH_TOKEN` et les clés VAPID ; notifications activées sur le téléphone d'au moins un opérateur ; essai fait (API arrêtée 3 min → alerte, redémarrée → « rétabli ») ; fournisseur d'email branché pour la copie par email ; sondes de `deploy/` relues (`/api/health` répond désormais **503** quand la base, Redis ou la file sont en panne) ; option externe (sonde gratuite sur `/api/health` ou `SUPERVISION_HEARTBEAT_URL`) décidée avec Ibrahim, sinon la panne complète de la machine n'alerte personne.
 
 ## Produit
-- [ ] Textes juridiques (mentions légales, confidentialité, conditions) complétés et validés par un conseil : ce sont des **brouillons**.
+- [ ] Textes juridiques (mentions légales, confidentialité, conditions, confidentialité de l'extension) complétés et validés par l'avocat : ils sont en **version provisoire, définitive après l'avocat** (bandeau et `noindex` à retirer ensuite, VITRINE.md).
 - [ ] Tarifs définitifs décidés ; `VITE_SHOW_INDICATIVE_PRICING` ajusté ; CGV rédigées.
 - [ ] Service d'email choisi avec Ibrahim et branché (`EMAIL_PROVIDER=smtp`, `SMTP_URL`, `EMAIL_FROM`, SPF/DKIM) : invitations et mot de passe oublié sont prêts ; par défaut `noop`, rien ne part (avertissement au démarrage).
 - [ ] Stockage objet pour les photos (MinIO sur la machine derrière Caddy, `STORAGE_*`) : routes `/api/uploads` prêtes, envoi depuis le navigateur à brancher (data URL en démo, URL en base en connecté tant que ce n'est pas fait).
-- [ ] `pnpm db:migrate` exécuté (0005 → 0015 : carte enregistrée, vue administrateur de l'usage, jetons, rattrapage des quotas des anciens abonnements, paiement Revolut avec `payment_orders` et `invoices`, compteur de factures transactionnel et réservation des webhooks, tables de Selio Cloud, tables de Selio Radar, tables de Selio Track et du modèle de prix (0013), Studio façon Kavis : `size_references`, `studio_preps`, `worn_photo_jobs` et lignes supplémentaires des factures (0014), mesures des limites de Vinted `negotiation_limits` et correspondances de migration `migration_mappings` (0015)). Si la 0012 a averti « doublons actifs existants », les résoudre puis la relancer pour créer l'index d'une seule demande d'achat active par affaire.
+- [ ] `pnpm db:migrate` exécuté (0005 → 0016 : carte enregistrée, vue administrateur de l'usage, jetons, rattrapage des quotas des anciens abonnements, paiement Revolut avec `payment_orders` et `invoices`, compteur de factures transactionnel et réservation des webhooks, tables de Selio Cloud, tables de Selio Radar, tables de Selio Track et du modèle de prix (0013), Studio façon Kavis : `size_references`, `studio_preps`, `worn_photo_jobs` et lignes supplémentaires des factures (0014), mesures des limites de Vinted `negotiation_limits` et correspondances de migration `migration_mappings` (0015), rôles élargis, parrainage (`referral_codes`, `referrals`, `subscription_credits`) et supervision (`supervision_targets`, `supervision_checks`, fournisseur `vinted_pro`) (0016 : deux fichiers, `0016_roles_referral.sql` et `0016_supervision_vinted_pro.sql`, appliqués dans l'ordre alphabétique)). Si la 0012 a averti « doublons actifs existants », les résoudre puis la relancer pour créer l'index d'une seule demande d'achat active par affaire.
 - [ ] Logo vectoriel officiel fourni (`logo-principal.svg`) pour favicons nets.
 
 ## Connecteurs et IA
@@ -98,6 +98,27 @@
 - [ ] `grep -rniE "bleam|clemz|v-?tools" packages apps` relu : aucune adresse ni requête vers un concurrent (le test `packages/ai/src/migration.test.ts` est vert) ; vitrine, aide et vidéos ne promettent **aucun import automatique** ni connexion à un autre outil, et n'utilisent pas leurs logos ; pages « Selio ou Bleam ? » relues par l'avocat avant publication.
 - [ ] Seuils de déclaration (30 ventes ou 2 000 € par an) vérifiés sur le texte officiel de l'année en cours et ajustés si besoin (`settings.thresholds`) ; le texte reste une information, « renseignez-vous auprès de l'administration », jamais un conseil fiscal.
 - [ ] Seuil de flou des photos (`DEFAULT_BLUR_THRESHOLD`, 100) ajusté sur nos propres photos ; avertissements jamais bloquants.
+
+## Vitrine (VITRINE.md)
+- [ ] Domaine choisi et relié ; `SITE_ORIGIN` (`apps/web/src/marketing/seo.ts`), `public/sitemap.xml`, `public/robots.txt` et `index.html` mis à jour ensemble (le test `seo.test.ts` vérifie qu'ils concordent) ; sitemap déclaré dans la Search Console.
+- [ ] Mention d'indépendance relue par l'avocat (« Selio est indépendant de Vinted et n'est ni affilié, ni approuvé, ni sponsorisé par Vinted. ») ; aucune promesse de classement, « zéro risque », « 100 % légal » ni « partenaire Vinted » (tests unitaires et de bout en bout verts).
+- [ ] Pages des filiales relues avec `docs/BUILD_STATUS.md` : l'état affiché (Disponible, En démonstration, En développement) correspond à la réalité au jour de la mise en ligne ; captures refaites si un écran a changé.
+- [ ] Comparatifs « Selio ou Bleam ? » et « Alternative à Bleam » : textes d'Elias insérés, lignes sur Bleam revérifiées et datées, relecture de l'avocat (publicité comparative, marques citées) ; puis `COMPARISON_READY = true` et les deux adresses ajoutées au sitemap. D'ici là, pages non indexées et absentes du menu.
+
+## Extension sur le Chrome Web Store (WEB-STORE.md)
+- [ ] Compte développeur (5 $) **validé par Ibrahim** et créé au nom de l'entreprise ; statut de professionnel et adresse de contact renseignés.
+- [ ] Paquet construit avec `VITE_DEFAULT_API_BASE_URL` et `EXTENSION_API_ORIGIN` sur l'adresse de production ; `pnpm extension:pack` sans avertissement ; empreinte SHA-256 notée.
+- [ ] Politique de confidentialité de l'extension définitive (avocat) et en ligne à `https://<domaine>/extension/confidentialite`.
+- [ ] Captures et vignette 440 × 280 produites (`apps/extension/store/captures.md`) sans aucune donnée réelle de client ni de tiers.
+- [ ] Publication d'abord « Non répertoriée » (bêta fermée) ; page `/extension` et EXTENSION-INSTALL.md mises à jour avec le lien de la fiche.
+
+## Rôles d'équipe et parrainage
+- [ ] Rôles vérifiés sur un compte de l'équipe : l'exécuteur ne voit ni prix d'achat, ni marges, ni chiffre d'affaires, ni facturation ; le contributeur photos ne peut que consulter les articles, ajouter des photos et lancer le générateur (403 ailleurs) ; la lecture seule voit les finances (comptable).
+- [ ] Parrainage : décision d'Ibrahim sur l'ouverture (`REFERRAL_ENABLED`), le cas de l'essai terminé sans carte et le texte des conditions (avocat) ; `REFERRAL_ENABLED` lu par l'API **et** par le worker (premier paiement de fin d'essai) avant d'ouvrir ; parcours essayé en bac à sable (code à l'inscription, premier paiement, facture à 0 € au renouvellement suivant pour les deux organisations).
+
+## Essai « verre liquide » (LIQUID-GLASS.md)
+- [ ] `VITE_EXPERIMENT_GLASS` absent ou `false` sur le site de production.
+- [ ] Captures avant / après et mesure de fluidité refaites **au doigt** sur un iPhone (Safari, application ajoutée à l'écran d'accueil) et un Android d'entrée de gamme ; avis « on garde, on étend ou on abandonne » confirmé par Ibrahim.
 
 ## Qualité
 - [ ] `pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e && pnpm build` verts sur la branche de release.

@@ -20,6 +20,8 @@ export interface NoopEmailOptions {
  * d'intégration puissent lire le lien envoyé.
  */
 export class NoopEmailProvider implements EmailProvider {
+  /** N'envoie rien : un email « noop » ne compte jamais comme une alerte délivrée. */
+  readonly delivers = false;
   private readonly logger: EmailLogger | undefined;
   private readonly keepLast: number;
   private readonly sent: SentEmail[] = [];

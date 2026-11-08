@@ -6,14 +6,14 @@ import { BrowserSlots, PlaywrightRunner, PurchaseRunner, RadarReader, probeChrom
 import { createAIService } from "@selio/ai";
 import { createPaymentProvider, loadPaymentConfig, paymentStartupNotices } from "@selio/connectors";
 import { Db, SecretBox, createPool } from "@selio/db";
-import { pricing, wornPhotos, type Services, type WornRunSummary } from "@selio/core";
+import { pricing, referralConfigFromEnv, supervision, wornPhotos, type Services, type WornRunSummary } from "@selio/core";
 import { createEmailProvider, emailStartupWarnings, loadEmailConfig } from "@selio/email";
 import { StorageObjectStore, createStorageClient, loadStorageConfig } from "@selio/storage";
-import { cloudDrainMs, cloudLoginConcurrency, cloudProfileMaxAgeMs, cloudRunnable, cloudServicesConfig, disabledSchedules, loadEnv, maintenanceSchedules, radarBrowsingMaxMs, radarServicesConfig, studioServicesConfig, trackServicesConfig, wornOverageCents } from "./config";
+import { cloudDrainMs, cloudLoginConcurrency, cloudProfileMaxAgeMs, cloudRunnable, cloudServicesConfig, disabledSchedules, loadEnv, maintenanceSchedules, radarBrowsingMaxMs, radarServicesConfig, studioServicesConfig, supervisionServicesConfig, supervisionTargets, trackServicesConfig, wornOverageCents } from "./config";
 import { CLOUD_LOGIN_JOB, CLOUD_LOGIN_QUEUE, CloudTickRunner, RunnerCloudExecutor, cloudLoginTask, cloudTick, createRedisLoginBus } from "./cloud";
 import { WebPushSender, loadVapidConfig } from "./push";
 import { CloudOffRadarReader, CloudPurchaseAdapter, CloudRadarReader, PageRateLimiter, RADAR_QUEUE, RADAR_RESUME_JOB, SingleFlight, alertsTick, radarAutoTick, radarResumeTask, radarTick, type AlertsTickSummary, type RadarAutoTickSummary, type RadarTickSummary } from "./radar";
-import { automationTick, connectorSyncTick, processJobs, renewSubscriptions, retentionTick } from "./tasks";
+import { automationTick, connectorSyncTick, processJobs, renewSubscriptions, retentionTick, supervisionTickTask, type SupervisionTaskSummary } from "./tasks";
 import { createPricingServices } from "./pricing";
 import { CloudTrackReader, TRACK_TICK_BUDGET_MINUTES, pricingReferencesTick, pricingTrainTask, trackTick, type PricingTrainSummary, type TrackTickSummary } from "./track";
 import { studioWornTick } from "./studio";
@@ -43,9 +43,12 @@ async function main() {
     publicWebUrl: env.PUBLIC_WEB_URL,
     payments: createPaymentProvider(paymentConfig, { logger: log }),
     billing: { franchiseTva: env.FRANCHISE_TVA },
-    config: { ...cloudServicesConfig(env), ...radarServicesConfig(env), ...trackServicesConfig(env), ...studioServicesConfig(env) },
+    // Parrainage : même lecture que l'API (seul « true » ouvre) ; le premier prélèvement après l'essai passe ici.
+    config: { ...cloudServicesConfig(env), ...radarServicesConfig(env), ...trackServicesConfig(env), ...studioServicesConfig(env), ...referralConfigFromEnv(process.env) },
     // Photos portées : AUCUN fournisseur choisi (décision d'Ibrahim) ; « noop » refuse proprement, « mock » (tests) jamais en production.
     wornPhotos: wornPhotos.createWornPhotoProvider(env.WORN_PHOTO_PROVIDER, { production: env.NODE_ENV === "production" }),
+    // Supervision : destinataires (OPERATOR_EMAILS), seuil de 3 échecs, rappel toutes les 60 min (réglables).
+    supervision: supervisionServicesConfig(env),
   };
   log.info(
     { provider: services.wornPhotos!.name, nightWindow: `${env.WORN_NIGHT_WINDOW.startHour}-${env.WORN_NIGHT_WINDOW.endHour}`, timezone: env.WORN_NIGHT_TIMEZONE, overage: env.WORN_OVERAGE_ENABLED, overageCents: wornOverageCents(env), ocr: env.OLLAMA_OCR_MODEL ?? null },
@@ -172,6 +175,19 @@ async function main() {
   // prend plus de nouvelle (la demande en cours se termine, une demande interrompue est close au passage suivant).
   const wornStop = new AbortController();
   const wornTicks: SingleFlight<WornRunSummary & { provider: string }> = new SingleFlight("studio.worn", () => studioWornTick(services, log, { signal: wornStop.signal }), log);
+  // Supervision : /api/health et /api/ai/health (avec AI_HEALTH_TOKEN) de PUBLIC_API_URL, ou SUPERVISION_TARGETS.
+  const watched = supervisionTargets(env);
+  const operatorCount = services.supervision!.operatorEmails!.length;
+  log.info(
+    { targets: watched.map((t) => t.name), operators: operatorCount, push: Boolean(vapid), emailDelivers: services.email?.delivers !== false, heartbeat: Boolean(env.SUPERVISION_HEARTBEAT_URL) },
+    "supervision : cibles contrôlées chaque minute",
+  );
+  // Aucun canal utilisable (email « noop » sans clés VAPID, OPERATOR_EMAILS vide) : dit explicitement au démarrage.
+  for (const w of supervision.supervisionChannelWarnings({ operatorEmails: operatorCount, emailDelivers: services.email?.delivers !== false, push: Boolean(vapid), heartbeat: Boolean(env.SUPERVISION_HEARTBEAT_URL) })) log.warn({}, w);
+  if (!env.AI_HEALTH_TOKEN && !env.SUPERVISION_TARGETS.length) log.warn({}, "supervision : AI_HEALTH_TOKEN absent, /api/ai/health n'est pas contrôlée");
+  const supervisionTicks: SingleFlight<SupervisionTaskSummary> = new SingleFlight("supervision.tick", () => supervisionTickTask(services, log, { targets: watched, heartbeatUrl: env.SUPERVISION_HEARTBEAT_URL }), log, (r) => {
+    if (r.down || r.alerts || r.reminders || r.recovered || r.heartbeat === "failed") log.info({ name: "supervision.tick", ...r }, "supervision : passage");
+  });
   const profiles = { baseDir: env.CLOUD_PROFILE_DIR, maxAgeMs: cloudProfileMaxAgeMs(env) };
   const cloudTicks: CloudTickRunner = new CloudTickRunner(() => cloudTick(services, log, { executor, concurrency: env.CLOUD_MAX_BROWSERS, shouldStop: () => cloudTicks.stopping, profiles }), log);
   const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
@@ -210,6 +226,8 @@ async function main() {
         case "pricing.train": result = trainings.trigger(); break;
         // Photos portées : file de nuit (rien n'est lancé hors de WORN_NIGHT_WINDOW).
         case "studio.worn": result = wornTicks.trigger(); break;
+        // Supervision : passage lancé sans retenir la file (un seul à la fois ; délai borné par cible).
+        case "supervision.tick": result = supervisionTicks.trigger(); break;
         default: log.warn({ name: job.name }, "tâche inconnue"); return null;
       }
       log.info({ name: job.name, result, ms: Date.now() - started }, "tâche terminée");
@@ -260,6 +278,7 @@ async function main() {
     trackTicks.stop();
     trainings.stop();
     wornTicks.stop();
+    supervisionTicks.stop();
     wornStop.abort();
     await worker.close();
     // Fenêtres de connexion et reprises 3-D Secure : attente bornée (le client se reconnectera ; les fenêtres
@@ -275,6 +294,7 @@ async function main() {
       trackTicks.drain(env.RADAR_PAGE_BUDGET_MS + 15_000),
       trainings.drain(30_000),
       wornTicks.drain(30_000),
+      supervisionTicks.drain(env.SUPERVISION_TIMEOUT_MS + 5_000),
     ]);
     // Navigateurs tenus ouverts pour une validation 3-D Secure : fermés (les demandes expireront, avec alerte).
     await purchases?.closeAll();

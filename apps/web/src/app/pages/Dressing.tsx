@@ -1,3 +1,4 @@
+import { can } from "@selio/domain";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -40,7 +41,7 @@ export default function Dressing() {
   } });
   const [republish, setRepublish] = useState<DressingListing | null>(null);
   const [insight, setInsight] = useState<DressingListing | null>(null);
-  const canWrite = session.role !== "viewer";
+  const canWrite = can(session.role, "items.write");
 
   return (
     <>

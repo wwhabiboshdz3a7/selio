@@ -1,11 +1,13 @@
 import { Link } from "react-router";
 import { ArrowRight, Check, Clock } from "lucide-react";
 import { SPACES, type SpaceDef } from "../app/spaces/spaces";
+import { productForSpace } from "./products";
 
 /**
  * Selio et ses filiales sur la vitrine (même source que l'application :
  * app/spaces/spaces.tsx). État honnête, formulé pour la vitrine : Studio
- * reste « en démonstration » (IA simulée hors modèle branché).
+ * reste « en démonstration » (IA simulée hors modèle branché). Selio Comptes
+ * (identifiant historique « generateur ») est disponible : une checklist et des textes.
  */
 const SHOWCASE_STATE: Record<SpaceDef["id"], { label: string; value: "available" | "demo" | "experimental" | "planned" }> = {
   selio: { label: "Disponible", value: "available" },
@@ -13,7 +15,7 @@ const SHOWCASE_STATE: Record<SpaceDef["id"], { label: string; value: "available"
   agents: { label: "Aperçu dans la démo", value: "experimental" },
   track: { label: "En développement", value: "planned" },
   cloud: { label: "En développement", value: "planned" },
-  generateur: { label: "En développement", value: "planned" },
+  generateur: { label: "Disponible", value: "available" },
 };
 
 export function SpaceStateBadge({ id }: { id: SpaceDef["id"] }) {
@@ -24,6 +26,7 @@ export function SpaceStateBadge({ id }: { id: SpaceDef["id"] }) {
 /** Carte d'un espace : ce qu'il fait, son état, et le lien pour l'ouvrir dans la démo. */
 export function SpaceShowcaseCard({ space, compact = false }: { space: SpaceDef; compact?: boolean }) {
   const ready = space.state === "available";
+  const product = productForSpace(space.id);
   return (
     <article className="card mk-card flex flex-col p-5 md:p-6" data-reveal="" aria-labelledby={`vitrine-espace-${space.id}`}>
       <div className="flex items-start justify-between gap-3">
@@ -43,10 +46,11 @@ export function SpaceShowcaseCard({ space, compact = false }: { space: SpaceDef;
           ))}
         </ul>
       )}
-      <p className="mt-auto pt-5">
+      <p className="mt-auto flex flex-wrap gap-x-4 gap-y-2 pt-5">
         <Link to={`/demo?vers=${space.home}`} className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">
           {space.state === "development" ? "Voir ce qui arrive, dans la démo" : `Ouvrir ${space.name} dans la démo`} <ArrowRight className="size-4" aria-hidden />
         </Link>
+        {product ? <Link to={product.path} className="inline-flex items-center gap-1 text-sm font-medium text-text-muted hover:text-text hover:underline">En savoir plus<span className="sr-only"> sur {product.name}</span></Link> : null}
       </p>
     </article>
   );
@@ -60,7 +64,7 @@ export function SpaceShowcaseCard({ space, compact = false }: { space: SpaceDef;
 export function SpacesConstellation() {
   const pos: Record<SpaceDef["id"], [number, number]> = { selio: [320, 130], generateur: [320, 30], studio: [110, 70], agents: [530, 70], track: [130, 196], cloud: [510, 196] };
   return (
-    <svg viewBox="0 0 640 260" className="mk-spaces-map" role="img" aria-label="Selio au centre, relié à Selio Studio, Selio Agents, Selio Track, Selio Cloud et au générateur de compte Vinted">
+    <svg viewBox="0 0 640 260" className="mk-spaces-map" role="img" aria-label="Selio au centre, relié à Selio Studio, Selio Agents, Selio Track, Selio Cloud et Selio Comptes">
       {SPACES.filter((s) => s.id !== "selio").map((s) => (
         <line key={s.id} x1={pos.selio[0]} y1={pos.selio[1]} x2={pos[s.id][0]} y2={pos[s.id][1]} className="mk-spaces-link" data-planned={s.state === "available" ? undefined : ""} />
       ))}

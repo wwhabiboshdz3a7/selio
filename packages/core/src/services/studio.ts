@@ -9,7 +9,7 @@ import {
 import { repos } from "@selio/db";
 import { AIError, providerCanSeeImages, type AIService } from "@selio/ai";
 import {
-  assembleStudioPrep, buildSellerQuestions, checkImageDimensions, comparablesFromSales, garmentKindFor, groupPhotosByArticle, matchSizeReference, mergeFields, mergeSortBatches, photosWithRole, planPhotoBatches, priceListingDraft, stripUnknownMeasurements, suggestFloorPrice,
+  assembleStudioPrep, buildSellerQuestions, can, checkImageDimensions, comparablesFromSales, garmentKindFor, groupPhotosByArticle, matchSizeReference, mergeFields, mergeSortBatches, photosWithRole, planPhotoBatches, priceListingDraft, stripUnknownMeasurements, suggestFloorPrice,
   type DraftPricing, type StudioArticleInput,
 } from "@selio/domain";
 import { AppError, nowIso, requireAction, withOrg, type OrgContext, type Services } from "../context";
@@ -425,7 +425,7 @@ function toSizeReferences(rows: SizeReferenceRecord[]): SizeReference[] {
  * article. Ne compte pas d'annonce Studio (seulement une requête IA).
  */
 export async function prepareListing(ctx: OrgContext, raw: unknown, signal?: AbortSignal): Promise<StudioPrepResult> {
-  requireAction(ctx, "ai.use");
+  requireAction(ctx, "studio.generate");
   const parsed = studioPrepareInput.safeParse(raw);
   if (!parsed.success) throw new AppError("validation", parsed.error.issues[0]?.message ?? "Demande invalide", 400, parsed.error.flatten());
   const input = parsed.data;
@@ -681,7 +681,7 @@ const SIZE_FREE_KINDS: readonly GarmentKind[] = ["bag", "accessory"];
  * jamais écraser une référence fournie par l'opérateur.
  */
 export async function validatePrep(ctx: OrgContext, prepId: string, raw: unknown): Promise<ValidatePrepResult> {
-  requireAction(ctx, "ai.use");
+  requireAction(ctx, "studio.generate");
   const parsed = studioPrepAnswers.safeParse(raw ?? {});
   if (!parsed.success) throw new AppError("validation", parsed.error.issues[0]?.message ?? "Réponses invalides", 400, parsed.error.flatten());
   const answers = parsed.data;
@@ -844,7 +844,7 @@ interface GenerationPlan {
  * l'utilisateur relit puis enregistre en brouillon ou met en vente.
  */
 export async function generateListing(ctx: OrgContext, raw: unknown, signal?: AbortSignal): Promise<StudioListingDraft> {
-  requireAction(ctx, "ai.use");
+  requireAction(ctx, "studio.generate");
   if (raw && typeof raw === "object" && (raw as { prepId?: unknown }).prepId !== undefined && (raw as { prepId?: unknown }).prepId !== null) return generateFromPrep(ctx, raw, signal);
   const parsed = listingGenerationInput.safeParse(raw);
   if (!parsed.success) throw new AppError("validation", parsed.error.issues[0]?.message ?? "Demande invalide", 400, parsed.error.flatten());
@@ -994,7 +994,8 @@ async function runGeneration(ctx: OrgContext, org: Organization, plan: Generatio
   const purchase = plan.purchase;
   const estimate = await pricing.estimate(ctx, {
     title: data.title, brand: data.brand, category: data.category, size: data.size, material: data.material,
-    color: data.colors[0] ?? null, condition: data.condition, photoCount: plan.photoCount, explain: true,
+    // Explication en mots seulement pour qui peut utiliser mon IA perso hors Studio (pas le contributeur photos).
+    color: data.colors[0] ?? null, condition: data.condition, photoCount: plan.photoCount, explain: can(ctx.role, "ai.use"),
   }, { signal }).catch(() => null);
   return withOrg(ctx, async (tx) => {
     await repos.aiRequests.update(tx, req.id, { status: "succeeded", validated: true, promptTokens: result.usage.promptTokens, outputTokens: result.usage.outputTokens, latencyMs: Math.max(result.latencyMs, Date.now() - started), finishedAt: nowIso(ctx) });

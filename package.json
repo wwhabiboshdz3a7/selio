@@ -15,6 +15,7 @@
     "build:api": "pnpm --filter @selio/api build",
     "build:worker": "pnpm --filter @selio/worker build",
     "build:extension": "pnpm --filter @selio/extension build",
+    "extension:pack": "pnpm --filter @selio/extension store:pack",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "test": "vitest run",

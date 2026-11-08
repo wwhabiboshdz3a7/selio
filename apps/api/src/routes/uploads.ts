@@ -22,9 +22,12 @@ const readQuery = z.object({ key: z.string().min(1).max(512) });
 
 export const UPLOAD_PRESIGN_RATE_LIMIT = { max: 60, timeWindow: "1 minute" } as const;
 
-/** Qui peut téléverser quoi : photos d'articles et du générateur = rôle opérateur ; avatar = tout membre connecté. */
+/**
+ * Qui peut téléverser quoi : photos d'articles et du générateur = « items.photos.write » (titulaire,
+ * administrateur, exécuteur et contributeur photos) ; avatar = tout membre connecté.
+ */
 function requireUploadRight(ctx: Parameters<typeof requireAction>[0], kind: UploadKind): void {
-  if (kind !== "avatar") requireAction(ctx, "items.write");
+  if (kind !== "avatar") requireAction(ctx, "items.photos.write");
 }
 
 export default async function uploadsRoutes(app: FastifyInstance, opts: { storage: StorageClient | null }) {
@@ -80,7 +83,7 @@ export default async function uploadsRoutes(app: FastifyInstance, opts: { storag
    */
   app.delete("/api/uploads/object", { config: { rateLimit: UPLOAD_PRESIGN_RATE_LIMIT } }, async (req) => {
     const ctx = app.requireCtx(req);
-    requireAction(ctx, "items.write");
+    requireAction(ctx, "items.photos.write");
     const storage = storageOrUnavailable();
     const { key } = readQuery.parse(req.query);
     if (!keyBelongsToOrg(key, ctx.orgId)) throw new AppError("forbidden", "Cette photo n'appartient pas à votre organisation.", 403);

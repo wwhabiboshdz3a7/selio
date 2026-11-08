@@ -8,6 +8,7 @@ import { Button, Card, Field, IconButton, Input, Money, PageHeader, Select, Text
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { dateInputToIso } from "../../lib/dates";
 import { MoneyInput, QueryBoundary } from "../components/common";
+import { useSeesFinances } from "../components/finance";
 import { useAppMutation } from "../components/hooks";
 import { PriceSuggestion } from "../components/pricing";
 import { ListingChecks, useBlurScores } from "../components/selling";
@@ -27,6 +28,8 @@ export default function ItemForm() {
   const session = useRequiredSession();
   const navigate = useNavigate();
   const editing = Boolean(id);
+  // Rôle sans finances (exécuteur) : prix d'achat, frais et marge ne sont ni affichés ni renvoyés (jamais écrasés).
+  const finances = useSeesFinances();
   const existing = useQuery({ queryKey: ["item", id], queryFn: () => client.getItem(id!), enabled: editing });
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -46,7 +49,15 @@ export default function ItemForm() {
   const blurScores = useBlurScores(form.photos.map((p) => p.url));
 
   const save = useAppMutation(
-    async (payload: InventoryItemCreate) => (editing ? client.updateItem(id!, payload) : client.createItem(payload)),
+    async (payload: InventoryItemCreate) => {
+      if (!finances) {
+        // Le serveur masque ces montants pour ce rôle : les renvoyer remettrait le prix d'achat à zéro.
+        const { purchasePriceCents: _p, purchaseFeesCents: _f, ...rest } = payload;
+        void _p; void _f;
+        return editing ? client.updateItem(id!, rest) : client.createItem(rest as InventoryItemCreate);
+      }
+      return editing ? client.updateItem(id!, payload) : client.createItem(payload);
+    },
     { invalidate: ["items", "item", "overview"], success: editing ? "Article enregistré" : "Article créé", onSuccess: (it) => navigate(`/app/items/${it.id}`) },
   );
 
@@ -127,10 +138,11 @@ export default function ItemForm() {
       </div>
       <div className="flex flex-col gap-4">
         <Card>
-          <h2 className="mb-4 text-md font-semibold">Prix et marge</h2>
+          <h2 className="mb-4 text-md font-semibold">{finances ? "Prix et marge" : "Prix"}</h2>
+          {!finances ? <p className="mb-4 text-xs text-text-muted">Prix d'achat, frais et marge sont masqués pour votre rôle : un administrateur les renseigne.</p> : null}
           <div className="flex flex-col gap-4">
-            <Field label="Prix d'achat" required>{(p) => <MoneyInput id={p.id} value={form.purchasePriceCents ?? 0} onChange={(v) => setForm({ ...form, purchasePriceCents: v ?? 0 })} allowEmpty={false} />}</Field>
-            <Field label="Frais d'acquisition" hint="Port entrant, nettoyage, retouche…">{(p) => <MoneyInput id={p.id} aria-describedby={p.describedBy} value={form.purchaseFeesCents ?? 0} onChange={(v) => setForm({ ...form, purchaseFeesCents: v ?? 0 })} allowEmpty={false} />}</Field>
+            {finances ? <Field label="Prix d'achat" required>{(p) => <MoneyInput id={p.id} value={form.purchasePriceCents ?? 0} onChange={(v) => setForm({ ...form, purchasePriceCents: v ?? 0 })} allowEmpty={false} />}</Field> : null}
+            {finances ? <Field label="Frais d'acquisition" hint="Port entrant, nettoyage, retouche…">{(p) => <MoneyInput id={p.id} aria-describedby={p.describedBy} value={form.purchaseFeesCents ?? 0} onChange={(v) => setForm({ ...form, purchaseFeesCents: v ?? 0 })} allowEmpty={false} />}</Field> : null}
             <Field label="Prix affiché" error={errors.listedPriceCents}>{(p) => <MoneyInput id={p.id} invalid={p.invalid} value={form.listedPriceCents ?? null} onChange={(v) => setForm({ ...form, listedPriceCents: v })} />}</Field>
             {/* Prix conseillé (§5.10) à la saisie de la marque, de la catégorie et de l'état : l'utilisateur choisit. */}
             <PriceSuggestion
@@ -139,15 +151,15 @@ export default function ItemForm() {
               floorCents={form.floorPriceCents ?? null}
               current={form.listedPriceCents ?? null}
             />
-            <Field label="Prix plancher" error={errors.floorPriceCents} hint={<>Suggéré par vos règles : <button type="button" className="font-medium text-text underline underline-offset-2" onClick={() => setForm({ ...form, floorPriceCents: suggestedFloor })}><Money cents={suggestedFloor} /></button> (marge min. {formatPercent(rules.minMarginRate)} et <Money cents={rules.minMarginCents} />).</>}>{(p) => <MoneyInput id={p.id} invalid={p.invalid} aria-describedby={p.describedBy} value={form.floorPriceCents ?? null} onChange={(v) => setForm({ ...form, floorPriceCents: v })} />}</Field>
+            <Field label="Prix plancher" error={errors.floorPriceCents} hint={!finances ? undefined : <>Suggéré par vos règles : <button type="button" className="font-medium text-text underline underline-offset-2" onClick={() => setForm({ ...form, floorPriceCents: suggestedFloor })}><Money cents={suggestedFloor} /></button> (marge min. {formatPercent(rules.minMarginRate)} et <Money cents={rules.minMarginCents} />).</>}>{(p) => <MoneyInput id={p.id} invalid={p.invalid} aria-describedby={p.describedBy} value={form.floorPriceCents ?? null} onChange={(v) => setForm({ ...form, floorPriceCents: v })} />}</Field>
             <Field label="Statut">{(p) => <Select id={p.id} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as FormState["status"] })}>{ITEM_STATUSES.map((s) => <option key={s} value={s}>{ITEM_STATUS_LABELS[s]}</option>)}</Select>}</Field>
             <Field label="Date d'achat">{(p) => <Input id={p.id} type="date" value={form.purchasedAt ? form.purchasedAt.slice(0, 10) : ""} onChange={(e) => { const iso = dateInputToIso(e.target.value); if (e.target.value && !iso) return; setForm({ ...form, purchasedAt: iso }); }} />}</Field>
           </div>
-          <div className="mt-4 rounded-md bg-surface-muted p-3 text-sm">
+          {finances ? <div className="mt-4 rounded-md bg-surface-muted p-3 text-sm">
             <p className="flex justify-between"><span className="text-text-muted">Coût d'acquisition</span><Money cents={(form.purchasePriceCents ?? 0) + (form.purchaseFeesCents ?? 0)} /></p>
             <p className="mt-1 flex justify-between"><span className="text-text-muted">Marge projetée au prix affiché</span>{margin ? <span><Money cents={margin.marginCents} signed /> <span className="text-text-muted">({formatPercent(margin.marginRate)})</span></span> : <span className="text-text-muted">—</span>}</p>
             {check && !check.ok ? <p className="mt-2 text-xs text-danger">{PRICE_CHECK_LABELS[check.reason]} : ce prix ne respecte pas vos règles de marge.</p> : null}
-          </div>
+          </div> : null}
         </Card>
         <div className="flex flex-wrap justify-end gap-2">
           <Link to={editing ? `/app/items/${id}` : "/app/items"}><Button variant="ghost" type="button">Annuler</Button></Link>

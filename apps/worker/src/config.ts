@@ -4,7 +4,7 @@ import { z } from "zod";
 import { aiConfigSchema } from "@selio/ai";
 import { loadPaymentConfig, paymentConfigSchema } from "@selio/connectors";
 import { emailConfigSchema, loadEmailConfig } from "@selio/email";
-import { wornPhotos, type ServicesConfig, type radar } from "@selio/core";
+import { wornPhotos, type ServicesConfig, type SupervisionServices, type SupervisionTarget, type radar } from "@selio/core";
 import { loadVapidConfig } from "./push";
 
 const bool = z.string().optional().transform((v) => v === "true" || v === "1");
@@ -71,6 +71,45 @@ export const timezoneSchema = z
 /** Entier facultatif : vide ou blanc = absent (une ligne « X= » du fichier .env ne vaut pas 0). */
 const optionalInt = (min: number, max: number) => z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), z.coerce.number().int().min(min).max(max).optional());
 
+/** Entier avec valeur par défaut : vide ou blanc = la valeur par défaut. */
+const intDefault = (min: number, max: number, def: number) => z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), z.coerce.number().int().min(min).max(max).default(def));
+
+/** Cible de SUPERVISION_TARGETS : nom court et adresse HTTP(S), sans en-tête (aucun secret dans cette variable). */
+const supervisionTargetSchema = z
+  .object({
+    name: z.string().trim().min(1).max(60).regex(/^[\p{L}\p{N} _.-]+$/u, "nom court : lettres, chiffres, espace, « _ », « . », « - »"),
+    url: z.string().url().refine((u) => /^https?:$/.test(new URL(u).protocol), "adresse http ou https"),
+  })
+  .strict();
+
+/**
+ * SUPERVISION_TARGETS : JSON `[{ "name": "api", "url": "https://…/api/health" }]` (20 cibles au plus, noms
+ * uniques). Vide : cibles par défaut (/api/health et /api/ai/health de PUBLIC_API_URL).
+ */
+export const supervisionTargetsSchema = z
+  .string()
+  .optional()
+  .transform((raw, ctx) => {
+    if (!raw || !raw.trim()) return [] as z.infer<typeof supervisionTargetSchema>[];
+    let json: unknown;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "JSON attendu, ex. [{\"name\":\"api\",\"url\":\"https://api.exemple.fr/api/health\"}]" });
+      return z.NEVER;
+    }
+    const parsed = z.array(supervisionTargetSchema).min(1).max(20).safeParse(json);
+    if (!parsed.success) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `liste de cibles invalide (${parsed.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join(" ; ")}) — champs « name » et « url » seulement` });
+      return z.NEVER;
+    }
+    if (new Set(parsed.data.map((t) => t.name)).size !== parsed.data.length) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "noms de cibles en double" });
+      return z.NEVER;
+    }
+    return parsed.data;
+  });
+
 export const workerEnvSchema = z
   .object({
     DATABASE_URL: z.string().min(1),
@@ -118,6 +157,27 @@ export const workerEnvSchema = z
     VAPID_PRIVATE_KEY: optionalText,
     VAPID_SUBJECT: optionalText,
     CRON_RETENTION: z.string().default("0 3 * * *"),
+    /**
+     * Supervision : « supervision.tick » chaque minute contrôle SUPERVISION_TARGETS (par défaut /api/health et
+     * /api/ai/health de PUBLIC_API_URL, la seconde avec AI_HEALTH_TOKEN) ; alerte Web Push et email des
+     * opérateurs (OPERATOR_EMAILS) après SUPERVISION_FAILURES_BEFORE_ALERT échecs, rappel toutes les
+     * SUPERVISION_REMINDER_MINUTES, rétablissement notifié.
+     */
+    CRON_SUPERVISION: z.string().default("* * * * *"),
+    /** Adresse de l'API vue depuis le worker (même machine : adresse locale). */
+    PUBLIC_API_URL: z.string().url().default("http://127.0.0.1:8787"),
+    /** Opérateurs Selio (mêmes adresses que l'API) : destinataires des alertes de supervision. */
+    OPERATOR_EMAILS: z.string().default(""),
+    SUPERVISION_TARGETS: supervisionTargetsSchema,
+    SUPERVISION_FAILURES_BEFORE_ALERT: intDefault(1, 60, 3),
+    SUPERVISION_REMINDER_MINUTES: intDefault(5, 24 * 60, 60),
+    SUPERVISION_TIMEOUT_MS: intDefault(1_000, 60_000, 10_000),
+    /**
+     * Option externe, DÉSACTIVÉE par défaut : adresse de « battement » d'un service de disponibilité gratuit
+     * (signal attendu chaque minute ; s'il n'arrive plus, ce service prévient, même si toute la machine est
+     * tombée). Appelée après chaque passage où aucune cible n'est en panne. HTTPS seulement.
+     */
+    SUPERVISION_HEARTBEAT_URL: optionalText.refine((v) => v === undefined || /^https:\/\/[^\s]+$/.test(v), "adresse https attendue"),
     /**
      * Échéances d'abonnement (renouvellements, fins d'essai, relances J+1 / J+3 / J+7, annulation des
      * autorisations restées posées) : toutes les heures. Les relances sont calculées à l'heure de
@@ -293,7 +353,36 @@ export function maintenanceSchedules(env: WorkerEnv): MaintenanceSchedule[] {
     { name: "pricing.references", pattern: env.CRON_PRICING_REFERENCES },
     { name: "pricing.train", pattern: env.PRICING_TRAIN_CRON },
     { name: "studio.worn", pattern: env.CRON_STUDIO_WORN },
+    { name: "supervision.tick", pattern: env.CRON_SUPERVISION },
   ];
+}
+
+/** Liste d'adresses email (virgules), en minuscules, sans doublon. */
+export function emailList(raw: string): string[] {
+  return [...new Set(raw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean))];
+}
+
+/**
+ * Cibles de la supervision : SUPERVISION_TARGETS si renseignée, sinon /api/health de PUBLIC_API_URL et,
+ * si AI_HEALTH_TOKEN est renseigné, /api/ai/health (sans jeton, elle répondrait 401 à chaque minute).
+ * Le jeton n'est joint qu'aux adresses /api/ai/health servies par PUBLIC_API_URL (jamais à un autre hôte).
+ */
+export function supervisionTargets(env: Pick<WorkerEnv, "PUBLIC_API_URL" | "SUPERVISION_TARGETS" | "AI_HEALTH_TOKEN">): SupervisionTarget[] {
+  const base = env.PUBLIC_API_URL.replace(/\/+$/, "");
+  const apiOrigin = new URL(base).origin;
+  const list = env.SUPERVISION_TARGETS.length
+    ? env.SUPERVISION_TARGETS.map((t) => ({ name: t.name, url: t.url }))
+    : [{ name: "api", url: `${base}/api/health` }, ...(env.AI_HEALTH_TOKEN ? [{ name: "ia", url: `${base}/api/ai/health` }] : [])];
+  return list.map((t) => {
+    const u = new URL(t.url);
+    const isAiHealth = u.origin === apiOrigin && /\/api\/ai\/health\/?$/.test(u.pathname);
+    return isAiHealth && env.AI_HEALTH_TOKEN ? { ...t, headers: { "x-health-token": env.AI_HEALTH_TOKEN } } : t;
+  });
+}
+
+/** Réglages de la supervision transmis au cœur (`services.supervision`). */
+export function supervisionServicesConfig(env: Pick<WorkerEnv, "OPERATOR_EMAILS" | "SUPERVISION_FAILURES_BEFORE_ALERT" | "SUPERVISION_REMINDER_MINUTES" | "SUPERVISION_TIMEOUT_MS">): SupervisionServices {
+  return { operatorEmails: emailList(env.OPERATOR_EMAILS), failuresBeforeAlert: env.SUPERVISION_FAILURES_BEFORE_ALERT, reminderMinutes: env.SUPERVISION_REMINDER_MINUTES, timeoutMs: env.SUPERVISION_TIMEOUT_MS };
 }
 
 /** Plannings retirés au démarrage quand ils ne doivent plus tourner (Radar Auto fermé). */

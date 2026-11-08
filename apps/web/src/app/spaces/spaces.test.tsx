@@ -12,7 +12,9 @@ describe("Selio et ses filiales", () => {
     expect(spaceForPath("/agents/marque-blanche")).toBe("agents");
     expect(spaceForPath("/track")).toBe("track");
     expect(spaceForPath("/cloud")).toBe("cloud");
-    expect(spaceForPath("/generateur")).toBe("generateur");
+    // Selio Comptes (identifiant historique « generateur ») vit sous /comptes.
+    expect(spaceForPath("/comptes")).toBe("generateur");
+    expect(spaceForPath("/app/accounts")).toBe("selio");
     expect(spaceForPath("/studiox")).toBe("selio");
     expect(spaceForPath("/app/settings/access")).toBeNull();
     expect(spaceForPath("/admin/acces")).toBeNull();
@@ -22,9 +24,15 @@ describe("Selio et ses filiales", () => {
     expect(SPACES.map((s) => s.id)).toEqual(["selio", "studio", "agents", "track", "cloud", "generateur"]);
     expect(SPACES.some((s) => /Global/.test(s.name))).toBe(false);
     expect(SPACES.find((s) => s.id === "agents")!.state).toBe("preview");
-    // Selio Cloud a ses vraies pages (aperçu : actions légères seulement) ; Track et le générateur restent en développement.
+    // Selio Cloud a ses vraies pages (aperçu : actions légères seulement) ; Track reste en développement.
     expect(SPACES.find((s) => s.id === "cloud")!.state).toBe("preview");
-    for (const id of ["track", "generateur"]) expect(SPACES.find((s) => s.id === id)!.state).toBe("development");
+    expect(SPACES.find((s) => s.id === "track")!.state).toBe("development");
+    // Selio Comptes : checklist et textes disponibles, sans aucune action à la place du client.
+    const comptes = SPACES.find((s) => s.id === "generateur")!;
+    expect(comptes).toMatchObject({ name: "Selio Comptes", home: "/comptes", state: "available" });
+    expect(comptes.description).toMatch(/ne crée aucun compte à votre place/);
+    expect(SPACE_GROUPS.generateur[0]!.items.map((i) => i.to)).toEqual(["/comptes"]);
+    expect(APP_PATH_PATTERN.test("/comptes")).toBe(true);
     expect(SPACE_GROUPS.cloud[0]!.items.map((i) => i.to)).toEqual(["/cloud", "/cloud/comptes", "/cloud/journal", "/cloud/accord", "/cloud/reglages"]);
     for (const path of ["/cloud/accord", "/cloud/comptes", "/cloud/journal", "/cloud/reglages"]) {
       expect(spaceForPath(path)).toBe("cloud");

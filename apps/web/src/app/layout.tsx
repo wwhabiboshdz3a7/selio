@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Bot, Boxes, ChevronDown, CircleUser, ClipboardList, CreditCard, Gauge, Heart, ListChecks, LogOut, Menu as MenuIcon, MessageSquare, MessagesSquare, Moon, Package, Pause, Printer, Radar, RefreshCw, Settings, ShieldCheck, Shirt, ShoppingCart, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
+import { ArrowRight, Bot, Boxes, Camera, ChevronDown, Eye, Lock, CircleUser, ClipboardList, CreditCard, Gauge, Heart, ListChecks, LogOut, Menu as MenuIcon, MessageSquare, MessagesSquare, Moon, Package, Pause, Printer, Radar, RefreshCw, Settings, ShieldCheck, Shirt, ShoppingCart, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
 import { Avatar, Banner, Button, IconButton, LoadingState, Menu, Tag, cn, formatDate } from "@selio/ui";
 import type { Subscription } from "@selio/contracts";
 import { daysLeft } from "../lib/billing";
@@ -15,6 +15,10 @@ import { HandCoins } from "lucide-react";
 import { LifeBuoy } from "lucide-react";
 import { HUB_PATH, SPACE_GROUPS, readLastSpace, spaceForPath, writeLastSpace, type SpaceArea } from "./spaces/spaces";
 import { SpacePill, SpaceSwitcher } from "./spaces/SpaceSwitcher";
+import { PHOTOS_HOME, hasReducedView, reducedViewTarget, seesFinances } from "../lib/roles";
+import { useGlassExperiment } from "../lib/glass";
+import { DOCK_CONTENT_PADDING, MobileDock } from "./components/MobileDock";
+import type { Session } from "../lib/data/types";
 
 export function RequireSession({ children }: { children: ReactNode }) {
   const session = useSession();
@@ -77,6 +81,24 @@ const GROUPS: NavGroup[] = [
   ] },
 ];
 
+/**
+ * Menu de la vue réduite (contributeur photos : voir les articles, leur ajouter des photos, lancer le
+ * générateur). Les autres pages affichent « réservé à d'autres rôles ».
+ */
+const PHOTOS_GROUPS: NavGroup[] = [
+  { title: "Photos", items: [
+    { to: PHOTOS_HOME, label: "Articles à photographier", icon: <Camera />, hint: "Ajouter des photos aux articles" },
+  ] },
+  { title: "Selio Studio", items: [
+    { to: "/studio", label: "Générateur d'annonces", icon: <Sparkles />, end: true, hint: "Vos photos → annonce rédigée par l'IA" },
+    { to: "/studio/annonces", label: "Annonces générées", icon: <ClipboardList /> },
+  ] },
+  { items: [
+    { to: "/app/help", label: "Aide", icon: <LifeBuoy /> },
+    { to: "/app/settings", label: "Paramètres", icon: <Settings /> },
+  ] },
+];
+
 /** Lien du menu : icônes neutres, élément actif en améthyste douce (fond teinté, icône violette). */
 const linkClass = ({ isActive }: { isActive: boolean }) => cn(
   "group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-base font-medium transition-colors [&>svg]:size-[18px] [&>svg]:shrink-0",
@@ -84,9 +106,9 @@ const linkClass = ({ isActive }: { isActive: boolean }) => cn(
 );
 
 /** Compteurs de la navigation (non lus, à valider, à republier…), partagés avec la vue d'ensemble. */
-export function useNavCounts() {
+export function useNavCounts(enabled = true) {
   const client = useClient();
-  return useQuery({ queryKey: ["nav-counts"], queryFn: async () => {
+  return useQuery({ queryKey: ["nav-counts"], enabled, queryFn: async () => {
     const [convs, jobs, opps, dressing] = await Promise.all([
       client.listConversations({ unread: true, pageSize: 1 }),
       client.listJobs({ status: "awaiting_approval", pageSize: 1 }),
@@ -102,7 +124,7 @@ const SPACE_NOTES: Partial<Record<SpaceArea, { label: string; text: string }>> =
   agents: { label: "Aperçu", text: "l'équipe et les accès sont réels ; les boutiques clientes sont des exemples fictifs." },
   track: { label: "En développement", text: "statistiques seulement ; simulateur par défaut, lecture en direct à valider juridiquement." },
   cloud: { label: "Aperçu", text: "actions légères seulement (répondre, relancer), avec votre accord ; en démonstration, rien ne touche Vinted." },
-  generateur: { label: "En développement", text: "ce qui arrive, et ce qui marche déjà dans Selio." },
+  generateur: { label: "Accompagnement", text: "checklist et textes à copier ; Selio ne crée aucun compte à votre place." },
 };
 
 export function AppLayout({ admin = false }: { admin?: boolean }) {
@@ -115,9 +137,20 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const { resolved, setPreference } = useTheme();
-  const counts = useNavCounts();
-  // Carte à enregistrer pendant l'essai, ou paiement échoué : rappel discret au-dessus des pages.
-  const subscription = useQuery({ queryKey: ["subscription"], queryFn: () => client.getSubscription(), staleTime: 30_000 });
+  // Contributeur photos : vue réduite (menu restreint, aucune requête hors de ses droits).
+  const reduced = hasReducedView(s.role);
+  const glass = useGlassExperiment(s.user.id).enabled;
+  // Dock en verre (mobile) : la hauteur qu'il occupe est exposée en --dock-offset (styles.css), pour que les
+  // éléments collés ou fixés en bas d'écran (barre « Enregistrer », notifications) se posent au-dessus de lui.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (glass) root.dataset.dock = "on";
+    else delete root.dataset.dock;
+    return () => { delete root.dataset.dock; };
+  }, [glass]);
+  const counts = useNavCounts(!reduced);
+  // Carte à enregistrer pendant l'essai, ou paiement échoué : rappel discret au-dessus des pages (finances).
+  const subscription = useQuery({ queryKey: ["subscription"], queryFn: () => client.getSubscription(), staleTime: 30_000, enabled: seesFinances(s.role) });
   useEffect(() => {
     setOpen(false);
   }, [location.pathname]);
@@ -130,7 +163,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
   }, [location.pathname]);
   const onboardingDone = s.org.settings.onboarding.dismissed || s.org.settings.onboarding.completedSteps.length >= 6;
   // Radar Auto « Activé » seulement si tous ses verrous sont levés (verrou serveur fermé par défaut).
-  const autoBuyStatus = useQuery({ queryKey: ["radar-auto"], queryFn: () => client.autoBuyStatus(), enabled: s.org.settings.autoBuy.enabled, staleTime: 60_000 });
+  const autoBuyStatus = useQuery({ queryKey: ["radar-auto"], queryFn: () => client.autoBuyStatus(), enabled: s.org.settings.autoBuy.enabled && !reduced, staleTime: 60_000 });
   const autoBuyOn = s.org.settings.autoBuy.enabled && autoBuyStatus.data?.active === true;
   // Espace affiché : celui de l'adresse ; les pages communes (paramètres, administration) gardent le dernier.
   const ownedArea = spaceForPath(location.pathname);
@@ -138,24 +171,24 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
   useEffect(() => {
     if (ownedArea) writeLastSpace(ownedArea);
   }, [ownedArea]);
-  const groups = area === "selio" ? GROUPS : SPACE_GROUPS[area];
+  const groups = reduced ? PHOTOS_GROUPS : area === "selio" ? GROUPS : SPACE_GROUPS[area];
   // Selio Cloud : l'arrêt global des automatisations met aussi le Cloud en pause (bandeau et menu).
-  const automation = useQuery({ queryKey: ["automation-state"], queryFn: () => client.getAutomationState(), enabled: area === "cloud", staleTime: 15_000 });
+  const automation = useQuery({ queryKey: ["automation-state"], queryFn: () => client.getAutomationState(), enabled: area === "cloud" && !reduced, staleTime: 15_000 });
   const cloudPaused = area === "cloud" && automation.data?.globalPaused === true;
 
   const sidebar = (
     <div className="flex h-full flex-col">
       <div className="space-rule shrink-0" aria-hidden />
       <div className="flex h-16 shrink-0 items-center justify-between gap-1 px-2">
-        <SpaceSwitcher area={area} />
+        {reduced ? <Link to={PHOTOS_HOME} className="flex min-w-0 flex-1 items-center gap-2 px-2" aria-label="Selio, articles à photographier"><Logo height={20} /></Link> : <SpaceSwitcher area={area} />}
         <IconButton label="Fermer le menu" className="md:hidden" onClick={() => setOpen(false)} size="sm"><X /></IconButton>
       </div>
-      {SPACE_NOTES[area] ? (
+      {!reduced && SPACE_NOTES[area] ? (
         <p className="mx-3 mb-3 shrink-0 rounded-md bg-surface-muted px-3 py-2 text-xs text-text-muted">
           <span className="font-semibold text-text">{SPACE_NOTES[area]!.label}</span> — {SPACE_NOTES[area]!.text}
         </p>
       ) : null}
-      {area === "selio" ? <div className="shrink-0 px-3 pb-3">
+      {area === "selio" && !reduced ? <div className="shrink-0 px-3 pb-3">
         <Link to="/studio" className="group bg-brand flex items-center gap-3 rounded-lg px-3 py-2.5 text-white shadow-sm ring-1 ring-white/10 ring-inset transition-[filter] hover:brightness-110">
           <Sparkles className="size-[18px] shrink-0 text-gold-300" aria-hidden />
           <span className="min-w-0 flex-1">
@@ -166,7 +199,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
         </Link>
       </div> : null}
       <nav aria-label="Navigation de l'application" className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 scrollbar-thin">
-        {!onboardingDone && area === "selio" ? (
+        {!onboardingDone && area === "selio" && !reduced ? (
           <NavLink to="/app/onboarding" className={linkClass}>
             <Zap aria-hidden /> Démarrage
           </NavLink>
@@ -205,7 +238,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
         ) : null}
       </nav>
       <div className="shrink-0 border-t border-border p-3">
-        <AiStatusRow />
+        {reduced ? null : <AiStatusRow />}
         <Menu
           align="start"
           side="top"
@@ -250,6 +283,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
             <Link to="/app/settings/data" className="font-medium text-accent underline-offset-2 hover:underline">Réinitialiser</Link>
           </Banner>
         ) : null}
+        {mode === "demo" ? <RolePreviewBanner s={s} /> : null}
         <BillingBanner s={subscription.data ?? null} pathname={location.pathname} />
         {cloudPaused ? (
           <Banner tone="neutral">
@@ -262,16 +296,59 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
         ) : null}
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-surface/90 px-4 backdrop-blur md:hidden">
           <IconButton label="Ouvrir le menu" onClick={() => setOpen(true)}><MenuIcon /></IconButton>
-          <Link to={HUB_PATH} className="flex min-w-0 flex-1 items-center gap-2" aria-label="Selio, vos espaces"><Logo height={20} /><SpacePill area={area} /></Link>
+          {reduced
+            ? <Link to={PHOTOS_HOME} className="flex min-w-0 flex-1 items-center gap-2" aria-label="Selio, articles à photographier"><Logo height={20} /></Link>
+            : <Link to={HUB_PATH} className="flex min-w-0 flex-1 items-center gap-2" aria-label="Selio, vos espaces"><Logo height={20} /><SpacePill area={area} /></Link>}
           {admin ? <Tag>Admin</Tag> : null}
           <Link to="/studio" aria-label="Générer une annonce" className="bg-brand inline-flex size-9 items-center justify-center rounded-md text-white"><Sparkles className="size-4 text-gold-300" aria-hidden /></Link>
           <IconButton label={resolved === "dark" ? "Mode clair" : "Mode sombre"} size="sm" onClick={() => setPreference(resolved === "dark" ? "light" : "dark")}>{resolved === "dark" ? <Sun /> : <Moon />}</IconButton>
         </header>
-        <main id="contenu-app" className="mx-auto w-full max-w-content flex-1 px-4 py-6 md:px-8 md:py-10 xl:px-12">
-          <Outlet />
+        <main id="contenu-app" className={cn("mx-auto w-full max-w-content flex-1 px-4 py-6 md:px-8 md:py-10 xl:px-12", glass && DOCK_CONTENT_PADDING)}>
+          {reduced ? <ReducedViewGate /> : <Outlet />}
         </main>
+        {/* Essai « verre liquide » : dock flottant sur mobile ; rien n'est rendu quand l'essai est inactif. */}
+        {glass ? <MobileDock reduced={reduced} /> : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * Vue réduite (contributeur photos) : les accueils mènent aux articles à photographier ; les autres pages
+ * ne s'ouvrent pas (le serveur refuserait leurs données de toute façon).
+ */
+function ReducedViewGate() {
+  const { pathname } = useLocation();
+  const target = reducedViewTarget(pathname);
+  if (target === pathname) return <Outlet />;
+  if (target) return <Navigate to={target} replace />;
+  return (
+    <div data-testid="reduced-view-blocked" className="mx-auto flex max-w-md flex-col items-center gap-3 py-16 text-center">
+      <Lock className="size-6 text-text-muted" aria-hidden />
+      <h1 className="text-xl font-semibold text-text">Page réservée à d'autres rôles</h1>
+      <p className="text-sm text-text-muted">Votre rôle (contributeur photos) permet d'ajouter des photos aux articles et de lancer le générateur d'annonces.</p>
+      <div className="flex flex-wrap justify-center gap-2">
+        <Link to={PHOTOS_HOME}><Button>Articles à photographier</Button></Link>
+        <Link to="/studio"><Button variant="secondary">Générateur d'annonces</Button></Link>
+      </div>
+    </div>
+  );
+}
+
+/** Démonstration : rappel de l'essai de rôle en cours, avec le retour à son propre rôle. */
+function RolePreviewBanner({ s }: { s: Session }) {
+  const client = useClient();
+  const own = s.memberships.find((m) => m.orgId === s.org.id)?.role ?? s.role;
+  const [busy, setBusy] = useState(false);
+  if (own === s.role || !client.previewRole) return null;
+  return (
+    <Banner tone="neutral">
+      <span data-testid="role-preview-banner" className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+        <Eye className="size-3.5 shrink-0 text-text-muted" aria-hidden />
+        <span>Vous voyez Selio comme <span className="font-medium text-text">« {ROLE_LABELS[s.role]} »</span> (essai de rôle de la démonstration).</span>
+        <button type="button" disabled={busy} className="font-medium text-accent underline-offset-2 hover:underline disabled:opacity-60" onClick={async () => { setBusy(true); try { await client.previewRole!(null); } finally { setBusy(false); } }}>Revenir à mon rôle</button>
+      </span>
+    </Banner>
   );
 }
 

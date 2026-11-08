@@ -55,7 +55,7 @@ function Popup() {
           </div>
         ) : null}
       </div>
-      <p className="text-[11px] text-text-muted">Aucune action n'est déclenchée sans votre confirmation. L'extension ne stocke ni mot de passe ni cookie Vinted. Outil indépendant, non affilié à Vinted.</p>
+      <p className="text-[11px] text-text-muted">Aucune action n'est déclenchée sans votre confirmation. L'extension ne stocke ni mot de passe ni cookie Vinted. Selio est indépendant de Vinted et n'est ni affilié, ni approuvé, ni sponsorisé par Vinted.</p>
       {status?.apiBaseUrl ? <a className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-text" href={status.apiBaseUrl.replace(/\/api.*$/, "")} target="_blank" rel="noreferrer"><ExternalLink className="size-3" /> Ouvrir Selio</a> : null}
     </div>
   );

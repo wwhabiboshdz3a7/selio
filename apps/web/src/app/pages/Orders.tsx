@@ -3,15 +3,17 @@ import { useNavigate, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
 import { ORDER_STATUSES, ORDER_STATUS_LABELS, type OrderQuery } from "@selio/contracts";
-import { orderMargin } from "@selio/domain";
+import { can, orderMargin } from "@selio/domain";
 import { Button, Dialog, EmptyState, Field, Input, Money, PageHeader, Pagination, Select, Table, TableEmpty, TableWrap, Td, Th, Tr, Tag, formatDate, formatPercent } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { ItemThumb, MoneyInput, OrderStatusBadge, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { Finance, FinanceMaskedNote, useSeesFinances } from "../components/finance";
 
 export default function Orders() {
   const client = useClient();
   const session = useRequiredSession();
+  const finances = useSeesFinances();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const query: Partial<OrderQuery> = { q: params.get("q") ?? undefined, status: (params.get("status") as OrderQuery["status"]) || undefined, page: Number(params.get("page") ?? 1), pageSize: 25 };
@@ -25,7 +27,8 @@ export default function Orders() {
   const selectedItem = items.data?.items.find((i) => i.id === form.itemId);
   return (
     <>
-      <PageHeader title="Commandes" description="Une commande fige le coût d'acquisition et calcule la marge brute. Les transitions de statut sont contrôlées." actions={session.role !== "viewer" ? <Button icon={<Plus />} onClick={() => setOpen(true)}>Nouvelle commande</Button> : undefined} />
+      <PageHeader title="Commandes" description="Une commande fige le coût d'acquisition et calcule la marge brute. Les transitions de statut sont contrôlées." actions={can(session.role, "orders.write") ? <Button icon={<Plus />} onClick={() => setOpen(true)}>Nouvelle commande</Button> : undefined} />
+      <FinanceMaskedNote />
       <div className="mb-4 grid gap-2 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Input placeholder="Rechercher article, client, référence…" prefix={<Search />} value={query.q ?? ""} onChange={(e) => set("q", e.target.value)} aria-label="Recherche" />
         <Select value={query.status ?? ""} onChange={(e) => set("status", e.target.value)} aria-label="Statut"><option value="">Tous les statuts</option>{ORDER_STATUSES.map((s) => <option key={s} value={s}>{ORDER_STATUS_LABELS[s]}</option>)}</Select>
@@ -46,7 +49,7 @@ export default function Orders() {
                         <Td><OrderStatusBadge status={o.status} /></Td>
                         <Td className="hide-mobile text-text-muted">{formatDate(o.createdAt)}</Td>
                         <Td numeric><Money cents={o.salePriceCents} /></Td>
-                        <Td numeric><span className="inline-flex flex-col items-end"><Money cents={m.marginCents} signed /><span className="text-xs text-text-muted">{formatPercent(m.marginRate)}</span></span></Td>
+                        <Td numeric><Finance><span className="inline-flex flex-col items-end"><Money cents={m.marginCents} signed /><span className="text-xs text-text-muted">{formatPercent(m.marginRate)}</span></span></Finance></Td>
                       </Tr>
                     );
                   })}
@@ -66,7 +69,7 @@ export default function Orders() {
             <Field label="Port à charge du vendeur">{(p) => <MoneyInput id={p.id} value={form.shippingCostCents} onChange={(v) => setForm({ ...form, shippingCostCents: v ?? 0 })} />}</Field>
           </div>
           <Field label="Référence externe" hint="Référence de transaction de la marketplace (sert à l'idempotence).">{(p) => <Input id={p.id} aria-describedby={p.describedBy} value={form.externalRef} onChange={(e) => setForm({ ...form, externalRef: e.target.value })} />}</Field>
-          {selectedItem && form.salePriceCents ? <p className="text-sm text-text-muted">Marge brute estimée : <Money cents={orderMargin({ salePriceCents: form.salePriceCents, platformFeeCents: 0, shippingCostCents: form.shippingCostCents ?? 0, otherCostsCents: 0, purchasePriceCents: selectedItem.purchasePriceCents, purchaseFeesCents: selectedItem.purchaseFeesCents }).marginCents} signed /> {selectedItem.floorPriceCents !== null && form.salePriceCents < selectedItem.floorPriceCents ? <Tag accent>sous le plancher</Tag> : null}</p> : null}
+          {finances && selectedItem && form.salePriceCents ? <p className="text-sm text-text-muted">Marge brute estimée : <Money cents={orderMargin({ salePriceCents: form.salePriceCents, platformFeeCents: 0, shippingCostCents: form.shippingCostCents ?? 0, otherCostsCents: 0, purchasePriceCents: selectedItem.purchasePriceCents, purchaseFeesCents: selectedItem.purchaseFeesCents }).marginCents} signed /> {selectedItem.floorPriceCents !== null && form.salePriceCents < selectedItem.floorPriceCents ? <Tag accent>sous le plancher</Tag> : null}</p> : null}
         </div>
       </Dialog>
     </>

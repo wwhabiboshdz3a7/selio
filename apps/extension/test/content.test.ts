@@ -40,9 +40,14 @@ function boot(url: string, opts: { paired?: boolean } = {}) {
   };
   const g = win as unknown as Record<string, unknown>;
   g.chrome = chrome;
+  // Le panneau est dans un shadow DOM fermé : le test garde une référence pour cliquer sur ses boutons.
+  const shadows: ShadowRoot[] = [];
+  const proto = win.HTMLElement.prototype as unknown as { attachShadow: (init: ShadowRootInit) => ShadowRoot };
+  const attach = proto.attachShadow;
+  proto.attachShadow = function (this: unknown, init: ShadowRootInit) { const r = attach.call(this, init); shadows.push(r); return r; };
   const fn = new Function("window", "document", "chrome", "location", "navigator", "setInterval", "Event", "HTMLElement", "Node", script);
   fn(win, win.document, chrome, win.location, win.navigator, () => 0, win.Event, win.HTMLElement, win.Node);
-  return { win, sent, listeners };
+  return { win, sent, listeners, shadows };
 }
 
 describe("content script compilé", () => {
@@ -62,13 +67,19 @@ describe("content script compilé", () => {
     expect(report!.pageKind).toBe("item");
     expect(sent.some((m) => (m as { type: string }).type === "diagnostic")).toBe(true);
   });
-  it("à l'ouverture du panneau sur un article, demande les comparables avec les seuls champs de l'article", async () => {
+  it("comparables demandés seulement au clic sur « Voir les comparables », avec les seuls champs de l'article", async () => {
     if (!script) return;
-    const { sent, listeners } = boot("https://www.vinted.fr/items/123456-veste");
+    const { sent, listeners, shadows } = boot("https://www.vinted.fr/items/123456-veste");
     await new Promise((r) => setTimeout(r, 20));
     // Panneau fermé : rien n'est demandé.
     expect(sent.some((m) => (m as { type: string }).type === "comparables")).toBe(false);
     listeners[0]?.({ type: "togglePanel" }, { id: "ext-id" }, () => {});
+    await new Promise((r) => setTimeout(r, 50));
+    // Panneau ouvert : toujours rien tant que la personne n'a pas cliqué (politique de confidentialité).
+    expect(sent.some((m) => (m as { type: string }).type === "comparables")).toBe(false);
+    const button = shadows.flatMap((sh) => Array.from(sh.querySelectorAll("button"))).find((b) => b.textContent === "Voir les comparables");
+    expect(button).toBeTruthy();
+    button!.click();
     await new Promise((r) => setTimeout(r, 50));
     const requests = sent.filter((m) => (m as { type: string }).type === "comparables") as { type: string; item: Record<string, unknown> }[];
     expect(requests).toHaveLength(1);

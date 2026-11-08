@@ -20,3 +20,5 @@ export * from "./cloud";
 export * from "./pricing";
 export * from "./track";
 export * from "./migration";
+export * from "./referral";
+export * from "./comptes";

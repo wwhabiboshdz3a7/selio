@@ -9,6 +9,7 @@ import { ScoreRing, scoreTextTone } from "../../components/charts";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { ItemStatusBadge, OrderStatusBadge, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { Finance } from "../components/finance";
 import { PriceEstimateView } from "../components/pricing";
 import { itemPriceFeatures } from "../../lib/track";
 import { ListingChecks, useBlurScores } from "../components/selling";
@@ -28,7 +29,7 @@ export default function ItemDetail() {
   const [typed, setTyped] = useState("");
   const setStatus = useAppMutation((status: ItemStatus) => client.setItemStatus(id, status), { invalidate: ["item", "items", "overview"], success: "Statut mis à jour" });
   const del = useAppMutation(() => client.deleteItem(id), { invalidate: ["items", "overview"], success: "Article supprimé", onSuccess: () => navigate("/app/items") });
-  const canWrite = session.role !== "viewer";
+  const canWrite = can(session.role, "items.write");
   const rules = session.org.settings.margin;
   return (
     <QueryBoundary query={q} skeleton="spinner">
@@ -48,7 +49,7 @@ export default function ItemDetail() {
                     items={transitions.map((s) => ({ label: ITEM_STATUS_LABELS[s], onSelect: () => setStatus.mutate(s), icon: s === "archived" ? <Archive /> : s === "in_stock" && it.status === "archived" ? <RotateCcw /> : undefined }))}
                   />
                   <Link to={`/app/items/${id}/edit`}><Button icon={<Pencil />}>Modifier</Button></Link>
-                  {session.role === "owner" || session.role === "admin" ? <Button variant="danger" icon={<Trash2 />} onClick={() => setConfirmDelete(true)}>Supprimer</Button> : null}
+                  {can(session.role, "items.delete") ? <Button variant="danger" icon={<Trash2 />} onClick={() => setConfirmDelete(true)}>Supprimer</Button> : null}
                 </>
               ) : undefined}
             />
@@ -121,11 +122,11 @@ export default function ItemDetail() {
                 <Card>
                   <h2 className="mb-3 text-md font-semibold">Prix et marge</h2>
                   <DescriptionList items={[
-                    { label: "Prix d'achat", value: <Money cents={it.purchasePriceCents} />, numeric: true },
-                    { label: "Frais d'acquisition", value: <Money cents={it.purchaseFeesCents} />, numeric: true },
+                    { label: "Prix d'achat", value: <Finance><Money cents={it.purchasePriceCents} /></Finance>, numeric: true },
+                    { label: "Frais d'acquisition", value: <Finance><Money cents={it.purchaseFeesCents} /></Finance>, numeric: true },
                     { label: "Prix affiché", value: it.listedPriceCents === null ? "—" : <Money cents={it.listedPriceCents} />, numeric: true },
                     { label: "Prix plancher", value: it.floorPriceCents === null ? "—" : <Money cents={it.floorPriceCents} />, numeric: true },
-                    { label: "Marge projetée", value: margin ? <><Money cents={margin.marginCents} signed /> <span className="text-text-muted">({formatPercent(margin.marginRate)})</span></> : "—", numeric: true },
+                    { label: "Marge projetée", value: <Finance>{margin ? <><Money cents={margin.marginCents} signed /> <span className="text-text-muted">({formatPercent(margin.marginRate)})</span></> : "—"}</Finance>, numeric: true },
                   ]} />
                   <p className="mt-3 text-xs text-text-muted">Marge projetée = prix affiché − frais plateforme par défaut − port vendeur par défaut − coût d'acquisition.</p>
                 </Card>

@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2, EyeOff, ExternalLink, Images, ShoppingBag, Star } from "lucide-react";
 import { ITEM_CATEGORY_LABELS, ITEM_CONDITION_LABELS, PURCHASE_STATUS_LABELS } from "@selio/contracts";
 import { can, dealEconomics, scoreBand } from "@selio/domain";
-import { Alert, Button, Card, DescriptionList, Dialog, Field, PageHeader, StatusBadge, Tag, buttonClass, cn, formatCents, formatDateTime, formatRelative } from "@selio/ui";
+import { Alert, Button, Card, DescriptionList, Dialog, Field, GlassSurface, PageHeader, StatusBadge, Tag, buttonClass, cn, formatCents, formatDateTime, formatRelative } from "@selio/ui";
 import { useClient, useData, useRequiredSession } from "../../lib/data/provider";
 import type { OpportunityDetail } from "../../lib/data/types";
 import { detectionDelaySeconds, estimateMethodLabel, formatDuration } from "../../lib/radar";
@@ -13,6 +13,7 @@ import { useAppMutation } from "../components/hooks";
 import { BandBadge, DealMath, ScoreBreakdown } from "../components/deals";
 import { RADAR_KEYS, SourceTag } from "../components/radar";
 import { ScoreRing } from "../../components/charts";
+import { useGlassExperiment } from "../../lib/glass";
 
 /**
  * Page d'une affaire (« 1 clic »), ouverte depuis une alerte sur le téléphone ou le flux de Radar :
@@ -39,6 +40,8 @@ function Deal({ o }: { o: OpportunityDetail }) {
   const d = dealEconomics(o.observed, o.estimate.resalePriceCents, fees, o.estimate.expectedFeesCents);
   const canBuy = can(session.role, "purchase.simulate");
   const canSort = can(session.role, "radar.write");
+  // Essai « verre liquide » : la carte « 1 clic » se pose en verre sur le bas de la photo.
+  const glass = useGlassExperiment(session.user.id).enabled;
   const [confirm, setConfirm] = useState(false);
   // Prix réellement payé (port compris), modifiable : prérempli avec le coût estimé de l'affaire.
   const [paidCents, setPaidCents] = useState<number | null>(d.totalCents);
@@ -95,7 +98,7 @@ function Deal({ o }: { o: OpportunityDetail }) {
             )}
             <span className="absolute top-3 left-3 rounded-full bg-surface p-0.5 shadow-sm"><ScoreRing score={o.score} size={60} stroke={6} /></span>
           </div>
-          <Card>
+          <DealActionSurface glass={glass}>
             <div className="flex flex-col gap-2">
               {o.itemUrl ? (
                 <a href={o.itemUrl} target="_blank" rel="noopener noreferrer" className={buttonClass({ variant: "accent", size: "lg", fullWidth: true })}>
@@ -118,7 +121,7 @@ function Deal({ o }: { o: OpportunityDetail }) {
               ) : null}
               {o.status === "dismissed" ? <p className="text-xs text-text-muted">Affaire ignorée : elle n'apparaît plus dans les bonnes affaires.</p> : null}
             </div>
-          </Card>
+          </DealActionSurface>
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
@@ -192,5 +195,15 @@ function Deal({ o }: { o: OpportunityDetail }) {
         </Field>
       </Dialog>
     </>
+  );
+}
+
+/** Carte « 1 clic » : la carte habituelle, ou une surface de verre posée sur la photo pendant l'essai. */
+function DealActionSurface({ glass, children }: { glass: boolean; children: ReactNode }) {
+  if (!glass) return <Card>{children}</Card>;
+  return (
+    <GlassSurface as="section" aria-label="Acheter en un clic" data-testid="radar-alert-card" className="relative z-[1] mx-3 -mt-28 min-w-0" contentClassName="p-4 md:p-5">
+      {children}
+    </GlassSurface>
   );
 }

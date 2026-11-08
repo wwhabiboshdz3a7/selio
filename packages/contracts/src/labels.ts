@@ -107,9 +107,10 @@ export const RULE_KIND_LABELS: Record<RuleKind, string> = {
 };
 
 export const ROLE_LABELS: Record<Role, string> = {
-  owner: "Propriétaire",
+  owner: "Titulaire",
   admin: "Administrateur",
-  operator: "Opérateur",
+  operator: "Exécuteur",
+  photographer: "Contributeur photos",
   viewer: "Lecture seule",
 };
 

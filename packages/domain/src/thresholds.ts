@@ -149,3 +149,16 @@ export function thresholdStatusForOrders(orders: Iterable<Pick<Order, "status" |
   const year = now.getUTCFullYear();
   return thresholdStatus({ ...yearTotals(orders, year), thresholds: thresholdsFromSettings(settings, year), approachingRate: settings.approachingRate, now });
 }
+
+/**
+ * Texte du seuil sans aucun montant (§5.15), pour un rôle sans « finances.read » : le nombre de ventes de
+ * l'année et le niveau d'alerte seulement, jamais le montant encaissé ni ce qu'il reste avant le seuil en
+ * euros (qui permettrait de recalculer le chiffre d'affaires). Utilisé par l'alerte de la vue d'ensemble.
+ */
+export function thresholdTextWithoutAmounts(s: Pick<ThresholdStatus, "level" | "year" | "salesThisYear" | "thresholds" | "reached">): string {
+  const situation = `En ${s.year}, vous avez ${ventes(s.salesThisYear)}.`;
+  const state = s.level === "reached"
+    ? (s.reached.includes("sales") ? `Le seuil de ${ventes(s.thresholds.salesCount)} est atteint.` : "Un seuil de transmission est atteint.")
+    : s.level === "approaching" ? "Un seuil de transmission approche." : "Vous êtes en dessous des seuils.";
+  return `${situation} ${state} Le détail des montants est réservé au titulaire et aux administrateurs. ${THRESHOLD_DISCLAIMER}`;
+}

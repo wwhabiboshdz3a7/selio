@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { ArrowRight, Bot, Boxes, ClipboardList, Cpu, MessageSquare, Package, Puzzle, Radar, Repeat, Settings, ShieldCheck, Shirt, ShoppingCart, Sparkles, TrendingUp, Users, Workflow } from "lucide-react";
-import { usePageMeta } from "../../lib/seo";
+import { useMarketingMeta } from "../seo";
 import { AvailabilityBadge, CheckList, CtaBand, MarketingSection, type Availability } from "../components";
 import { MODULES } from "../catalog";
 
@@ -41,7 +41,7 @@ const FOUNDATION: { id: string; icon: ReactNode; title: string; availability: Av
 ];
 
 export default function Features() {
-  usePageMeta("Fonctionnalités", "Les quatorze modules de Selio, avec leur état honnête : générateur d'annonces IA, dressing intelligent, republications, analyse des revendeurs, bonnes affaires, achat auto, messagerie, stock, commandes, analyses, automatisations, extension et IA personnelle. Plus le socle commun : clients, paramètres, sécurité.");
+  useMarketingMeta("/fonctionnalites");
   return (
     <>
       <MarketingSection level={1} reveal eyebrow="Fonctionnalités" title="Quatorze modules, un par problème concret de revendeur" lead="Les quatorze étoiles de la constellation, chacune avec son état honnête : disponible, en démonstration, expérimental ou en préparation. Le socle commun (clients, paramètres, sécurité) est détaillé plus bas.">

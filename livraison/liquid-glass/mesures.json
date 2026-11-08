@@ -1,0 +1,1046 @@
+{
+  "meta": {
+    "generatedAt": "2026-11-08T03:03:01.362Z",
+    "chromium": "153.0.8010.12",
+    "headless": true,
+    "runs": 3,
+    "warmup": 1,
+    "alternatingOrder": true,
+    "scrollMs": 3000,
+    "states": [
+      {
+        "id": "sans-dock",
+        "label": "sans dock"
+      },
+      {
+        "id": "dock-opaque",
+        "label": "dock opaque"
+      },
+      {
+        "id": "verre-simple",
+        "label": "verre sans réfraction ni animation"
+      },
+      {
+        "id": "verre-complet",
+        "label": "verre complet"
+      }
+    ],
+    "devices": [
+      {
+        "id": "iphone-15",
+        "label": "iPhone 15 (émulé dans Chromium)",
+        "viewport": {
+          "width": 393,
+          "height": 852
+        },
+        "deviceScaleFactor": 3,
+        "emulated": true,
+        "refraction": false
+      },
+      {
+        "id": "android",
+        "label": "Android 412 × 915 (émulé dans Chromium)",
+        "viewport": {
+          "width": 412,
+          "height": 915
+        },
+        "deviceScaleFactor": 2.625,
+        "emulated": true,
+        "refraction": true
+      }
+    ]
+  },
+  "note": "Chromium headless sur serveur, appareils émulés : pas un téléphone. Safari iOS réel à vérifier.",
+  "fluidity": [
+    {
+      "mode": "60hz",
+      "device": "iphone-15",
+      "state": "sans-dock",
+      "label": "sans dock",
+      "dock": "absent",
+      "refraction": false,
+      "runs": [
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.8,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 14657,
+          "order": 0
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.8,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 14657,
+          "order": 3
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.7,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 14657,
+          "order": 0
+        }
+      ],
+      "median": {
+        "fps": 60,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 16.8
+      }
+    },
+    {
+      "mode": "60hz",
+      "device": "iphone-15",
+      "state": "dock-opaque",
+      "label": "dock opaque",
+      "dock": "présent",
+      "refraction": false,
+      "runs": [
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.7,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 14721,
+          "order": 1
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.8,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 14721,
+          "order": 2
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.8,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 14721,
+          "order": 1
+        }
+      ],
+      "median": {
+        "fps": 60,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 16.8
+      }
+    },
+    {
+      "mode": "60hz",
+      "device": "iphone-15",
+      "state": "verre-simple",
+      "label": "verre sans réfraction ni animation",
+      "dock": "présent",
+      "refraction": false,
+      "runs": [
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.8,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 14721,
+          "order": 2
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.7,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 14721,
+          "order": 1
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.8,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 14721,
+          "order": 2
+        }
+      ],
+      "median": {
+        "fps": 60,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 16.8
+      }
+    },
+    {
+      "mode": "60hz",
+      "device": "iphone-15",
+      "state": "verre-complet",
+      "label": "verre complet",
+      "dock": "présent",
+      "refraction": false,
+      "runs": [
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.7,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 14721,
+          "order": 3
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.8,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 14721,
+          "order": 0
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.8,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 14721,
+          "order": 3
+        }
+      ],
+      "median": {
+        "fps": 60,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 16.8
+      }
+    },
+    {
+      "mode": "60hz",
+      "device": "android",
+      "state": "sans-dock",
+      "label": "sans dock",
+      "dock": "absent",
+      "refraction": false,
+      "runs": [
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.8,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 15202,
+          "order": 0
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.7,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 15202,
+          "order": 3
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.7,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 15202,
+          "order": 0
+        }
+      ],
+      "median": {
+        "fps": 60,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 16.7
+      }
+    },
+    {
+      "mode": "60hz",
+      "device": "android",
+      "state": "dock-opaque",
+      "label": "dock opaque",
+      "dock": "présent",
+      "refraction": false,
+      "runs": [
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.7,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 15266,
+          "order": 1
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.8,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 15266,
+          "order": 2
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.8,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 15266,
+          "order": 1
+        }
+      ],
+      "median": {
+        "fps": 60,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 16.8
+      }
+    },
+    {
+      "mode": "60hz",
+      "device": "android",
+      "state": "verre-simple",
+      "label": "verre sans réfraction ni animation",
+      "dock": "présent",
+      "refraction": false,
+      "runs": [
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.7,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 15266,
+          "order": 2
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.7,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 15266,
+          "order": 1
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.8,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 15266,
+          "order": 2
+        }
+      ],
+      "median": {
+        "fps": 60,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 16.7
+      }
+    },
+    {
+      "mode": "60hz",
+      "device": "android",
+      "state": "verre-complet",
+      "label": "verre complet",
+      "dock": "présent",
+      "refraction": true,
+      "runs": [
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.8,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 15266,
+          "order": 3
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.7,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 15266,
+          "order": 0
+        },
+        {
+          "frames": 180,
+          "durationMs": 3000,
+          "fps": 60,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 16.8,
+          "maxFrameMs": 16.8,
+          "scrollablePx": 15266,
+          "order": 3
+        }
+      ],
+      "median": {
+        "fps": 60,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 16.8
+      }
+    }
+  ],
+  "fluidityUnthrottled": [
+    {
+      "mode": "sans-limite",
+      "device": "iphone-15",
+      "state": "sans-dock",
+      "label": "sans dock",
+      "dock": "absent",
+      "refraction": false,
+      "runs": [
+        {
+          "frames": 4877,
+          "durationMs": 2983,
+          "fps": 1635,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.2,
+          "maxFrameMs": 17.9,
+          "scrollablePx": 14657,
+          "order": 0
+        },
+        {
+          "frames": 4943,
+          "durationMs": 2990,
+          "fps": 1653.1,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.3,
+          "maxFrameMs": 18,
+          "scrollablePx": 14657,
+          "order": 3
+        },
+        {
+          "frames": 4822,
+          "durationMs": 2984,
+          "fps": 1615.8,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.3,
+          "maxFrameMs": 17.9,
+          "scrollablePx": 14657,
+          "order": 0
+        }
+      ],
+      "median": {
+        "fps": 1635,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 1.3
+      }
+    },
+    {
+      "mode": "sans-limite",
+      "device": "iphone-15",
+      "state": "dock-opaque",
+      "label": "dock opaque",
+      "dock": "présent",
+      "refraction": false,
+      "runs": [
+        {
+          "frames": 4564,
+          "durationMs": 2984,
+          "fps": 1529.5,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.3,
+          "maxFrameMs": 17.8,
+          "scrollablePx": 14721,
+          "order": 1
+        },
+        {
+          "frames": 4557,
+          "durationMs": 2993,
+          "fps": 1522.7,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.5,
+          "maxFrameMs": 17.8,
+          "scrollablePx": 14721,
+          "order": 2
+        },
+        {
+          "frames": 5064,
+          "durationMs": 3000,
+          "fps": 1688.1,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.3,
+          "maxFrameMs": 17.7,
+          "scrollablePx": 14721,
+          "order": 1
+        }
+      ],
+      "median": {
+        "fps": 1529.5,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 1.3
+      }
+    },
+    {
+      "mode": "sans-limite",
+      "device": "iphone-15",
+      "state": "verre-simple",
+      "label": "verre sans réfraction ni animation",
+      "dock": "présent",
+      "refraction": false,
+      "runs": [
+        {
+          "frames": 4542,
+          "durationMs": 2991,
+          "fps": 1518.6,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.5,
+          "maxFrameMs": 17.7,
+          "scrollablePx": 14721,
+          "order": 2
+        },
+        {
+          "frames": 4329,
+          "durationMs": 2994,
+          "fps": 1446.1,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.4,
+          "maxFrameMs": 17.7,
+          "scrollablePx": 14721,
+          "order": 1
+        },
+        {
+          "frames": 4460,
+          "durationMs": 2983,
+          "fps": 1495.2,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.5,
+          "maxFrameMs": 17.8,
+          "scrollablePx": 14721,
+          "order": 2
+        }
+      ],
+      "median": {
+        "fps": 1495.2,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 1.5
+      }
+    },
+    {
+      "mode": "sans-limite",
+      "device": "iphone-15",
+      "state": "verre-complet",
+      "label": "verre complet",
+      "dock": "présent",
+      "refraction": false,
+      "runs": [
+        {
+          "frames": 1131,
+          "durationMs": 2999,
+          "fps": 377.1,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 3.8,
+          "maxFrameMs": 9,
+          "scrollablePx": 14721,
+          "order": 3
+        },
+        {
+          "frames": 1166,
+          "durationMs": 3003,
+          "fps": 388.2,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 3.7,
+          "maxFrameMs": 7.8,
+          "scrollablePx": 14721,
+          "order": 0
+        },
+        {
+          "frames": 1172,
+          "durationMs": 3000,
+          "fps": 390.7,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 3.5,
+          "maxFrameMs": 8.6,
+          "scrollablePx": 14721,
+          "order": 3
+        }
+      ],
+      "median": {
+        "fps": 388.2,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 3.7
+      }
+    },
+    {
+      "mode": "sans-limite",
+      "device": "android",
+      "state": "sans-dock",
+      "label": "sans dock",
+      "dock": "absent",
+      "refraction": false,
+      "runs": [
+        {
+          "frames": 4686,
+          "durationMs": 2991,
+          "fps": 1566.9,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.3,
+          "maxFrameMs": 17.7,
+          "scrollablePx": 15202,
+          "order": 0
+        },
+        {
+          "frames": 4953,
+          "durationMs": 2996,
+          "fps": 1653.3,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.3,
+          "maxFrameMs": 17.8,
+          "scrollablePx": 15202,
+          "order": 3
+        },
+        {
+          "frames": 4772,
+          "durationMs": 2986,
+          "fps": 1598.4,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.4,
+          "maxFrameMs": 17.8,
+          "scrollablePx": 15202,
+          "order": 0
+        }
+      ],
+      "median": {
+        "fps": 1598.4,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 1.3
+      }
+    },
+    {
+      "mode": "sans-limite",
+      "device": "android",
+      "state": "dock-opaque",
+      "label": "dock opaque",
+      "dock": "présent",
+      "refraction": false,
+      "runs": [
+        {
+          "frames": 4109,
+          "durationMs": 2991,
+          "fps": 1373.8,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.5,
+          "maxFrameMs": 17.8,
+          "scrollablePx": 15266,
+          "order": 1
+        },
+        {
+          "frames": 4694,
+          "durationMs": 2983,
+          "fps": 1573.6,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.4,
+          "maxFrameMs": 17.8,
+          "scrollablePx": 15266,
+          "order": 2
+        },
+        {
+          "frames": 4574,
+          "durationMs": 2983,
+          "fps": 1533.5,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.4,
+          "maxFrameMs": 17.9,
+          "scrollablePx": 15266,
+          "order": 1
+        }
+      ],
+      "median": {
+        "fps": 1533.5,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 1.4
+      }
+    },
+    {
+      "mode": "sans-limite",
+      "device": "android",
+      "state": "verre-simple",
+      "label": "verre sans réfraction ni animation",
+      "dock": "présent",
+      "refraction": false,
+      "runs": [
+        {
+          "frames": 3793,
+          "durationMs": 2988,
+          "fps": 1269.6,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.7,
+          "maxFrameMs": 24.3,
+          "scrollablePx": 15266,
+          "order": 2
+        },
+        {
+          "frames": 4632,
+          "durationMs": 2984,
+          "fps": 1552.1,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.4,
+          "maxFrameMs": 17.7,
+          "scrollablePx": 15266,
+          "order": 1
+        },
+        {
+          "frames": 4696,
+          "durationMs": 2985,
+          "fps": 1573.5,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 1.3,
+          "maxFrameMs": 17.9,
+          "scrollablePx": 15266,
+          "order": 2
+        }
+      ],
+      "median": {
+        "fps": 1552.1,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 1.4
+      }
+    },
+    {
+      "mode": "sans-limite",
+      "device": "android",
+      "state": "verre-complet",
+      "label": "verre complet",
+      "dock": "présent",
+      "refraction": true,
+      "runs": [
+        {
+          "frames": 1122,
+          "durationMs": 2999,
+          "fps": 374.1,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 3.9,
+          "maxFrameMs": 13.4,
+          "scrollablePx": 15266,
+          "order": 3
+        },
+        {
+          "frames": 1124,
+          "durationMs": 3000,
+          "fps": 374.7,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 3.7,
+          "maxFrameMs": 9.2,
+          "scrollablePx": 15266,
+          "order": 0
+        },
+        {
+          "frames": 1113,
+          "durationMs": 2999,
+          "fps": 371.1,
+          "slowFramesPercent": 0,
+          "p95FrameMs": 3.7,
+          "maxFrameMs": 7.1,
+          "scrollablePx": 15266,
+          "order": 3
+        }
+      ],
+      "median": {
+        "fps": 374.1,
+        "slowFramesPercent": 0,
+        "p95FrameMs": 3.7
+      }
+    }
+  ],
+  "surfaces": {
+    "iphone-15-light": {
+      "overview": {
+        "dock": {
+          "mode": "glass",
+          "refraction": "non",
+          "motion": "on",
+          "fallback": null,
+          "backdropFilter": "blur(18px) saturate(1.6)",
+          "height": 60,
+          "bottomGap": 12
+        },
+        "alertCard": null
+      },
+      "radar": {
+        "dock": {
+          "mode": "glass",
+          "refraction": "non",
+          "motion": "on",
+          "fallback": null,
+          "backdropFilter": "blur(18px) saturate(1.6)",
+          "height": 60,
+          "bottomGap": 12
+        },
+        "alertCard": {
+          "mode": "glass",
+          "refraction": "non",
+          "motion": "on",
+          "fallback": null,
+          "backdropFilter": "blur(18px) saturate(1.6)",
+          "height": 921,
+          "bottomGap": -115
+        }
+      }
+    },
+    "iphone-15-dark": {
+      "overview": {
+        "dock": {
+          "mode": "glass",
+          "refraction": "non",
+          "motion": "on",
+          "fallback": null,
+          "backdropFilter": "blur(18px) saturate(1.6)",
+          "height": 60,
+          "bottomGap": 12
+        },
+        "alertCard": null
+      },
+      "radar": {
+        "dock": {
+          "mode": "glass",
+          "refraction": "non",
+          "motion": "on",
+          "fallback": null,
+          "backdropFilter": "blur(18px) saturate(1.6)",
+          "height": 60,
+          "bottomGap": 12
+        },
+        "alertCard": {
+          "mode": "glass",
+          "refraction": "non",
+          "motion": "on",
+          "fallback": null,
+          "backdropFilter": "blur(18px) saturate(1.6)",
+          "height": 921,
+          "bottomGap": -115
+        }
+      }
+    },
+    "android-light": {
+      "overview": {
+        "dock": {
+          "mode": "glass",
+          "refraction": "affichée",
+          "motion": "on",
+          "fallback": null,
+          "backdropFilter": "blur(18px) saturate(1.6)",
+          "height": 60,
+          "bottomGap": 12
+        },
+        "alertCard": null
+      },
+      "radar": {
+        "dock": {
+          "mode": "glass",
+          "refraction": "affichée",
+          "motion": "on",
+          "fallback": null,
+          "backdropFilter": "blur(18px) saturate(1.6)",
+          "height": 60,
+          "bottomGap": 12
+        },
+        "alertCard": {
+          "mode": "glass",
+          "refraction": "affichée",
+          "motion": "on",
+          "fallback": null,
+          "backdropFilter": "blur(18px) saturate(1.6)",
+          "height": 940,
+          "bottomGap": -93
+        }
+      }
+    },
+    "android-dark": {
+      "overview": {
+        "dock": {
+          "mode": "glass",
+          "refraction": "affichée",
+          "motion": "on",
+          "fallback": null,
+          "backdropFilter": "blur(18px) saturate(1.6)",
+          "height": 60,
+          "bottomGap": 12
+        },
+        "alertCard": null
+      },
+      "radar": {
+        "dock": {
+          "mode": "glass",
+          "refraction": "affichée",
+          "motion": "on",
+          "fallback": null,
+          "backdropFilter": "blur(18px) saturate(1.6)",
+          "height": 60,
+          "bottomGap": 12
+        },
+        "alertCard": {
+          "mode": "glass",
+          "refraction": "affichée",
+          "motion": "on",
+          "fallback": null,
+          "backdropFilter": "blur(18px) saturate(1.6)",
+          "height": 940,
+          "bottomGap": -93
+        }
+      }
+    }
+  },
+  "captures": [
+    {
+      "file": "iphone-15-light-avant-vue-ensemble.png",
+      "device": "iphone-15",
+      "theme": "light",
+      "state": "avant",
+      "page": "/app"
+    },
+    {
+      "file": "iphone-15-light-avant-radar.png",
+      "device": "iphone-15",
+      "theme": "light",
+      "state": "avant",
+      "page": "/app/radar"
+    },
+    {
+      "file": "iphone-15-light-apres-vue-ensemble.png",
+      "device": "iphone-15",
+      "theme": "light",
+      "state": "apres",
+      "page": "/app"
+    },
+    {
+      "file": "iphone-15-light-apres-radar.png",
+      "device": "iphone-15",
+      "theme": "light",
+      "state": "apres",
+      "page": "/app/radar"
+    },
+    {
+      "file": "iphone-15-dark-avant-vue-ensemble.png",
+      "device": "iphone-15",
+      "theme": "dark",
+      "state": "avant",
+      "page": "/app"
+    },
+    {
+      "file": "iphone-15-dark-avant-radar.png",
+      "device": "iphone-15",
+      "theme": "dark",
+      "state": "avant",
+      "page": "/app/radar"
+    },
+    {
+      "file": "iphone-15-dark-apres-vue-ensemble.png",
+      "device": "iphone-15",
+      "theme": "dark",
+      "state": "apres",
+      "page": "/app"
+    },
+    {
+      "file": "iphone-15-dark-apres-radar.png",
+      "device": "iphone-15",
+      "theme": "dark",
+      "state": "apres",
+      "page": "/app/radar"
+    },
+    {
+      "file": "android-light-avant-vue-ensemble.png",
+      "device": "android",
+      "theme": "light",
+      "state": "avant",
+      "page": "/app"
+    },
+    {
+      "file": "android-light-avant-radar.png",
+      "device": "android",
+      "theme": "light",
+      "state": "avant",
+      "page": "/app/radar"
+    },
+    {
+      "file": "android-light-apres-vue-ensemble.png",
+      "device": "android",
+      "theme": "light",
+      "state": "apres",
+      "page": "/app"
+    },
+    {
+      "file": "android-light-apres-radar.png",
+      "device": "android",
+      "theme": "light",
+      "state": "apres",
+      "page": "/app/radar"
+    },
+    {
+      "file": "android-dark-avant-vue-ensemble.png",
+      "device": "android",
+      "theme": "dark",
+      "state": "avant",
+      "page": "/app"
+    },
+    {
+      "file": "android-dark-avant-radar.png",
+      "device": "android",
+      "theme": "dark",
+      "state": "avant",
+      "page": "/app/radar"
+    },
+    {
+      "file": "android-dark-apres-vue-ensemble.png",
+      "device": "android",
+      "theme": "dark",
+      "state": "apres",
+      "page": "/app"
+    },
+    {
+      "file": "android-dark-apres-radar.png",
+      "device": "android",
+      "theme": "dark",
+      "state": "apres",
+      "page": "/app/radar"
+    }
+  ],
+  "verdict": {
+    "notes": [
+      "iPhone 15 (émulé dans Chromium), à 60 Hz, dock opaque → verre complet : 60 → 60 images/s, images > 32 ms 0 % → 0 %.",
+      "iPhone 15 (émulé dans Chromium), sans limite de cadence, par image : sans dock 0,61 ms → dock opaque 0,65 ms → verre sans réfraction ni animation 0,67 ms → verre complet 2,58 ms (15 % du budget de 16,7 ms à 60 Hz) ; réfraction coupée comme sur WebKit.",
+      "Android 412 × 915 (émulé dans Chromium), à 60 Hz, dock opaque → verre complet : 60 → 60 images/s, images > 32 ms 0 % → 0 %.",
+      "Android 412 × 915 (émulé dans Chromium), sans limite de cadence, par image : sans dock 0,63 ms → dock opaque 0,65 ms → verre sans réfraction ni animation 0,64 ms → verre complet 2,67 ms (16 % du budget de 16,7 ms à 60 Hz).",
+      "Décomposition : le flou et le liseré seuls coûtent au plus 2,3 % de plus que le même dock opaque ; c'est l'animation du reflet (repeinte à chaque image) et, sur Android, la réfraction qui multiplie le coût par 4,15."
+    ],
+    "avis": "On garde l'essai, limité au dock mobile et à la carte d'alerte du Radar, désactivé par défaut. On ne l'étend pas encore : le verre complet multiplie par 4,1 le temps de rendu d'une image par rapport au même dock opaque (jusqu'à 16 % du budget à 60 Hz, en rendu logiciel sur serveur) ; le flou et le liseré seuls coûtent au plus 2,3 % de plus que le même dock opaque ; c'est l'animation du reflet (repeinte à chaque image) et, sur Android, la réfraction qui multiplie le coût par 4,15. Aucune image lente de plus à 60 Hz ici. Piste si le coût gêne sur un vrai téléphone : figer le reflet (comme avec « réduire les animations ») plutôt que retirer le flou. À confirmer au doigt sur un iPhone (Safari) et un Android d'entrée de gamme avant toute extension.",
+    "slowFramesDeltaPoints": 0,
+    "worstBudgetShare": 0.16,
+    "worstCostFactor": 4.1,
+    "blurOnlyFactor": 1.023,
+    "refractionAndMotionFactor": 4.15,
+    "baseline": "dock-opaque"
+  }
+}

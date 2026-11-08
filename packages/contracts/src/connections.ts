@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { id, isoDate, provider } from "./common";
+import { id, isoDate, provider, type Provider } from "./common";
 import { normalizeVintedHost } from "./vinted-domains";
 
 export const CONNECTOR_STATUSES = [
@@ -70,6 +70,29 @@ export const marketplaceConnection = z.object({
 });
 export type MarketplaceConnection = z.infer<typeof marketplaceConnection>;
 
+/** Fournisseur de l'API officielle Vinted Pro Integrations (accès réservé aux comptes Pro admis par Vinted). */
+export const VINTED_PRO_PROVIDER = "vinted_pro" as const satisfies Provider;
+
+/**
+ * Adresse de base de l'API Vinted Pro Integrations, saisie par l'équipe avec l'accès remis par Vinted :
+ * aucune adresse n'est inscrite en dur dans Selio (rien n'est vérifié tant que l'accès n'est pas obtenu).
+ * Garde-fou contre l'envoi de la clé à un hôte quelconque : HTTPS seulement, hôte sous « vinted.com »,
+ * sans identifiant, port, requête ni fragment. Rend l'adresse normalisée (sans « / » final), ou null.
+ */
+export function normalizeVintedProBaseUrl(raw: unknown): string | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  const host = url.hostname.toLowerCase();
+  if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash) return null;
+  if (host !== "vinted.com" && !host.endsWith(".vinted.com")) return null;
+  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+}
+
 export const connectionCreate = z.object({
   provider,
   label: z.string().trim().min(1).max(80),
@@ -86,6 +109,10 @@ export const connectionCreate = z.object({
     .superRefine((v, ctx) => {
       if (v.vintedHost !== undefined && normalizeVintedHost(v.vintedHost) === null) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["vintedHost"], message: "Domaine Vinted inconnu : seuls les domaines officiels de Vinted sont acceptés." });
+      }
+      // Vinted Pro : adresse de l'API vide (pas encore remise par Vinted) ou HTTPS sous vinted.com.
+      if (v.apiBaseUrl !== undefined && v.apiBaseUrl !== "" && normalizeVintedProBaseUrl(v.apiBaseUrl) === null) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["apiBaseUrl"], message: "Adresse de l'API Vinted Pro invalide : HTTPS et domaine vinted.com seulement (adresse remise par Vinted avec l'accès)." });
       }
     })
     .optional(),

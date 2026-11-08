@@ -1,7 +1,17 @@
+# Vitrine Selio : pages publiques indexables, application et espaces exclus.
+# Domaine à confirmer par Ibrahim (même valeur que SITE_ORIGIN dans apps/web/src/marketing/seo.ts).
 User-agent: *
 Allow: /
 Disallow: /app
 Disallow: /studio
+Disallow: /agents
+Disallow: /track
+Disallow: /cloud
+Disallow: /comptes
+Disallow: /generateur
 Disallow: /agence
 Disallow: /global
 Disallow: /admin
+Disallow: /api/
+
+Sitemap: https://selio.fr/sitemap.xml

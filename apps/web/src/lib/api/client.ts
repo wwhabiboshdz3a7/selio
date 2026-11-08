@@ -19,7 +19,12 @@ import type { StoredStudioPhoto, StudioGenerateFromPrepInput, StudioPrepAnswersI
 import { buildUsageCounter, type GeneratorPhoto } from "@selio/contracts";
 import { buildTrackUsage } from "../track";
 import type { MigrationApplyInput, MigrationConvertInput, MigrationFileInput, VintedLimits, VintedLimitsMeasurementInput } from "@selio/contracts";
+import type { HealthDetailsView, ReferralView, StudioDraftInput } from "../data/types";
+import type { Photo, ReferralOverview } from "@selio/contracts";
 import type { BundleSuggestionView, DeclarationThresholdsView, EndToEndMarginsView, MigrationApplyView, MigrationConversion, VintedLimitsView } from "../data/types";
+
+/** Parrainage fermé : rien à afficher (aucun code, aucun lien). */
+const REFERRAL_DISABLED: ReferralOverview = { enabled: false, code: null, shareUrl: null, referred: { pending: 0, qualified: 0, credited: 0, refused: 0 }, creditsAvailable: 0, creditsConsumed: 0, referredBy: null };
 
 type Query = Record<string, string | number | boolean | undefined | null>;
 
@@ -111,7 +116,11 @@ export class ApiClient implements DataClient {
 
   getSession() { return this.get<Session | null>("/api/auth/session"); }
   login(input: { email: string; password: string }) { return this.post<Session>("/api/auth/login", input); }
-  register(input: { email: string; password: string; displayName: string; orgName: string }) { return this.post<Session>("/api/auth/register", input); }
+  register(input: { email: string; password: string; displayName: string; orgName: string; referralCode?: string }) {
+    // Un code vide n'est pas envoyé (le serveur l'ignorerait de toute façon) ; il n'est jamais bloquant.
+    const { referralCode, ...rest } = input;
+    return this.post<Session>("/api/auth/register", referralCode?.trim() ? { ...rest, referralCode: referralCode.trim() } : rest);
+  }
   logout() { return this.post<void>("/api/auth/logout"); }
   switchOrg(orgId: string) { return this.post<Session>("/api/auth/switch-org", { orgId }); }
   requestPasswordReset(email: string) { return this.post<void>("/api/auth/password/forgot", { email }); }
@@ -124,14 +133,30 @@ export class ApiClient implements DataClient {
   updateMemberRole(membershipId: string, role: Role) { return this.patch<void>(`/api/org/members/${membershipId}`, { role }); }
   removeMember(membershipId: string) { return this.del<void>(`/api/org/members/${membershipId}`); }
   completeOnboardingStep(step: string) { return this.post<Organization>(`/api/org/onboarding/${encodeURIComponent(step)}`); }
+  /**
+   * GET /api/referral. Parrainage désactivé (REFERRAL_ENABLED=false) ou route absente : `enabled: false`,
+   * la page et le lien restent masqués. Jamais « proposition » en connecté : c'est le serveur qui décide.
+   */
+  async getReferral(): Promise<ReferralView> {
+    try {
+      const r = await this.get<ReferralOverview>("/api/referral");
+      return { ...r, proposal: false };
+    } catch (e) {
+      if (e instanceof DataError && e.status === 404) return { ...REFERRAL_DISABLED, proposal: false };
+      throw e;
+    }
+  }
 
   listItems(query: Partial<InventoryQuery>) { return this.get<Page<InventoryItem>>("/api/items", query as Query); }
   listItemBrands() { return this.get<string[]>("/api/items/brands"); }
   getItem(id: string) { return this.get<InventoryItem>(`/api/items/${id}`); }
   createItem(input: InventoryItemCreate) { return this.post<InventoryItem>("/api/items", input); }
+  createStudioDraft(input: StudioDraftInput) { return this.post<InventoryItem>("/api/studio/drafts", input); }
   updateItem(id: string, input: InventoryItemUpdate) { return this.patch<InventoryItem>(`/api/items/${id}`, input); }
   setItemStatus(id: string, status: InventoryItem["status"]) { return this.post<InventoryItem>(`/api/items/${id}/status`, { status }); }
   deleteItem(id: string) { return this.del<void>(`/api/items/${id}`); }
+  /** POST /api/items/:id/photos : ajout de photos seulement (« items.photos.write », contributeur photos compris). */
+  addItemPhotos(id: string, photos: Photo[]) { return this.post<InventoryItem>(`/api/items/${id}/photos`, { photos }); }
   bulkItems(action: BulkItemAction) { return this.post<{ affected: number }>("/api/items/bulk", action); }
   importItems(items: InventoryItemCreate[]) { return this.post<{ created: number }>("/api/items/import", { items }); }
   exportItemsCsv() { return this.request<string>("GET", "/api/items/export.csv", undefined, { raw: true }); }
@@ -275,14 +300,14 @@ export class ApiClient implements DataClient {
   async trackUsage(): Promise<TrackUsageView> {
     try {
       const u = await this.get<ApiTrackUsage>("/api/track/usage");
-      const sub = await this.getSubscription();
+      const sub = await this.planQuotas();
       return {
         ...buildTrackUsage({ period: u.period, track: { filtersFollowed: u.counters.filtersFollowed, scans: u.counters.scans, photoSearches: u.counters.photoSearches } }, sub, u.counters.filtersFollowed.used),
         historyMonths: u.historyMonths, source: u.source, sourceLabel: u.sourceLabel, notices: u.notices, history: u.history,
       };
     } catch (e) {
       if (!(e instanceof DataError) || e.status !== 402) throw e;
-      const [usage, sub] = await Promise.all([this.getUsage(), this.getSubscription()]);
+      const [usage, sub] = await Promise.all([this.getUsage(), this.planQuotas()]);
       return buildTrackUsage(usage, sub, 0);
     }
   }
@@ -313,6 +338,11 @@ export class ApiClient implements DataClient {
   getAiHealth(windowDays?: number) { return this.get<AiHealthData>("/api/ai/stats", { days: windowDays }); }
 
   getSubscription() { return this.get<Subscription>("/api/billing/subscription"); }
+  /**
+   * Offre et quotas seulement (GET /api/org/plan, ouvert à tout membre, sans donnée de paiement) : l'abonnement
+   * complet est réservé aux rôles qui voient les finances (403 « finances_forbidden » pour l'exécuteur).
+   */
+  private planQuotas() { return this.get<Pick<Subscription, "plan" | "quotas">>("/api/org/plan"); }
   getUsage() { return this.get<UsageSummary>("/api/billing/usage"); }
   startCheckout(plan: PaidPlan, opts: { cycle?: BillingCycle } = {}) { return this.post<CheckoutOutcome>("/api/billing/checkout", { plan, cycle: opts.cycle ?? "monthly" }); }
   startCardUpdate() { return this.post<CheckoutOutcome>("/api/billing/card"); }
@@ -336,6 +366,8 @@ export class ApiClient implements DataClient {
   getAdminUsage() { return this.get<AdminUsageReport>("/api/admin/usage"); }
   adminSetPlan(orgId: string, plan: Plan) { return this.post<void>(`/api/admin/orgs/${orgId}/plan`, { plan }); }
   adminListAudit(limit = 100) { return this.get<AuditLog[]>("/api/admin/audit", { limit }); }
+  /** GET /api/health/details (opérateurs seulement) : santé, files, cibles supervisées, dernières vérifications. */
+  getHealthDetails() { return this.get<HealthDetailsView>("/api/health/details", { perTarget: 20 }); }
 
   // Selio Agents est en aperçu : aucune donnée serveur, rien n'est enregistré sur le compte.
   async getWhiteLabel(): Promise<WhiteLabel | null> {

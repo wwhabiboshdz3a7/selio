@@ -93,6 +93,22 @@ Adresse de recherche (`buildSearchUrl`) : `https://<domaine Vinted du compte>/ca
 
 Procédure : relevé à la main dans un navigateur ordinaire, sans aucune automatisation (RADAR.md §10, étape 1). Un écart se corrige dans un nouvel adaptateur `v2-catalog.ts` ou `v2-checkout.ts` avec ses fixtures, **jamais en modifiant `v1` en place**.
 
+## Vinted Pro Integrations (`vinted_pro`) — SQUELETTE, AUCUN APPEL, ACCÈS À DEMANDER
+
+C'est la **seule voie officielle** de Vinted pour un outil tiers : une API réservée aux comptes **Vinted Pro** admis par Vinted (articles, commandes et bordereaux, webhooks), sur candidature, avec une clé fournie par Vinted. Selio n'a **pas** cet accès : **Ibrahim doit le demander** (délai annoncé de 4 à 6 semaines selon la page commerciale). Détail et sources : `packages/connectors/src/vinted-pro/README.md`.
+
+**État réel (8 novembre 2026)**
+
+- `VintedProConnector` (`packages/connectors/src/vinted-pro/connector.ts`) est enregistré dans le registre (fournisseur `vinted_pro`, contrainte SQL élargie par la migration 0016) ; transport `server`, `experimental: true`.
+- **Aucun point d'accès, aucun en-tête, aucun algorithme de signature n'est écrit** : la documentation officielle (`pro-docs.svc.vinted.com`) n'a pas pu être lue (hôte refusé par le réseau de la session de développement). Les adresses de production et de bac à sable, la clé d'accès et la clé de signature, la forme des webhooks et la limite d'emplacements d'articles (« 500 » selon une source tierce) ne viennent que d'extraits de recherche : **non vérifiés, non codés**.
+- `describe()` : les 6 capacités `unavailable` (« Accès et documentation à obtenir auprès de Vinted Pro »). `test()` : `ok: false`, statut d'accès `needs_access` et la liste de ce qui manque, **sans appel réseau même quand tout est renseigné** (vérifié par les tests, `fetch` injectable). `readItems` et `syncOrders` : `unsupported`.
+- Configuration : identifiant de compte Pro, adresse de l'API (vide par défaut, **HTTPS sous `vinted.com` seulement**, `normalizeVintedProBaseUrl`), clé API secrète chiffrée comme les autres secrets de connexion. **Jamais un mot de passe Vinted.**
+- Messagerie, offres, favoris, recherche catalogue et achat ne sont pas annoncés dans cette API : ces fonctions restent sur l'extension (et Selio Cloud).
+
+**Limites connues du branchement actuel** (hors du connecteur) : `needs_access` n'existe pas encore dans les statuts des contrats (la connexion est stockée `not_configured`) ; `createConnection` met « prêt » par défaut pour un fournisseur autre que `demo` jusqu'au premier test, et `testConnection` ne transmet pas le secret déchiffré au connecteur. À corriger en branchant l'API.
+
+**Pour brancher, une fois l'accès obtenu** : lire la documentation avec l'accès (version, authentification, signature des requêtes et des webhooks) ; écrire les appels sur le `fetch` injecté avec des réponses du bac à sable en fixtures ; recevoir les webhooks par une route dédiée, signature vérifiée et traitement idempotent (même modèle que Revolut) ; passer chaque capacité de `unavailable` à `experimental` puis `available` après essai sur le bac à sable ; mettre à jour la vitrine (« accès à demander » sur l'accueil et la page Extension) et ce document.
+
 ## Paiement (Revolut Merchant API)
 
 `packages/connectors/src/payments/` : une interface neutre `PaymentProvider` (`types.ts` : `createCustomer`, `createCheckoutOrder`, `createOrder`, `chargeSavedMethod`, `cancelOrder`, `getOrder`, `listMerchantPaymentMethods`, `verifyWebhook`, erreurs typées) pour pouvoir brancher un fournisseur de secours (Mollie) sans toucher au cœur, et son implémentation `revolut.ts` (`RevolutClient`, sans SDK, `fetch` injectable pour les tests) :

@@ -1,14 +1,17 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, Card, Field, Input, Table, TableWrap, Td, Th, Tr, formatDateTime } from "@selio/ui";
-import { useClient, useData } from "../../../lib/data/provider";
+import { can } from "@selio/domain";
+import { useClient, useData, useRequiredSession } from "../../../lib/data/provider";
 import { QueryBoundary } from "../../components/common";
 import { useAppMutation } from "../../components/hooks";
 
 export default function Security() {
   const client = useClient();
   const { mode } = useData();
-  const audit = useQuery({ queryKey: ["audit"], queryFn: () => client.listAuditLogs(50) });
+  // Journal d'audit : réservé aux rôles qui consultent l'organisation (pas la vue réduite du contributeur photos).
+  const canReadAudit = can(useRequiredSession().role, "org.read");
+  const audit = useQuery({ queryKey: ["audit"], queryFn: () => client.listAuditLogs(50), enabled: canReadAudit });
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
   const [err, setErr] = useState<string | null>(null);
   const change = useAppMutation(() => client.changePassword({ current: pw.current, next: pw.next }), { success: mode === "demo" ? "Changement simulé (démonstration)" : "Mot de passe modifié", onSuccess: () => setPw({ current: "", next: "", confirm: "" }) });
@@ -41,7 +44,7 @@ export default function Security() {
         </ul>
         <Alert tone="info" className="mt-3">L'authentification à deux facteurs n'est pas encore disponible.</Alert>
       </Card>
-      <Card padding="none">
+      {canReadAudit ? <Card padding="none">
         <h2 className="px-4 pt-4 text-md font-semibold md:px-5">Journal d'audit</h2>
         <QueryBoundary query={audit}>
           {(list) => (
@@ -53,7 +56,7 @@ export default function Security() {
             </TableWrap>
           )}
         </QueryBoundary>
-      </Card>
+      </Card> : null}
     </div>
   );
 }

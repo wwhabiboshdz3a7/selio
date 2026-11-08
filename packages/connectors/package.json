@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./revolut": "./src/payments/revolut.ts",
-    "./vinted-adapter": "./src/vinted/adapters/index.ts"
+    "./vinted-adapter": "./src/vinted/adapters/index.ts",
+    "./vinted-pro": "./src/vinted-pro/index.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",

@@ -14,6 +14,7 @@ import type { PriceEstimate, PriceEstimateInput, PriceModelStatus, TrackSource, 
 import type { AccountStats, AiHealthSummary, BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
 
 import type { BundleSuggestion, MarginsByPeriod, MarginTotals, ThresholdStatus } from "@selio/domain";
+import type { Photo, ReferralOverview } from "@selio/contracts";
 import type { MigrationApplyInput, MigrationConvertInput, MigrationFileInput, MigrationMapping, RuleKind, VintedLimits, VintedLimitsMeasurementInput } from "@selio/contracts";
 
 export type VariantLeaderboardRow = ReturnType<typeof variantLeaderboard>[number];
@@ -26,12 +27,27 @@ export type Mode = "demo" | "connected";
  */
 export type CheckoutOutcome = Omit<CheckoutResult, "simulated"> & { simulated: boolean };
 
+/** Brouillon d'annonce du générateur : les champs de l'annonce seulement (POST /api/studio/drafts). */
+export interface StudioDraftInput {
+  title: string;
+  description?: string;
+  brand?: string | null;
+  size?: string | null;
+  category?: string;
+  condition?: string;
+  listedPriceCents?: number | null;
+  photos?: { id?: string; url: string; alt?: string }[];
+  attributes?: Record<string, unknown>;
+}
+
 export interface Session {
   mode: Mode;
   user: User;
   org: Organization;
   role: Role;
   memberships: (Membership & { orgName: string })[];
+  /** Inscription seulement : réponse du serveur sur le code de parrainage saisi (jamais bloquante). */
+  referral?: { applied: boolean; reason?: string; message: string };
 }
 
 export interface OverviewData {
@@ -664,13 +680,77 @@ export interface VintedLimitsView {
   canRecord: { org: boolean; global: boolean };
 }
 
+/**
+ * Page Parrainage (GET /api/referral) : la vue du serveur, plus `proposal` quand l'offre « un mois offert
+ * aux deux » n'est pas encore ouverte (démonstration : REFERRAL_ENABLED est faux par défaut côté serveur).
+ * `enabled: false` : page et lien masqués.
+ */
+export type ReferralView = ReferralOverview & { proposal: boolean };
+
+/** Santé d'un composant de l'API (miroir de `ComponentStatus`, packages/core/src/services/supervision.ts). */
+export type HealthComponentStatus = "ok" | "inline" | "down";
+
+/** État d'une cible supervisée (miroir de `TargetState`). */
+export interface SupervisionTargetView {
+  name: string;
+  url: string;
+  status: "unknown" | "up" | "down";
+  consecutiveFailures: number;
+  failingSince: string | null;
+  downSince: string | null;
+  lastAlertAt: string | null;
+  lastCheckedAt: string | null;
+  lastOkAt: string | null;
+  lastStatusCode: number | null;
+  lastLatencyMs: number | null;
+  lastError: string | null;
+}
+
+/** Une vérification enregistrée (miroir de `SupervisionCheckRow`). */
+export interface SupervisionCheckView {
+  target: string;
+  ok: boolean;
+  statusCode: number | null;
+  latencyMs: number | null;
+  error: string | null;
+  event: "alert" | "reminder" | "recovered" | null;
+  /** Canaux réellement délivrés (push + emails d'un vrai fournisseur) ; 0 : personne n'a été prévenu ; null : aucune notification. */
+  delivered: number | null;
+  checkedAt: string;
+}
+
+/** GET /api/health/details (opérateurs seulement) : santé de l'API, files, cibles supervisées et alertes. */
+export interface HealthDetailsView {
+  health: {
+    ok: boolean;
+    status: "ok" | "down";
+    version: string;
+    uptimeSeconds: number;
+    checkedAt: string;
+    checks: { database: HealthComponentStatus; redis: HealthComponentStatus; queue: HealthComponentStatus };
+    latencyMs: { database: number | null; redis: number | null };
+  };
+  queues: { name: string; waiting: number; active: number; failed: number; completed?: number; paused: boolean }[];
+  supervision: {
+    failuresBeforeAlert: number;
+    reminderMinutes: number;
+    targets: SupervisionTargetView[];
+    recent: SupervisionCheckView[];
+    /** Toutes les alertes de la période gardée (7 jours, au plus 200), pas seulement les dernières vérifications. */
+    alerts: SupervisionCheckView[];
+  };
+  /** Démonstration : données d'exemple, aucune vérification réelle. */
+  simulated?: boolean;
+}
+
 export interface DataClient {
   readonly mode: Mode;
   // Session
   getSession(): Promise<Session | null>;
   login(input: { email: string; password: string }): Promise<Session>;
   /** `trialDays` : durée de l'essai, 14 jours (seule valeur ; carte enregistrée, rien débité avant la fin). */
-  register(input: { email: string; password: string; displayName: string; orgName: string; trialDays?: TrialDays }): Promise<Session>;
+  /** `referralCode` : code de parrainage saisi (facultatif, jamais bloquant : un code refusé est ignoré). */
+  register(input: { email: string; password: string; displayName: string; orgName: string; trialDays?: TrialDays; referralCode?: string }): Promise<Session>;
   logout(): Promise<void>;
   switchOrg(orgId: string): Promise<Session>;
   /**
@@ -689,14 +769,25 @@ export interface DataClient {
   updateMemberRole(membershipId: string, role: Role): Promise<void>;
   removeMember(membershipId: string): Promise<void>;
   completeOnboardingStep(step: string): Promise<Organization>;
+  /**
+   * Démonstration seulement : voir l'application avec un autre rôle (null : revenir au sien). Les règles de
+   * ce rôle s'appliquent alors aussi aux actions de la démo. Absent en mode connecté.
+   */
+  previewRole?(role: Role | null): Promise<Session>;
+  // Parrainage (§5.15) : désactivé par défaut (REFERRAL_ENABLED), page masquée tant qu'il l'est
+  getReferral(): Promise<ReferralView>;
   // Articles
   listItems(query: Partial<InventoryQuery>): Promise<Page<InventoryItem>>;
   listItemBrands(): Promise<string[]>;
   getItem(id: string): Promise<InventoryItem>;
   createItem(input: InventoryItemCreate): Promise<InventoryItem>;
+  /** Brouillon du générateur (« studio.generate ») : en stock, sans prix d'achat ni publication (contributeur photos compris). */
+  createStudioDraft(input: StudioDraftInput): Promise<InventoryItem>;
   updateItem(id: string, input: InventoryItemUpdate): Promise<InventoryItem>;
   setItemStatus(id: string, status: InventoryItem["status"]): Promise<InventoryItem>;
   deleteItem(id: string): Promise<void>;
+  /** Ajoute des photos à un article (droit « items.photos.write » : contributeur photos compris). */
+  addItemPhotos(id: string, photos: Photo[]): Promise<InventoryItem>;
   bulkItems(action: BulkItemAction): Promise<{ affected: number }>;
   importItems(items: InventoryItemCreate[]): Promise<{ created: number }>;
   exportItemsCsv(): Promise<string>;
@@ -892,6 +983,8 @@ export interface DataClient {
   getAdminUsage(): Promise<AdminUsageReport>;
   adminSetPlan(orgId: string, plan: Plan): Promise<void>;
   adminListAudit(limit?: number): Promise<AuditLog[]>;
+  /** Supervision (Admin › Supervision) : dernières vérifications de /api/health et /api/ai/health, état, alertes. */
+  getHealthDetails(): Promise<HealthDetailsView>;
   // Selio Agents (aperçu) : marque blanche
   /** Marque blanche enregistrée (null tant qu'elle n'est pas personnalisée, et toujours en mode connecté). */
   getWhiteLabel(): Promise<WhiteLabel | null>;

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { Check, ChevronRight } from "lucide-react";
 import { Alert, Button, Card, Field, Input, PageHeader, ProgressBar, Select, Toggle, cn, formatNumber } from "@selio/ui";
 import { useClient, useData, useRequiredSession } from "../../lib/data/provider";
@@ -21,6 +21,8 @@ export default function Onboarding() {
   const session = useRequiredSession();
   const { mode } = useData();
   const navigate = useNavigate();
+  // Message du serveur sur le code de parrainage saisi à l'inscription (enregistré, ignoré ou refusé).
+  const referralMessage = (useLocation().state as { referralMessage?: unknown } | null)?.referralMessage;
   const completed = new Set(session.org.settings.onboarding.completedSteps);
   const firstIncomplete = STEPS.findIndex((s) => !completed.has(s.key));
   const [current, setCurrent] = useState(firstIncomplete === -1 ? STEPS.length - 1 : firstIncomplete);
@@ -36,6 +38,7 @@ export default function Onboarding() {
   return (
     <>
       <PageHeader title="Démarrage" description={`${STEPS.length} étapes courtes pour configurer Selio. Vous pouvez revenir ici à tout moment.`} actions={<Button variant="ghost" onClick={() => dismiss.mutate()} loading={dismiss.isPending}>Terminer plus tard</Button>} />
+      {typeof referralMessage === "string" ? <div className="mb-4 max-w-2xl" data-testid="referral-message"><Alert tone="info" title="Parrainage">{referralMessage}</Alert></div> : null}
       <ProgressBar value={completed.size} max={STEPS.length} label="Progression" className="mb-6 max-w-md" />
       <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
         <ol className="flex flex-col gap-1">

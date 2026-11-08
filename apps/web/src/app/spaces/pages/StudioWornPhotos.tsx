@@ -1,3 +1,4 @@
+import { can } from "@selio/domain";
 import { useRef, useState } from "react";
 import { Link } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -36,7 +37,7 @@ export default function StudioWornPhotos() {
   const [consent, setConsent] = useState(false);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const fileRef = useRef<HTMLInputElement>(null);
-  const canWrite = session.role !== "viewer";
+  const canWrite = can(session.role, "ai.use");
 
   const pick = async (files: FileList | null) => {
     const f = files?.[0];

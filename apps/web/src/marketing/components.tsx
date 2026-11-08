@@ -1,9 +1,10 @@
 import { useEffect, useId, useMemo, useRef, type ReactNode, type RefObject } from "react";
 import { Link } from "react-router";
-import { ArrowRight, Check, Clock } from "lucide-react";
+import { ArrowRight, Check, Clock, Minus } from "lucide-react";
 import { buttonClass, cn } from "@selio/ui";
 import { seeded } from "./constellation/geometry";
 import { AVAILABILITY_LABEL, type Availability } from "./catalog";
+import { INDEPENDENCE_NOTICE, serializeJsonLd } from "./seo";
 import "./marketing.css";
 
 /** Largeur de contenu standard, ou celle passée en classe (max-w-md, max-w-3xl…). */
@@ -253,4 +254,36 @@ export function PlannedList({ items }: { items: string[] }) {
       ))}
     </ul>
   );
+}
+
+/** Ce qu'un module ne fait pas : liste neutre (ni rouge ni alerte), un trait par ligne. */
+export function NotList({ items }: { items: string[] }) {
+  return (
+    <ul className="flex flex-col gap-2">
+      {items.map((i) => (
+        <li key={i} className="flex items-start gap-2 text-sm text-text">
+          <Minus className="mt-0.5 size-4 shrink-0 text-text-muted" aria-hidden />
+          {i}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Mention d'indépendance vis-à-vis de Vinted, mot pour mot (seo.ts). */
+export function IndependenceNotice({ className }: { className?: string }) {
+  return <p className={cn("text-xs text-text-muted", className)} data-testid="independence-notice">{INDEPENDENCE_NOTICE}</p>;
+}
+
+/**
+ * Données structurées schema.org (JSON-LD) d'une page. Bloc de données, jamais
+ * exécuté : la CSP (script-src 'self') ne s'applique pas à ce type.
+ */
+export function JsonLd({ data }: { data: Record<string, unknown> | Record<string, unknown>[] }) {
+  return <script type="application/ld+json" data-selio-jsonld="" dangerouslySetInnerHTML={{ __html: serializeJsonLd(data) }} />;
+}
+
+/** Emplacement d'un texte attendu (Elias, avocat) : visible, jamais confondu avec un texte définitif. */
+export function Placeholder({ children, className }: { children: ReactNode; className?: string }) {
+  return <span className={cn("mk-placeholder", className)} data-placeholder="">{children}</span>;
 }

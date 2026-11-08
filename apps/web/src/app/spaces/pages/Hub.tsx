@@ -5,6 +5,8 @@ import { ArrowRight } from "lucide-react";
 import { AGENCY_EXAMPLE_CLIENTS } from "@selio/demo-data";
 import { ROLE_LABELS } from "@selio/contracts";
 import { PageHeader, StatusBadge, Tag, buttonClass, cn, formatCents, formatNumber } from "@selio/ui";
+import { seesFinances } from "../../../lib/roles";
+import { checklistProgress, loadComptes } from "../../../lib/comptes";
 import { useClient, useRequiredSession } from "../../../lib/data/provider";
 import { Sparkline } from "../../../components/charts";
 import { ItemThumb } from "../../components/common";
@@ -107,9 +109,14 @@ export default function Hub() {
   const studio = items.data ? summarizeGenerated(items.data.items, scores.data) : null;
   const first = session.user.displayName.split(" ")[0];
   const dash = "—";
+  // Exécuteur : pas de chiffre d'affaires (finances masquées) ; le nombre de ventes à la place.
+  const finances = seesFinances(session.role);
+  const comptes = checklistProgress(new Set(loadComptes(session.org.id).done));
   const figures: Partial<Record<SpaceDef["id"], Figure[]>> = {
     selio: [
-      { label: "CA du mois", value: overview.data ? formatCents(overview.data.sales.revenueCents, { compact: true }) : dash },
+      finances
+        ? { label: "CA du mois", value: overview.data ? formatCents(overview.data.sales.revenueCents, { compact: true }) : dash }
+        : { label: "Ventes du mois", value: overview.data ? formatNumber(overview.data.sales.orderCount) : dash },
       { label: "Annonces en ligne", value: overview.data ? formatNumber(overview.data.stock.listedCount) : dash, hint: counts.data ? `${counts.data.dressingDue} à republier` : undefined },
       { label: "Messages non lus", value: counts.data ? formatNumber(counts.data.unread) : dash },
     ],
@@ -123,6 +130,9 @@ export default function Hub() {
       { label: "Votre rôle", value: ROLE_LABELS[session.role] },
       { label: "Boutiques clientes", value: formatNumber(AGENCY_EXAMPLE_CLIENTS.length), hint: "exemples fictifs" },
     ],
+    generateur: [
+      { label: "Checklist", value: `${comptes.done}/${comptes.total}`, hint: "étapes faites dans Vinted" },
+    ],
     cloud: [
       { label: "Comptes Cloud", value: cloudAccounts.data ? formatNumber(cloudLive.length) : dash, hint: "10 au plus" },
       { label: "En pause", value: cloudAccounts.data ? formatNumber(cloudLive.filter((a) => a.status === "paused").length) : dash },
@@ -135,7 +145,7 @@ export default function Hub() {
   const recent = studio?.generated.slice(0, 5) ?? [];
   const brand = whiteLabel.data;
   const signals: Partial<Record<SpaceDef["id"], ReactNode>> = {
-    selio: (cumulative.at(-1) ?? 0) > 0 ? (
+    selio: finances && (cumulative.at(-1) ?? 0) > 0 ? (
       <div className="flex items-center gap-3">
         <Sparkline values={cumulative} className="h-10 w-full max-w-56" tone="var(--space-tint)" />
         <p className="text-xs text-text-muted">Chiffre d'affaires cumulé, {overview.data!.periodLabel}</p>

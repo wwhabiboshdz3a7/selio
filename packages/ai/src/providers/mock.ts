@@ -1,4 +1,4 @@
-import { LABEL_FIELDS, MEASUREMENT_NAMES, MIGRATION_SOURCES, PHOTO_ROLES, type MigrationSource, type PhotoRole } from "@selio/contracts";
+import { ACCOUNT_STYLES, ACCOUNT_STYLE_DESCRIPTIONS, ACCOUNT_STYLE_LABELS, LABEL_FIELDS, MEASUREMENT_NAMES, MIGRATION_SOURCES, PHOTO_ROLES, type AccountStyle, type MigrationSource, type PhotoRole } from "@selio/contracts";
 import { hashString, parseSettingsText, seededRandom, suggestMappingFromCandidates, type MigrationCandidate } from "@selio/domain";
 import { AIError, extractJson, type AIProvider, type EmbedResult, type GenerateOptions, type GenerateRequest, type GenerateResult, type HealthResult, type OcrRequest, type OcrResult, type StructuredRequest, type StructuredResult } from "../types";
 
@@ -146,6 +146,7 @@ export class MockAIProvider implements AIProvider {
     if (req.schemaName === "label_read") return mockLabelRead(req.prompt);
     if (req.schemaName === "measurements_read") return mockMeasurements(req.prompt);
     if (req.schemaName === "settings_migration") return mockSettingsMigration(req.prompt);
+    if (req.schemaName === "account_texts") return mockAccountTexts(hints);
     if (req.schemaName === "listing_description") {
       return {
         title: `${hints.brand ? hints.brand + " " : ""}${hints.title ?? "Article"}`.slice(0, 120),
@@ -223,6 +224,10 @@ interface Hints {
   condition?: string;
   category?: string;
   signature?: string;
+  /** Selio Comptes : style de la boutique, ton et nom de la boutique (indices de buildAccountTextsRequest). */
+  style?: string;
+  tone?: string;
+  shop?: string;
 }
 
 /** Lit les indices structurés que le constructeur de prompt insère (`[[clé: valeur]]`). */
@@ -539,4 +544,31 @@ function mockSettingsMigration(prompt: string): Record<string, unknown> {
   const warnings = [...mapping.warnings];
   if (screenshots > 0 && !h.migration) warnings.push("Simulateur : les captures d'écran ne sont pas lues (aucun modèle de vision réel) ; collez vos réglages en texte.");
   return { source: mapping.source, fields: mapping.fields, unknownFields: mapping.unknownFields, warnings };
+}
+
+/**
+ * Textes de boutique simulés (Selio Comptes) : à partir du style et du ton seulement, comme le vrai modèle doit
+ * le faire. Aucun chiffre, aucune donnée sur la personne ; le nom de la boutique n'est repris que s'il est fourni.
+ */
+function mockAccountTexts(h: Hints): Record<string, unknown> {
+  const style: AccountStyle = (ACCOUNT_STYLES as readonly string[]).includes(h.style ?? "") ? (h.style as AccountStyle) : "mixte";
+  const d = ACCOUNT_STYLE_DESCRIPTIONS[style];
+  const shop = h.shop ? h.shop.replace(/[<>{}]/g, "").trim() : "";
+  const concise = h.tone === "concise";
+  const hello = h.tone === "neutral" ? "Bonjour" : concise ? "Bonjour" : "Bonjour et bienvenue";
+  return {
+    presentation: concise
+      ? `${hello}${shop ? ` chez ${shop}` : ""}. ${ACCOUNT_STYLE_LABELS[style]} : ${d.articles}, ${d.care}.`
+      : `${hello}${shop ? ` chez ${shop}` : " dans ma boutique"} ! Je propose ${d.articles}, avec ${d.care}. Chaque pièce est décrite honnêtement, défauts compris, et je réponds volontiers à vos questions.`,
+    shippingRules: concise
+      ? "Envoi soigné avec les modes proposés par Vinted, après vérification de l'article."
+      : "J'envoie chaque commande avec les modes d'envoi proposés par Vinted, dans un emballage soigné et après avoir vérifié l'article. Je garde la preuve de dépôt de chaque colis.",
+    cannedReplies: [
+      { situation: "Article encore disponible ?", text: "Bonjour, oui, l'article est toujours disponible. Je reste à votre disposition pour toute question." },
+      { situation: "Demande de mesures", text: "Bonjour, avec plaisir : je prends les mesures et je vous les envoie au plus vite." },
+      { situation: "Offre trop basse", text: "Bonjour, merci pour votre offre. Je ne peux pas l'accepter, mais une autre proposition sur l'annonce reste possible." },
+      { situation: "Remerciement après l'achat", text: "Merci beaucoup pour votre achat ! Votre colis est préparé avec soin." },
+    ],
+    hashtags: [...d.hashtags],
+  };
 }

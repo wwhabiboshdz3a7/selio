@@ -161,6 +161,12 @@ export const apiEnvSchema = z
     WORN_OVERAGE_CENTS: optionalInt(1, 500),
     /** Ancien nom de WORN_OVERAGE_CENTS (lu seulement si WORN_OVERAGE_CENTS est absent). */
     WORN_OVERAGE_UNIT_CENTS: optionalInt(1, 500),
+    /**
+     * Parrainage « un mois offert aux deux » (§5.15) : faux par défaut, ni code, ni page (GET /api/referral : 404),
+     * ni lien créé à l'inscription, ni crédit accordé. Activation à décider par Ibrahim (même valeur que le worker).
+     */
+    // Même lecture que `referralConfigFromEnv` (@selio/core, worker) : seul « true » ouvre.
+    REFERRAL_ENABLED: z.string().optional().transform((v) => (v ?? "").trim().toLowerCase() === "true"),
   })
   .merge(aiConfigSchema)
   // Stockage des photos (S3 / MinIO), emails transactionnels et paiement Revolut : blocs facultatifs, validés ci-dessous.
@@ -253,6 +259,11 @@ export function studioServicesConfig(cfg: Pick<ApiEnv, "WORN_OVERAGE_ENABLED" | 
   };
 }
 
+/** Réglage du parrainage pour les services (`services.config.referralEnabled`). */
+export function referralServicesConfig(cfg: Pick<ApiEnv, "REFERRAL_ENABLED">): Pick<ServicesConfig, "referralEnabled"> {
+  return { referralEnabled: cfg.REFERRAL_ENABLED };
+}
+
 export interface StartupNotice {
   level: "warn" | "info";
   message: string;
@@ -289,6 +300,7 @@ export function startupNotices(cfg: ApiEnv): StartupNotice[] {
   out.push(cfg.WORN_PHOTO_PROVIDER === "mock"
     ? { level: "warn", message: "Photos portées : fournisseur de TEST « mock » (aucune image produite, démonstration seulement)." }
     : { level: "info", message: "Photos portées : aucun fournisseur choisi (WORN_PHOTO_PROVIDER=noop) : chaque demande est refusée proprement, quota rendu — décision à prendre." });
+  out.push({ level: "info", message: cfg.REFERRAL_ENABLED ? "Parrainage ouvert (REFERRAL_ENABLED=true) : un mois offert aux deux au premier paiement de la filleule." : "Parrainage fermé (REFERRAL_ENABLED=false) : ni code ni page, les codes saisis à l'inscription sont ignorés." });
   if (cfg.WORN_OVERAGE_ENABLED) out.push({ level: "warn", message: `Photos portées au-delà du quota OUVERTES (WORN_OVERAGE_ENABLED=true) : ${(wornOverageCents(cfg) / 100).toFixed(2).replace(".", ",")} € la photo (PROPOSITION), avec l'accord explicite du client, facturées au renouvellement.` });
   return out;
 }

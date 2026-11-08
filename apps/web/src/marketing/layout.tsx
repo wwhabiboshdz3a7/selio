@@ -7,6 +7,8 @@ import { Logo } from "../components/Logo";
 import { useSession } from "../lib/data/provider";
 import { getOverNight, getOverNightServer, subscribeOverNight } from "./nightHeader";
 import { HUB_PATH } from "../app/spaces/paths";
+import { PRODUCTS } from "./products";
+import { COMPARISON_READY, INDEPENDENCE_NOTICE, LEGAL_DRAFT_NOTICE } from "./seo";
 
 const NAV = [
   { to: "/fonctionnalites", label: "Fonctionnalités" },
@@ -92,17 +94,21 @@ export function MarketingLayout() {
       </main>
       <footer className="bg-surface">
         <div aria-hidden className="h-px bg-[linear-gradient(90deg,transparent,var(--violet-300)_30%,var(--gold-300)_70%,transparent)] opacity-70" />
-        <div className="mx-auto grid max-w-content gap-8 px-4 py-12 md:grid-cols-4 md:px-8">
-          <div className="md:col-span-1">
+        <div className="mx-auto grid max-w-content gap-8 px-4 py-12 sm:grid-cols-2 md:px-8 lg:grid-cols-5">
+          <div className="sm:col-span-2 lg:col-span-1">
             <Logo height={22} />
             <p className="mt-3 max-w-xs text-sm text-text-muted">L'outil de gestion des revendeurs : stock, conversations, clients, commandes et marges au même endroit.</p>
           </div>
           <FooterCol title="Produit" links={[["/fonctionnalites", "Fonctionnalités"], ["/plateforme", "Les espaces Selio"], ["/extension", "Extension navigateur"], ["/assistant-ia", "Assistant IA"], ["/tarifs", "Tarifs"]]} />
+          <FooterCol title="Filiales" links={[...PRODUCTS.map((p): [string, string] => [p.path, p.name]), ...(COMPARISON_READY ? ([["/selio-ou-bleam", "Selio ou Bleam ?"], ["/alternative-bleam", "Alternative à Bleam"]] as [string, string][]) : [])]} />
           <FooterCol title="Aide" links={[["/faq", "FAQ"], ["/contact", "Contact"], ["/demo", "Démonstration"], ["/connexion", "Connexion"]]} />
-          <FooterCol title="Légal" links={[["/mentions-legales", "Mentions légales"], ["/confidentialite", "Confidentialité"], ["/conditions", "Conditions d'utilisation"]]} />
+          <FooterCol title="Légal" links={[["/mentions-legales", "Mentions légales"], ["/confidentialite", "Confidentialité"], ["/conditions", "Conditions d'utilisation"], ["/extension/confidentialite", "Confidentialité de l'extension"]]} />
         </div>
         <div className="border-t border-border">
-          <p className="mx-auto max-w-content px-4 py-4 text-xs text-text-muted md:px-8">Selio est un outil indépendant. Il n'est ni affilié à Vinted ni approuvé par Vinted. Les textes juridiques de ce site sont des brouillons à compléter avant publication.</p>
+          <div className="mx-auto max-w-content px-4 py-4 text-xs text-text-muted md:px-8">
+            <p data-testid="footer-independence">{INDEPENDENCE_NOTICE}</p>
+            <p className="mt-1">Textes juridiques : {LEGAL_DRAFT_NOTICE.charAt(0).toLowerCase() + LEGAL_DRAFT_NOTICE.slice(1)}</p>
+          </div>
         </div>
       </footer>
     </div>

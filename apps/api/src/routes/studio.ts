@@ -3,7 +3,7 @@ import { z } from "zod";
 import { STUDIO_ACCURACY_TARGETS, STUDIO_ACCURACY_TO_MEASURE_LABEL, STUDIO_LABEL_MAX_PHOTOS, STUDIO_MAX_PHOTOS, STUDIO_MODEL_JPEG_QUALITY, STUDIO_MODEL_MAX_BYTES, STUDIO_MODEL_MAX_PHOTOS, STUDIO_MODEL_MAX_SIDE_PX, STUDIO_TAPE_MAX_PHOTOS, quotasForPlan } from "@selio/contracts";
 import { checkImageDimensions } from "@selio/domain";
 import { repos } from "@selio/db";
-import { AppError, dressing, market, requireAction, studio, studioVisionOf, withOrg, wornPhotos, type OrgContext, type Services } from "@selio/core";
+import { AppError, dressing, items, market, requireAction, studio, studioVisionOf, withOrg, wornPhotos, type OrgContext, type Services } from "@selio/core";
 
 /**
  * Selio Studio : préparation des annonces façon Kavis (§5.11), générateur d'annonces, photos portées,
@@ -194,7 +194,8 @@ export default async function studioRoutes(app: FastifyInstance) {
    */
   app.post("/api/studio/prepare", { bodyLimit: STUDIO_PHOTOS_BODY_LIMIT, config: perUser("studio-prepare", 10, "1 minute") }, async (req, reply) => {
     const ctx = app.requireCtx(req);
-    requireAction(ctx, "ai.use");
+    // Générateur : titulaire, administrateur, exécuteur et contributeur photos (« studio.generate »).
+    requireAction(ctx, "studio.generate");
     precheckStudioPhotos(req.body, { strict: true, reducer: !!app.services.studio?.reducer });
     try {
       const prep = await studio.prepareListing(ctx, req.body, abortOnClose(req));
@@ -229,6 +230,16 @@ export default async function studioRoutes(app: FastifyInstance) {
     } catch (err) {
       throw explicitPhotoError(err);
     }
+  });
+
+  /**
+   * Brouillon de l'annonce générée (« studio.generate ») : article « en stock », sans prix d'achat, sans
+   * plancher, sans compte Vinted, jamais publié. Seule écriture du stock ouverte au contributeur photos.
+   */
+  app.post("/api/studio/drafts", { bodyLimit: STUDIO_PHOTOS_BODY_LIMIT, config: perUser("studio-drafts", 30, "1 minute") }, async (req, reply) => {
+    const item = await items.createStudioDraft(app.requireCtx(req), req.body ?? {});
+    reply.status(201);
+    return item;
   });
 
   // ---------------------------------------------------------------- photos portées

@@ -22,7 +22,7 @@ test.describe("Selio et ses filiales", () => {
     page.on("pageerror", (e) => errors.push(e.message));
     await openDemo(page, null);
     await expect(page.getByRole("heading", { name: "Selio et ses filiales" })).toBeVisible();
-    for (const name of ["Selio", "Selio Studio", "Selio Agents", "Selio Track", "Selio Cloud", "Générateur de compte Vinted"]) await expect(page.getByRole("article", { name, exact: true })).toBeVisible();
+    for (const name of ["Selio", "Selio Studio", "Selio Agents", "Selio Track", "Selio Cloud", "Selio Comptes"]) await expect(page.getByRole("article", { name, exact: true })).toBeVisible();
     await expect(page.getByRole("article", { name: "Selio Global" })).toHaveCount(0);
     await expect(page.getByRole("article", { name: "Selio Agents" }).getByText("Aperçu", { exact: true }).first()).toBeVisible();
     // Selio Cloud est devenu un vrai espace (/cloud) en aperçu dans la démo : plus « En développement ».
@@ -58,7 +58,7 @@ test.describe("Selio et ses filiales", () => {
     await expect(page.getByText("10 comptes maximum par organisation")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Comment ça marchera" })).toHaveCount(0);
 
-    await switchSpace(page, /^Selio\b(?! Studio| Agents| Track| Cloud)/);
+    await switchSpace(page, /^Selio\b(?! Studio| Agents| Track| Cloud| Comptes)/);
     await expect(page).toHaveURL(/\/app$/);
     await expect(page.getByRole("heading", { name: /Bonjour/ })).toBeVisible();
     // Anciennes adresses : générateur → Studio, Agence → Agents, Global → accueil des filiales.
@@ -78,7 +78,9 @@ test.describe("Selio et ses filiales", () => {
     await page.waitForURL((url) => url.pathname === "/app/espaces");
     await expect(page.getByRole("heading", { name: "Selio et ses filiales" })).toBeVisible();
     // Depuis n'importe quel espace, le sélecteur ramène à cet accueil.
+    // L'ancienne adresse du générateur de compte mène à Selio Comptes.
     await page.goto("/generateur");
+    await page.waitForURL((url) => url.pathname === "/comptes");
     if (isMobile(page)) await page.getByRole("button", { name: "Ouvrir le menu" }).click();
     await page.getByRole("button", { name: /Changer d'espace/ }).last().click();
     await page.getByRole("link", { name: /accueil central/ }).click();

@@ -10,9 +10,10 @@ import { PreviewNotice } from "../components";
 
 /** Les rôles Selio, lus du point de vue d'une agence (les droits sont exactement ceux de Paramètres › Comptes et accès). */
 const AGENCY_ROLES: Record<Role, { who: string; does: string }> = {
-  owner: { who: "Le propriétaire (vous, ou la direction de l'agence)", does: "Tout, y compris l'abonnement, la facturation des clients et la suppression." },
+  owner: { who: "Le titulaire (vous, ou la direction de l'agence)", does: "Tout, y compris l'abonnement, la facturation des clients et la suppression." },
   admin: { who: "Un ou une responsable de compte", does: "Règle l'outil pour l'équipe : réglages, membres, comptes connectés, automatisations." },
-  operator: { who: "Les opérateurs de l'équipe", does: "Traitent les boutiques au quotidien : stock, annonces, messages, commandes." },
+  operator: { who: "Les exécuteurs de l'équipe", does: "Traitent les boutiques au quotidien : stock, annonces, messages, commandes. Ne voient pas les finances." },
+  photographer: { who: "La personne qui photographie les articles", does: "Ajoute les photos et lance le générateur d'annonces, rien d'autre." },
   viewer: { who: "Un client qui suit sa boutique", does: "Consulte ventes, annonces et analyses, sans rien modifier ni envoyer." },
 };
 

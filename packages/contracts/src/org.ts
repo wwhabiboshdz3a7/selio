@@ -655,6 +655,11 @@ export const registerInput = z.object({
   orgName: z.string().trim().min(1).max(120),
   /** Durée de l'essai : 14 jours (seul choix ; 7 et 30 envoyés par d'anciens clients sont ramenés à 14). */
   trialDays: trialDays.default(DEFAULT_TRIAL_DAYS),
+  /**
+   * Code de parrainage saisi (facultatif, forme libre : « ab3-k7q »). Jamais bloquant : un code vide, mal
+   * formé, inconnu ou désactivé est ignoré avec un message (`referral.applyCodeAtSignup`).
+   */
+  referralCode: z.string().trim().max(32).optional(),
 });
 export const loginInput = z.object({ email, password: z.string().min(1).max(200) });
 
@@ -662,4 +667,8 @@ export const orgUpdate = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   settings: orgSettings.partial().optional(),
 });
+/**
+ * Invitation d'un membre : tous les rôles d'équipe sauf le titulaire, qui ne s'attribue pas par invitation
+ * (un administrateur ne peut jamais l'attribuer ; le titulaire nomme un autre titulaire par changement de rôle).
+ */
 export const inviteInput = z.object({ email, role });

@@ -1,3 +1,4 @@
+import { can } from "@selio/domain";
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -19,14 +20,14 @@ export default function Automations() {
   const state = useQuery({ queryKey: ["automation-state"], queryFn: () => client.getAutomationState() });
   const pause = useAppMutation((p: boolean) => client.setGlobalPause(p), { invalidate: ["automation-state", "overview", "rules"], success: (s) => (s.globalPaused ? "Arrêt global activé" : "Automatisations reprises") });
   const [confirmPause, setConfirmPause] = useState(false);
-  const canWrite = session.role === "owner" || session.role === "admin";
+  const canWrite = can(session.role, "automations.write");
   return (
     <>
       <PageHeader eyebrow="Automatisation" title="Journal des tâches" description="Ce que les automatisations ont fait ou s'apprêtent à faire : la file des tâches, les validations en attente et les règles détaillées (horaires, limites). Les actions sensibles attendent votre validation par défaut." actions={state.data ? (state.data.globalPaused ? <Button variant="secondary" icon={<Play />} onClick={() => pause.mutate(false)} loading={pause.isPending} disabled={!canWrite}>Reprendre</Button> : <Button variant="danger" icon={<Pause />} onClick={() => setConfirmPause(true)} disabled={!canWrite}>Arrêt global</Button>) : null} />
       {state.data?.globalPaused ? <Alert tone="warning" title="Arrêt global actif" className="mb-4">Aucune règle ne s'exécute depuis le {state.data.pausedAt ? formatDateTime(state.data.pausedAt) : "—"}. Les tâches en attente restent visibles.</Alert> : null}
       <Alert tone="info" className="mb-4" title="Où s'exécutent les règles">Les actions qui lisent ou écrivent sur Vinted passent par l'extension et exigent un navigateur ouvert : elles ne sont jamais promises 24 h/24. Les calculs (décision de négociation, baisse de prix dans Selio) tournent sur le serveur.</Alert>
       <Tabs ariaLabel="Sections" value={tab} onChange={(t) => { const p = new URLSearchParams(params); p.set("tab", t); setParams(p, { replace: true }); }} items={[{ value: "rules", label: "Règles" }, { value: "jobs", label: "File et historique" }]} className="mb-4" />
-      {tab === "rules" ? <Rules canWrite={canWrite} /> : <Jobs canWrite={session.role !== "viewer"} />}
+      {tab === "rules" ? <Rules canWrite={canWrite} /> : <Jobs canWrite={can(session.role, "messages.send")} />}
       <ConfirmDialog open={confirmPause} onClose={() => setConfirmPause(false)} onConfirm={() => { pause.mutate(true); setConfirmPause(false); }} title="Activer l'arrêt global ?" description="Toutes les règles cessent de déclencher des actions jusqu'à la reprise. Les tâches en cours terminent proprement." confirmLabel="Arrêter" danger />
     </>
   );

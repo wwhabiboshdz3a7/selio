@@ -71,11 +71,29 @@ export interface ShippingDocument {
   note: string;
 }
 
+/**
+ * Statut d'accès propre à un connecteur, plus précis que le statut stocké : « needs_access » = l'accès
+ * doit être demandé au fournisseur (Vinted Pro Integrations : comptes admis par Vinted seulement) et sa
+ * documentation obtenue avant tout appel. Tant que l'interface ne connaît pas ce statut, la connexion
+ * est enregistrée « not_configured » et `accessStatus` porte le détail (voir `effectiveStatus`).
+ */
+export const CONNECTOR_ACCESS_STATUSES = ["needs_access"] as const;
+export type ConnectorAccessStatus = (typeof CONNECTOR_ACCESS_STATUSES)[number];
+
+/** Résultat de `test()` : celui des contrats, avec le statut d'accès éventuel. */
+export interface ConnectorTestResult extends ConnectionTestResult {
+  accessStatus?: ConnectorAccessStatus;
+}
+
+/** Transports d'un connecteur : extension navigateur (session de l'utilisateur), serveur (API officielle), simulateur. */
+export const CONNECTOR_TRANSPORTS = ["extension", "server", "simulator"] as const;
+export type ConnectorTransport = (typeof CONNECTOR_TRANSPORTS)[number];
+
 export interface ConnectorDescriptor {
   provider: Provider;
   label: string;
   description: string;
-  transport: "extension" | "server" | "simulator";
+  transport: ConnectorTransport;
   experimental: boolean;
   capabilities: { capability: Capability; state: "available" | "experimental" | "unavailable"; note: string }[];
   /** Ce que l'utilisateur doit fournir pour configurer (jamais un mot de passe Vinted). */
@@ -86,7 +104,7 @@ export interface ConnectorDescriptor {
 export interface Connector {
   readonly provider: Provider;
   describe(): ConnectorDescriptor;
-  test(ctx: ConnectorContext): Promise<ConnectionTestResult>;
+  test(ctx: ConnectorContext): Promise<ConnectorTestResult>;
   readItems?(ctx: ConnectorContext, opts?: { since?: string }): Promise<CapabilityResult<ExternalItem[]>>;
   readConversations?(ctx: ConnectorContext, opts?: { since?: string }): Promise<CapabilityResult<ExternalConversation[]>>;
   syncOrders?(ctx: ConnectorContext, opts?: { since?: string }): Promise<CapabilityResult<ExternalOrder[]>>;
@@ -101,4 +119,9 @@ export function unsupported(message: string): CapabilityResult<never> {
 
 export function statusFromTest(result: Pick<ConnectionTestResult, "ok" | "status">): ConnectorStatus {
   return result.status;
+}
+
+/** Statut à afficher : le statut d'accès s'il est présent (« needs_access »), sinon le statut stocké. */
+export function effectiveStatus(result: Pick<ConnectorTestResult, "status" | "accessStatus">): ConnectorStatus | ConnectorAccessStatus {
+  return result.accessStatus ?? result.status;
 }

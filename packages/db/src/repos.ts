@@ -1,6 +1,7 @@
 import {
   priceModelRecord as priceModelRecordSchema, priceReference as priceReferenceSchema, trackFilter as trackFilterSchema, trackPhotoSearch as trackPhotoSearchSchema, trackScan as trackScanSchema, trackSnapshot as trackSnapshotSchema,
   type ItemCategory, type PriceModelMetrics, type PriceModelRecord, type PriceReference, type PriceReferenceInput, type PriceReferenceSource, type TrackCriteria, type TrackFilter, type TrackPhotoSearch, type TrackScan, type TrackSnapshot, type TrackSource,
+  referral as referralSchema, subscriptionCredit as subscriptionCreditSchema, type Referral, type ReferralStatus, type SubscriptionCredit,
   aiRequest, auditLog, cloudAccount as cloudAccountSchema, cloudAction as cloudActionSchema, cloudConsent as cloudConsentSchema, cloudLoginSession as cloudLoginSessionSchema, automationRule, conversation as conversationSchema, customer as customerSchema, extensionToken, inventoryEvent, inventoryItem, invoice as invoiceSchema, job as jobSchema, marketplaceConnection, membership as membershipSchema, message as messageSchema, opportunity as opportunitySchema, order as orderSchema, organization as organizationSchema, paymentOrder as paymentOrderSchema, purchaseRequest as purchaseSchema, radarSearch as radarSchema, radarRead as radarReadSchema, radarAlert as radarAlertSchema, pushSubscription as pushSubscriptionSchema, RADAR_BLOCK_OUTCOMES, shipment as shipmentSchema, subscription as subscriptionSchema, usageEvent, user as userSchema, quotasForPlan, isLegacyQuotas, resolveQuotas,
   type AiRequest, type AuditLog, type AutomationRule, type CloudAccount, type CloudAction, type CloudActionDetail, type CloudConsent, type CloudJournalQuery, type CloudLoginSession, type Conversation, type ConversationQuery, type Customer, type CustomerQuery, type ExtensionToken, type InventoryEvent, type InventoryItem, type InventoryQuery, type Invoice, type Job, type JobQuery, type MarketplaceConnection, type Membership, type Message, type Opportunity, type Order, type OrderQuery, type Organization, type Page, type PaymentOrder, type PurchaseRequest, type RadarSearch, type RadarRead, type RadarReadOutcome, type RadarSourceKind, type RadarAlert, type RadarAlertKind, type RadarAlertPayload, type PushSubscription, type Shipment, type Subscription, type UsageEvent, type User,
 } from "@selio/contracts";
@@ -168,6 +169,95 @@ export const invites = {
   },
   async purgeExpired(tx: Tx): Promise<number> {
     return (await tx.query("delete from invites where expires_at < now() - interval '30 days' returning id")).length;
+  },
+};
+
+// ---------------------------------------------------------------- parrainage (0016)
+/**
+ * Codes de parrainage : un par organisation (table globale, cherchée à l'inscription avant de connaître
+ * la marraine). `create` rend null en cas de collision (code déjà pris ou organisation déjà pourvue) :
+ * le service relit ou retire un autre code.
+ */
+export const referralCodes = {
+  async byOrg(tx: Tx, orgId: string): Promise<string | null> {
+    return (await tx.maybeOne<{ code: string }>("select code from referral_codes where org_id = $1", [orgId]))?.code ?? null;
+  },
+  async byCode(tx: Tx, code: string): Promise<{ orgId: string; code: string } | null> {
+    return tx.maybeOne<{ orgId: string; code: string }>("select org_id, code from referral_codes where code = $1", [code]);
+  },
+  async create(tx: Tx, orgId: string, code: string): Promise<string | null> {
+    const r = await tx.maybeOne<{ code: string }>("insert into referral_codes (org_id, code) values ($1, $2) on conflict do nothing returning code", [orgId, code]);
+    return r?.code ?? null;
+  },
+};
+
+/** Liens marraine → filleule (table globale ; transitions conditionnelles, donc idempotentes). */
+export const referrals = {
+  /** Lien « en attente » ; null si la filleule est déjà parrainée (une seule fois). */
+  async create(tx: Tx, input: { code: string; referrerOrgId: string; referredOrgId: string }): Promise<Referral | null> {
+    const r = await tx.maybeOne("insert into referrals (code, referrer_org_id, referred_org_id) values ($1, $2, $3) on conflict (referred_org_id) do nothing returning *", [input.code, input.referrerOrgId, input.referredOrgId]);
+    return r ? parse(referralSchema, r) : null;
+  },
+  async byId(tx: Tx, id: string): Promise<Referral | null> {
+    const r = await tx.maybeOne("select * from referrals where id = $1", [id]);
+    return r ? parse(referralSchema, r) : null;
+  },
+  async byReferred(tx: Tx, referredOrgId: string): Promise<Referral | null> {
+    const r = await tx.maybeOne("select * from referrals where referred_org_id = $1", [referredOrgId]);
+    return r ? parse(referralSchema, r) : null;
+  },
+  /** Filleules d'une marraine par état (compteurs seulement : rien sur les organisations filleules). */
+  async countByStatus(tx: Tx, referrerOrgId: string): Promise<Record<ReferralStatus, number>> {
+    const rows = await tx.query<{ status: ReferralStatus; n: number }>("select status, count(*)::int as n from referrals where referrer_org_id = $1 group by status", [referrerOrgId]);
+    const out: Record<ReferralStatus, number> = { pending: 0, qualified: 0, credited: 0, refused: 0 };
+    for (const r of rows) out[r.status] = Number(r.n);
+    return out;
+  },
+  /** pending → qualified, une seule fois : null si le lien n'était plus en attente. */
+  async markQualified(tx: Tx, id: string, at: string): Promise<Referral | null> {
+    const r = await tx.maybeOne("update referrals set status = 'qualified', qualified_at = $2 where id = $1 and status = 'pending' returning *", [id, at]);
+    return r ? parse(referralSchema, r) : null;
+  },
+  /** pending → refused (contrôle d'auto-parrainage ou plafond au premier paiement) : null si plus en attente. */
+  async markRefused(tx: Tx, id: string, at: string, reason: NonNullable<Referral["refusedReason"]>): Promise<Referral | null> {
+    const r = await tx.maybeOne("update referrals set status = 'refused', refused_at = $2, refused_reason = $3 where id = $1 and status = 'pending' returning *", [id, at, reason]);
+    return r ? parse(referralSchema, r) : null;
+  },
+  /** Filleules qualifiées (crédits accordés) d'une marraine depuis `since` : sert au plafond par marraine. */
+  async countQualifiedSince(tx: Tx, referrerOrgId: string, since: string): Promise<number> {
+    return tx.count("select count(*) from referrals where referrer_org_id = $1 and status in ('qualified', 'credited') and qualified_at >= $2", [referrerOrgId, since]);
+  },
+  /** qualified → credited quand les deux crédits sont consommés (fonction SQL bornée : crédits sous RLS). */
+  async settle(tx: Tx, id: string, at: string): Promise<ReferralStatus | null> {
+    const r = await tx.maybeOne<{ status: ReferralStatus | null }>("select app_referral_settle($1, $2) as status", [id, at]);
+    return r?.status ?? null;
+  },
+};
+
+/**
+ * Mois offerts (table d'organisation sous RLS : app.org_id doit valoir `orgId`). Un crédit par organisation
+ * et par parrainage (index unique) : accorder deux fois ne crée rien.
+ */
+export const subscriptionCredits = {
+  async grant(tx: Tx, input: { orgId: string; kind: SubscriptionCredit["kind"]; months: number; sourceReferralId: string | null }): Promise<SubscriptionCredit | null> {
+    const r = await tx.maybeOne("insert into subscription_credits (org_id, kind, months, source_referral_id) values ($1, $2, $3, $4) on conflict do nothing returning *", [input.orgId, input.kind, input.months, input.sourceReferralId]);
+    return r ? parse(subscriptionCreditSchema, r) : null;
+  },
+  /** Plus ancien crédit disponible, verrouillé pour la transaction (deux renouvellements concurrents n'en consomment qu'un). */
+  async takeAvailable(tx: Tx, orgId: string): Promise<SubscriptionCredit | null> {
+    const r = await tx.maybeOne("select * from subscription_credits where org_id = $1 and consumed_at is null order by created_at, id limit 1 for update skip locked", [orgId]);
+    return r ? parse(subscriptionCreditSchema, r) : null;
+  },
+  /** Consommation conditionnelle : null si le crédit l'était déjà. */
+  async consume(tx: Tx, id: string, invoiceId: string, at: string): Promise<SubscriptionCredit | null> {
+    const r = await tx.maybeOne("update subscription_credits set consumed_at = $3, invoice_id = $2 where id = $1 and consumed_at is null returning *", [id, invoiceId, at]);
+    return r ? parse(subscriptionCreditSchema, r) : null;
+  },
+  async list(tx: Tx, orgId: string): Promise<SubscriptionCredit[]> {
+    return (await tx.query("select * from subscription_credits where org_id = $1 order by created_at, id", [orgId])).map((r) => parse(subscriptionCreditSchema, r));
+  },
+  async countAvailable(tx: Tx, orgId: string): Promise<number> {
+    return tx.count("select count(*) from subscription_credits where org_id = $1 and consumed_at is null", [orgId]);
   },
 };
 

@@ -65,12 +65,12 @@ export function euroLabel(cents: number): string {
 }
 
 /**
- * Lignes supplémentaires d'une facture, comprises dans son montant TTC : aujourd'hui seulement le
- * dépassement des photos portées (`overage` / `worn_photo`). Aucune ligne quand le dépassement est
- * désactivé ou que rien n'a été produit au-delà du quota.
+ * Lignes supplémentaires d'une facture, comprises dans son montant TTC : le dépassement des photos portées
+ * (`overage` / `worn_photo`) et le mois offert du parrainage (`credit` / `referral_month`, à 0 €). Aucune
+ * ligne quand le dépassement est désactivé ou que rien n'a été produit au-delà du quota.
  */
-export const INVOICE_EXTRA_LINE_KINDS = ["overage"] as const;
-export const INVOICE_EXTRA_LINE_PRODUCTS = ["worn_photo"] as const;
+export const INVOICE_EXTRA_LINE_KINDS = ["overage", "credit"] as const;
+export const INVOICE_EXTRA_LINE_PRODUCTS = ["worn_photo", "referral_month"] as const;
 export const invoiceExtraLine = z.object({
   kind: z.enum(INVOICE_EXTRA_LINE_KINDS),
   product: z.enum(INVOICE_EXTRA_LINE_PRODUCTS),
@@ -154,7 +154,7 @@ export interface InvoiceView {
    * Abonnement d'abord (`kind: "plan"`), puis les lignes de dépassement (`kind: "overage"`, avec
    * quantité et prix unitaire). La somme des lignes est le TTC de la facture.
    */
-  lines: { label: string; periodLabel: string; amountCents: number; kind?: "plan" | "overage"; quantity?: number; unitCents?: number }[];
+  lines: { label: string; periodLabel: string; amountCents: number; kind?: "plan" | "overage" | "credit"; quantity?: number; unitCents?: number }[];
   totals: InvoiceAmounts & { vatRate: number };
   /** Frais du fournisseur de paiement : information, jamais refacturés au client. */
   paymentProvider: "revolut" | null;

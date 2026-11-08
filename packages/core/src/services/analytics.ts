@@ -1,9 +1,9 @@
 import { repos } from "@selio/db";
 import {
-  PERIOD_PRESETS, breakdownBy, buildDashboard, buildDressing, comparablesFromSales, daysInStock, granularityFor, itemMargins, marginsByPeriod, marginTotals, orderMargin, periodFromPreset, periodLabel, previousPeriod, salesKpis, salesSeries, stockKpis, thresholdStatusForOrders, toCsv,
+  PERIOD_PRESETS, breakdownBy, buildDashboard, buildDressing, dashboardWithoutFinances, thresholdTextWithoutAmounts, comparablesFromSales, daysInStock, granularityFor, itemMargins, marginsByPeriod, marginTotals, orderMargin, periodFromPreset, periodLabel, previousPeriod, salesKpis, salesSeries, stockKpis, thresholdStatusForOrders, toCsv,
   type EndToEndMargin, type MarginTotals, type MarginsByPeriod, type PeriodPreset, type ThresholdStatus,
 } from "@selio/domain";
-import { AppError, requireAction, withOrg, type OrgContext } from "../context";
+import { AppError, requireAction, seesFinances, withOrg, type OrgContext } from "../context";
 import type { AnalyticsData, AnalyticsFilters, OverviewData } from "../types-data";
 
 const PRESETS: readonly PeriodPreset[] = PERIOD_PRESETS;
@@ -35,17 +35,21 @@ export async function getOverview(ctx: OrgContext, rawPeriod: unknown): Promise<
     if (state.globalPaused) alerts.push({ id: "global-pause", tone: "warning", title: "Automatisations en arrêt global", description: "Aucune règle ne s'exécute tant que l'arrêt global est actif.", to: "/app/automations" });
     if (ai.status === "unavailable" || ai.status === "circuit_open") alerts.push({ id: "ai", tone: "warning", title: "Assistant IA indisponible", description: `${ai.message}. Les gabarits déterministes restent utilisables.`, to: "/app/settings/ai" });
     const org = await repos.orgs.byId(tx, ctx.orgId);
+    // Rôle sans « finances.read » (exécuteur, contributeur photos) : agrégats financiers retirés ici, côté
+    // service, et pas seulement par la liste de clés masquées à la sortie de l'API (§5.15).
+    const finances = seesFinances(ctx.role);
     // Seuils de déclaration (30 ventes ou 2 000 € par an) : information factuelle, jamais un conseil fiscal.
     if (org.settings.thresholds.enabled) {
       const t = thresholdStatusForOrders(orders, org.settings.thresholds, now);
-      if (t.level !== "none") alerts.push({ id: "declaration-thresholds", tone: t.level === "reached" ? "warning" : "info", title: t.level === "reached" ? "Seuil de déclaration des plateformes atteint" : "Vous approchez d'un seuil de déclaration des plateformes", description: t.text, to: "/app/analytics" });
+      if (t.level !== "none") alerts.push({ id: "declaration-thresholds", tone: t.level === "reached" ? "warning" : "info", title: t.level === "reached" ? "Seuil de déclaration des plateformes atteint" : "Vous approchez d'un seuil de déclaration des plateformes", description: finances ? t.text : thresholdTextWithoutAmounts(t), to: "/app/analytics" });
     }
     const sales = comparablesFromSales(orders, new Map(items.map((i) => [i.id, i])));
+    const dashboard = buildDashboard(items, orders, p, now, { timezone: org.settings.timezone, granularity: granularityFor(period) });
     return {
       period, sales: salesKpis(orders, p), previousSales: salesKpis(orders, previousPeriod(p, period)), stock: stockKpis(items, now),
       series: salesSeries(orders, p, granularityFor(period)),
       periodLabel: periodLabel(period, now),
-      dashboard: buildDashboard(items, orders, p, now, { timezone: org.settings.timezone, granularity: granularityFor(period) }),
+      dashboard: finances ? dashboard : dashboardWithoutFinances(dashboard),
       dressing: buildDressing(items, sales, { now, rules: org.settings.margin, republishAfterDays: org.settings.dressing.republishAfterDays }).summary,
       counts: { openConversations: conv.open, unreadMessages: conv.unread, pendingOrders: await repos.orders.countPending(tx), jobsAwaiting: jobCounts.awaiting_approval ?? 0, jobsFailed: jobCounts.failed ?? 0 },
       alerts, recentOrders: await repos.orders.recent(tx, 5), recentConversations: await repos.conversations.recent(tx, 5),
@@ -70,14 +74,18 @@ export function getAnalytics(ctx: OrgContext, raw: Record<string, unknown>): Pro
     if (filters.category) orders = orders.filter((o) => itemMap.get(o.itemId)?.category === filters.category);
     if (filters.channel) orders = orders.filter((o) => o.provider === filters.channel);
     const granularity = filters.granularity ?? granularityFor(filters.period);
+    // Sans « finances.read » : montants masqués à la sortie, et classement par nombre de ventes (pas par CA).
+    const rank = <R extends { orderCount: number }>(rows: R[]): R[] => (seesFinances(ctx.role) ? rows : [...rows].sort((a, b) => b.orderCount - a.orderCount));
     const inPeriod = orders.filter((o) => new Date(o.createdAt) >= p.from && new Date(o.createdAt) < p.to && o.status !== "cancelled" && o.status !== "refunded");
     return {
       period: filters.period, sales: salesKpis(orders, p), previousSales: salesKpis(orders, previousPeriod(p, filters.period)), stock: stockKpis(items, now, { period: p }),
       series: salesSeries(orders, p, granularity),
-      byCategory: breakdownBy(orders, (o) => itemMap.get(o.itemId)?.category ?? "other", p),
-      byChannel: breakdownBy(orders, (o) => o.provider, p),
-      byBrand: breakdownBy(orders, (o) => itemMap.get(o.itemId)?.brand ?? "—", p).slice(0, 8),
-      topItems: inPeriod.map((o) => ({ item: itemMap.get(o.itemId)!, order: o, marginCents: orderMargin(o).marginCents })).filter((x) => x.item).sort((a, b) => b.marginCents - a.marginCents).slice(0, 5),
+      byCategory: rank(breakdownBy(orders, (o) => itemMap.get(o.itemId)?.category ?? "other", p)),
+      byChannel: rank(breakdownBy(orders, (o) => o.provider, p)),
+      byBrand: rank(breakdownBy(orders, (o) => itemMap.get(o.itemId)?.brand ?? "—", p)).slice(0, 8),
+      // Sans « finances.read », trié par date (le classement par marge en dirait déjà trop).
+      topItems: inPeriod.map((o) => ({ item: itemMap.get(o.itemId)!, order: o, marginCents: orderMargin(o).marginCents })).filter((x) => x.item)
+        .sort(seesFinances(ctx.role) ? (a, b) => b.marginCents - a.marginCents : (a, b) => b.order.createdAt.localeCompare(a.order.createdAt)).slice(0, 5),
     };
   });
 }

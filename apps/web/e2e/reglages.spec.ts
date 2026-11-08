@@ -52,8 +52,9 @@ test.describe("réglages : négociation, comptes et accès, assistant IA", () =>
       await page.getByLabel("Rôle affiché").selectOption("viewer");
       await expect(row.getByLabel("Non autorisé", { exact: true }).filter({ visible: true })).toHaveCount(1);
     } else {
+      // Cinq rôles : seul le titulaire confirme un achat réel.
       await expect(row.getByLabel("Autorisé", { exact: true })).toHaveCount(1);
-      await expect(row.getByLabel("Non autorisé", { exact: true })).toHaveCount(3);
+      await expect(row.getByLabel("Non autorisé", { exact: true })).toHaveCount(4);
     }
     await page.getByLabel("Rôle de Karim Benali").selectOption("viewer");
     await expect(page.getByText("Rôle mis à jour")).toBeVisible();

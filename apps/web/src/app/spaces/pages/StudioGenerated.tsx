@@ -4,7 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import type { InventoryItem } from "@selio/contracts";
 import { EmptyState, ErrorState, FilterChip, PageHeader, SkeletonRows, StatStrip, Tag, buttonClass, formatCents, formatDate, formatNumber } from "@selio/ui";
-import { useClient } from "../../../lib/data/provider";
+import { can } from "@selio/domain";
+import { useClient, useRequiredSession } from "../../../lib/data/provider";
+import { hasReducedView } from "../../../lib/roles";
 import { errorMessage } from "../../../lib/errors";
 import { ScoreRing } from "../../../components/charts";
 import { ItemStatusBadge, ItemThumb } from "../../components/common";
@@ -34,9 +36,11 @@ function soldIn(item: InventoryItem): number | null {
 
 export default function StudioGenerated() {
   const client = useClient();
+  const { role } = useRequiredSession();
   const items = useAllItems();
-  const scores = useDressingScores();
-  const connections = useQuery({ queryKey: ["connections"], queryFn: () => client.listConnections() });
+  // Vue réduite (contributeur photos) : ni dressing ni comptes Vinted, qui lui répondent 403.
+  const scores = useDressingScores({ enabled: !hasReducedView(role) });
+  const connections = useQuery({ queryKey: ["connections"], queryFn: () => client.listConnections(), enabled: can(role, "connections.read") });
   const [filter, setFilter] = useState<Filter>("all");
   const summary = useMemo(() => (items.data ? summarizeGenerated(items.data.items, scores.data) : null), [items.data, scores.data]);
   const accountName = (id: string | null) => {

@@ -1,6 +1,7 @@
 import { bulkItemAction, inventoryItemCreate, inventoryItemUpdate, inventoryQuery, namedMeasurementField, photoRole, type InventoryEvent, type InventoryItem, type NamedMeasurementField, type Page, type PhotoRole } from "@selio/contracts";
 import { repos } from "@selio/db";
-import { ITEM_TRANSITIONS, canChangeItemStatus, checkListing, diffItem, nextSku, toCsv, EXPORT_HEADERS, inventoryToCsvRow, type ListingCheck } from "@selio/domain";
+import { z } from "zod";
+import { ITEM_TRANSITIONS, canChangeItemStatus, checkListing, diffItem, newId, nextSku, toCsv, EXPORT_HEADERS, inventoryToCsvRow, type ListingCheck } from "@selio/domain";
 import { PLAN_QUOTAS } from "@selio/demo-data";
 import { AppError, nowIso, requireAction, withOrg, type OrgContext } from "../context";
 import type { Tx } from "@selio/db";
@@ -57,6 +58,80 @@ export async function updateItemTx(ctx: OrgContext, tx: Tx, id: string, raw: unk
 export function updateItem(ctx: OrgContext, id: string, raw: unknown): Promise<InventoryItem> {
   requireAction(ctx, "items.write");
   return withOrg(ctx, (tx) => updateItemTx(ctx, tx, id, raw));
+}
+
+/** Photo ajoutée par le contributeur photos : image envoyée (data URL réduite), URL HTTPS ou clé de stockage de l'organisation. */
+const addedPhoto = z.object({
+  url: z.string().min(1).max(4_000_000),
+  alt: z.string().trim().max(200).default(""),
+});
+const addPhotosInput = z.object({ photos: z.array(addedPhoto).min(1).max(12) });
+
+function acceptablePhotoUrl(url: string, orgId: string): boolean {
+  if (/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(url)) return true;
+  if (/^https:\/\/[^\s"'<>]+$/.test(url)) return true;
+  return url.startsWith(`org/${orgId}/item-photo/`) && /^[A-Za-z0-9/._-]+$/.test(url);
+}
+
+/** Brouillon du générateur : les champs de l'annonce, rien d'autre (ni prix d'achat, ni plancher, ni publication). */
+const studioDraftInput = z.object({
+  title: z.string().trim().min(3).max(200),
+  description: z.string().max(5000).default(""),
+  brand: z.string().trim().max(80).nullable().default(null),
+  size: z.string().trim().max(40).nullable().default(null),
+  category: z.string().max(40).optional(),
+  condition: z.string().max(40).optional(),
+  listedPriceCents: z.number().int().min(0).max(10_000_000).nullable().default(null),
+  photos: z.array(addedPhoto.extend({ id: z.string().max(80).optional() })).max(12).default([]),
+  attributes: z.record(z.string(), z.unknown()).optional(),
+});
+
+/**
+ * Brouillon d'annonce du générateur (POST /api/studio/drafts, « studio.generate ») : seule voie d'écriture du
+ * stock ouverte au contributeur photos, qui lance le générateur et doit pouvoir garder l'annonce générée. Le
+ * brouillon est créé « en stock », sans prix d'achat ni frais (0, à compléter par l'équipe), sans plancher,
+ * sans compte Vinted et jamais publié : publier, fixer les prix et choisir le compte restent à l'exécuteur et
+ * au-dessus (« items.write »). Les photos suivent les mêmes règles que l'ajout de photos.
+ */
+export function createStudioDraft(ctx: OrgContext, raw: unknown): Promise<InventoryItem> {
+  requireAction(ctx, "studio.generate");
+  const parsed = studioDraftInput.safeParse(raw);
+  if (!parsed.success) throw new AppError("validation", "Brouillon invalide", 400, parsed.error.flatten());
+  const d = parsed.data;
+  const bad = d.photos.filter((p) => !acceptablePhotoUrl(p.url, ctx.orgId));
+  if (bad.length) throw new AppError("validation", "Photo refusée : image JPEG, PNG ou WebP, adresse HTTPS ou photo téléversée de l'organisation.", 400);
+  return withOrg(ctx, (tx) => createItemTx(ctx, tx, {
+    title: d.title, description: d.description, brand: d.brand, size: d.size,
+    ...(d.category ? { category: d.category } : {}), ...(d.condition ? { condition: d.condition } : {}),
+    listedPriceCents: d.listedPriceCents,
+    photos: d.photos.map((p, position) => ({ id: p.id ?? newId(), url: p.url, alt: p.alt || d.title, position })),
+    purchasePriceCents: 0, purchaseFeesCents: 0, floorPriceCents: null, status: "in_stock", connectionId: null,
+    tags: ["générateur", "brouillon"],
+    attributes: d.attributes ?? {},
+  }, "Brouillon du générateur"));
+}
+
+/**
+ * Ajout de photos à un article, et rien d'autre (§5.15) : seul droit d'écriture du contributeur photos
+ * (« items.photos.write »). Les photos s'ajoutent après les existantes (12 au plus par article) ; aucun autre
+ * champ de l'article n'est modifiable par cette voie (ni prix, ni statut, ni description).
+ */
+export function addItemPhotos(ctx: OrgContext, id: string, raw: unknown): Promise<InventoryItem> {
+  requireAction(ctx, "items.photos.write");
+  const parsed = addPhotosInput.safeParse(raw);
+  if (!parsed.success) throw new AppError("validation", parsed.error.issues[0]?.message ?? "Photos invalides", 400, parsed.error.flatten());
+  const bad = parsed.data.photos.find((p) => !acceptablePhotoUrl(p.url, ctx.orgId));
+  if (bad) throw new AppError("validation", "Photo refusée : image JPEG, PNG ou WebP, adresse HTTPS ou photo envoyée par Selio pour votre organisation.", 400);
+  return withOrg(ctx, async (tx) => {
+    const before = await repos.items.byId(tx, id);
+    if (before.photos.length + parsed.data.photos.length > 12) throw new AppError("validation", `12 photos au plus par article (${before.photos.length} déjà).`, 400);
+    const start = before.photos.reduce((m, p) => Math.max(m, p.position + 1), before.photos.length);
+    const photos = [...before.photos, ...parsed.data.photos.map((p, i) => ({ id: newId(), url: p.url, alt: p.alt, position: start + i }))];
+    const after = await repos.items.update(tx, id, { photos });
+    await repos.itemEvents.add(tx, { itemId: id, actorUserId: ctx.userId, kind: "updated", changes: { photos: { from: before.photos.length, to: photos.length } }, note: "Photos ajoutées" });
+    await repos.audit.add(tx, { actorUserId: ctx.userId, action: "item.photos_added", targetType: "inventory_item", targetId: id, meta: { added: parsed.data.photos.length, total: photos.length }, ip: ctx.ip });
+    return after;
+  });
 }
 
 export function setItemStatus(ctx: OrgContext, id: string, status: InventoryItem["status"]): Promise<InventoryItem> {

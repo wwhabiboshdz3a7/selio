@@ -155,6 +155,61 @@
 
   --sidebar-width: 264px;
   --content-max: 1600px;
+
+  /* ---- Verre liquide (essai §6 « Liquid Glass », composant GlassSurface) --
+     Réservé à GlassSurface (packages/ui/src/styles/glass.css). Les tons forcés
+     (--glass-light-*, --glass-dark-*) ne dépendent pas du thème de la page ;
+     les rôles --glass-* (sans ton) suivent le thème, comme --surface et --text.
+     --glass-*-scrim : opacité de la sous-couche sous le texte, calculée par
+     scrimAlphaFor() pour garantir 4,5:1 sur fond blanc ET noir (test dédié). */
+  --glass-light-surface:   var(--gray-0);    /* = --surface en clair */
+  --glass-light-text:      var(--gray-900);  /* = --text en clair */
+  --glass-light-muted:     var(--gray-500);  /* = --text-muted en clair */
+  --glass-light-edge:      var(--gray-200);  /* filet du repli opaque */
+  --glass-light-alpha:      56%;
+  --glass-light-alpha-soft: 74%;
+  --glass-light-scrim:      56%;             /* minimum calculé : 52 % */
+  --glass-light-border:    color-mix(in srgb, var(--gray-0) 55%, transparent);
+  --glass-light-highlight: linear-gradient(180deg, color-mix(in srgb, var(--gray-0) 62%, transparent) 0%, transparent 46%);
+  --glass-light-sheen:     linear-gradient(105deg, transparent 36%, color-mix(in srgb, var(--gray-0) 24%, transparent) 50%, transparent 64%);
+  --glass-light-shadow:    0 1px 2px rgba(18, 16, 23, 0.04), 0 10px 30px rgba(18, 16, 23, 0.08);
+  /* Rôles colorés DANS le verre (accent, succès, erreur, avertissement) : variantes foncées qui tiennent
+     4,5:1 sur la sous-couche (56 %) même quand un fond noir passe dessous ; recalculées par contrast.test.ts. */
+  --glass-light-accent:    var(--violet-900);
+  --glass-light-success:   #052815;
+  --glass-light-danger:    #470D08;
+  --glass-light-warning:   #3A2002;
+
+  --glass-dark-surface:    #23202A;          /* = --surface en sombre */
+  --glass-dark-text:       #EEEBF3;          /* = --text en sombre */
+  --glass-dark-muted:      #B4AFC0;          /* = --text-muted en sombre */
+  --glass-dark-edge:       #37333F;          /* = --border en sombre */
+  --glass-dark-alpha:       52%;
+  --glass-dark-alpha-soft:  70%;
+  --glass-dark-scrim:       70%;             /* minimum calculé : 67 % */
+  --glass-dark-border:     color-mix(in srgb, var(--gray-0) 35%, transparent);
+  --glass-dark-highlight:  linear-gradient(180deg, color-mix(in srgb, var(--gray-0) 16%, transparent) 0%, transparent 42%);
+  --glass-dark-sheen:      linear-gradient(105deg, transparent 36%, color-mix(in srgb, var(--gray-0) 9%, transparent) 50%, transparent 64%);
+  --glass-dark-shadow:     0 1px 2px rgba(0, 0, 0, 0.25), 0 12px 32px rgba(0, 0, 0, 0.32);
+  --glass-dark-accent:     var(--violet-100);
+  --glass-dark-success:    #D3F5E3;
+  --glass-dark-danger:     #FFE0DB;
+  --glass-dark-warning:    #FCE7C4;
+
+  /* Rôles du verre (ton « auto ») : construits depuis --surface, ils basculent avec le thème. */
+  --glass-alpha:      var(--glass-light-alpha);
+  --glass-alpha-soft: var(--glass-light-alpha-soft);
+  --glass-bg:         color-mix(in srgb, var(--surface) var(--glass-alpha), transparent);
+  --glass-bg-soft:    color-mix(in srgb, var(--surface) var(--glass-alpha-soft), transparent);
+  --glass-border:     var(--glass-light-border);
+  --glass-highlight:  var(--glass-light-highlight);
+  --glass-sheen:      var(--glass-light-sheen);
+  --glass-shadow:     var(--glass-light-shadow);
+  --glass-scrim:      var(--glass-light-scrim);
+  --glass-accent:     var(--glass-light-accent);
+  --glass-success:    var(--glass-light-success);
+  --glass-danger:     var(--glass-light-danger);
+  --glass-warning:    var(--glass-light-warning);
 }
 
 /* ---- Mode sombre (système, sauf choix « clair ») et mode sombre forcé ---- */
@@ -207,6 +262,17 @@
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2), 0 6px 18px rgba(0, 0, 0, 0.12);
     --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
     --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px #9B80F7;
+    --glass-alpha: var(--glass-dark-alpha);
+    --glass-alpha-soft: var(--glass-dark-alpha-soft);
+    --glass-border: var(--glass-dark-border);
+    --glass-highlight: var(--glass-dark-highlight);
+    --glass-sheen: var(--glass-dark-sheen);
+    --glass-shadow: var(--glass-dark-shadow);
+    --glass-scrim: var(--glass-dark-scrim);
+    --glass-accent: var(--glass-dark-accent);
+    --glass-success: var(--glass-dark-success);
+    --glass-danger: var(--glass-dark-danger);
+    --glass-warning: var(--glass-dark-warning);
   }
 }
 :root[data-theme="dark"] {
@@ -257,6 +323,17 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2), 0 6px 18px rgba(0, 0, 0, 0.12);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
   --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px #9B80F7;
+  --glass-alpha: var(--glass-dark-alpha);
+  --glass-alpha-soft: var(--glass-dark-alpha-soft);
+  --glass-border: var(--glass-dark-border);
+  --glass-highlight: var(--glass-dark-highlight);
+  --glass-sheen: var(--glass-dark-sheen);
+  --glass-shadow: var(--glass-dark-shadow);
+  --glass-scrim: var(--glass-dark-scrim);
+  --glass-accent: var(--glass-dark-accent);
+  --glass-success: var(--glass-dark-success);
+  --glass-danger: var(--glass-dark-danger);
+  --glass-warning: var(--glass-dark-warning);
 }
 
 /* ---- Base --------------------------------------------------------------- */
