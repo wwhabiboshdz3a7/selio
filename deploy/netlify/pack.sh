@@ -11,6 +11,8 @@ STAGE="$(mktemp -d)"
 cp -R apps/web/dist/. "$STAGE/"
 cp deploy/netlify/_headers deploy/netlify/_redirects "$STAGE/"
 mkdir -p "$(dirname "$OUT")"
+# Chemin absolu : le zip est créé depuis le dossier temporaire.
+OUT="$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")"
 rm -f "$OUT"
 (cd "$STAGE" && zip -qr -X "$OUT" .)
 rm -rf "$STAGE"
