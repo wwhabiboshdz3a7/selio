@@ -22,7 +22,7 @@ function caps(list, o = {}) {
   return list.map(([t0, t1, text, opt = {}]) => {
     let i = 0, g = false;
     const step = opt.step ?? 0.13;
-    const body = text.split("\n").map((line) => line.split(" ").map((w) => {
+    const body = text.replace(/ ([?!:…])/g, "\u00a0$1").split("\n").map((line) => line.split(" ").map((w) => {
       if (w.startsWith("*")) g = true;
       const s = `<span class="cw"${an(t0 + 0.05 + step * i++, g ? "sayG" : "say", 0.22)}>${w.replace(/\*/g, "")}</span>`;
       if (w.endsWith("*")) g = false;
@@ -77,7 +77,7 @@ const logo = (d, w = 600) => `<div class="logo"${an(d, "slam", 0.5, `width:${w}p
 const CTA = "Essaie 14 jours gratuits";
 const DISCLAIMER = "Carte enregistrée à l'inscription, rien n'est débité avant la fin.<br>Outil indépendant, non affilié à Vinted ni aux marques citées. Chiffres de démonstration.";
 const THUMBS = ["overview", "radar", "studioann", "nego", "autohub", "analytics", "dressing", "cloud"];
-const capWords = (text, d0, step = 0.16) => { let i = 0, g = false; return text.split("\n").map((l) => l.split(" ").map((w) => { if (w.startsWith("*")) g = true; const s = `<span class="cw"${an(d0 + step * i++, g ? "sayG" : "say", 0.22)}>${w.replace(/\*/g, "")}</span>`; if (w.endsWith("*")) g = false; return s; }).join(" ")).join("<br>"); };
+const capWords = (text, d0, step = 0.16) => { let i = 0, g = false; return text.replace(/ ([?!:…])/g, "\u00a0$1").split("\n").map((l) => l.split(" ").map((w) => { if (w.startsWith("*")) g = true; const s = `<span class="cw"${an(d0 + step * i++, g ? "sayG" : "say", 0.22)}>${w.replace(/\*/g, "")}</span>`; if (w.endsWith("*")) g = false; return s; }).join(" ")).join("<br>"); };
 
 /* carton final vertical : logo, promesse, bouton, mention, carrousel d'écrans */
 const endCard = (lines = "Du sourcing\nà la vente,\nun *seul écosystème.*", th = 0, cta = CTA) => `

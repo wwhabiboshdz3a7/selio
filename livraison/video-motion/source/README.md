@@ -1,4 +1,4 @@
-# Série motion design Selio — 24 vidéos courtes verticales
+# Série motion design Selio — 37 vidéos courtes verticales
 
 Même direction artistique que les spots de 45 s et 80 s (`livraison/video-pub`, `livraison/video-beta`) : fond encre et
 améthyste, Inter, sous-titres karaoké avec mots-clés en or, logo blanc, vrais écrans de la démo en mode sombre dans un
@@ -31,13 +31,27 @@ H.264, 30 i/s, AAC à −14 LUFS.
 | `23-prix-conseille` | Vente rapide, standard, marge maximale |
 | `25-demo-sans-compte` | « Explore la démo, sans compte » |
 | `26-toi-qui-decides` | Rien n'est publié sans ton clic |
+| `27-mot-de-passe` | Le mot de passe Vinted n'est jamais demandé |
+| `28-l-ia-redige` | L'IA rédige, elle ne décide rien |
+| `29-note-sur-100` | Les quatre critères de la note |
+| `30-prix-plancher` | Le prix plancher, jamais révélé |
+| `31-ta-marge` | La formule de la marge brute |
+| `32-cout-reel` | Prix + port + protection acheteurs |
+| `33-plusieurs-comptes` | Vente, Achat, Perso ; 1, 3 ou 10 comptes |
+| `34-importe-ton-stock` | Import et export CSV |
+| `35-changer-d-outil` | Reprendre ses réglages sans donner ses identifiants |
+| `36-sur-ton-telephone` | Écran d'accueil, clair ou sombre, photos au téléphone |
+| `37-stock-automatique` | Remise en ligne tant qu'il reste du stock |
+| `38-apres-la-vente` | Bordereau, remerciement, relance |
+| `39-messagerie` | L'assistant propose, tu valides |
 
 Toutes les vidéos sont verticales (1080 × 1920) et se terminent sur « Essaie 14 jours gratuits » (commercialisation ;
 plus de mention de bêta). Les faits commerciaux (essai, offres, offre fondateurs, facturation annuelle) viennent de
 `packages/demo-data/src/plans.ts` sur la branche produit ; aucun montant n'est affiché car les prix y sont encore
 marqués « indicatifs ». Le bouton et la mention se changent dans `engine.js` (`CTA`, `DISCLAIMER`).
 
-Les textes reprennent les sous-titres validés des trois spots existants ; les chiffres sont ceux des écrans de la démo
+Les textes des vidéos 01 à 14 reprennent les sous-titres validés des trois spots existants, ceux des vidéos 27 à 39
+les réponses de la FAQ (`packages/domain/src/help-text.ts`) ; les chiffres sont ceux des écrans de la démo
 (pull Tommy Hilfiger à pois). Les écrans viennent de `../../video-beta/source/ecrans` (captures réelles et maquettes
 dans la charte, voir le README de ce dossier). Pas de voix off.
 
@@ -56,6 +70,6 @@ Nécessite Node, Playwright (Chromium), ffmpeg, Python 3 avec numpy et Pillow. A
 
 - `engine.js` : moteur déterministe `seek(t)`, sous-titres (`caps`), iPhone (`phone`), pastilles (`fchip`),
   mises en avant (`hl`, `ck`, `bd`), notification, cartons de fin. Chaque élément déclare aussi son bruitage.
-- `videos/modules.js`, `videos/marque.js`, `videos/commerce.js` : le déroulé de chaque vidéo (textes, instants, défilements).
+- `videos/modules.js`, `videos/marque.js`, `videos/commerce.js`, `videos/confiance.js` : le déroulé de chaque vidéo (textes, instants, défilements).
 - `audio.py` : musique et bruitages synthétisés (instruments repris du spot de 80 s, aucun échantillon tiers).
 - `render.cjs` : capture image par image, encodage, mixage.

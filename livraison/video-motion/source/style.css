@@ -32,7 +32,7 @@ body{font-family:Inter,sans-serif;color:#fff;-webkit-font-smoothing:antialiased}
 @keyframes sayG{from{color:rgba(255,255,255,.3);background-size:0% 30%}to{color:#E2C67C;background-size:100% 30%}}
 @keyframes draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
 @keyframes spin{to{transform:rotate(360deg)}}
-@keyframes ripple{0%{opacity:.9;transform:scale(.3)}100%{opacity:0;transform:scale(2.2)}}
+@keyframes ripple{0%{opacity:0;transform:scale(.3)}8%{opacity:.9;transform:scale(.4)}100%{opacity:0;transform:scale(2.2)}}
 @keyframes shine{from{background-position:120% 0}to{background-position:-60% 0}}
 @keyframes shineX{from{left:-160px}to{left:110%}}
 @keyframes growY{from{transform:scaleY(0)}to{transform:scaleY(1)}}
@@ -112,3 +112,8 @@ body{font-family:Inter,sans-serif;color:#fff;-webkit-font-smoothing:antialiased}
 .kick{position:absolute;left:0;right:0;text-align:center;font:600 34px Inter;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.62)}
 .hero{position:absolute;left:0;right:0;text-align:center;font:800 var(--fs,420px)/1 Inter;letter-spacing:-.05em;font-variant-numeric:tabular-nums;color:#E2C67C;text-shadow:0 10px 80px rgba(226,198,124,.35)}
 .hero{white-space:nowrap}
+.bar{position:absolute;left:90px;right:90px}
+.bar .t{display:flex;justify-content:space-between;align-items:baseline;font:600 44px Inter;letter-spacing:-.02em}.bar .t b{font:700 44px Inter;color:#E2C67C;font-variant-numeric:tabular-nums}
+.bar .tr{margin-top:16px;height:26px;border-radius:13px;background:rgba(255,255,255,.1);overflow:hidden}.bar .tr i{display:block;height:100%;border-radius:13px;background:linear-gradient(90deg,#5232B5,#9B80F7);transform-origin:0 50%}
+@keyframes growX{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+.sug{border:2px dashed #B5A3FF;border-radius:18px;padding:12px 15px;font:500 18px/1.33 Inter;color:#EEEBF3;background:rgba(155,128,247,.1)}.sug b{display:block;font:600 14px Inter;color:#B5A3FF;margin-bottom:5px;letter-spacing:.02em}
