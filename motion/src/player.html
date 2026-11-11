@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Selio motion</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="stage"></div>
+<script src="engine.js"></script>
+<script src="videos/brand.js"></script>
+<script src="videos/market.js"></script>
+<script src="videos/pro.js"></script>
+<script>
+  /* ?v=<id>&fmt=9x16|16x9|1x1 [&play=1 pour lire en temps reel dans le navigateur] */
+  const q = new URLSearchParams(location.search);
+  const id = q.get("v") || Object.keys(SELIO.videos)[0];
+  const dur = SELIO.mount(id, q.get("fmt") || "9x16");
+  if (q.get("play")) { const t0 = performance.now(); (function loop() { SELIO.seek(((performance.now() - t0) / 1000) % dur); requestAnimationFrame(loop); })(); }
+</script>
+</body>
+</html>

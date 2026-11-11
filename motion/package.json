@@ -1,0 +1,14 @@
+{
+  "name": "selio-motion",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Videos motion design Selio : scenes HTML/CSS rendues image par image (Playwright) puis encodees (ffmpeg).",
+  "scripts": {
+    "render": "node render.cjs",
+    "stills": "node render.cjs --stills"
+  },
+  "dependencies": {
+    "@fontsource/playfair-display": "^5.1.0",
+    "@fontsource/source-sans-3": "^5.1.0"
+  }
+}
