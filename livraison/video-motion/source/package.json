@@ -1,0 +1,6 @@
+{
+  "name": "selio-video-motion",
+  "private": true,
+  "description": "Serie de videos motion design Selio (charte v3 : encre, amethyste, or, Inter).",
+  "dependencies": { "@fontsource/inter": "^5.1.0" }
+}
