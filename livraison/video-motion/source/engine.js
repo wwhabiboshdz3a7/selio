@@ -74,26 +74,27 @@ function phone(page, { top = 500, scroll = [], ov = "", enter = true, hd = 168, 
 const notif = (t0, t1, top, title, body) => `<div style="position:absolute;inset:0;z-index:20"><div${an(t1 - 0.25, "out", 0.25)}><div class="notif"${an(t0, "drop", 0.55, `top:${top}px`)}><img src="${BRAND}selio-app-icon-noir.png"><div style="flex:1"><div class="hd"><b>SELIO</b><span>maintenant</span></div><div class="ti">${title}</div><div class="bo">${body}</div></div></div></div></div>${sfx("notif", t0)}${sfx("buzz", t0)}${sfx("buzz", t0 + 0.4)}`;
 
 const logo = (d, w = 600) => `<div class="logo"${an(d, "slam", 0.5, `width:${w}px;height:${(w * 186) / 600}px`)}><img src="${BRAND}selio-logo-blanc.png"><div class="ls"${an(d + 0.5, "shine", 1.1, "--ez:linear")}></div></div>`;
-const DISCLAIMER = "Outil indépendant, non affilié à Vinted ni aux marques citées.<br>Chiffres de démonstration.";
+const CTA = "Essaie 14 jours gratuits";
+const DISCLAIMER = "Carte enregistrée à l'inscription, rien n'est débité avant la fin.<br>Outil indépendant, non affilié à Vinted ni aux marques citées. Chiffres de démonstration.";
 const THUMBS = ["overview", "radar", "studioann", "nego", "autohub", "analytics", "dressing", "cloud"];
 const capWords = (text, d0, step = 0.16) => { let i = 0, g = false; return text.split("\n").map((l) => l.split(" ").map((w) => { if (w.startsWith("*")) g = true; const s = `<span class="cw"${an(d0 + step * i++, g ? "sayG" : "say", 0.22)}>${w.replace(/\*/g, "")}</span>`; if (w.endsWith("*")) g = false; return s; }).join(" ")).join("<br>"); };
 
 /* carton final vertical : logo, promesse, bouton, mention, carrousel d'écrans */
-const endCard = (lines = "Du sourcing\nà la vente,\nun *seul écosystème.*", th = 0) => `
+const endCard = (lines = "Du sourcing\nà la vente,\nun *seul écosystème.*", th = 0, cta = CTA) => `
   <div class="flash"${an(0, "flash", 0.7, "--ez:ease-out")}></div>${sfx("impact", 0)}${sfx("sparkle", 0, 0.9)}${sfx("shine", 0.5)}
   <div style="position:absolute;left:240px;top:330px">${logo(0.05)}</div>
   <div class="cap slam" style="--top:560px;--fs:98px"><div${an(0.35, "up", 0.5)}>${capWords(lines, 0.5)}</div></div>
-  <div style="position:absolute;left:0;right:0;top:930px;text-align:center"><div class="btn"${an(1.5, "pop", 0.5, "--ez:var(--back)")}>Rejoins la bêta fermée<div class="sh"${an(2.0, "shineX", 0.9, "--ez:linear")}></div></div>${sfx("pop", 1.5, 4)}
+  <div style="position:absolute;left:0;right:0;top:930px;text-align:center"><div class="btn"${an(1.5, "pop", 0.5, "--ez:var(--back)")}>${cta}<div class="sh"${an(2.0, "shineX", 0.9, "--ez:linear")}></div></div>${sfx("pop", 1.5, 4)}
     <div${an(1.9, "up", 0.5, "font:600 34px Inter;margin-top:34px")}>Lien en bio ↓</div>${sfx("ding", 1.9, 1)}
     <div class="small"${an(2.2, "fade", 0.6, "margin-top:26px")}>${DISCLAIMER}</div></div>
   <div style="position:absolute;inset:0;perspective:1700px">${[0, 1, 2, 3, 4].map((i) => `<div${an(0.5 + i * 0.09, "up", 0.9, `position:absolute;left:${-170 + i * 290}px;top:${1390 + Math.abs(i - 2) * 50}px`)}><div class="loop" style="--an:drift;--du:8s;--dx:-90px"><div class="cc" style="transform:rotateY(${(2 - i) * 16}deg) rotateX(6deg)"><img src="${ECR}thumb-${THUMBS[(i + th) % 8]}.jpg"></div></div></div>`).join("")}</div>`;
 
 /* carton final en vmin (9:16, 16:9, 1:1) */
-const endFlex = (lines = "Du sourcing à la vente,\nun *seul écosystème.*") => `
+const endFlex = (lines = "Du sourcing à la vente,\nun *seul écosystème.*", cta = CTA) => `
   <div class="flash"${an(0, "flash", 0.7, "--ez:ease-out")}></div>${sfx("impact", 0)}${sfx("sparkle", 0, 0.9)}${sfx("shine", 0.5)}
   <div class="center" style="padding:0 6vmin"><div style="font-size:0">${logo(0.05, 0).replace("width:0px;height:0px", "width:56vmin;height:17.36vmin")}</div>
     <div class="fx" style="font-size:7.6vmin;font-weight:800;margin-top:5vmin"><div${an(0.35, "up", 0.5)}>${capWords(lines, 0.5)}</div></div>
-    <div class="btn"${an(1.6, "pop", 0.5, "--ez:var(--back);margin-top:6vmin;font-size:4.4vmin;padding:3.2vmin 6vmin")}>Rejoins la bêta fermée<div class="sh"${an(2.1, "shineX", 0.9, "--ez:linear")}></div></div>${sfx("pop", 1.6, 4)}
+    <div class="btn"${an(1.6, "pop", 0.5, "--ez:var(--back);margin-top:6vmin;font-size:4.4vmin;padding:3.2vmin 6vmin")}>${cta}<div class="sh"${an(2.1, "shineX", 0.9, "--ez:linear")}></div></div>${sfx("pop", 1.6, 4)}
     <div class="small"${an(2.2, "fade", 0.6, "margin-top:4vmin;font-size:2.2vmin")}>${DISCLAIMER}</div></div>`;
 
 function background() {
@@ -135,3 +136,7 @@ SELIO.mount = (id, fmt) => {
   SELIO.seek(0);
   return built.dur;
 };
+
+/* ligne de liste (coche or, ou croix rouge avec no = true) */
+const crow = (d, y, text, no = false) => `<div class="crow${no ? " no" : ""}"${an(d, "up", 0.45, `top:${y}px`)}><span class="ok">${no ? '<svg viewBox="0 0 24 24" fill="none" stroke="#1C1A24" stroke-width="3.2" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg>' : CK}</span><span>${text}</span></div>${sfx(no ? "tick" : "check", d)}`;
+const plan = (d, y, name, profile, detail, hot = false) => `<div class="plan${hot ? " hot" : ""}"${an(d, "up", 0.5, `top:${y}px`)}><b>${name}</b><span>${profile}</span><small>${detail}</small></div>${sfx("pop", d, hot ? 4 : 2)}`;
