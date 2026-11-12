@@ -1,4 +1,4 @@
-# Série motion design Selio — 37 vidéos courtes verticales
+# Série motion design Selio — 37 vidéos courtes et 8 films verticaux
 
 Même direction artistique que les spots de 45 s et 80 s (`livraison/video-pub`, `livraison/video-beta`) : fond encre et
 améthyste, Inter, sous-titres karaoké avec mots-clés en or, logo blanc, vrais écrans de la démo en mode sombre dans un
@@ -45,6 +45,22 @@ H.264, 30 i/s, AAC à −14 LUFS.
 | `38-apres-la-vente` | Bordereau, remerciement, relance |
 | `39-messagerie` | L'assistant propose, tu valides |
 
+### Films par filiale (27 à 44 s), pour les comptes dédiés
+
+| Film | Contenu |
+| --- | --- |
+| `50-film-radar` | Recherche, note sur 100, alerte, coût réel, bénéfice, « c'est toi qui achètes » |
+| `51-film-track` | Ventes observées, revente moyenne, achat maximum, comparables, lien vers le Radar |
+| `52-film-studio` | Trois étapes, photos, titre et description, attributs, prix conseillé, publication |
+| `53-film-gestion` | Dressing, négociation, automatisation, commandes, analyses |
+| `54-film-cloud` | Ordinateur éteint, connexion par le client, rythme humain, pause, journal (aperçu) |
+| `55-film-comptes` | Checklist d'ouverture de boutique et textes prêts à copier |
+| `56-film-agents` | Rôles, accès, journal d'audit, boutiques clientes (aperçu) |
+| `57-film-plateforme` | L'outil de gestion puis les six filiales |
+
+Chaque film s'ouvre sur un carton au nom de la filiale. Cloud et Agents portent la mention « aperçu » (état des espaces
+dans `apps/web/src/app/spaces/spaces.tsx`) ; Track y est encore « en développement ».
+
 Toutes les vidéos sont verticales (1080 × 1920) et se terminent sur « Essaie 14 jours gratuits » (commercialisation ;
 plus de mention de bêta). Les faits commerciaux (essai, offres, offre fondateurs, facturation annuelle) viennent de
 `packages/demo-data/src/plans.ts` sur la branche produit ; aucun montant n'est affiché car les prix y sont encore
@@ -70,6 +86,6 @@ Nécessite Node, Playwright (Chromium), ffmpeg, Python 3 avec numpy et Pillow. A
 
 - `engine.js` : moteur déterministe `seek(t)`, sous-titres (`caps`), iPhone (`phone`), pastilles (`fchip`),
   mises en avant (`hl`, `ck`, `bd`), notification, cartons de fin. Chaque élément déclare aussi son bruitage.
-- `videos/modules.js`, `videos/marque.js`, `videos/commerce.js`, `videos/confiance.js` : le déroulé de chaque vidéo (textes, instants, défilements).
+- `videos/modules.js`, `videos/marque.js`, `videos/commerce.js`, `videos/confiance.js`, `videos/films.js` : le déroulé de chaque vidéo (textes, instants, défilements).
 - `audio.py` : musique et bruitages synthétisés (instruments repris du spot de 80 s, aucun échantillon tiers).
 - `render.cjs` : capture image par image, encodage, mixage.
