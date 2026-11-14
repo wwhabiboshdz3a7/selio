@@ -11,6 +11,14 @@
   # URL publique de l'API en mode connecté. Vide = mode démonstration seul.
   # VITE_API_BASE_URL = "https://api.exemple.fr"
 
+# API Selio (PC de production) relayée par le tunnel : même origine pour les cookies.
+# À mettre à jour quand l'adresse du tunnel change.
+[[redirects]]
+  from = "/api/*"
+  to = "https://translate-economies-boards-increased.trycloudflare.com/api/:splat"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
