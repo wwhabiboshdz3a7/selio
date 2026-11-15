@@ -60,6 +60,7 @@ function Filters({ usage }: { usage: TrackUsageView }) {
                       <div className="flex flex-wrap items-center gap-2">
                         <Link to={`/track/filtres/${f.id}`} className="font-medium text-text hover:text-accent">{f.name}</Link>
                         <StatusBadge tone={f.enabled ? "success" : "muted"}>{f.enabled ? "Suivi" : "En pause"}</StatusBadge>
+                        {f.alertRules?.enabled ? <StatusBadge tone="accent">Alertes</StatusBadge> : null}
                       </div>
                       <div className="mt-1 flex flex-wrap gap-1">{criteriaTags(f.criteria).map((t) => <Tag key={t}>{t}</Tag>)}<Tag>Prix max {formatCents(f.criteria.maxPriceCents)}</Tag></div>
                       <p className="mt-1 text-xs text-text-muted">

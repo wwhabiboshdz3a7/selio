@@ -52,7 +52,8 @@ Même fichier .env que ci-dessus (API et worker).
 | `COOKIE_SECURE` | Obligatoire | `true` | Obligatoire en production (HTTPS). Le serveur refuse de démarrer sinon. |
 | `TRUST_PROXY` | Recommandé | `true` | Derrière Caddy/Nginx, pour lire la vraie adresse IP (limites de débit, audit). |
 | `NODE_ENV` | Obligatoire | `production` | Active les garde-fous de production (pas d'IA simulée, cookies sécurisés). |
-| `OPERATOR_EMAILS` | Recommandé | `vous@domaine.fr` | Comptes ayant accès à l'administration Selio. |
+| `OPERATOR_EMAILS` | Recommandé | `vous@domaine.fr` | Opérateurs **techniques** de Selio Admin (`/admin`) : tout (santé, supervision, IA, modèle de prix, références de tailles, interrupteurs). Relu à chaque requête : un compte déjà créé devient opérateur sans réinscription. |
+| `OPERATOR_BUSINESS_EMAILS` | Facultatif | `associe@domaine.fr` | Opérateurs **business** de Selio Admin : tableau de croissance, comptes (qualification, accès offert, prolongation d'essai, notes), offres commerciales, usage de Track par client. Pas d'accès aux pages techniques (refus 403). |
 | `PORT / HOST / LOG_LEVEL` | Facultatif | `8787 / 0.0.0.0 / info` | Valeurs par défaut adaptées. |
 
 ## 4. IA : mon IA perso et les deux modèles qui l'épaulent (annonces, réponses, prix)
@@ -269,7 +270,7 @@ Variables du **worker** ; détail du fonctionnement : [docs/SUPERVISION.md](SUPE
 
 | Variable | Statut | Exemple / format | À quoi elle sert |
 |---|---|---|---|
-| `OPERATOR_EMAILS` | Recommandé | `vous@domaine.fr` | Mêmes adresses que l'API : destinataires des alertes (Web Push sur leurs appareils, et email). Vide : les pannes sont enregistrées, personne n'est prévenu. |
+| `OPERATOR_EMAILS` | Recommandé | `vous@domaine.fr` | Mêmes adresses que l'API : destinataires des alertes (Web Push sur leurs appareils, et email). Vide : les pannes sont enregistrées, personne n'est prévenu. Les alertes techniques ne partent qu'aux opérateurs techniques : `OPERATOR_BUSINESS_EMAILS` n'est pas lu par le worker. |
 | `PUBLIC_API_URL` | Recommandé | `https://api.votre-domaine.fr` (défaut `http://127.0.0.1:8787`) | Base des cibles par défaut : `/api/health` et `/api/ai/health`. |
 | `AI_HEALTH_TOKEN` | Recommandé | même valeur que l'API | Joint seulement aux adresses `/api/ai/health` de `PUBLIC_API_URL`. Absent : l'IA n'est pas contrôlée. |
 | `CRON_SUPERVISION` | Facultatif | `* * * * *` | Cadence des vérifications. |

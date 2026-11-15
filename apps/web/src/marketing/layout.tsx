@@ -9,6 +9,7 @@ import { getOverNight, getOverNightServer, subscribeOverNight } from "./nightHea
 import { HUB_PATH } from "../app/spaces/paths";
 import { PRODUCTS } from "./products";
 import { COMPARISON_READY, INDEPENDENCE_NOTICE, LEGAL_DRAFT_NOTICE } from "./seo";
+import { OfferBanner } from "../app/components/offers";
 
 const NAV = [
   { to: "/fonctionnalites", label: "Fonctionnalités" },
@@ -44,6 +45,8 @@ export function MarketingLayout() {
   return (
     <div className="mk-scope flex min-h-dvh flex-col bg-bg">
       <a href="#contenu" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2">Aller au contenu</a>
+      {/* Offre commerciale en cours (gérée dans Selio Admin) : refermable, rien sans offre. */}
+      <OfferBanner scope="vitrine" />
       <header className="mk-header sticky top-0 z-30 border-b border-border bg-surface/90 backdrop-blur-md" data-over-night={overNight || undefined}>
         <div className="mx-auto flex h-14 max-w-content items-center justify-between gap-4 px-4 md:px-8">
           <Link to="/" aria-label="Selio, accueil" className="shrink-0"><Logo height={24} inverse={overNight} /></Link>

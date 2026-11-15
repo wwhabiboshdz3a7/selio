@@ -28,6 +28,7 @@
     "ai:bench": "pnpm --filter @selio/ai bench",
     "cloud:bench": "pnpm --filter @selio/cloud bench",
     "prix:eval": "pnpm --filter @selio/pricing eval",
+    "track:check": "pnpm --filter @selio/worker track:check",
     "studio:eval": "pnpm --filter @selio/studio-eval eval",
     "format:check": "prettier --check ."
   },

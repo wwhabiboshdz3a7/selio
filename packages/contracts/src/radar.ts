@@ -424,7 +424,8 @@ export type PushSubscription = z.infer<typeof pushSubscription>;
 /** Vue renvoyée au navigateur : sans les clés de chiffrement de l'abonnement. */
 export type PushSubscriptionView = Omit<PushSubscription, "p256dh" | "auth">;
 
-export const RADAR_ALERT_KINDS = ["opportunity", "blocked", "payment_3ds"] as const;
+/** `track_trend` : alerte de tendance d'un filtre Track (même file et mêmes appareils que Radar). */
+export const RADAR_ALERT_KINDS = ["opportunity", "blocked", "payment_3ds", "track_trend"] as const;
 export const radarAlertKind = z.enum(RADAR_ALERT_KINDS);
 export type RadarAlertKind = z.infer<typeof radarAlertKind>;
 export const RADAR_ALERT_CHANNELS = ["push", "email"] as const;

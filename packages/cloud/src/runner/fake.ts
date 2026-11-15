@@ -140,6 +140,12 @@ export class FakeRunner implements BrowserRunner, PageFetcher, PageOpener {
     if (!resolveRadarUrl(input.url, ["catalog", "item"])) {
       return { ok: false, code: "error", message: "Adresse refusée (simulé).", launched: false, durationMs: 0 };
     }
+    // Page publique (Selio Track) : catalogue seulement, jamais avec une session ; les scénarios s'appliquent.
+    if (input.publicPage) {
+      if (fakeHasSession(input.session) || !resolveRadarUrl(input.url, ["catalog"])) return { ok: false, code: "error", message: "Lecture publique refusée (simulé).", launched: false, durationMs: 0 };
+      const scenario = this.fetchQueue.length > 0 ? this.fetchQueue.shift()! : this.fetchFallback;
+      return fakeFetchOutcome(scenario, input, this.pageHtml);
+    }
     // Sans session, rien n'est lancé et aucun scénario n'est consommé.
     if (!fakeHasSession(input.session)) return fakeFetchOutcome("ok", input, this.pageHtml);
     const scenario = this.fetchQueue.length > 0 ? this.fetchQueue.shift()! : this.fetchFallback;

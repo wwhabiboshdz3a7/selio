@@ -66,11 +66,13 @@ export function euroLabel(cents: number): string {
 
 /**
  * Lignes supplémentaires d'une facture, comprises dans son montant TTC : le dépassement des photos portées
- * (`overage` / `worn_photo`) et le mois offert du parrainage (`credit` / `referral_month`, à 0 €). Aucune
- * ligne quand le dépassement est désactivé ou que rien n'a été produit au-delà du quota.
+ * (`overage` / `worn_photo`), le mois offert du parrainage (`credit` / `referral_month`, à 0 €) et la remise
+ * d'une offre commerciale (`discount` / `offer_discount`, « Remise : Printemps (PRINTEMPS) ») : son montant est
+ * positif et se RETRANCHE du total. Aucune ligne quand le dépassement est désactivé ou que rien n'a été produit
+ * au-delà du quota. Les factures d'avant les remises restent lisibles (les nouvelles valeurs s'ajoutent).
  */
-export const INVOICE_EXTRA_LINE_KINDS = ["overage", "credit"] as const;
-export const INVOICE_EXTRA_LINE_PRODUCTS = ["worn_photo", "referral_month"] as const;
+export const INVOICE_EXTRA_LINE_KINDS = ["overage", "credit", "discount"] as const;
+export const INVOICE_EXTRA_LINE_PRODUCTS = ["worn_photo", "referral_month", "offer_discount"] as const;
 export const invoiceExtraLine = z.object({
   kind: z.enum(INVOICE_EXTRA_LINE_KINDS),
   product: z.enum(INVOICE_EXTRA_LINE_PRODUCTS),
@@ -96,9 +98,9 @@ export function wornOverageLine(quantity: number, unitCents: number = WORN_OVERA
   return { kind: "overage", product: "worn_photo", label: wornOverageLineLabel(q, unit), quantity: q, unitCents: unit, amountCents: q * unit };
 }
 
-/** Total TTC des lignes supplémentaires (centimes). */
-export function extraLinesTotal(lines: readonly Pick<InvoiceExtraLine, "amountCents">[] = []): number {
-  return lines.reduce((sum, l) => sum + Math.max(0, Math.round(l.amountCents)), 0);
+/** Total TTC des lignes supplémentaires (centimes) : une remise (`discount`) se retranche. */
+export function extraLinesTotal(lines: readonly (Pick<InvoiceExtraLine, "amountCents"> & { kind?: InvoiceExtraLine["kind"] })[] = []): number {
+  return lines.reduce((sum, l) => sum + (l.kind === "discount" ? -1 : 1) * Math.max(0, Math.round(l.amountCents)), 0);
 }
 
 export const invoice = z.object({
@@ -138,8 +140,8 @@ export interface InvoiceAmounts {
  * `extraLines` (dépassement) s'ajoutent au montant de base : `invoiceAmounts(base, taux, lignes)`
  * vaut `invoiceAmounts(base + total des lignes, taux)`.
  */
-export function invoiceAmounts(amountCents: number, vatRate: number, extraLines: readonly Pick<InvoiceExtraLine, "amountCents">[] = []): InvoiceAmounts {
-  const incl = Math.max(0, Math.round(amountCents)) + extraLinesTotal(extraLines);
+export function invoiceAmounts(amountCents: number, vatRate: number, extraLines: readonly (Pick<InvoiceExtraLine, "amountCents"> & { kind?: InvoiceExtraLine["kind"] })[] = []): InvoiceAmounts {
+  const incl = Math.max(0, Math.max(0, Math.round(amountCents)) + extraLinesTotal(extraLines));
   const rate = Math.max(0, vatRate);
   const excl = rate > 0 ? Math.round(incl / (1 + rate / 100)) : incl;
   return { exclVatCents: excl, vatCents: incl - excl, inclVatCents: incl };
@@ -152,9 +154,10 @@ export interface InvoiceView {
   customer: { orgName: string; email: string | null };
   /**
    * Abonnement d'abord (`kind: "plan"`), puis les lignes de dépassement (`kind: "overage"`, avec
-   * quantité et prix unitaire). La somme des lignes est le TTC de la facture.
+   * quantité et prix unitaire) et la remise d'une offre (`kind: "discount"`, montant NÉGATIF). La somme des
+   * lignes est le TTC de la facture.
    */
-  lines: { label: string; periodLabel: string; amountCents: number; kind?: "plan" | "overage" | "credit"; quantity?: number; unitCents?: number }[];
+  lines: { label: string; periodLabel: string; amountCents: number; kind?: "plan" | "overage" | "credit" | "discount"; quantity?: number; unitCents?: number }[];
   totals: InvoiceAmounts & { vatRate: number };
   /** Frais du fournisseur de paiement : information, jamais refacturés au client. */
   paymentProvider: "revolut" | null;

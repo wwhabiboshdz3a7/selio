@@ -21,4 +21,6 @@ export * from "./pricing";
 export * from "./track";
 export * from "./migration";
 export * from "./referral";
+export * from "./offers";
 export * from "./comptes";
+export * from "./admin";

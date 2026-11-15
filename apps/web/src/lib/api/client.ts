@@ -13,6 +13,7 @@ import type { BillingCycle, Invoice, InvoiceView, PaidPlan, TrackSource, UsageCo
 import type { CheckoutOutcome, CloudAccountView, CloudAvailabilityView, CloudJournalFilters, CloudLoginStart } from "../data/types";
 import type { CloudAccount, CloudAction, CloudActionLevel, CloudConsentView, CloudLoginTicket } from "@selio/contracts";
 import { loginSocketUrl } from "../cloud/login-protocol";
+import type { TrackAdminStatus, TrackAlertRulesInput, TrackFilterAlerts, TrackManualPauseInput } from "@selio/contracts";
 import type { PriceEstimate, PriceEstimateInput, TrackFilter, TrackFilterCreate, TrackFilterUpdate, TrackPhotoSearch, TrackPhotoSearchInput, TrackSalesFeed, TrackScan, TrackScanInput } from "@selio/contracts";
 import type { PricingModelView, StudioDraft, TrackTrendsView, TrackUsageView } from "../data/types";
 import type { StoredStudioPhoto, StudioGenerateFromPrepInput, StudioPrepAnswersInput, StudioPrepareOptions, StudioPrepareRequest, StudioPrepResultView, StudioPrepView, ValidatePrepResultView, WornPhotoRequestInput, WornPhotosView, WornPhotoStatusView, WornPhotoView } from "../data/types";
@@ -21,6 +22,9 @@ import { buildTrackUsage } from "../track";
 import type { MigrationApplyInput, MigrationConvertInput, MigrationFileInput, VintedLimits, VintedLimitsMeasurementInput } from "@selio/contracts";
 import type { HealthDetailsView, ReferralView, StudioDraftInput } from "../data/types";
 import type { Photo, ReferralOverview } from "@selio/contracts";
+import type { AdminAccountDetail, AdminAccountRow, AdminAccountsQuery, AdminGrantInput, AdminGrowth, AdminQualificationInput } from "@selio/contracts";
+import type { CommercialOffer, OfferInput, OfferRedemption, OfferUpdate, PromoCheckResult, PublicOffer } from "@selio/contracts";
+import type { OfferDeleteResult, PromoApplyResult } from "../data/types";
 import type { BundleSuggestionView, DeclarationThresholdsView, EndToEndMarginsView, MigrationApplyView, MigrationConversion, VintedLimitsView } from "../data/types";
 
 /** Parrainage fermé : rien à afficher (aucun code, aucun lien). */
@@ -116,10 +120,10 @@ export class ApiClient implements DataClient {
 
   getSession() { return this.get<Session | null>("/api/auth/session"); }
   login(input: { email: string; password: string }) { return this.post<Session>("/api/auth/login", input); }
-  register(input: { email: string; password: string; displayName: string; orgName: string; referralCode?: string }) {
+  register(input: { email: string; password: string; displayName: string; orgName: string; referralCode?: string; promoCode?: string }) {
     // Un code vide n'est pas envoyé (le serveur l'ignorerait de toute façon) ; il n'est jamais bloquant.
-    const { referralCode, ...rest } = input;
-    return this.post<Session>("/api/auth/register", referralCode?.trim() ? { ...rest, referralCode: referralCode.trim() } : rest);
+    const { referralCode, promoCode, ...rest } = input;
+    return this.post<Session>("/api/auth/register", { ...rest, ...(referralCode?.trim() ? { referralCode: referralCode.trim() } : {}), ...(promoCode?.trim() ? { promoCode: promoCode.trim() } : {}) });
   }
   logout() { return this.post<void>("/api/auth/logout"); }
   switchOrg(orgId: string) { return this.post<Session>("/api/auth/switch-org", { orgId }); }
@@ -146,6 +150,16 @@ export class ApiClient implements DataClient {
       throw e;
     }
   }
+
+  // Offres commerciales : bandeau public (sans session), code promo, offre de l'organisation.
+  async getOfferBanner(): Promise<PublicOffer[]> {
+    return (await this.get<{ offers: PublicOffer[] }>("/api/offers/banner")).offers;
+  }
+  checkPromoCode(input: { code: string; plan?: PaidPlan; cycle?: BillingCycle }) { return this.post<PromoCheckResult>("/api/offers/check", input); }
+  async getOrgOffer(): Promise<OfferRedemption | null> {
+    return (await this.get<{ redemption: OfferRedemption | null }>("/api/billing/offer")).redemption;
+  }
+  applyPromoCode(input: { code: string; plan?: PaidPlan }) { return this.post<PromoApplyResult>("/api/billing/offer", input); }
 
   listItems(query: Partial<InventoryQuery>) { return this.get<Page<InventoryItem>>("/api/items", query as Query); }
   listItemBrands() { return this.get<string[]>("/api/items/brands"); }
@@ -311,6 +325,12 @@ export class ApiClient implements DataClient {
       return buildTrackUsage(usage, sub, 0);
     }
   }
+  trackFilterAlerts(filterId: string) { return this.get<TrackFilterAlerts>(`/api/track/filters/${encodeURIComponent(filterId)}/alerts`); }
+  updateTrackFilterAlerts(filterId: string, rules: TrackAlertRulesInput) { return this.request<TrackFilterAlerts>("PUT", `/api/track/filters/${encodeURIComponent(filterId)}/alerts`, rules); }
+  // Selio Track dans l'administration (/api/admin/track/*) : lecture pour tout opérateur, pause et reprise « tech ».
+  adminTrack() { return this.get<TrackAdminStatus>("/api/admin/track"); }
+  adminPauseTrack(input: TrackManualPauseInput) { return this.post<TrackAdminStatus>("/api/admin/track/pause", input); }
+  adminResumeTrack() { return this.post<TrackAdminStatus>("/api/admin/track/resume", {}); }
   // Estimation des prix (/api/pricing/*) : le prix est décidé par l'estimation, mon IA perso l'explique seulement.
   estimatePrice(input: PriceEstimateInput) { return this.post<PriceEstimate>("/api/pricing/estimate", input); }
   pricingModelStatus() { return this.get<PricingModelView>("/api/pricing/model"); }
@@ -366,8 +386,21 @@ export class ApiClient implements DataClient {
   getAdminUsage() { return this.get<AdminUsageReport>("/api/admin/usage"); }
   adminSetPlan(orgId: string, plan: Plan) { return this.post<void>(`/api/admin/orgs/${orgId}/plan`, { plan }); }
   adminListAudit(limit = 100) { return this.get<AuditLog[]>("/api/admin/audit", { limit }); }
+  // Selio Admin : croissance et comptes
+  getAdminGrowth() { return this.get<AdminGrowth>("/api/admin/growth"); }
+  adminListAccounts(query: AdminAccountsQuery = {}) { return this.get<AdminAccountRow[]>("/api/admin/accounts", { ...query }); }
+  adminGetAccount(orgId: string) { return this.get<AdminAccountDetail>(`/api/admin/accounts/${encodeURIComponent(orgId)}`); }
+  adminQualifyAccount(orgId: string, input: AdminQualificationInput) { return this.post<AdminAccountDetail>(`/api/admin/accounts/${encodeURIComponent(orgId)}/qualification`, input); }
+  adminSetAccountNote(orgId: string, note: string) { return this.post<AdminAccountDetail>(`/api/admin/accounts/${encodeURIComponent(orgId)}/note`, { note }); }
+  adminGrantAccess(orgId: string, input: AdminGrantInput) { return this.post<AdminAccountDetail>(`/api/admin/accounts/${encodeURIComponent(orgId)}/grant`, input); }
+  adminRevokeAccess(orgId: string) { return this.del<AdminAccountDetail>(`/api/admin/accounts/${encodeURIComponent(orgId)}/grant`); }
+  adminExtendTrial(orgId: string, days: number) { return this.post<AdminAccountDetail>(`/api/admin/accounts/${encodeURIComponent(orgId)}/extend-trial`, { days }); }
   /** GET /api/health/details (opérateurs seulement) : santé, files, cibles supervisées, dernières vérifications. */
   getHealthDetails() { return this.get<HealthDetailsView>("/api/health/details", { perTarget: 20 }); }
+  adminListOffers() { return this.get<CommercialOffer[]>("/api/admin/offers"); }
+  adminCreateOffer(input: OfferInput) { return this.post<CommercialOffer>("/api/admin/offers", input); }
+  adminUpdateOffer(id: string, input: OfferUpdate) { return this.patch<CommercialOffer>(`/api/admin/offers/${encodeURIComponent(id)}`, input); }
+  adminDeleteOffer(id: string) { return this.del<OfferDeleteResult>(`/api/admin/offers/${encodeURIComponent(id)}`); }
 
   // Selio Agents est en aperçu : aucune donnée serveur, rien n'est enregistré sur le compte.
   async getWhiteLabel(): Promise<WhiteLabel | null> {

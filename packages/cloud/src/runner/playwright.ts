@@ -384,13 +384,14 @@ export class PlaywrightRunner implements BrowserRunner, PageFetcher, PageOpener 
   }
 
   /** Contexte sans enregistrement (la session reste en mémoire, jamais dans un fichier), session injectée, une page. */
-  private async openPage(lease: BrowserLease, session: StorageState): Promise<{ context: BrowserContext; page: Page }> {
+  private async openPage(lease: BrowserLease, session: StorageState | null): Promise<{ context: BrowserContext; page: Page }> {
     if (!lease.browser) throw new Error("Navigateur non lancé.");
     const context = await lease.browser.newContext(contextOptions(this.viewport));
     lease.context = context;
     context.setDefaultTimeout(this.stepTimeoutMs);
     context.setDefaultNavigationTimeout(this.stepTimeoutMs);
-    await injectSession(context, session);
+    // Page publique (Selio Track) : contexte vierge, aucun cookie injecté.
+    if (session) await injectSession(context, session);
     const page = await context.newPage();
     lease.page = page;
     return { context, page };
@@ -587,10 +588,13 @@ export class PlaywrightRunner implements BrowserRunner, PageFetcher, PageOpener 
   async fetchPage(input: FetchPageInput): Promise<FetchPageOutcome> {
     const started = Date.now();
     const notStarted = (code: RunFailureCode, message: string): FetchPageOutcome => ({ ok: false, code, message, launched: false, durationMs: Date.now() - started });
-    const target = this.resolveRadarTarget(input.url);
-    if (!target) return notStarted("error", "Adresse refusée : Radar ne lit que les pages catalogue et les annonces Vinted.");
+    const publicPage = input.publicPage === true;
+    // Page publique (Selio Track) : catalogue seulement, jamais avec une session.
+    const target = this.resolveRadarTarget(input.url, publicPage ? ["catalog"] : ["catalog", "item"]);
+    if (!target) return notStarted("error", publicPage ? "Adresse refusée : Track ne lit que des pages catalogue publiques de Vinted." : "Adresse refusée : Radar ne lit que les pages catalogue et les annonces Vinted.");
+    if (publicPage && input.session) return notStarted("error", "Lecture publique refusée avec une session : Track lit sans compte.");
     const session = input.session ? filterStorageState(input.session) : null;
-    if (!session || isSessionEmpty(session)) return notStarted("not_logged_in", "Aucune session enregistrée pour le compte Achat : le client doit se connecter dans la fenêtre sécurisée.");
+    if (!publicPage && (!session || isSessionEmpty(session))) return notStarted("not_logged_in", "Aucune session enregistrée pour le compte Achat : le client doit se connecter dans la fenêtre sécurisée.");
     let profileDir = input.profileDir;
     if (!profileDir) {
       try {
@@ -622,7 +626,8 @@ export class PlaywrightRunner implements BrowserRunner, PageFetcher, PageOpener 
       }
       const html = await page.content();
       const finalUrl = page.url();
-      const after = await readSession(context);
+      // Page publique : aucune session relue ni rendue (les cookies posés par Vinted restent dans le contexte jeté).
+      const after = publicPage ? null : await readSession(context);
       return { ok: true, html, finalUrl, status, ...(challenge ? { challenge: true } : {}), durationMs: Date.now() - started, ...(after ? { session: after } : {}) };
     } catch (err) {
       const page = lease.page;

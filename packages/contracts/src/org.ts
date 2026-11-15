@@ -2,11 +2,23 @@ import { z } from "zod";
 import { currency, email, id, isoDate, nonNegCents, rate, role, slug } from "./common";
 import { RADAR_ALERT_MIN_SCORE_DEFAULT, RADAR_DEFAULT_MAX_PAGES_PER_MINUTE } from "./radar";
 
+/**
+ * Rôles d'opérateur Selio (Selio Admin), tirés de la configuration du serveur à chaque requête :
+ * « tech » (OPERATOR_EMAILS, et l'ancien drapeau `users.is_operator`) peut tout ; « business »
+ * (OPERATOR_BUSINESS_EMAILS) pilote la croissance, les comptes et les offres commerciales.
+ */
+export const OPERATOR_ROLES = ["tech", "business"] as const;
+export const operatorRole = z.enum(OPERATOR_ROLES);
+export type OperatorRole = z.infer<typeof operatorRole>;
+
 export const user = z.object({
   id,
   email,
   displayName: z.string().trim().min(1).max(80),
+  /** Vrai pour les deux rôles d'opérateur (compatibilité) ; le détail est dans `operatorRole`. */
   isOperator: z.boolean().default(false),
+  /** Rôle d'opérateur recalculé par le serveur (null : client). Absent des listes de membres. */
+  operatorRole: operatorRole.nullable().optional(),
   createdAt: isoDate,
 });
 export type User = z.infer<typeof user>;
@@ -596,6 +608,11 @@ export const subscription = z.object({
   lastChargeError: z.string().max(500).nullable().default(null),
   /** Après le retour à l'accès de base : les données sont conservées jusqu'à cette date. */
   dataRetentionUntil: isoDate.nullable().default(null),
+  /**
+   * Accès offert par l'équipe Selio (Selio Admin) : plan payant actif sans débit jusqu'à cette date
+   * (GRANT_NO_END : sans fin, réservé à l'équipe Selio). Absent ou null : pas d'accès offert.
+   */
+  grantedUntil: isoDate.nullable().optional(),
   createdAt: isoDate,
   updatedAt: isoDate,
 });

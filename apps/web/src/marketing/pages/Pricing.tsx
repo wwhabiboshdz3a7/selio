@@ -9,6 +9,9 @@ import { useMarketingMeta } from "../seo";
 import { showIndicativePricing } from "../../lib/env";
 import { STUDIO_SLIDER, annualMonthlyEquivalentCents, studioQuote } from "../pricing";
 import { CheckList, Container, Eyebrow, MarketingSection } from "../components";
+import { DiscountedPrice, OfferHint, useOfferBanner } from "../../app/components/offers";
+import { discountedFor, offerConditionLabel } from "../../lib/offers";
+import type { PublicOffer } from "@selio/contracts";
 
 const OFFER_KEYS: OfferKey[] = ["trial", "starter", "pro", "agence"];
 const OFFER_NAMES = { trial: TRIAL_OFFER.name, ...Object.fromEntries(PLAN_OFFERS.map((p) => [p.key, p.name])) } as Record<OfferKey, string>;
@@ -30,6 +33,8 @@ function perPhoto(cents: number): string {
 export default function Pricing() {
   useMarketingMeta("/tarifs");
   const [period, setPeriod] = useState<Period>("monthly");
+  // Offre commerciale publique (bandeau) : prix remisé affiché à côté du prix normal des forfaits concernés.
+  const offers = useOfferBanner("vitrine").data;
   const faq = helpEntries().filter((e) => e.categoryId === "tarifs");
   return (
     <>
@@ -65,7 +70,7 @@ export default function Pricing() {
           <Segmented ariaLabel="Facturation" value={period} onChange={setPeriod} items={[{ value: "monthly", label: "Au mois" }, { value: "annual", label: `À l'année · ${FREE_MONTHS} mois offerts` }]} />
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
-          {PLAN_OFFERS.map((p) => <PlanCard key={p.key} offer={p} period={period} />)}
+          {PLAN_OFFERS.map((p) => <PlanCard key={p.key} offer={p} period={period} offers={offers} />)}
         </div>
 
         <dl className="card mt-4 grid divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0" data-reveal="">
@@ -107,9 +112,11 @@ export default function Pricing() {
   );
 }
 
-function PlanCard({ offer, period }: { offer: PlanOffer; period: Period }) {
+function PlanCard({ offer, period, offers }: { offer: PlanOffer; period: Period; offers?: PublicOffer[] }) {
   const monthly = monthlyPriceCents(offer.key);
   const annual = annualPriceCents(offer.key);
+  // Remise de l'offre en cours sur l'échéance affichée (mensuelle, ou annuelle une fois).
+  const promo = showIndicativePricing ? discountedFor(offers, offer.key, period === "monthly" ? monthly : annual) : null;
   const founders = PRICING.founders.discountPlans.includes(offer.key)
     ? `${price(foundersMonthlyCents(offer.key))} / mois pendant ${PRICING.founders.discountMonths} mois`
     : `${PRICING.founders.freeMonthsStarter} mois offert`;
@@ -119,11 +126,12 @@ function PlanCard({ offer, period }: { offer: PlanOffer; period: Period }) {
       <p className="mt-0.5 text-sm font-medium text-accent">{offer.profile}</p>
       <p className="mt-1 text-sm text-text-muted">{offer.forWhom}</p>
       <p className="num mt-5 text-2xl font-semibold text-text">
-        {price(period === "monthly" ? monthly : annualMonthlyEquivalentCents(offer.key))}
+        {promo && period === "monthly" ? <DiscountedPrice normalCents={monthly} discountedCents={promo.cents} /> : price(period === "monthly" ? monthly : annualMonthlyEquivalentCents(offer.key))}
         {showIndicativePricing ? <span className="text-sm font-normal text-text-muted"> / mois{period === "annual" ? ", à l'année" : ""}</span> : null}
+        {promo && period === "monthly" ? <OfferHint text={offerConditionLabel(promo.offer)} title={promo.offer.name} /> : null}
       </p>
       <p className="num mt-0.5 text-xs text-text-muted">
-        {period === "annual" ? `${price(annual)} par an, soit ${FREE_MONTHS} mois offerts` : "Sans engagement, résiliable à tout moment"}
+        {period === "annual" ? (promo ? <>{price(promo.cents)} par an au lieu de {price(annual)} ({offerConditionLabel(promo.offer, "yearly")})</> : `${price(annual)} par an, soit ${FREE_MONTHS} mois offerts`) : "Sans engagement, résiliable à tout moment"}
       </p>
       {showIndicativePricing ? <p className="num mt-1 text-xs text-text-muted">Fondateurs : {founders}</p> : null}
       <div className="mt-5 flex-1"><CheckList items={offer.highlights} /></div>

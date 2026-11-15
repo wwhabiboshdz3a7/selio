@@ -32,3 +32,4 @@ export * from "./photo-checks";
 export * from "./bundles";
 export * from "./thresholds";
 export * from "./migration";
+export * from "./operator-permissions";

@@ -6,6 +6,9 @@ import type { OrgContext, Services } from "../context";
 import * as cloud from "./cloud";
 import * as market from "./market";
 import * as track from "./track";
+import * as trackAdmin from "./track-admin";
+import * as trackAlerts from "./track-alerts";
+import { orgUsageFrom } from "./admin";
 
 /**
  * Selio Track sur PostgreSQL, base DÉDIÉE (selio_test_core_track, créée si besoin) : Vitest 3 en espace de
@@ -90,7 +93,9 @@ beforeEach(async () => {
   // Tables partagées de Track et coupe-circuit : propres à cette base de test.
   await owner.query("truncate track_filter_reads, track_snapshots, price_references, price_models");
   await owner.query("delete from track_filters");
-  await owner.query("update track_runtime set window_measures = '', slowdown_factor = 1, last_block_at = null, paused_until = null, pause_reason = null");
+  await owner.query("update track_runtime set window_measures = '', slowdown_factor = 1, last_block_at = null, paused_until = null, pause_reason = null, manual_paused = false, manual_paused_at = null, manual_paused_by = null, manual_pause_reason = null");
+  await owner.query("truncate track_read_log");
+  await owner.query("delete from radar_alerts where kind = 'track_trend'");
   await cloud.clearCircuit(services);
 });
 
@@ -445,7 +450,7 @@ describe("Selio Track : scans de niche, recherche par photo, Agence", () => {
     await services.db.withGlobal((tx) => repos.trackSnapshots.add(tx, { fingerprint: f.fingerprint, source: "demo", readAt: "2026-05-01T00:00:00.000Z", listedCount: 1, medianPriceCents: 1000, p25Cents: 1000, p75Cents: 1000, newCount: 0, goneCount: 0, medianDaysListed: null, brandShares: [], scope: { categories: [], brands: [], categoriesVerified: true } }));
     expect(await track.trackOrgIds(services)).toContain(ctx.orgId);
     // Pro : 3 mois d'historique.
-    expect(await track.purgeTrackHistory(services, ctx.orgId)).toEqual({ scans: 1, photoSearches: 0 });
+    expect(await track.purgeTrackHistory(services, ctx.orgId)).toEqual({ scans: 1, photoSearches: 0, alerts: 0 });
     expect(await track.purgeTrackSnapshots(services)).toEqual({ snapshots: 1, fingerprints: 0 });
     expect(await services.db.withGlobal((tx) => repos.trackSnapshots.count(tx, f.fingerprint))).toBe(1);
     // Plus aucun suivi : l'empreinte et ses instantanés sont oubliés.
@@ -637,5 +642,130 @@ describe("Selio Track : scans insuffisants et recherche par photo", () => {
     await expect(track.photoSearch(ctx, { photo: `data:image/jpeg;base64,${PHOTO_B64}` })).rejects.toMatchObject({ status: 503 });
     expect(await usageOf(ctx, "track.photo_search")).toBe(0);
     expect(await track.listPhotoSearches(ctx)).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------- alertes de tendance, pause manuelle, administration
+
+const snap = (readAt: string, extra: Partial<Parameters<typeof repos.trackSnapshots.add>[1]> = {}) => ({
+  id: `s-${readAt}`, fingerprint: "a".repeat(64), source: "demo" as const, readAt, listedCount: 40, medianPriceCents: 2000, p25Cents: 1500, p75Cents: 2500,
+  newCount: 2, goneCount: 1, medianDaysListed: 4, brandShares: [], scope: { categories: [], brands: [], categoriesVerified: true }, createdAt: readAt, ...extra,
+});
+
+describe("Selio Track : alertes de tendance (fonctions pures)", () => {
+  const rules = { enabled: true, medianPrice: { enabled: true, percent: 15 }, newListings: { enabled: true, threshold: 10 }, daysToSell: { enabled: true, percent: 25 } };
+  const prev = ["2026-10-27T08:00:00.000Z", "2026-10-28T08:00:00.000Z", "2026-10-29T08:00:00.000Z"].map((d) => snap(d));
+
+  it("prix médian ± X % face aux 7 jours précédents, nouvelles au-dessus du seuil, délai de vente en baisse", () => {
+    const hits = trackAlerts.evaluateTrackAlertRules(rules, snap("2026-10-30T08:00:00.000Z", { medianPriceCents: 2400, newCount: 12, medianDaysListed: 2 }), prev);
+    expect(hits.map((h) => h.rule)).toEqual(["median_price", "new_listings", "days_to_sell"]);
+    expect(hits[0]).toMatchObject({ value: 0.2, reference: 2000 });
+    expect(hits[0]!.message).toContain("hausse de 20 %");
+    expect(hits[2]!.message).toContain("estimation");
+    // Baisse du prix : alerte aussi (± X %), sous le seuil : rien.
+    expect(trackAlerts.evaluateTrackAlertRules(rules, snap("2026-10-30T08:00:00.000Z", { medianPriceCents: 1600 }), prev).map((h) => h.rule)).toEqual(["median_price"]);
+    expect(trackAlerts.evaluateTrackAlertRules(rules, snap("2026-10-30T08:00:00.000Z", { medianPriceCents: 2200, newCount: 9, medianDaysListed: 3.5 }), prev)).toEqual([]);
+  });
+
+  it("aucune alerte coupée, sans assez de référence, ou face à une autre source (simulateur ≠ direct)", () => {
+    const latest = snap("2026-10-30T08:00:00.000Z", { medianPriceCents: 3000, newCount: 50, medianDaysListed: 1 });
+    expect(trackAlerts.evaluateTrackAlertRules({ ...rules, enabled: false }, latest, prev)).toEqual([]);
+    expect(trackAlerts.evaluateTrackAlertRules({}, latest, prev)).toEqual([]);
+    expect(trackAlerts.evaluateTrackAlertRules(rules, latest, prev.slice(0, 2)).map((h) => h.rule)).toEqual(["new_listings"]);
+    expect(trackAlerts.evaluateTrackAlertRules(rules, { ...latest, source: "cloud" }, prev).map((h) => h.rule)).toEqual(["new_listings"]);
+    // Références de plus de 7 jours : ignorées.
+    expect(trackAlerts.evaluateTrackAlertRules(rules, snap("2026-11-10T08:00:00.000Z", { medianPriceCents: 3000 }), prev)).toEqual([]);
+  });
+});
+
+describe("Selio Track : alertes évaluées après chaque lecture, envoyées par la file des notifications", () => {
+  it("une alerte par filtre et par règle au plus toutes les 24 h, listée dans la page du filtre, notification en file", async () => {
+    if (!available) return;
+    const ctx = await setupOrg("pro");
+    const other = await setupOrg("pro");
+    const f = await track.createFilter(ctx, { name: "Jeans 501", criteria });
+    const g = await track.createFilter(other, { name: "Mêmes jeans", criteria });
+    // Alertes : seuil de nouvelles annonces très bas chez la première organisation, coupées chez l'autre.
+    await trackAlerts.updateFilterAlerts(ctx, f.id, { enabled: true, newListings: { enabled: true, threshold: 1 } });
+    const first = await track.runTrackRead(services, f.fingerprint, "demo");
+    expect(first.outcome).toBe("ok");
+    expect(first.alerts).toBe(0); // première lecture : aucune « nouvelle » annonce comptée
+    advance(130);
+    const second = await track.runTrackRead(services, f.fingerprint, "demo");
+    expect(second.newCount).toBeGreaterThanOrEqual(1);
+    expect(second.alerts).toBe(1);
+    const view = await trackAlerts.filterAlerts(ctx, f.id);
+    expect(view.events).toHaveLength(1);
+    expect(view.events[0]).toMatchObject({ rule: "new_listings", source: "demo", notified: true });
+    expect(view.notices.join(" ")).toContain("24 h");
+    const queued = await services.db.withOrg(ctx.orgId, (tx) => repos.radarAlerts.list(tx));
+    expect(queued.filter((a) => a.kind === "track_trend")).toHaveLength(1);
+    expect(queued[0]!.payload).toMatchObject({ title: "Track : Jeans 501", url: `/track/filtres/${f.id}` });
+    expect(queued[0]!.payload.body).toContain("Données de démonstration");
+    // L'autre organisation (alertes coupées) ne reçoit rien.
+    expect((await trackAlerts.filterAlerts(other, g.id)).events).toEqual([]);
+    // Moins de 24 h plus tard : la même règle ne repart pas.
+    advance(130);
+    const third = await track.runTrackRead(services, f.fingerprint, "demo");
+    expect(third.newCount).toBeGreaterThanOrEqual(1);
+    expect(third.alerts).toBe(0);
+    // Désactivées : plus rien.
+    await trackAlerts.updateFilterAlerts(ctx, f.id, { enabled: false, newListings: { enabled: true, threshold: 1 } });
+    advance(24 * 60);
+    expect((await track.runTrackRead(services, f.fingerprint, "demo")).alerts).toBe(0);
+    expect((await trackAlerts.filterAlerts(ctx, f.id)).events).toHaveLength(1);
+  });
+
+  it("réglage refusé sans Track (402) et validé (bornes)", async () => {
+    if (!available) return;
+    const ctx = await setupOrg("pro");
+    const f = await track.createFilter(ctx, { name: "Jeans", criteria });
+    await expect(trackAlerts.updateFilterAlerts(ctx, f.id, { enabled: true, medianPrice: { enabled: true, percent: 2 } })).rejects.toMatchObject({ status: 400 });
+    await services.db.withOrg(ctx.orgId, (tx) => repos.subscriptions.upsert(tx, { plan: "starter", status: "active", quotas: quotasForPlan("starter") }));
+    await expect(trackAlerts.filterAlerts(ctx, f.id)).rejects.toMatchObject({ status: 402 });
+  });
+});
+
+describe("Selio Track : pause manuelle et administration", () => {
+  const operator = (ctx: OrgContext, operatorRole?: "tech" | "business"): OrgContext => ({ ...ctx, isOperator: true, ...(operatorRole ? { operatorRole } : {}) }) as OrgContext;
+
+  it("la pause manuelle arrête toute lecture (simulateur compris) sans redémarrage ; la reprise relit", async () => {
+    if (!available) return;
+    const ctx = await setupOrg("pro");
+    const f = await track.createFilter(ctx, { name: "Jeans", criteria });
+    const ops = operator(await setupOrg("free"));
+    await trackAdmin.adminTrackPause(ops, { reason: "Vérification" });
+    const paused = await track.runDueTrackReads(services);
+    expect(paused.results.map((r) => r.skipped)).toEqual(["manual_pause"]);
+    expect(await services.db.withGlobal((tx) => repos.trackSnapshots.count(tx, f.fingerprint))).toBe(0);
+    const status = await trackAdmin.adminTrackResume(ops);
+    expect(status.manualPause.paused).toBe(false);
+    expect((await track.runDueTrackReads(services)).read).toBe(1);
+    expect(await services.db.withGlobal((tx) => repos.trackSnapshots.count(tx, f.fingerprint))).toBe(1);
+  });
+
+  it("lecture pour tout opérateur, pause réservée au rôle « tech » ; journal des lectures et blocages récents", async () => {
+    if (!available) return;
+    const ctx = await setupOrg("pro");
+    await track.createFilter(ctx, { name: "Jeans", criteria });
+    services.config = { trackLiveEnabled: true };
+    reader.enqueue({ ok: false, code: "captcha", message: "CAPTCHA" });
+    await track.runDueTrackReads(services);
+    const business = operator(await setupOrg("free"), "business");
+    await expect(trackAdmin.adminTrackStatus(ctx)).rejects.toMatchObject({ status: 403 });
+    const s = await trackAdmin.adminTrackStatus(business);
+    expect(s).toMatchObject({ source: "cloud", liveEnabled: true, canControl: false, signalPause: { active: true, reason: "captcha" }, slowdown: { windowReads: 1, windowBlocks: 1 } });
+    expect(s.recentProblems[0]).toMatchObject({ outcome: "captcha", source: "cloud" });
+    expect(s.usage.find((u) => u.orgId === ctx.orgId)).toMatchObject({ filters: { used: 1, quota: 5, enabled: 1 } });
+    await expect(trackAdmin.adminTrackPause(business, { reason: "Essai" })).rejects.toMatchObject({ status: 403 });
+    await expect(trackAdmin.adminTrackResume(business)).rejects.toMatchObject({ status: 403 });
+    expect((await trackAdmin.adminTrackPause(operator(await setupOrg("free"), "tech"), { reason: "Après le CAPTCHA" })).manualPause.paused).toBe(true);
+  });
+
+  it("vue « utilisation par client » : filtres suivis réels face au quota, sans peser dans l'alerte à 80 %", () => {
+    const row = { id: "o1", name: "Boutique", plan: "pro", status: "active", quotas: quotasForPlan("pro"), createdAt: T0.toISOString(), members: 1, items: 0, connections: 0, monthUsage: {}, cloudToday: 0, aiRequestsMonth: 0, aiSettings: {} };
+    const u = orgUsageFrom(row, 5);
+    expect(u.track.filtersFollowed).toMatchObject({ used: 5, quota: 5, exceeded: true });
+    expect(u.warning).toBe(false);
   });
 });

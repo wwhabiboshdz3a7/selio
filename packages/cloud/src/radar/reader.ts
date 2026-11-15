@@ -54,6 +54,8 @@ export interface ReadSearchInput {
   pageBudgetMs?: number;
   /** Critères filtrés après lecture (marques, tailles, états, prix : voir `buildSearchUrl`). */
   criteria?: CatalogSearchCriteria;
+  /** Selio Track : page catalogue publique, lue explicitement sans session (`session` null). */
+  publicPage?: boolean;
   /** Dossier de travail fourni par l'appelant (sinon créé par l'exécuteur). */
   profileDir?: string;
 }
@@ -155,6 +157,7 @@ export class RadarReader {
       url: input.url,
       timeoutMs: input.pageBudgetMs ?? this.pageBudgetMs,
       waitForSelectors: CATALOG_GRID_SELECTORS,
+      ...(input.publicPage ? { publicPage: true } : {}),
       ...(input.profileDir ? { profileDir: input.profileDir } : {}),
     });
     const observedAt = this.now();

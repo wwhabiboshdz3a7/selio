@@ -21,6 +21,12 @@ export type RadarPageKind = "catalog" | "item";
 export interface FetchPageInput {
   /** Session filtrée du compte Achat (déchiffrée par l'appelant). Sans session : refus, rien n'est lancé. */
   session: StorageState | null;
+  /**
+   * Selio Track : lecture d'une page catalogue PUBLIQUE, explicitement sans session (`session` doit être
+   * null) : contexte vierge, aucun cookie injecté, aucune session relue ni rendue. Refusée pour une annonce
+   * ou avec une session. Sans ce drapeau, l'absence de session reste un refus (Radar).
+   */
+  publicPage?: boolean;
   /** Page catalogue ou annonce Vinted (https, liste fermée des domaines). */
   url: string;
   /** Dossier de travail neuf ; créé sous `profileBaseDir` de l'exécuteur s'il est absent. */

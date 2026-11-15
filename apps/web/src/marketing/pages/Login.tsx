@@ -7,7 +7,7 @@ import { queryClient, sessionKey, useData } from "../../lib/data/provider";
 import { connectedModeAvailable } from "../../lib/env";
 import { errorMessage } from "../../lib/errors";
 import type { Mode } from "../../lib/data/types";
-import { APP_PATH_PATTERN, HUB_PATH } from "../../app/spaces/paths";
+import { landingPath } from "../../lib/admin";
 
 export default function Login() {
   usePageMeta("Connexion", "Connexion à l'application Selio.", { noindex: true });
@@ -26,7 +26,8 @@ export default function Login() {
       const session = await client.login({ email, password });
       // La session ouverte remplace celle en cache (« aucune session », lue par la vitrine).
       queryClient.setQueryData([...sessionKey, mode], session);
-      navigate(location.state?.from && APP_PATH_PATTERN.test(location.state.from) ? location.state.from : HUB_PATH, { replace: true });
+      // Opérateur Selio (mode connecté) : Selio Admin ; client : l'accueil des espaces (ou la page demandée).
+      navigate(landingPath(session, location.state?.from), { replace: true });
     } catch (err) {
       setError(errorMessage(err));
     } finally {

@@ -5,11 +5,13 @@ import { Db, MIGRATIONS_DIR, SecretBox, createPool, repos, runMigrations, type P
 import { FakeTrackReader, cloud, pricing, track, type OrgContext, type Services } from "@selio/core";
 import { parseCondition } from "@selio/pricing";
 import { generateSyntheticReferences } from "@selio/pricing/synthetic";
-import type { RadarReadResult } from "@selio/cloud";
+import { readFileSync } from "node:fs";
+import { FakeRunner, RadarReader, type RadarReadResult } from "@selio/cloud";
 import { loadEnv, maintenanceSchedules, trackServicesConfig } from "./config";
 import { GbmPriceTrainer, ThreadedPriceTrainer, createPricingServices, loadStoredPriceModel, toPricingReference } from "./pricing";
 import { PageRateLimiter } from "./radar";
 import { retentionTick } from "./tasks";
+import { checkTrackConfig, formatTrackCheck, parseEnvFile } from "./track-check";
 import { CloudTrackReader, pricingReferencesTick, pricingTrainTask, toTrackReaderOutcome, trackTick } from "./track";
 
 /**
@@ -79,7 +81,8 @@ beforeEach(async () => {
   // Tables partagées de Track, base de références, modèles et coupe-circuit : propres à cette base de test.
   await owner.query("truncate track_filter_reads, track_snapshots, price_references, price_models");
   await owner.query("delete from track_filters");
-  await owner.query("update track_runtime set window_measures = '', slowdown_factor = 1, last_block_at = null, paused_until = null, pause_reason = null");
+  await owner.query("update track_runtime set window_measures = '', slowdown_factor = 1, last_block_at = null, paused_until = null, pause_reason = null, manual_paused = false, manual_paused_at = null, manual_paused_by = null, manual_pause_reason = null");
+  await owner.query("truncate track_read_log");
   await cloud.clearCircuit(services);
 });
 
@@ -136,12 +139,13 @@ describe("worker : Selio Track (adaptateurs et configuration)", () => {
   });
 
   it("lit la page catalogue SANS session (pages publiques) et refuse un domaine hors liste", async () => {
-    const calls: { session: unknown; url: string; criteria: unknown }[] = [];
-    const reader = new CloudTrackReader({ readSearch: async (input) => { calls.push({ session: input.session, url: input.url, criteria: input.criteria }); return read({}); } }, silent);
+    const calls: { session: unknown; url: string; criteria: unknown; publicPage: unknown }[] = [];
+    const reader = new CloudTrackReader({ readSearch: async (input) => { calls.push({ session: input.session, url: input.url, criteria: input.criteria, publicPage: input.publicPage }); return read({}); } }, silent);
     const out = await reader.read({ fingerprint: "a".repeat(64), criteria: track.normalizeTrackCriteria(criteria), vintedHost: "www.vinted.fr", now: T0 });
     expect(out).toMatchObject({ ok: true, items: [] });
     expect(calls).toHaveLength(1);
     expect(calls[0]!.session).toBeNull();
+    expect(calls[0]!.publicPage).toBe(true);
     // Page lue entière : le filtre local est appliqué par Track, pas par le lecteur.
     expect(calls[0]!.criteria).toBeUndefined();
     expect(calls[0]!.url).toMatch(/^https:\/\/www\.vinted\.fr\/catalog\?/);
@@ -292,6 +296,124 @@ describe("worker : passage de Track (track.tick)", () => {
     expect(r).toMatchObject({ reads: 0, blocked: 0, skipped: { no_browser: 1 } });
     expect(limiter.used(clock)).toBe(0);
     expect(machine.used(clock)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------- passage au réel : chemin complet, sans Vinted
+
+/**
+ * Chemin de lecture en direct tel que le worker le monte (`CloudTrackReader` → `RadarReader` de @selio/cloud →
+ * exécuteur), avec l'exécuteur FACTICE de @selio/cloud à la place de Chromium : la page catalogue est la
+ * fixture synthétique de l'adaptateur, les signaux sont les pages de blocage factices. Rien ne part vers Vinted.
+ */
+describe("worker : passage au réel préparé (lecteur Cloud factice, aucune page de Vinted)", () => {
+  const fixture = readFileSync(new URL("../../../packages/connectors/src/vinted/fixtures/catalog-page.v1.html", import.meta.url), "utf8");
+  const wide = { maxPriceCents: 100_000 };
+  const liveWith = (runner: FakeRunner) => {
+    services.config = { trackLiveEnabled: true };
+    services.track = { reader: new CloudTrackReader(new RadarReader({ fetcher: runner, now: () => new Date(clock) }), silent) };
+  };
+
+  it("lit une page publique SANS session (contexte vierge), retire les champs personnels, journalise la lecture", async () => {
+    if (!available) return;
+    const runner = new FakeRunner({ pageHtml: () => fixture });
+    liveWith(runner);
+    const ctx = await setupOrg("pro");
+    const f = await track.createFilter(ctx, { name: "Tout", criteria: wide });
+    const r = await trackTick(services, silent, { limiter: new PageRateLimiter(10), machineLimiter: new PageRateLimiter(30) });
+    expect(r).toMatchObject({ source: "cloud", reads: 1, ok: 1, blocked: 0, paused: false });
+    expect(runner.fetchCalls).toHaveLength(1);
+    expect(runner.fetchCalls[0]).toMatchObject({ hadSession: false });
+    expect(runner.fetchCalls[0]!.url).toMatch(/^https:\/\/www\.vinted\.fr\/catalog\?/);
+    const snap = (await owner.query("select * from track_snapshots where fingerprint = $1", [f.fingerprint])).rows[0];
+    expect(snap.source).toBe("cloud");
+    expect(snap.listed_count).toBeGreaterThan(0);
+    const log = (await owner.query("select outcome, source from track_read_log")).rows;
+    expect(log).toEqual([{ outcome: "ok", source: "cloud" }]);
+    // Aucun pseudo, aucune adresse d'annonce, aucune photo dans les tables partagées.
+    const shared = JSON.stringify([(await owner.query("select * from track_snapshots")).rows, (await owner.query("select state from track_filter_reads")).rows, (await owner.query("select * from track_read_log")).rows]);
+    expect(shared).not.toMatch(/items\/\d|images\d?\.vinted|new-item-box__owner/);
+  });
+
+  it("« trop de requêtes » (429) reconnu par detectBlock : Track en pause, coupe-circuit de la machine, plus aucune page lue", async () => {
+    if (!available) return;
+    const runner = new FakeRunner({ pageHtml: () => fixture, fetchScenarios: ["rate_limited"] });
+    liveWith(runner);
+    const ctx = await setupOrg("agence");
+    await track.createFilter(ctx, { name: "A", criteria: wide });
+    await track.createFilter(ctx, { name: "B", criteria: { ...wide, keywords: ["veste"] } });
+    const r = await trackTick(services, silent, { limiter: new PageRateLimiter(10), machineLimiter: new PageRateLimiter(30) });
+    expect(r).toMatchObject({ reads: 1, blocked: 1, paused: true });
+    expect(r.circuitUntil).not.toBeNull();
+    expect(await cloud.machinePausedUntil(services, clock)).not.toBeNull();
+    expect((await services.db.withGlobal((tx) => repos.trackReads.runtime(tx))).pauseReason).toBe("rate_limited");
+    // Passage suivant, 5 min plus tard : rien n'est lu, rien n'est retenté.
+    clock = new Date(T0.getTime() + 5 * 60_000);
+    const next = await trackTick(services, silent, { limiter: new PageRateLimiter(10), machineLimiter: new PageRateLimiter(30) });
+    expect(next.reads).toBe(0);
+    expect(next.paused).toBe(true);
+    expect(runner.fetchCalls).toHaveLength(1);
+  });
+
+  it("CAPTCHA dans la page : arrêt au premier signal, facteur de ralentissement doublé, journal du blocage", async () => {
+    if (!available) return;
+    const runner = new FakeRunner({ pageHtml: () => fixture, fetchScenarios: ["blocked"] });
+    liveWith(runner);
+    const ctx = await setupOrg("pro");
+    await track.createFilter(ctx, { name: "A", criteria: wide });
+    const r = await trackTick(services, silent, { limiter: new PageRateLimiter(10), machineLimiter: new PageRateLimiter(30) });
+    expect(r).toMatchObject({ blocked: 1, paused: true, factor: 2 });
+    expect((await owner.query("select outcome from track_read_log")).rows).toEqual([{ outcome: "captcha" }]);
+  });
+
+  it("pause manuelle (administration) : le passage ne lance aucun navigateur, sans redémarrage", async () => {
+    if (!available) return;
+    const runner = new FakeRunner({ pageHtml: () => fixture });
+    liveWith(runner);
+    const ctx = await setupOrg("pro");
+    await track.createFilter(ctx, { name: "A", criteria: wide });
+    await services.db.withGlobal((tx) => repos.trackReads.setManualPause(tx, { paused: true, by: "ops", reason: "Essai" }));
+    const limiter = new PageRateLimiter(10);
+    const r = await trackTick(services, silent, { limiter, machineLimiter: new PageRateLimiter(30) });
+    expect(r).toMatchObject({ reads: 0, paused: true, manualPause: true, skipped: { manual_pause: 1 } });
+    expect(runner.fetchCalls).toHaveLength(0);
+    expect(limiter.used(clock)).toBe(0);
+    await services.db.withGlobal((tx) => repos.trackReads.setManualPause(tx, { paused: false, by: null, reason: null }));
+    expect((await trackTick(services, silent, { limiter, machineLimiter: new PageRateLimiter(30) })).reads).toBe(1);
+  });
+
+  it("l'exécuteur refuse une lecture publique avec une session, ou d'une page d'annonce", async () => {
+    const runner = new FakeRunner({ pageHtml: () => fixture });
+    expect(await runner.fetchPage({ session: { cookies: [{ name: "access_token_web", value: "x", domain: ".vinted.fr", path: "/", expires: -1, httpOnly: true, secure: true, sameSite: "Lax" }], origins: [] }, publicPage: true, url: "https://www.vinted.fr/catalog?search_text=jean" })).toMatchObject({ ok: false, launched: false });
+    expect(await runner.fetchPage({ session: null, publicPage: true, url: "https://www.vinted.fr/items/1-jean" })).toMatchObject({ ok: false, launched: false });
+    expect(runner.fetchCalls.map((c) => c.hadSession)).toEqual([true, false]);
+  });
+});
+
+describe("worker : pnpm track:check (vérification hors ligne)", () => {
+  it("interrupteur fermé : simulateur, rien à préparer ; --live dit ce qui manque, sans jamais afficher un secret", () => {
+    const closed = checkTrackConfig({ DATABASE_URL: "postgres://u:motdepasse-secret@h/db" });
+    expect(closed).toMatchObject({ mode: "simulateur", liveEnabled: false, ready: true });
+    const asked = checkTrackConfig({ DATABASE_URL: "postgres://u:motdepasse-secret@h/db", SECRETS_ENCRYPTION_KEY: "cle-secrete-0123" }, { forceLive: true, fileExists: () => false });
+    expect(asked).toMatchObject({ mode: "direct", ready: false });
+    const missing = asked.items.filter((i) => i.level === "manque").map((i) => i.label);
+    expect(missing).toEqual(expect.arrayContaining(["CLOUD_ENABLED=true", "CLOUD_CHROMIUM_PATH"]));
+    expect(asked.items.filter((i) => i.level === "manuel").map((i) => i.label).join(" ")).toMatch(/avocat/);
+    const text = formatTrackCheck(asked);
+    expect(text).toMatch(/aucune page de Vinted n'est lue/);
+    expect(text).not.toMatch(/motdepasse-secret|cle-secrete/);
+  });
+
+  it("configuration complète pour le direct (Chromium présent, réglages prudents) ; analyse d'un vendeur toujours refusée", () => {
+    const env = parseEnvFile("# deploy/.env\nTRACK_LIVE_ENABLED=true\nCLOUD_ENABLED=\"true\"\nCLOUD_CHROMIUM_PATH=/usr/bin/chromium # installé\nTRACK_MAX_PAGES_PER_MINUTE=2\n");
+    expect(env).toMatchObject({ TRACK_LIVE_ENABLED: "true", CLOUD_ENABLED: "true", CLOUD_CHROMIUM_PATH: "/usr/bin/chromium" });
+    const ready = checkTrackConfig(env, { fileExists: (p) => p === "/usr/bin/chromium" });
+    expect(ready).toMatchObject({ mode: "direct", liveEnabled: true, ready: true });
+    expect(ready.items.find((i) => i.label.startsWith("TRACK_MAX_PAGES_PER_MINUTE"))!.level).toBe("ok");
+    // Plafond par défaut (10) : signalé, pas bloquant ; analyse d'un vendeur ouverte : bloquant.
+    expect(checkTrackConfig({ ...env, TRACK_MAX_PAGES_PER_MINUTE: "10" }, { fileExists: () => true }).items.some((i) => i.level === "attention" && i.label.includes("TRACK_MAX_PAGES_PER_MINUTE"))).toBe(true);
+    expect(checkTrackConfig({ ...env, TRACK_SELLER_ANALYSIS_ENABLED: "true" }, { fileExists: () => true }).ready).toBe(false);
+    expect(checkTrackConfig({ ...env, TRACK_READ_INTERVAL_MINUTES: "15" }, { fileExists: () => true }).ready).toBe(false);
   });
 });
 

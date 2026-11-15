@@ -18,6 +18,7 @@ import TrackNiches from "./Niches";
 import TrackPhoto from "./Photo";
 import TrackSales from "./Sales";
 import TrackSellers from "./Sellers";
+import { AdminTrack } from "../admin/AdminTrack";
 
 beforeAll(() => {
   const proto = HTMLDialogElement.prototype as HTMLDialogElement & { showModal: () => void; close: () => void };
@@ -295,5 +296,81 @@ describe("prix conseillés", () => {
     expect(await within(measured).findByText(/Modèle entraîné · erreur 19 %/)).toBeTruthy();
     expect(within(measured).getByText("Estimations à ± 20 %")).toBeTruthy();
     expect(within(measured).getByText("640")).toBeTruthy();
+  });
+});
+
+describe("Selio Track : alertes de tendance d'un filtre", () => {
+  it("coupées par défaut ; une règle allumée et enregistrée, listée dans la page du filtre ; tout couper", async () => {
+    const client = await demo("pro");
+    const f = (await client.trackFilters())[0]!;
+    mount(`/track/filtres/${f.id}`, "/track/filtres/:id", <TrackFilterDetail />);
+    const section = within(await screen.findByRole("region", { name: "Alertes de tendance" }));
+    expect(await section.findByText("Coupées")).toBeTruthy();
+    expect(section.getByText(/activez une règle pour être prévenu/)).toBeTruthy();
+    expect(section.getByText(/une alerte par règle au plus toutes les 24 h/)).toBeTruthy();
+    fireEvent.click(section.getByRole("switch", { name: /Recevoir les alertes de ce filtre/ }));
+    fireEvent.click(section.getByRole("switch", { name: /Prix médian qui bouge/ }));
+    const percent = section.getByLabelText("Écart du prix médian, en %") as HTMLInputElement;
+    fireEvent.change(percent, { target: { value: "5" } });
+    fireEvent.click(section.getByRole("button", { name: "Enregistrer" }));
+    expect(await section.findByText("Activées")).toBeTruthy();
+    const saved = await client.trackFilterAlerts(f.id);
+    expect(saved.rules).toMatchObject({ enabled: true, medianPrice: { enabled: true, percent: 5 } });
+    // Alertes rejouées sur l'historique simulé, signalées comme démonstration (ou message d'attente).
+    await waitFor(() => expect(section.queryAllByText(/données de démonstration/).length > 0 || section.queryByText(/apparaîtront ici après les prochaines lectures/) !== null).toBe(true));
+    fireEvent.click(section.getByRole("button", { name: "Tout couper" }));
+    expect(await section.findByText("Coupées")).toBeTruthy();
+    expect((await client.trackFilterAlerts(f.id)).rules.enabled).toBe(false);
+  });
+
+  it("filtre en pause : signalé dans sa page ; liste des filtres : pastille « Alertes »", async () => {
+    const client = await demo("pro");
+    const [f, g] = await client.trackFilters();
+    await client.updateTrackFilter(f!.id, { enabled: false });
+    await client.updateTrackFilterAlerts(g!.id, { enabled: true, newListings: { enabled: true, threshold: 1 } });
+    mount(`/track/filtres/${f!.id}`, "/track/filtres/:id", <TrackFilterDetail />);
+    expect(await screen.findByText(/Ce filtre est en pause/)).toBeTruthy();
+    cleanup();
+    mount("/track/filtres", "/track/filtres", <TrackFilters />);
+    expect(await screen.findByText("Alertes")).toBeTruthy();
+  });
+});
+
+describe("Selio Track dans l'administration (/admin/track)", () => {
+  it("source simulateur, interrupteur fermé, lectures simulées, usage par client ; pause puis reprise (rôle « tech »)", async () => {
+    const client = await demo("pro");
+    mount("/admin/track", "/admin/track", <AdminTrack />);
+    expect(await screen.findByRole("heading", { name: "Selio Track", level: 1 })).toBeTruthy();
+    expect(screen.getAllByText("Simulateur").length).toBeGreaterThan(0);
+    expect(screen.getByText("Fermé")).toBeTruthy();
+    expect(screen.getByText(/Aucune page de Vinted n'est lue/)).toBeTruthy();
+    expect(screen.getByText("Aucune anomalie ni aucun blocage sur 7 jours.")).toBeTruthy();
+    const usage = within(screen.getByRole("heading", { name: "Usage de Track par client" }).closest("div")!.parentElement!);
+    expect(usage.getByText("2 / 5")).toBeTruthy();
+    expect(usage.getByText("Atelier Lune (exemple)")).toBeTruthy();
+    const pause = screen.getByRole("button", { name: "Mettre Track en pause" }) as HTMLButtonElement;
+    expect(pause.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Raison (journal d'audit)"), { target: { value: "Vérification avant mise à jour" } });
+    fireEvent.click(pause);
+    expect(await screen.findByRole("button", { name: "Reprendre" })).toBeTruthy();
+    expect(screen.getByText(/Raison : Vérification avant mise à jour/)).toBeTruthy();
+    expect((await client.adminTrack()).manualPause.paused).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Reprendre" }));
+    expect(await screen.findByRole("button", { name: "Mettre Track en pause" })).toBeTruthy();
+    expect((await client.adminListAudit()).map((a) => a.action).slice(0, 2)).toEqual(["admin.track_resumed", "admin.track_paused"]);
+  });
+
+  it("opérateur « business » : lecture seule ; non-opérateur : refus (403)", async () => {
+    const client = await demo("pro");
+    await client.previewOperatorRole?.("business");
+    mount("/admin/track", "/admin/track", <AdminTrack />);
+    expect(await screen.findByText(/réservé au rôle d'opérateur « tech »/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Mettre Track en pause" })).toBeNull();
+    await expect(client.adminPauseTrack({ reason: "Essai" })).rejects.toMatchObject({ status: 403 });
+    cleanup();
+    vi.spyOn(client, "adminTrack").mockRejectedValue(new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403));
+    queryClient.clear();
+    mount("/admin/track", "/admin/track", <AdminTrack />);
+    expect(await screen.findByText("Accès réservé aux opérateurs Selio.")).toBeTruthy();
   });
 });

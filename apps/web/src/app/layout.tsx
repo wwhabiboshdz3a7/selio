@@ -18,13 +18,15 @@ import { SpacePill, SpaceSwitcher } from "./spaces/SpaceSwitcher";
 import { PHOTOS_HOME, hasReducedView, reducedViewTarget, seesFinances } from "../lib/roles";
 import { useGlassExperiment } from "../lib/glass";
 import { DOCK_CONTENT_PADDING, MobileDock } from "./components/MobileDock";
-import type { Session } from "../lib/data/types";
+import { DataError, type Session } from "../lib/data/types";
+import { OfferBanner } from "./components/offers";
 
 export function RequireSession({ children }: { children: ReactNode }) {
   const session = useSession();
   const location = useLocation();
   if (session.isPending) return <LoadingState label="Ouverture de la session…" className="min-h-dvh" />;
-  if (session.isError) return <Navigate to="/connexion" replace state={{ from: location.pathname, error: "La session n'a pas pu être vérifiée." }} />;
+  // Compte bloqué par l'équipe Selio : le message du serveur est affiché tel quel sur la page de connexion.
+  if (session.isError) return <Navigate to="/connexion" replace state={{ from: location.pathname, error: session.error instanceof DataError && session.error.code === "account_blocked" ? session.error.message : "La session n'a pas pu être vérifiée." }} />;
   if (!session.data) return <Navigate to="/connexion" replace state={{ from: location.pathname }} />;
   return <>{children}</>;
 }
@@ -229,10 +231,10 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
         ))}
         {s.user.isOperator ? (
           <div className="mt-3">
-            <p className="px-2.5 pb-1.5 text-xs font-bold tracking-wider text-text uppercase">Opérateur</p>
+            <p className="px-2.5 pb-1.5 text-xs font-bold tracking-wider text-text uppercase">Équipe Selio</p>
             <ul className="flex flex-col gap-0.5">
-              <li><NavLink to="/admin" end className={linkClass}><ShieldCheck /> Administration</NavLink></li>
-              <li><NavLink to="/admin/acces" className={linkClass}><Users /> Comptes et accès</NavLink></li>
+              {/* Retour vers Selio Admin, l'espace séparé des opérateurs. */}
+              <li><NavLink to="/admin" className={linkClass} title="Selio Admin : croissance, comptes, offres"><ShieldCheck /> Administration</NavLink></li>
             </ul>
           </div>
         ) : null}
@@ -285,6 +287,8 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
         ) : null}
         {mode === "demo" ? <RolePreviewBanner s={s} /> : null}
         <BillingBanner s={subscription.data ?? null} pathname={location.pathname} />
+        {/* Offre commerciale en cours (gérée dans Selio Admin) : refermable, rien sans offre. */}
+        {reduced ? null : <OfferBanner scope="app" />}
         {cloudPaused ? (
           <Banner tone="neutral">
             <span data-testid="cloud-paused-banner" className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1">

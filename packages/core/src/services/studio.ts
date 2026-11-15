@@ -12,7 +12,7 @@ import {
   assembleStudioPrep, buildSellerQuestions, can, checkImageDimensions, comparablesFromSales, garmentKindFor, groupPhotosByArticle, matchSizeReference, mergeFields, mergeSortBatches, photosWithRole, planPhotoBatches, priceListingDraft, stripUnknownMeasurements, suggestFloorPrice,
   type DraftPricing, type StudioArticleInput,
 } from "@selio/domain";
-import { AppError, nowIso, requireAction, withOrg, type OrgContext, type Services } from "../context";
+import { AppError, nowIso, requireAction, requireOperatorCapability, withOrg, type OrgContext, type Services } from "../context";
 import * as pricing from "./pricing";
 
 type SizeReferenceRecord = repos.SizeReferenceRecord;
@@ -790,7 +790,7 @@ export function shareBlocker(brand: string, reference: string): string | null {
 
 /** Ajoute ou remplace une référence de tailles fournie par Selio (opérateur seulement). */
 export async function provideSizeReference(ctx: OrgContext, raw: unknown): Promise<SizeReferenceRecord> {
-  if (!ctx.isOperator) throw new AppError("forbidden", "Réservé à l'opérateur Selio.", 403);
+  requireOperatorCapability(ctx, "admin.size_references");
   const parsed = sizeReference.safeParse(raw);
   if (!parsed.success) throw new AppError("validation", parsed.error.issues[0]?.message ?? "Référence invalide", 400, parsed.error.flatten());
   const r = parsed.data;

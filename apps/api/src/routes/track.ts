@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { TRACK_DEMO_NOTICE, TRACK_LEGAL_NOTICE, TRACK_SOURCE_LABELS, TRACK_UNAVAILABLE_MESSAGE, buildUsageCounter, quotasForPlan, type PlanQuotas, type TrackSource, type UsageCounter } from "@selio/contracts";
 import { repos, type Tx } from "@selio/db";
-import { AppError, requireAction, track, withOrg, type OrgContext } from "@selio/core";
+import { AppError, requireAction, track, trackAdmin, trackAlerts, withOrg, type OrgContext } from "@selio/core";
 
 /**
  * Selio Track (prompt §5.9, Pro et Agence) : STATISTIQUES SEULEMENT. L'API ne lit jamais de page Vinted
@@ -73,6 +73,11 @@ export default async function trackRoutes(app: FastifyInstance, opts: { liveEnab
   // Tendances sur 7, 30 (défaut) ou 90 jours, bornées à l'historique du plan.
   app.get<{ Params: { id: string }; Querystring: { days?: string } }>("/api/track/filters/:id/trends", async (req) => track.trends(app.requireCtx(req), req.params.id, { days: req.query.days }));
 
+  // Alertes de tendance du filtre (réglage et dernières alertes) : coupées par défaut, une par règle et par
+  // 24 h au plus, évaluées par le worker après chaque lecture.
+  app.get<{ Params: { id: string } }>("/api/track/filters/:id/alerts", async (req) => trackAlerts.filterAlerts(app.requireCtx(req), req.params.id));
+  app.put<{ Params: { id: string } }>("/api/track/filters/:id/alerts", { config: perUser("track-filters", 20, "1 minute") }, async (req) => trackAlerts.updateFilterAlerts(app.requireCtx(req), req.params.id, req.body ?? {}));
+
   // ---------------------------------------------------------------- scans de niche
   // « Données insuffisantes » : aucune note, aucun prix, rien de décompté du quota du mois (20 par jour au plus).
   app.post("/api/track/scans", { config: perUser("track-scan", 20, "1 minute") }, async (req, reply) => { reply.status(201); return track.nicheScan(app.requireCtx(req), req.body ?? {}); });
@@ -113,6 +118,13 @@ export default async function trackRoutes(app: FastifyInstance, opts: { liveEnab
   // Analyse d'un vendeur concurrent : 409 tant que TRACK_SELLER_ANALYSIS_ENABLED est faux (RGPD), 501 sinon.
   app.get("/api/track/seller-analysis", async (req) => track.sellerAnalysis(app.requireCtx(req)));
   app.post("/api/track/seller-analysis", async (req) => track.sellerAnalysis(app.requireCtx(req)));
+
+  // ---------------------------------------------------------------- administration (opérateurs Selio)
+  // Lecture pour tout opérateur ; pause et reprise manuelles réservées au rôle « tech », auditées
+  // (`admin.track_paused`, `admin.track_resumed`) et relues par le worker à chaque lecture.
+  app.get("/api/admin/track", async (req) => trackAdmin.adminTrackStatus(app.requireCtx(req)));
+  app.post("/api/admin/track/pause", { config: perUser("admin-track", 10, "1 minute") }, async (req) => trackAdmin.adminTrackPause(app.requireCtx(req), req.body ?? {}));
+  app.post("/api/admin/track/resume", { config: perUser("admin-track", 10, "1 minute") }, async (req) => trackAdmin.adminTrackResume(app.requireCtx(req)));
 
   // ---------------------------------------------------------------- utilisation
   /** Compteurs du mois (mêmes décomptes que les refus du cœur) et historique mensuel dans la limite du plan. */

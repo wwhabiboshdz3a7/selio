@@ -22,8 +22,19 @@ import { CYCLE_LABELS, addCycle, inTrial as trialRunning, isRunning, periodLabel
 import { helpAskInput, type HelpAnswer } from "@selio/contracts";
 import { can } from "@selio/domain";
 import { normalizeReferralCode, type Photo } from "@selio/contracts";
+import { offerInvoiceLineLabel, offerMonthsPerInstallment, redemptionDiscountFor, type CommercialOffer, type InvoiceExtraLine, type OfferInput, type OfferRedemption, type OfferUpdate, type PromoCheckResult, type PublicOffer } from "@selio/contracts";
+import type { OfferDeleteResult, PromoApplyResult } from "../data/types";
+import { LocalDemoOfferStore, createDemoOffer, demoBanners, demoCheckCode, updateDemoOffer, type DemoOfferStore } from "./offers";
 import type { HealthDetailsView, ReferralView } from "../data/types";
 import { demoHealthDetails, demoReferralCode } from "./team";
+import { accountDetail, accountRow, extendTrialRecord, filterAccounts, grantRecord, growthOf, noteRecord, qualifyRecord, revokeRecord, seedDemoAdmin, type DemoAccountRecord, type DemoAdminState } from "./admin";
+import { operatorCan, type OperatorCapability } from "@selio/domain";
+import type { AdminAccountDetail, AdminAccountRow, AdminAccountsQuery, AdminGrantInput, AdminGrowth, AdminQualificationInput, OperatorRole } from "@selio/contracts";
+
+/** Actions internes de Selio Admin, absentes du journal montré au client (même règle que le serveur). */
+const isInternalAdminAction = (action: string) => ["admin.account_", "admin.access_", "admin.trial_"].some((p) => action.startsWith(p));
+/** Actions montrées dans l'historique d'une fiche compte. */
+const ADMIN_HISTORY_PREFIXES = ["admin.", "billing.", "referral.", "auth.register", "member."];
 import { whiteLabelInput as whiteLabelInputSchema, type WhiteLabel, type WhiteLabelInput } from "@selio/contracts";
 import {
   CLOUD_ACTION_KIND_LABELS, CLOUD_ACTION_LEVEL_LABELS, CLOUD_ACTION_STATUS_LABELS, CLOUD_CONSENT_TEXT, CLOUD_CONSENT_VERSION, CLOUD_LOGIN_TTL_MINUTES, CLOUD_PAUSE_REASON_LABELS, CLOUD_RUN_CODE_LABELS, CLOUD_SKIP_REASON_LABELS,
@@ -60,7 +71,8 @@ import { demoApplyMigration, demoBundles, demoConvertMigration, demoEndToEndMarg
 import { recordMeasuredLimits, vintedLimitsStatus } from "@selio/domain";
 import { vintedLimitsMeasurementInput, type MigrationApplyInput, type MigrationConvertInput, type MigrationFileInput, type VintedLimits, type VintedLimitsMeasurementInput } from "@selio/contracts";
 import type { BundleSuggestionView, DeclarationThresholdsView, EndToEndMarginsView, MigrationApplyView, MigrationConversion, VintedLimitsRecordView, VintedLimitsView } from "../data/types";
-import { completeCriteria, demoFingerprint, demoNicheScan, demoSalesFeed, demoTrends, seedDemoTrack, withReadTimes, type DemoTrackState } from "./track";
+import { DEFAULT_ALERT_RULES, completeCriteria, demoAdminTrack, demoFilterAlerts, demoFingerprint, demoNicheScan, demoSalesFeed, demoTrends, seedDemoTrack, withReadTimes, type DemoTrackState } from "./track";
+import { trackAlertRules as trackAlertRulesSchema, trackManualPauseInput as trackManualPauseInputSchema, type TrackAdminStatus, type TrackAlertRulesInput, type TrackFilterAlerts, type TrackManualPauseInput } from "@selio/contracts";
 
 function paginate<T>(items: T[], page = 1, pageSize = 25): Page<T> {
   const total = items.length;
@@ -83,6 +95,8 @@ type Subsidiaries = Pick<UsageSummary, "studio" | "track" | "cloud">;
 type DemoBillingState = DemoState & { invoices?: Invoice[] };
 /** Essai de rôle de la démonstration (« voir comme… ») : rangé à côté de l'état partagé. */
 type DemoRoleHolder = DemoState & { rolePreview?: Role | null };
+/** Selio Admin en démonstration : comptes d'exemple, qualification du compte de la démo, essai de rôle d'opérateur. */
+type DemoAdminHolder = DemoState & { admin?: DemoAdminState; operatorRolePreview?: OperatorRole | null };
 /** Selio Cloud de la démonstration : même principe, créé au premier accès (voir ./cloud.ts). */
 type DemoCloudHolder = DemoState & { cloud?: DemoCloudState };
 /** Mesures des limites de Vinted enregistrées dans la démonstration (comme la table negotiation_limits). */
@@ -95,6 +109,8 @@ type DemoRadarHolder = DemoState & { radar?: DemoRadarState };
 type DemoTrackHolder = DemoState & { track?: DemoTrackState };
 /** Selio Studio façon Kavis de la démonstration (préparations, base des références, photos portées) : voir ./studio.ts. */
 type DemoStudioHolder = DemoState & { studio?: DemoStudioState };
+/** Offre commerciale appliquée à l'organisation de démonstration (comme offer_redemptions) : une seule. */
+type DemoOfferHolder = DemoState & { offerRedemption?: OfferRedemption | null };
 
 export interface DemoClientOptions {
   /**
@@ -102,6 +118,8 @@ export interface DemoClientOptions {
    * la démonstration montre Radar Auto verrouillé. Vrai seulement dans les tests (comptes de l'équipe).
    */
   radarAutoServerEnabled?: boolean;
+  /** Offres commerciales (globales, hors de l'espace de démonstration) : stockage local par défaut. */
+  offerStore?: DemoOfferStore;
 }
 
 const isPaid = (plan: Plan | null | undefined): plan is PaidPlan => (PAID_PLANS as readonly string[]).includes(plan ?? "");
@@ -142,9 +160,11 @@ export class DemoClient implements DataClient {
   private state: DemoState | null;
   private readonly ai: AIService;
   private listeners = new Set<() => void>();
+  private readonly offerStore: DemoOfferStore;
 
   constructor(private readonly storage: DemoStorage = new LocalDemoStorage(), private readonly clock: () => Date = () => new Date(), private readonly options: DemoClientOptions = {}) {
     this.state = storage.load();
+    this.offerStore = options.offerStore ?? new LocalDemoOfferStore();
     // Une démo enregistrée avant l'arrivée d'un réglage (lots, situations, limites Vinted, seuils…) reçoit ses valeurs par défaut.
     if (this.state) this.state.org = { ...this.state.org, settings: orgSettingsSchema.parse(this.state.org.settings) };
     this.ai = new AIService({ provider: new MockAIProvider({ latencyMs: 250 }), concurrency: 2, maxPending: 20, circuitFailures: 3, circuitCooldownMs: 30_000, timeoutMs: 5000, allowFallback: true });
@@ -191,7 +211,10 @@ export class DemoClient implements DataClient {
     const membership = st.memberships.find((m) => m.userId === st.user.id)!;
     // Essai de rôle (démonstration) : l'application et les règles de la démo suivent ce rôle.
     const role = (st as DemoRoleHolder).rolePreview ?? membership.role;
-    return { mode: "demo", user: st.user, org: st.org, role, memberships: st.memberships.filter((m) => m.userId === st.user.id).map((m) => ({ ...m, orgName: st.org.name })) };
+    // Rôle d'opérateur (Selio Admin) : Marie est opératrice « tech » ; l'essai de rôle peut montrer « business ».
+    const operatorRole: OperatorRole | null = st.user.isOperator ? ((st as DemoAdminHolder).operatorRolePreview ?? "tech") : null;
+    const user: User = { ...st.user, isOperator: operatorRole !== null, operatorRole };
+    return { mode: "demo", user, org: st.org, role, memberships: st.memberships.filter((m) => m.userId === st.user.id).map((m) => ({ ...m, orgName: st.org.name })) };
   }
   private itemById(id: string): InventoryItem {
     const it = this.s.items.find((i) => i.id === id);
@@ -266,7 +289,7 @@ export class DemoClient implements DataClient {
     this.persist();
     return this.session();
   }
-  async register(input: { email: string; password: string; displayName: string; orgName: string; trialDays?: TrialDays; referralCode?: string }): Promise<Session> {
+  async register(input: { email: string; password: string; displayName: string; orgName: string; trialDays?: TrialDays; referralCode?: string; promoCode?: string }): Promise<Session> {
     await this.delay(200);
     this.state = buildDemoState(this.clock());
     this.state.user = { ...this.state.user, email: input.email, displayName: input.displayName };
@@ -280,14 +303,18 @@ export class DemoClient implements DataClient {
     // Parrainage : jamais bloquant ; en démonstration, le code est seulement noté (aucune marraine réelle).
     const code = normalizeReferralCode(input.referralCode ?? "");
     if (code) this.audit("referral.code_noted", "organization", this.state.org.id, { code, simulated: true });
+    // Code promo (offre commerciale) : jamais bloquant ; appliqué au premier paiement simulé.
+    const promo = input.promoCode?.trim() ? this.redeemPromo(input.promoCode, null) : null;
     this.persist();
+    const extra: Pick<Session, "referral" | "promo"> = {};
     if (input.referralCode?.trim()) {
       const message = code
         ? `Démonstration : le code de parrainage ${code} est noté, mais aucun mois offert n'est accordé (le parrainage n'est pas encore ouvert).`
         : "Ce code de parrainage n'a pas le bon format (6 lettres et chiffres) : il est ignoré, votre inscription continue.";
-      return { ...this.session(), referral: { applied: false, reason: code ? "disabled" : "invalid_code", message } };
+      extra.referral = { applied: false, reason: code ? "disabled" : "invalid_code", message };
     }
-    return this.session();
+    if (promo) extra.promo = { applied: promo.applied, ...(promo.reason ? { reason: promo.reason } : {}), message: promo.applied ? promo.message : `${promo.message} Votre inscription continue.` };
+    return { ...this.session(), ...extra };
   }
   async logout(): Promise<void> {
     if (this.state) this.audit("auth.logout", null, null, {});
@@ -400,6 +427,97 @@ export class DemoClient implements DataClient {
       creditsConsumed: 0,
       referredBy: null,
     };
+  }
+
+  // ---------- offres commerciales (mêmes règles que le serveur, offres rangées hors de l'espace) ----------
+  /** Applique un code à l'organisation de démonstration (une seule offre) ; un refus est rendu avec son message. */
+  private redeemPromo(rawCode: string, plan: string | null): PromoApplyResult {
+    const st = this.s as DemoOfferHolder;
+    if (st.offerRedemption) return { applied: false, valid: false, reason: "already_applied", message: `Une offre est déjà appliquée à votre abonnement (« ${st.offerRedemption.name} ») : une seule offre à la fois. Écrivez-nous pour la changer.` };
+    const list = this.offerStore.load();
+    const found = demoCheckCode(list, rawCode, this.clock(), plan);
+    if (!found.offer) return { applied: false, ...found.result };
+    const offer = found.offer;
+    this.offerStore.save(list.map((o) => (o.id === offer.id ? { ...o, redemptions: o.redemptions + 1, updatedAt: this.now() } : o)));
+    const redemption: OfferRedemption = { id: newId(), orgId: st.org.id, offerId: offer.id, name: offer.name, code: offer.code, discountPercent: offer.discountPercent, discountCents: offer.discountCents, plans: [...offer.plans], durationMonths: offer.durationMonths, monthsRemaining: offer.durationMonths, createdAt: this.now(), updatedAt: this.now() };
+    st.offerRedemption = redemption;
+    this.audit("offer.applied", "offer_redemption", redemption.id, { offerId: offer.id, code: offer.code, simulated: true });
+    return { ...found.result, applied: true, message: found.result.message.replace(/^Code (\S+) valable/, "Code $1 enregistré").replace(/\.$/, ", appliqué à vos prochains paiements."), redemption };
+  }
+  /** Ligne « Remise : … » d'une échéance simulée, et les mois restants après elle (null : aucune remise). */
+  private demoDiscount(plan: PaidPlan, cycle: BillingCycle, priceCents: number): { line: InvoiceExtraLine; after: number | null } | null {
+    const r = (this.s as DemoOfferHolder).offerRedemption;
+    if (!r) return null;
+    const d = redemptionDiscountFor(r, plan, cycle, priceCents);
+    if (!d) return null;
+    return { line: { kind: "discount", product: "offer_discount", label: offerInvoiceLineLabel(r.name, r.code), quantity: 1, unitCents: d.discountCents, amountCents: d.discountCents }, after: d.monthsRemainingAfter };
+  }
+  /** Sans session : le bandeau de la vitrine. Aucune offre tant qu'aucune n'a été créée dans l'admin démo. */
+  async getOfferBanner(): Promise<PublicOffer[]> {
+    return demoBanners(this.offerStore.load(), this.clock());
+  }
+  async checkPromoCode(input: { code: string; plan?: PaidPlan; cycle?: BillingCycle }): Promise<PromoCheckResult> {
+    return demoCheckCode(this.offerStore.load(), input.code, this.clock(), input.plan ?? null, input.cycle === "yearly" ? "yearly" : "monthly").result;
+  }
+  async getOrgOffer(): Promise<OfferRedemption | null> {
+    if (!can(this.session().role, "finances.read")) throw new DataError("finances_forbidden", "Votre rôle ne voit pas les finances.", 403);
+    return (this.s as DemoOfferHolder).offerRedemption ?? null;
+  }
+  async applyPromoCode(input: { code: string; plan?: PaidPlan }): Promise<PromoApplyResult> {
+    await this.delay(150);
+    this.requireBillingManage();
+    const sub = this.s.subscription;
+    const plan = input.plan ?? (isPaid(sub.pendingPlan) ? sub.pendingPlan : (sub.status === "active" || sub.status === "past_due") && isPaid(sub.plan) ? sub.plan : null);
+    const r = this.redeemPromo(input.code, plan);
+    if (!r.applied) throw new DataError(r.reason === "already_applied" ? "conflict" : "promo_refused", r.message, r.reason === "already_applied" ? 409 : 400, { reason: r.reason });
+    this.persist();
+    return r;
+  }
+  private requireOffersOperator(): void {
+    if (!this.s.user.isOperator) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+  }
+  async adminListOffers(): Promise<CommercialOffer[]> {
+    this.requireOffersOperator();
+    return [...this.offerStore.load()].sort((a, b) => Number(a.archivedAt !== null) - Number(b.archivedAt !== null) || b.createdAt.localeCompare(a.createdAt));
+  }
+  async adminCreateOffer(input: OfferInput): Promise<CommercialOffer> {
+    await this.delay(150);
+    this.requireOffersOperator();
+    const list = this.offerStore.load();
+    const offer = createDemoOffer(list, input, this.s.user.id, this.now());
+    this.offerStore.save([offer, ...list]);
+    this.audit("admin.offer_created", "commercial_offer", offer.id, { name: offer.name, code: offer.code, simulated: true });
+    this.persist();
+    return offer;
+  }
+  async adminUpdateOffer(id: string, input: OfferUpdate): Promise<CommercialOffer> {
+    await this.delay(150);
+    this.requireOffersOperator();
+    const list = this.offerStore.load();
+    const updated = updateDemoOffer(list, id, input, this.now());
+    this.offerStore.save(list.map((o) => (o.id === id ? updated : o)));
+    this.audit("admin.offer_updated", "commercial_offer", id, { changed: Object.keys(input), simulated: true });
+    this.persist();
+    return updated;
+  }
+  async adminDeleteOffer(id: string): Promise<OfferDeleteResult> {
+    await this.delay(150);
+    this.requireOffersOperator();
+    const list = this.offerStore.load();
+    const offer = list.find((o) => o.id === id);
+    if (!offer) throw new DataError("not_found", "Offre introuvable.", 404);
+    let result: OfferDeleteResult;
+    if (offer.redemptions === 0) {
+      this.offerStore.save(list.filter((o) => o.id !== id));
+      result = { deleted: true, archived: false, offer: null };
+    } else {
+      const archived: CommercialOffer = { ...offer, active: false, bannerEnabled: false, archivedAt: offer.archivedAt ?? this.now(), updatedAt: this.now() };
+      this.offerStore.save(list.map((o) => (o.id === id ? archived : o)));
+      result = { deleted: false, archived: true, offer: archived };
+    }
+    this.audit(result.deleted ? "admin.offer_deleted" : "admin.offer_archived", "commercial_offer", id, { name: offer.name, simulated: true });
+    this.persist();
+    return result;
   }
   async completeOnboardingStep(step: string): Promise<Organization> {
     const steps = new Set(this.s.org.settings.onboarding.completedSteps);
@@ -2009,7 +2127,7 @@ export class DemoClient implements DataClient {
     const fingerprint = demoFingerprint(parsed.data.criteria);
     if (track.filters.some((f) => f.fingerprint === fingerprint)) throw new DataError("conflict", "Un filtre avec les mêmes critères est déjà suivi.", 409);
     const now = this.now();
-    const created: TrackFilter = { id: newId(), orgId: this.s.org.id, name: parsed.data.name, criteria: completeCriteria(parsed.data.criteria), fingerprint, enabled: parsed.data.enabled, lastReadAt: null, nextReadAt: null, createdAt: now, updatedAt: now };
+    const created: TrackFilter = { id: newId(), orgId: this.s.org.id, name: parsed.data.name, criteria: completeCriteria(parsed.data.criteria), fingerprint, enabled: parsed.data.enabled, alertRules: DEFAULT_ALERT_RULES, lastReadAt: null, nextReadAt: null, createdAt: now, updatedAt: now };
     track.filters.push(created);
     this.audit("track.filter_created", "track_filter", created.id, {});
     this.persist();
@@ -2122,6 +2240,60 @@ export class DemoClient implements DataClient {
       return { month, scans: n("track.scan"), photoSearches: n("track.photo_search") };
     });
     return { ...base, source: "demo", sourceLabel: TRACK_SOURCE_LABELS.demo, notices: [TRACK_LEGAL_NOTICE, TRACK_DEMO_NOTICE], history };
+  }
+  /** Alertes de tendance d'un filtre : réglage gardé dans la démo, alertes rejouées sur l'historique simulé. */
+  async trackFilterAlerts(filterId: string): Promise<TrackFilterAlerts> {
+    this.requireTrack();
+    return demoFilterAlerts(this.trackFilterById(filterId), this.s.subscription.quotas.trackHistoryMonths, this.clock());
+  }
+  async updateTrackFilterAlerts(filterId: string, rules: TrackAlertRulesInput): Promise<TrackFilterAlerts> {
+    this.requireTrackWrite();
+    const parsed = trackAlertRulesSchema.safeParse(rules ?? {});
+    if (!parsed.success) throw new DataError("validation", parsed.error.issues[0]?.message ?? "Réglage des alertes invalide", 400, parsed.error.flatten());
+    const f = this.trackFilterById(filterId);
+    f.alertRules = parsed.data;
+    f.updatedAt = this.now();
+    this.audit("track.filter_alerts_updated", "track_filter", filterId, { enabled: parsed.data.enabled });
+    this.persist();
+    return demoFilterAlerts(f, this.s.subscription.quotas.trackHistoryMonths, this.clock());
+  }
+
+  // ---------- Selio Track dans l'administration ----------
+  /** Rôle d'opérateur de la session (« tech » par défaut pour un opérateur, tant que les rôles ne sont pas connus). */
+  private trackOperatorCanControl(): boolean {
+    const role = (this.session().user as { operatorRole?: string | null }).operatorRole;
+    return role === undefined ? this.s.user.isOperator : role === "tech";
+  }
+  async adminTrack(): Promise<TrackAdminStatus> {
+    if (!this.s.user.isOperator) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+    const q = this.s.subscription.quotas;
+    const month = new Date(Date.UTC(this.clock().getUTCFullYear(), this.clock().getUTCMonth(), 1)).toISOString();
+    const n = (kind: UsageEvent["kind"]) => this.s.usage.filter((u) => u.kind === kind && u.createdAt >= month).reduce((t, u) => t + u.quantity, 0);
+    return demoAdminTrack({
+      state: this.track(), org: { id: this.s.org.id, name: this.s.org.name, plan: this.s.subscription.plan },
+      quotas: { filters: q.trackFiltersFollowed, scans: q.trackScansPerMonth, photoSearches: q.trackPhotoSearchesPerMonth },
+      month: { scans: n("track.scan"), photoSearches: n("track.photo_search") }, canControl: this.trackOperatorCanControl(), now: this.clock(),
+    });
+  }
+  async adminPauseTrack(input: TrackManualPauseInput): Promise<TrackAdminStatus> {
+    if (!this.s.user.isOperator) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+    if (!this.trackOperatorCanControl()) throw new DataError("forbidden", "Mettre Track en pause ou le reprendre est réservé au rôle d'opérateur « tech ».", 403);
+    const parsed = trackManualPauseInputSchema.safeParse(input ?? {});
+    if (!parsed.success) throw new DataError("validation", parsed.error.issues[0]?.message ?? "Raison de la pause invalide", 400);
+    const st = this.track();
+    st.manualPause = { paused: true, since: st.manualPause?.paused ? st.manualPause.since : this.now(), by: this.s.user.id, reason: parsed.data.reason };
+    this.audit("admin.track_paused", "track", "runtime", { reason: parsed.data.reason });
+    this.persist();
+    return this.adminTrack();
+  }
+  async adminResumeTrack(): Promise<TrackAdminStatus> {
+    if (!this.s.user.isOperator) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+    if (!this.trackOperatorCanControl()) throw new DataError("forbidden", "Mettre Track en pause ou le reprendre est réservé au rôle d'opérateur « tech ».", 403);
+    const st = this.track();
+    st.manualPause = { paused: false, since: null, by: null, reason: null };
+    this.audit("admin.track_resumed", "track", "runtime", {});
+    this.persist();
+    return this.adminTrack();
   }
 
   // ---------- estimation des prix ----------
@@ -2328,6 +2500,16 @@ export class DemoClient implements DataClient {
   private settleSubscription(): void {
     const now = this.clock();
     let changed = false;
+    // Accès offert par l'équipe Selio (Selio Admin) : jamais débité ni rétrogradé avant sa fin ; ensuite, accès de base.
+    const granted = this.s.subscription;
+    if (granted.grantedUntil) {
+      if (new Date(granted.grantedUntil) > now) return;
+      this.s.subscription = { ...granted, plan: "free", quotas: quotasForPlan("free"), status: "canceled", grantedUntil: null, pendingPlan: null, cancelAtPeriodEnd: false, dataRetentionUntil: new Date(now.getTime() + DATA_RETENTION_DAYS_AFTER_END * 86_400_000).toISOString(), updatedAt: now.toISOString() };
+      this.adminState().own.grantedBy = null;
+      this.audit("billing.grant_ended", "subscription", granted.id, { reason: "granted_ended", previousPlan: granted.plan, grantedUntil: granted.grantedUntil, simulated: true });
+      this.persist();
+      return;
+    }
     // Le jeu de données dit « carte enregistrée » sans fournisseur : c'est la carte fictive de la
     // démonstration, enregistrée « pour le marchand » chez Revolut (bac à sable), comme après un
     // vrai enregistrement. Un abonnement issu d'une inscription (cardOnFile=false) n'est pas touché.
@@ -2371,8 +2553,12 @@ export class DemoClient implements DataClient {
     const previousEnd = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null;
     const start = kind === "renewal" && previousEnd && previousEnd <= now ? previousEnd : now;
     const end = addCycle(start, cycle);
-    const amountCents = planPriceCents(plan, cycle);
-    const invoice: Invoice = { id: newId(), orgId: this.s.org.id, number: this.nextInvoiceNumber(now), plan, cycle, amountCents, vatRate: DEFAULT_VAT_RATE, vatNotice: null, periodStart: start.toISOString(), periodEnd: end.toISOString(), orderId, issuedAt: now.toISOString(), createdAt: now.toISOString() };
+    // Offre commerciale appliquée : remise sur le prix du forfait, mois décomptés à l'échéance payée (comme le serveur).
+    const discount = this.demoDiscount(plan, cycle, planPriceCents(plan, cycle));
+    const amountCents = planPriceCents(plan, cycle) - (discount?.line.amountCents ?? 0);
+    const invoice: Invoice = { id: newId(), orgId: this.s.org.id, number: this.nextInvoiceNumber(now), plan, cycle, amountCents, vatRate: DEFAULT_VAT_RATE, vatNotice: null, periodStart: start.toISOString(), periodEnd: end.toISOString(), orderId: amountCents > 0 ? orderId : null, issuedAt: now.toISOString(), createdAt: now.toISOString(), ...(discount ? { extraLines: [discount.line] } : {}) };
+    const holder = this.s as DemoOfferHolder;
+    if (discount && holder.offerRedemption) holder.offerRedemption = { ...holder.offerRedemption, monthsRemaining: holder.offerRedemption.monthsRemaining === null ? null : Math.max(0, holder.offerRedemption.monthsRemaining - offerMonthsPerInstallment(cycle)), updatedAt: now.toISOString() };
     this.invoices().unshift(invoice);
     this.s.subscription = { ...sub, plan, quotas: quotasForPlan(plan), status: "active", provider: "revolut", externalRef: null, currentPeriodEnd: end.toISOString(), cycle, pendingPlan: null, cardOnFile: true, revolutCustomerId: sub.revolutCustomerId ?? DEMO_CUSTOMER_ID, paymentMethodId: sub.paymentMethodId ?? DEMO_PAYMENT_METHOD_ID, chargeAttempts: 0, nextChargeAt: null, lastChargeError: null, dataRetentionUntil: null, cancelAtPeriodEnd: false, testMode: true, updatedAt: now.toISOString() };
     this.audit("billing.payment_completed", "invoice", invoice.id, { plan, cycle, amountCents, orderId, kind, invoiceNumber: invoice.number, periodEnd: end.toISOString(), simulated: true });
@@ -2457,9 +2643,11 @@ export class DemoClient implements DataClient {
       return { orderToken: null, orderId, mode: "sandbox", amountCents: CARD_VERIFICATION_AMOUNT_CENTS, captureMode: "manual", simulated: true, message: `Démonstration : carte enregistrée pour l'offre ${PLAN_LABELS[plan]} (autorisation de ${formatEurosFr(CARD_VERIFICATION_AMOUNT_CENTS)} annulée aussitôt), rien n'est débité avant la fin de l'essai. En mode connecté, le formulaire Revolut s'ouvrirait ici.` };
     }
     const invoice = this.completeDemoPayment(plan, cycle, "checkout", orderId);
-    this.audit("billing.checkout_simulated", "subscription", sub.id, { plan, cycle, captureMode: "automatic", kind: "checkout", amountCents, orderId });
+    const paid = invoice.amountCents;
+    const remise = invoice.extraLines?.find((l) => l.kind === "discount");
+    this.audit("billing.checkout_simulated", "subscription", sub.id, { plan, cycle, captureMode: "automatic", kind: "checkout", amountCents: paid, planAmountCents: amountCents, orderId });
     this.persist();
-    return { orderToken: null, orderId, mode: "sandbox", amountCents, captureMode: "automatic", simulated: true, message: `Démonstration : paiement de ${formatEurosFr(amountCents)} (${PLAN_LABELS[plan]}, ${CYCLE_LABELS[cycle]}) simulé, facture ${invoice.number} émise. En mode connecté, le formulaire Revolut s'ouvrirait ici.` };
+    return { orderToken: null, orderId: paid > 0 ? orderId : null, mode: "sandbox", amountCents: paid, captureMode: paid > 0 ? "automatic" : null, simulated: true, message: `Démonstration : paiement de ${formatEurosFr(paid)} (${PLAN_LABELS[plan]}, ${CYCLE_LABELS[cycle]}${remise ? `, ${remise.label.toLowerCase()} de ${formatEurosFr(remise.amountCents)} comprise` : ""}) simulé, facture ${invoice.number} émise. En mode connecté, le formulaire Revolut s'ouvrirait ici.` };
   }
   /**
    * Démonstration du changement de carte : aucun formulaire ; une nouvelle carte fictive remplace
@@ -2529,7 +2717,11 @@ export class DemoClient implements DataClient {
       invoice,
       issuer: { name: "Selio", vatNotice: invoice.vatNotice },
       customer: { orgName: this.s.org.name, email: this.s.user.email },
-      lines: [{ label: `Abonnement Selio ${PLAN_LABELS[invoice.plan]} — ${CYCLE_LABELS[invoice.cycle]}`, periodLabel: invoicePeriodLabel(invoice.periodStart, invoice.periodEnd), amountCents: invoice.amountCents }],
+      // Remise d'une offre : ligne négative après l'abonnement (même rendu que le serveur, la somme reste le TTC).
+      lines: [
+        { label: `Abonnement Selio ${PLAN_LABELS[invoice.plan]} — ${CYCLE_LABELS[invoice.cycle]}`, periodLabel: invoicePeriodLabel(invoice.periodStart, invoice.periodEnd), amountCents: invoice.amountCents + (invoice.extraLines ?? []).filter((l) => l.kind === "discount").reduce((s, l) => s + l.amountCents, 0) },
+        ...(invoice.extraLines ?? []).filter((l) => l.kind === "discount").map((l) => ({ kind: "discount" as const, label: l.label, periodLabel: invoicePeriodLabel(invoice.periodStart, invoice.periodEnd), amountCents: -l.amountCents, quantity: l.quantity, unitCents: l.unitCents })),
+      ],
       totals: { ...invoiceAmounts(invoice.amountCents, invoice.vatRate), vatRate: invoice.vatRate },
       paymentProvider: invoice.orderId ? "revolut" : null,
     };
@@ -2549,7 +2741,8 @@ export class DemoClient implements DataClient {
 
   // ---------- sécurité et données ----------
   async listAuditLogs(limit = 100): Promise<AuditLog[]> {
-    return this.s.audit.slice(0, limit);
+    // Actions internes de Selio Admin (qualification, note, accès offert, essai prolongé) : jamais montrées au client.
+    return this.s.audit.filter((a) => !isInternalAdminAction(a.action)).slice(0, limit);
   }
   async changePassword(): Promise<void> {
     await this.delay(200);
@@ -2585,7 +2778,7 @@ export class DemoClient implements DataClient {
   // ---------- administration ----------
   async getAdminOverview(): Promise<AdminOverview> {
     const st = this.s;
-    if (!st.user.isOperator) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+    this.requireOperatorCap("admin.health");
     const ai = await this.ai.status();
     const dayAgo = new Date(this.clock().getTime() - 86_400_000).toISOString();
     const recentAi = st.aiRequests.filter((r) => r.createdAt >= dayAgo);
@@ -2611,41 +2804,150 @@ export class DemoClient implements DataClient {
    */
   async getAdminUsage(): Promise<AdminUsageReport> {
     const st = this.s;
-    if (!st.user.isOperator) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+    this.requireOperatorCap("admin.usage.read");
     const mine = await this.getUsage();
     const now = this.clock();
-    const sample = (id: string, name: string, plan: PaidPlan, status: string, createdDaysAgo: number, used: { ai: number; items: number; connections: number; members: number; month?: Record<string, number>; cloudToday?: number }): AdminOrgUsage => {
+    const sample = (id: string, name: string, plan: PaidPlan, status: string, createdDaysAgo: number, used: { ai: number; items: number; connections: number; members: number; month?: Record<string, number>; cloudToday?: number; trackFilters?: number }): AdminOrgUsage => {
       const q = quotasForPlan(plan);
       return adminOrgUsage({
         id, name, plan, status,
         createdAt: new Date(now.getTime() - createdDaysAgo * 86_400_000).toISOString(),
         counters: { aiRequests: buildUsageCounter(used.ai, q.aiRequestsPerMonth), items: buildUsageCounter(used.items, q.items), connections: buildUsageCounter(used.connections, q.connections), members: buildUsageCounter(used.members, q.members) },
-        ...subsidiaryUsage(used.month ?? {}, q, used.cloudToday ?? 0),
+        ...subsidiaryUsage(used.month ?? {}, q, used.cloudToday ?? 0, used.trackFilters ?? 0),
         automationActions: used.month?.["automation.action"] ?? 0,
       });
     };
     const orgs: AdminOrgUsage[] = [
       adminOrgUsage({ id: st.org.id, name: st.org.name, plan: st.subscription.plan, status: st.subscription.status, createdAt: st.org.createdAt, counters: mine.counters, studio: mine.studio, track: mine.track, cloud: mine.cloud, automationActions: mine.automationActions }),
       sample("org-exemple-starter", "Friperie du Cours (exemple)", "starter", "active", 64, { ai: 262, items: 410, connections: 1, members: 1, month: { "automation.action": 38 } }),
-      sample("org-exemple-pro", "Atelier Lune (exemple)", "pro", "past_due", 120, { ai: 1500, items: 980, connections: 3, members: 2, month: { "studio.listing": 20, "studio.worn_photo": 4, "track.scan": 6, "track.photo_search": 11, "automation.action": 210 } }),
-      sample("org-exemple-agence", "Dressing Nomade (exemple)", "agence", "active", 31, { ai: 2100, items: 6400, connections: 7, members: 4, month: { "studio.listing": 51, "studio.worn_photo": 12, "track.scan": 20, "track.photo_search": 40, "automation.action": 1290 }, cloudToday: 620 }),
+      sample("org-exemple-pro", "Atelier Lune (exemple)", "pro", "past_due", 120, { ai: 1500, items: 980, connections: 3, members: 2, month: { "studio.listing": 20, "studio.worn_photo": 4, "track.scan": 6, "track.photo_search": 11, "automation.action": 210 }, trackFilters: 5 }),
+      sample("org-exemple-agence", "Dressing Nomade (exemple)", "agence", "active", 31, { ai: 2100, items: 6400, connections: 7, members: 4, month: { "studio.listing": 51, "studio.worn_photo": 12, "track.scan": 20, "track.photo_search": 40, "automation.action": 1290 }, cloudToday: 620, trackFilters: 12 }),
     ];
     return { period: mine.period, orgs: orgs.sort((a, b) => b.maxPercent - a.maxPercent || a.name.localeCompare(b.name, "fr")) };
   }
   async adminSetPlan(orgId: string, plan: Plan): Promise<void> {
-    if (!this.s.user.isOperator) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+    this.requireOperatorCap("admin.plans");
     if (orgId !== this.s.org.id) throw new DataError("not_found", "Organisation introuvable", 404);
     this.s.subscription = { ...this.s.subscription, plan, quotas: PLAN_QUOTAS[plan], updatedAt: this.now() };
     this.audit("admin.plan_changed", "organization", orgId, { plan });
     this.persist();
   }
   async adminListAudit(limit = 100): Promise<AuditLog[]> {
-    if (!this.s.user.isOperator) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+    this.requireOperatorCap("admin.audit");
     return this.s.audit.filter((a) => a.action.startsWith("admin.") || a.action.startsWith("auth.") || a.action.startsWith("token.") || a.action.startsWith("connection.")).slice(0, limit);
   }  /** Supervision de la démonstration : exemple fixe (aucune vérification réelle, aucune alerte envoyée). */
   async getHealthDetails(): Promise<HealthDetailsView> {
-    if (!this.s.user.isOperator) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+    this.requireOperatorCap("admin.supervision");
     return demoHealthDetails(this.clock());
+  }
+
+  // ---------- Selio Admin : croissance et comptes ----------
+  /** Même matrice que le serveur (`operatorCan`) : refus 403 propre. */
+  private requireOperatorCap(capability: OperatorCapability): void {
+    const role = this.session().user.operatorRole ?? null;
+    if (!role) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+    if (!operatorCan(role, capability)) throw new DataError("forbidden", "Accès réservé à l'opérateur technique de Selio.", 403);
+  }
+  private adminState(): DemoAdminState {
+    const st = this.s as DemoAdminHolder;
+    st.admin ??= seedDemoAdmin(this.clock(), st.user.id);
+    return st.admin;
+  }
+  /** Compte de la démonstration vu par l'admin : organisation, abonnement, membres et journal. */
+  private ownAccountRecord(): DemoAccountRecord {
+    this.settleSubscription();
+    const st = this.s;
+    const own = this.adminState().own;
+    const sub = st.subscription;
+    const me = this.session().user;
+    return {
+      id: st.org.id, name: st.org.name, slug: st.org.slug, createdAt: st.org.createdAt,
+      qualification: own.qualification, qualificationNote: own.qualificationNote, qualifiedBy: own.qualifiedBy, qualifiedAt: own.qualifiedAt,
+      plan: sub.plan, status: sub.status, provider: sub.provider, cycle: sub.cycle, currentPeriodEnd: sub.currentPeriodEnd, cardOnFile: sub.cardOnFile, cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+      grantedUntil: sub.grantedUntil ?? null, grantedBy: sub.grantedUntil ? own.grantedBy : null,
+      team: st.memberships.map((m) => {
+        const u = st.users.find((x) => x.id === m.userId);
+        return { userId: m.userId, email: u?.email ?? "—", displayName: u?.displayName ?? "—", role: m.role, operatorRole: m.userId === me.id ? me.operatorRole ?? null : u?.isOperator ? "tech" : null };
+      }),
+      history: st.audit.filter((a) => ADMIN_HISTORY_PREFIXES.some((p) => a.action.startsWith(p))).slice(0, 100).map((a) => ({ id: a.id, action: a.action, actorUserId: a.actorUserId, actorEmail: this.userEmail(a.actorUserId), meta: a.meta, createdAt: a.createdAt })),
+    };
+  }
+  private userEmail(id: string | null): string | null {
+    if (!id) return null;
+    return this.s.users.find((u) => u.id === id)?.email ?? null;
+  }
+  private accountRecords(): DemoAccountRecord[] {
+    return [this.ownAccountRecord(), ...this.adminState().accounts];
+  }
+  /** Applique une action de l'admin au compte (celui de la démo ou un exemple) et la journalise dans son historique. */
+  private adminMutate(orgId: string, op: (r: DemoAccountRecord) => { action: string; meta: Record<string, unknown> }): AdminAccountDetail {
+    this.requireOperatorCap("admin.accounts.manage");
+    const st = this.s;
+    const now = this.clock();
+    if (orgId === st.org.id) {
+      const rec = this.ownAccountRecord();
+      const { action, meta } = op(rec);
+      const own = this.adminState().own;
+      Object.assign(own, { qualification: rec.qualification, qualificationNote: rec.qualificationNote, qualifiedBy: rec.qualifiedBy, qualifiedAt: rec.qualifiedAt, grantedBy: rec.grantedBy });
+      const sub = st.subscription;
+      if (rec.plan !== sub.plan || rec.status !== sub.status || rec.currentPeriodEnd !== sub.currentPeriodEnd || rec.grantedUntil !== (sub.grantedUntil ?? null)) {
+        st.subscription = { ...sub, plan: rec.plan, quotas: quotasForPlan(rec.plan), status: rec.status, provider: rec.provider as Subscription["provider"], currentPeriodEnd: rec.currentPeriodEnd, grantedUntil: rec.grantedUntil, cancelAtPeriodEnd: false, pendingPlan: null, dataRetentionUntil: null, updatedAt: now.toISOString() };
+      }
+      this.audit(action, action.startsWith("admin.account_") ? "organization" : "subscription", orgId, meta);
+    } else {
+      const rec = this.adminState().accounts.find((a) => a.id === orgId);
+      if (!rec) throw new DataError("not_found", "Compte introuvable.", 404);
+      const { action, meta } = op(rec);
+      rec.history.unshift({ id: newId(), action, actorUserId: st.user.id, actorEmail: st.user.email, meta, createdAt: now.toISOString() });
+    }
+    this.persist();
+    return this.accountDetailOf(orgId);
+  }
+  private accountDetailOf(orgId: string): AdminAccountDetail {
+    const rec = this.accountRecords().find((a) => a.id === orgId);
+    if (!rec) throw new DataError("not_found", "Compte introuvable.", 404);
+    return accountDetail(rec, (id) => this.userEmail(id) ?? (id ? this.adminState().accounts.flatMap((a) => a.team).find((m) => m.userId === id)?.email ?? null : null));
+  }
+  async getAdminGrowth(): Promise<AdminGrowth> {
+    this.requireOperatorCap("admin.growth");
+    return growthOf(this.accountRecords(), this.clock(), { pending: 1, qualified: 1, credited: 0, refused: 0 });
+  }
+  async adminListAccounts(query: AdminAccountsQuery = {}): Promise<AdminAccountRow[]> {
+    this.requireOperatorCap("admin.accounts.read");
+    return filterAccounts(this.accountRecords().map(accountRow), query).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  async adminGetAccount(orgId: string): Promise<AdminAccountDetail> {
+    this.requireOperatorCap("admin.accounts.read");
+    return this.accountDetailOf(orgId);
+  }
+  async adminQualifyAccount(orgId: string, input: AdminQualificationInput): Promise<AdminAccountDetail> {
+    await this.delay(120);
+    return this.adminMutate(orgId, (r) => qualifyRecord(r, input, this.s.user.id, this.clock()));
+  }
+  async adminSetAccountNote(orgId: string, note: string): Promise<AdminAccountDetail> {
+    await this.delay(120);
+    return this.adminMutate(orgId, (r) => noteRecord(r, { note }, this.s.user.id, this.clock()));
+  }
+  async adminGrantAccess(orgId: string, input: AdminGrantInput): Promise<AdminAccountDetail> {
+    await this.delay(120);
+    return this.adminMutate(orgId, (r) => grantRecord(r, input, this.s.user.id, this.clock()));
+  }
+  async adminRevokeAccess(orgId: string): Promise<AdminAccountDetail> {
+    await this.delay(120);
+    return this.adminMutate(orgId, (r) => revokeRecord(r, this.clock()));
+  }
+  async adminExtendTrial(orgId: string, days: number): Promise<AdminAccountDetail> {
+    await this.delay(120);
+    return this.adminMutate(orgId, (r) => extendTrialRecord(r, days, this.clock()));
+  }
+  /** Essai de rôle d'opérateur (démonstration) : Selio Admin vu en « business » ; null revient à « tech ». */
+  async previewOperatorRole(role: OperatorRole | null): Promise<Session> {
+    const st = this.s as DemoAdminHolder;
+    if (!st.user.isOperator) throw new DataError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+    st.operatorRolePreview = role === "tech" ? null : role;
+    this.audit("demo.operator_role_preview", null, null, { role: st.operatorRolePreview });
+    this.persist();
+    return this.session();
   }
 
 

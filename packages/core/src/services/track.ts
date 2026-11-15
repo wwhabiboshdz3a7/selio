@@ -17,6 +17,7 @@ import { AppError, nowIso, requireAction, withOrg, type OrgContext, type Service
 import * as cloud from "./cloud";
 import { aiQuotaLeftTx, estimate, quantileCents, runStructuredAi } from "./pricing";
 import { effectiveSlowdownFactor, slowdownAfterRead } from "./radar";
+import { evaluateTrackAlerts } from "./track-alerts";
 import { RADAR_SIGNALS, validateCatalogItems, type RadarSignal } from "./radar-sources";
 
 /**
@@ -330,7 +331,8 @@ function medianOf(values: readonly number[]): number | null {
 
 // ---------------------------------------------------------------- lecture d'une empreinte
 
-export type TrackSkipReason = "not_due" | "paused" | "machine_paused" | "no_reader";
+/** `manual_pause` : Track mis en pause par un opérateur « tech » depuis /admin/track (toutes sources). */
+export type TrackSkipReason = "not_due" | "paused" | "machine_paused" | "no_reader" | "manual_pause";
 
 export interface TrackReadResult {
   fingerprint: string;
@@ -350,13 +352,15 @@ export interface TrackReadResult {
   /** Signal de Vinted : toutes les lectures en direct de Track sont en pause. */
   paused: boolean;
   circuitUntil: string | null;
+  /** Alertes de tendance déclenchées après l'instantané (toutes organisations). */
+  alerts: number;
   message?: string;
 }
 
 const SIGNAL_OUTCOME: Record<RadarSignal, RadarReadOutcome> = { captcha: "captcha", rate_limited: "rate_limited", blocked: "blocked", warning: "blocked" };
 const FAILURE_OUTCOME: Record<"not_logged_in" | "selector_missing" | "timeout" | "error" | "unavailable", RadarReadOutcome> = { not_logged_in: "error", selector_missing: "page_changed", timeout: "timeout", error: "error", unavailable: "error" };
 
-const skip = (fingerprint: string, source: TrackSource, skipped: TrackSkipReason, message?: string): TrackReadResult => ({ fingerprint, source, outcome: null, skipped, listed: 0, seen: 0, newCount: 0, goneCount: 0, references: 0, snapshotId: null, nextReadAt: null, factor: 1, paused: false, circuitUntil: null, message });
+const skip = (fingerprint: string, source: TrackSource, skipped: TrackSkipReason, message?: string): TrackReadResult => ({ fingerprint, source, outcome: null, skipped, listed: 0, seen: 0, newCount: 0, goneCount: 0, references: 0, snapshotId: null, nextReadAt: null, factor: 1, paused: false, circuitUntil: null, alerts: 0, message });
 
 /**
  * Lit UNE empreinte (une seule lecture quelle que soit la quantité de clients qui la suivent) et en tire
@@ -365,6 +369,21 @@ const skip = (fingerprint: string, source: TrackSource, skipped: TrackSkipReason
  */
 export async function runTrackRead(services: Services, fingerprint: string, source: TrackSource, opts: { now?: Date } = {}): Promise<TrackReadResult> {
   const now = opts.now ?? services.now();
+  // Pause manuelle d'un opérateur (/admin/track) : relue à chaque lecture, sans redémarrage du worker.
+  const manual = await services.db.withGlobal((tx) => repos.trackReads.manualPause(tx));
+  if (manual.paused) return skip(fingerprint, source, "manual_pause", "Track est en pause manuelle (administration).");
+  const res = await readFingerprint(services, fingerprint, source, now);
+  if (res.outcome === null) return res;
+  // Journal partagé des lectures (/admin/track) puis alertes de tendance : jamais bloquants pour la lecture.
+  await services.db.withGlobal((tx) => repos.trackReads.log(tx, { fingerprint, readAt: now.toISOString(), source, outcome: res.outcome!, listed: res.listed, newCount: res.newCount, goneCount: res.goneCount, factor: res.factor, message: res.outcome === "ok" ? null : res.message ?? null })).catch(() => undefined);
+  if (res.outcome === "ok" && res.snapshotId) {
+    const alerts = await evaluateTrackAlerts(services, fingerprint, now).catch(() => null);
+    if (alerts) res.alerts = alerts.fired;
+  }
+  return res;
+}
+
+async function readFingerprint(services: Services, fingerprint: string, source: TrackSource, now: Date): Promise<TrackReadResult> {
   const iso = now.toISOString();
   const reader = services.track?.reader;
   const interval = trackReadIntervalMinutes(services);
@@ -499,7 +518,7 @@ export async function runTrackRead(services: Services, fingerprint: string, sour
     await repos.trackReads.finish(tx, { fingerprint, readAt: iso, nextReadAt: next.toISOString(), outcome: "ok", counted: true, blocked: false, anomaly: false, factor: 1, state: current, stateSource: source });
     return { snapshotId: snapshot?.id ?? null, newCount: diff.newCount, goneCount: diff.gone.length, references: written };
   });
-  return { fingerprint, source, outcome: "ok", skipped: null, listed: items.length, seen: page.seen, newCount: saved.newCount, goneCount: saved.goneCount, references: saved.references, snapshotId: saved.snapshotId, nextReadAt: next.toISOString(), factor, paused: false, circuitUntil: null };
+  return { fingerprint, source, outcome: "ok", skipped: null, listed: items.length, seen: page.seen, newCount: saved.newCount, goneCount: saved.goneCount, references: saved.references, snapshotId: saved.snapshotId, nextReadAt: next.toISOString(), factor, paused: false, circuitUntil: null, alerts: 0 };
 }
 
 export interface TrackTickSummary {
@@ -527,7 +546,7 @@ export async function runDueTrackReads(services: Services, opts: { now?: Date; l
     const res = await runTrackRead(services, p.fingerprint, source, { now: opts.now ?? services.now() });
     results.push(res);
     if (res.skipped) skipped.set(res.skipped, (skipped.get(res.skipped) ?? 0) + 1);
-    if (res.paused || res.skipped === "paused" || res.skipped === "machine_paused") break;
+    if (res.paused || res.skipped === "paused" || res.skipped === "machine_paused" || res.skipped === "manual_pause") break;
   }
   return { due: planned.length, read: results.filter((r) => r.outcome !== null).length, source, skipped: [...skipped.entries()].map(([reason, count]) => ({ reason, count })), results };
 }
@@ -886,15 +905,15 @@ export function trackOrgIds(services: Services): Promise<string[]> {
 }
 
 /**
- * Historique d'une organisation : scans et recherches par photo plus anciens que `trackHistoryMonths`
+ * Historique d'une organisation : scans, recherches par photo et alertes de tendance plus anciens que `trackHistoryMonths`
  * mois (tout, sans offre Track) sont supprimés.
  */
-export async function purgeTrackHistory(services: Services, orgId: string, now: Date = services.now()): Promise<{ scans: number; photoSearches: number }> {
+export async function purgeTrackHistory(services: Services, orgId: string, now: Date = services.now()): Promise<{ scans: number; photoSearches: number; alerts: number }> {
   return services.db.withOrg(orgId, async (tx) => {
     const months = Math.max(0, Math.min(12, (await quotasTx(tx)).trackHistoryMonths));
     const before = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - months, now.getUTCDate(), now.getUTCHours(), now.getUTCMinutes())).toISOString();
     const cutoff = months === 0 ? new Date(now.getTime() + 1).toISOString() : before;
-    return { scans: await repos.trackScans.purgeBefore(tx, cutoff), photoSearches: await repos.trackPhotoSearches.purgeBefore(tx, cutoff) };
+    return { scans: await repos.trackScans.purgeBefore(tx, cutoff), photoSearches: await repos.trackPhotoSearches.purgeBefore(tx, cutoff), alerts: await repos.trackAlertEvents.purgeBefore(tx, cutoff) };
   });
 }
 

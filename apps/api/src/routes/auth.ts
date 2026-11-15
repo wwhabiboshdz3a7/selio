@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { ReferralApplyOutcome } from "@selio/contracts";
-import { AppError, auth, org as orgService, referral } from "@selio/core";
+import { AppError, adminAccounts, auth, offers, org as orgService, referral } from "@selio/core";
 import { SESSION_COOKIE } from "../plugins/auth";
 
 export default async function authRoutes(app: FastifyInstance, opts: { cookieSecure: boolean; operatorEmails: string[] }) {
@@ -14,8 +14,11 @@ export default async function authRoutes(app: FastifyInstance, opts: { cookieSec
     // Code de parrainage facultatif (`referralCode`), appliqué une fois l'organisation créée : JAMAIS bloquant
     // (code vide, mal formé, inconnu, le sien, parrainage fermé : ignoré avec un message ; incident : idem).
     const referralOutcome = await applyReferralCode(app, s.orgId!, (req.body as { referralCode?: unknown } | null)?.referralCode, req);
+    // Code promo facultatif (`promoCode`, offre commerciale) : JAMAIS bloquant non plus (inconnu, expiré, plein :
+    // ignoré avec un message). La remise s'appliquera au premier paiement (fin de l'essai comprise).
+    const promoOutcome = await offers.applyCodeAtSignup(app.services, s.orgId!, (req.body as { promoCode?: unknown } | null)?.promoCode, { actorUserId: s.userId, ip: req.ip });
     const session = await bootstrapSession(app, req, s.orgId!, s);
-    return referralOutcome ? { ...session, referral: referralOutcome } : session;
+    return { ...session, ...(referralOutcome ? { referral: referralOutcome } : {}), ...(promoOutcome ? { promo: promoOutcome } : {}) };
   });
 
   app.post("/api/auth/login", { config: { rateLimit: { max: 20, timeWindow: "15 minutes" } } }, async (req, reply) => {
@@ -95,8 +98,10 @@ async function bootstrapSession(app: FastifyInstance, req: Parameters<typeof app
   const userId = s?.userId ?? req.sessionInfo?.userId;
   if (!userId) throw new AppError("unauthorized", "Session introuvable", 401);
   const m = await app.services.db.withGlobal((tx) => repos.memberships.get(tx, orgId, userId));
-  const user = await app.services.db.withGlobal((tx) => repos.users.byId(tx, userId));
   if (!m) throw new AppError("forbidden", "Aucune appartenance à cette organisation.", 403);
-  req.orgCtx = { services: app.services, orgId, userId, role: m.role, isOperator: user.isOperator, ip: req.ip };
+  // Rôle d'opérateur tiré de la configuration ; compte « bloqué » : connexion refusée avec un message clair.
+  const access = await adminAccounts.sessionAccess(app.services, userId, orgId);
+  if (access.blocked) throw adminAccounts.accountBlockedError();
+  req.orgCtx = { services: app.services, orgId, userId, role: m.role, isOperator: access.operatorRole !== null, operatorRole: access.operatorRole, ip: req.ip };
   return orgService.getSession(req.orgCtx);
 }

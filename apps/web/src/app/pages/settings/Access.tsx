@@ -8,7 +8,6 @@ import { Alert, Avatar, Button, Card, ConfirmDialog, Field, Input, PageHeader, S
 import { useClient, useData, useRequiredSession } from "../../../lib/data/provider";
 import { QueryBoundary } from "../../components/common";
 import { useAppMutation } from "../../components/hooks";
-import { AdminTabs } from "../admin-tabs";
 
 /** À qui s'adresse chaque rôle, en une phrase, et ce qu'il fait au quotidien. */
 export const ROLE_GUIDE: Record<Role, { forWhom: string; summary: string }> = {
@@ -39,12 +38,12 @@ export default function Access() {
   const assignable = ROLES.filter((r) => canAssignRole(session.role, r));
   // Le titulaire ne s'attribue jamais par invitation (on invite, puis on change le rôle).
   const invitable = ROLES.filter((r) => r !== "owner" && canAssignRole(session.role, r));
-  // Même page dans Paramètres et dans Opérateur › Administration (en-tête et onglets propres à l'administration).
+  // Même page dans Paramètres et dans Selio Admin (en-tête propre à l'administration).
   const inAdmin = useLocation().pathname.startsWith("/admin");
 
   return (
     <div className="flex flex-col gap-4">
-      {inAdmin ? <div><PageHeader eyebrow="Opérateur" title="Administration" description="Les comptes et accès de l'équipe : qui est membre, avec quel rôle, et ce que chaque rôle permet. Les mêmes réglages restent dans Paramètres › Comptes et accès." /><AdminTabs /></div> : null}
+      {inAdmin ? <PageHeader eyebrow="Selio Admin" title="Accès de l'équipe" description="Les comptes et accès de votre organisation : qui est membre, avec quel rôle, et ce que chaque rôle permet. Les mêmes réglages restent dans Paramètres › Comptes et accès." /> : null}
       <Card>
         <h2 className="text-md font-semibold">Qui accède à Selio</h2>
         <p className="mt-1 max-w-2xl text-sm text-text-muted">Chaque personne a son propre identifiant et un rôle dans l'organisation. Le rôle décide de ce qu'elle peut voir et faire ; ses actions sont tracées dans le <Link to="/app/settings/security" className="font-medium text-accent hover:underline">journal d'audit</Link>. Ces accès concernent l'application : vos comptes Vinted se gèrent dans <Link to="/app/accounts" className="font-medium text-accent hover:underline">Comptes Vinted</Link>.</p>

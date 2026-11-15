@@ -6,7 +6,6 @@ import type { AdminOrgUsage } from "../../lib/data/types";
 import { QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
 import { meterState } from "../components/usage";
-import { AdminTabs } from "./admin-tabs";
 
 /** Cellule « utilisé / quota » avec le pourcentage ; un tiret quand la fonction n'est pas incluse et rien n'est utilisé. */
 function UsageCell({ c }: { c: UsageCounter }) {
@@ -35,8 +34,7 @@ export default function Admin() {
   const setPlan = useAppMutation(({ orgId, plan }: { orgId: string; plan: Plan }) => client.adminSetPlan(orgId, plan), { invalidate: ["admin-overview", "subscription", "usage"], success: "Plan mis à jour (action journalisée)" });
   return (
     <>
-      <PageHeader eyebrow="Opérateur" title="Administration" description="Santé des services, files, connecteurs, consommation IA, plans et quotas, puis les comptes et accès de l'équipe. Aucun secret n'est affiché ici ; toutes les actions sont journalisées." />
-      <AdminTabs />
+      <PageHeader eyebrow="Selio Admin · Technique" title="Santé et plans" description="Santé des services, files, connecteurs, consommation IA, plans et quotas, utilisation par client. Aucun secret n'est affiché ici ; toutes les actions sont journalisées." />
       <QueryBoundary query={q}>
         {(d) => (
           <div className="flex flex-col gap-6">

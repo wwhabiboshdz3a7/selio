@@ -16,6 +16,7 @@ export * as radar from "./services/radar";
 export * as connections from "./services/connections";
 export * as billing from "./services/billing";
 export * as referral from "./services/referral";
+export * as offers from "./services/offers";
 export * as comptes from "./services/comptes";
 export { referralConfigFromEnv } from "./services/referral";
 export * as admin from "./services/admin";
@@ -38,6 +39,9 @@ export type { AutoBuyRunResult, PlannedRead, RadarSkipReason, RadarTickSummary, 
 export { planReads, radarConfigFromEnv } from "./services/radar";
 export * as pricing from "./services/pricing";
 export * as track from "./services/track";
+export * as trackAlerts from "./services/track-alerts";
+export * as trackAdmin from "./services/track-admin";
+export type { TrackAlertHit, TrackAlertsSummary } from "./services/track-alerts";
 export type { ComparableSelection, EngineEstimate, PriceModelLike, PricePredictionLike, PriceTrainOutcome, PriceTrainerLike, PriceTrainingRow, PricingComparable, PricingPools, PricingServices, PricingTarget, TrainModelResult } from "./services/pricing";
 export { FakePriceModel, FakePriceTrainer } from "./services/pricing";
 export type { PlannedTrackRead, TrackListingState, TrackReadResult, TrackReader, TrackReaderInput, TrackReaderOutcome, TrackSkipReason, TrackTickSummary } from "./services/track";
@@ -51,3 +55,4 @@ export { FakeWornPhotoProvider, NO_WORN_PROVIDER_MESSAGE, NoopWornPhotoProvider,
 export * as supervision from "./services/supervision";
 export type { CheckResult, HealthReport, SupervisionCheckRow, SupervisionEvent, SupervisionFetch, SupervisionServices, SupervisionTarget, SupervisionTickSummary, TargetState } from "./services/supervision";
 export { SUPERVISION_FAILURES_BEFORE_ALERT, SUPERVISION_REMINDER_MINUTES } from "./services/supervision";
+export * as adminAccounts from "./services/admin-accounts";

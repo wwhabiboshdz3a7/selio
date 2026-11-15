@@ -90,7 +90,10 @@ export function InvoiceSheet({ view, issuer }: { view: InvoiceView; issuer: Invo
         </thead>
         <tbody>
           {view.lines.map((line, i) => {
-            const a = invoiceAmounts(line.amountCents, totals.vatRate);
+            // Remise d'une offre : ligne négative, décomposée comme son opposé (HT, TVA et TTC en négatif).
+            const sign = line.amountCents < 0 ? -1 : 1;
+            const abs = invoiceAmounts(Math.abs(line.amountCents), totals.vatRate);
+            const a = { exclVatCents: sign * abs.exclVatCents, vatCents: sign * abs.vatCents, inclVatCents: sign * abs.inclVatCents };
             return (
               <tr key={i} className="border-b border-border align-top">
                 <td className="py-3 pr-3">
