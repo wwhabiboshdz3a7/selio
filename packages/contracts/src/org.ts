@@ -613,6 +613,17 @@ export const subscription = z.object({
    * (GRANT_NO_END : sans fin, réservé à l'équipe Selio). Absent ou null : pas d'accès offert.
    */
   grantedUntil: isoDate.nullable().optional(),
+  /**
+   * Paiement simulé (Revolut pas encore configuré, ou PAYMENT_MODE=simulated) : date à laquelle le client a
+   * confirmé son offre SANS carte. Aucune commande, aucun débit. Quand Revolut sera configuré, la même
+   * organisation verra « Enregistrer votre carte » avant la fin de son essai (aucune migration manuelle).
+   */
+  simulatedCheckoutAt: isoDate.nullable().optional(),
+  /**
+   * Essai terminé alors que le paiement n'était pas encore activé : accès de base, « en attente du paiement »,
+   * depuis cette date. Effacé dès qu'un paiement, une prolongation d'essai ou un accès offert reprend la main.
+   */
+  awaitingPaymentSince: isoDate.nullable().optional(),
   createdAt: isoDate,
   updatedAt: isoDate,
 });
@@ -689,3 +700,18 @@ export const orgUpdate = z.object({
  * (un administrateur ne peut jamais l'attribuer ; le titulaire nomme un autre titulaire par changement de rôle).
  */
 export const inviteInput = z.object({ email, role });
+
+/**
+ * Réponse d'une invitation (POST /api/org/members) : le membre, et le lien d'invitation à copier quand le
+ * compte vient d'être créé pour l'occasion (l'email peut ne pas partir : fournisseur « noop »). Pour une
+ * personne qui a DÉJÀ un compte Selio, aucun lien n'est rendu (il permettrait de choisir son mot de passe) :
+ * elle est ajoutée tout de suite et retrouve l'organisation dans son sélecteur à sa prochaine connexion.
+ */
+export interface InviteOutcome {
+  /** Lien `/invitation?token=…` (7 jours, usage unique) ; null pour un compte existant. */
+  link: string | null;
+  expiresAt: string | null;
+  existingAccount: boolean;
+  /** Vrai seulement si un email est réellement parti (SMTP) ; faux en « noop ». */
+  emailDelivered: boolean;
+}

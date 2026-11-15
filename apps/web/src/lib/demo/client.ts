@@ -21,6 +21,8 @@ import { CARD_VERIFICATION_AMOUNT_CENTS, DATA_RETENTION_DAYS_AFTER_END, DEFAULT_
 import { CYCLE_LABELS, addCycle, inTrial as trialRunning, isRunning, periodLabel as invoicePeriodLabel, planPriceCents } from "../billing";
 import { helpAskInput, type HelpAnswer } from "@selio/contracts";
 import { can } from "@selio/domain";
+import { botActionStatus, botForRuleKind, describeBots } from "@selio/domain";
+import { CLOUD_ACTIVE_HOURS_DEFAULT, PURCHASE_STATUS_LABELS, RULE_KIND_LABELS, type BotAction, type BotId, type BotSummary } from "@selio/contracts";
 import { normalizeReferralCode, type Photo } from "@selio/contracts";
 import { offerInvoiceLineLabel, offerMonthsPerInstallment, redemptionDiscountFor, type CommercialOffer, type InvoiceExtraLine, type OfferInput, type OfferRedemption, type OfferUpdate, type PromoCheckResult, type PublicOffer } from "@selio/contracts";
 import type { OfferDeleteResult, PromoApplyResult } from "../data/types";
@@ -29,7 +31,7 @@ import type { HealthDetailsView, ReferralView } from "../data/types";
 import { demoHealthDetails, demoReferralCode } from "./team";
 import { accountDetail, accountRow, extendTrialRecord, filterAccounts, grantRecord, growthOf, noteRecord, qualifyRecord, revokeRecord, seedDemoAdmin, type DemoAccountRecord, type DemoAdminState } from "./admin";
 import { operatorCan, type OperatorCapability } from "@selio/domain";
-import type { AdminAccountDetail, AdminAccountRow, AdminAccountsQuery, AdminGrantInput, AdminGrowth, AdminQualificationInput, OperatorRole } from "@selio/contracts";
+import type { AdminAccountDetail, AdminAccountRow, AdminAccountsQuery, AdminAddToMyOrgInput, AdminGrantInput, AdminGrowth, AdminQualificationInput, CheckoutPreview, OperatorRole, ServerCapabilities } from "@selio/contracts";
 
 /** Actions internes de Selio Admin, absentes du journal montré au client (même règle que le serveur). */
 const isInternalAdminAction = (action: string) => ["admin.account_", "admin.access_", "admin.trial_"].some((p) => action.startsWith(p));
@@ -72,6 +74,8 @@ import { recordMeasuredLimits, vintedLimitsStatus } from "@selio/domain";
 import { vintedLimitsMeasurementInput, type MigrationApplyInput, type MigrationConvertInput, type MigrationFileInput, type VintedLimits, type VintedLimitsMeasurementInput } from "@selio/contracts";
 import type { BundleSuggestionView, DeclarationThresholdsView, EndToEndMarginsView, MigrationApplyView, MigrationConversion, VintedLimitsRecordView, VintedLimitsView } from "../data/types";
 import { DEFAULT_ALERT_RULES, completeCriteria, demoAdminTrack, demoFilterAlerts, demoFingerprint, demoNicheScan, demoSalesFeed, demoTrends, seedDemoTrack, withReadTimes, type DemoTrackState } from "./track";
+import { adjustedPrice, userPreferences as userPreferencesSchema, userPreferencesUpdate as userPreferencesUpdateSchema, type ActivityPage, type ActivityQuery, type ItemSummary, type UserPreferences, type UserPreferencesUpdate } from "@selio/contracts";
+import { demoActivityPage, demoActivityRows } from "./activity";
 import { trackAlertRules as trackAlertRulesSchema, trackManualPauseInput as trackManualPauseInputSchema, type TrackAdminStatus, type TrackAlertRulesInput, type TrackFilterAlerts, type TrackManualPauseInput } from "@selio/contracts";
 
 function paginate<T>(items: T[], page = 1, pageSize = 25): Page<T> {
@@ -109,6 +113,8 @@ type DemoRadarHolder = DemoState & { radar?: DemoRadarState };
 type DemoTrackHolder = DemoState & { track?: DemoTrackState };
 /** Selio Studio façon Kavis de la démonstration (préparations, base des références, photos portées) : voir ./studio.ts. */
 type DemoStudioHolder = DemoState & { studio?: DemoStudioState };
+/** Préférences par utilisateur (raccourcis de Selio Manager), comme la colonne users.preferences. */
+type DemoPreferencesHolder = DemoState & { preferences?: Record<string, UserPreferences> };
 /** Offre commerciale appliquée à l'organisation de démonstration (comme offer_redemptions) : une seule. */
 type DemoOfferHolder = DemoState & { offerRedemption?: OfferRedemption | null };
 
@@ -534,6 +540,15 @@ export class DemoClient implements DataClient {
     if (query.category) list = list.filter((i) => i.category === query.category);
     if (query.brand) list = list.filter((i) => norm(i.brand) === norm(query.brand));
     if (query.minDaysOnline !== undefined) list = list.filter((i) => (i.status === "listed" || i.status === "reserved") && (daysOnline(i, this.clock()) ?? -1) >= query.minDaysOnline!);
+    if (query.connectionId) list = list.filter((i) => i.connectionId === query.connectionId);
+    if (query.photos === "none") list = list.filter((i) => i.photos.length === 0);
+    // Marge projetée au prix affiché (hors port), comme le serveur ; ignorée sans « finances.read ».
+    if (query.margin && can(this.session().role, "finances.read")) {
+      const m = (i: InventoryItem) => (i.listedPriceCents ?? 0) - i.purchasePriceCents - i.purchaseFeesCents;
+      if (query.margin === "negative") list = list.filter((i) => i.listedPriceCents !== null && m(i) < 0);
+      if (query.margin === "low") list = list.filter((i) => (i.listedPriceCents ?? 0) > 0 && m(i) >= 0 && m(i) < i.listedPriceCents! * 0.3);
+      if (query.margin === "good") list = list.filter((i) => (i.listedPriceCents ?? 0) > 0 && m(i) >= i.listedPriceCents! * 0.3);
+    }
     if (query.q) {
       const q = norm(query.q);
       list = list.filter((i) => norm(i.title).includes(q) || norm(i.brand).includes(q) || norm(i.sku).includes(q) || i.tags.some((t) => norm(t).includes(q)));
@@ -632,6 +647,8 @@ export class DemoClient implements DataClient {
     return after;
   }
   async bulkItems(action: BulkItemAction): Promise<{ affected: number }> {
+    if (action.action === "set_price" && action.listedPriceCents === undefined) throw new DataError("validation", "Indiquez le nouveau prix.", 400);
+    if (action.action === "adjust_price" && action.priceRate === undefined) throw new DataError("validation", "Indiquez le pourcentage d'ajustement.", 400);
     let affected = 0;
     for (const id of action.ids) {
       const it = this.s.items.find((i) => i.id === id);
@@ -644,6 +661,20 @@ export class DemoClient implements DataClient {
           case "set_floor_margin": if (action.floorMarginCents !== undefined) { await this.updateItem(id, { floorPriceCents: it.purchasePriceCents + it.purchaseFeesCents + action.floorMarginCents }); affected++; } break;
           case "add_tag": if (action.tag && !it.tags.includes(action.tag)) { await this.updateItem(id, { tags: [...it.tags, action.tag] }); affected++; } break;
           case "delete": await this.deleteItem(id); affected++; break;
+          case "set_price": if (action.listedPriceCents !== undefined && action.listedPriceCents !== it.listedPriceCents) { await this.updateItem(id, { listedPriceCents: action.listedPriceCents }); affected++; } break;
+          case "adjust_price": {
+            const next = action.priceRate !== undefined ? adjustedPrice(it.listedPriceCents, it.floorPriceCents, action.priceRate) : null;
+            if (next !== null && next !== it.listedPriceCents) { await this.updateItem(id, { listedPriceCents: next }); affected++; }
+            break;
+          }
+          case "republish": {
+            if (it.status !== "listed" && it.status !== "reserved") break;
+            const variant = republicationPlan(it, { now: this.clock(), republishAfterDays: this.s.org.settings.dressing.republishAfterDays }).next;
+            if (!variant) break;
+            await this.republishItem(id, variant.id);
+            affected++;
+            break;
+          }
         }
       } catch {
         // une ligne en échec n'interrompt pas le lot ; elle n'est pas comptée
@@ -671,6 +702,49 @@ export class DemoClient implements DataClient {
   }
   async itemHistory(id: string): Promise<InventoryEvent[]> {
     return this.s.itemEvents.filter((e) => e.itemId === id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  /** Compteurs de « Articles et stock » : même calcul que le serveur (`repos.items.summary`). */
+  async itemSummary(): Promise<ItemSummary> {
+    const now = this.clock();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+    const republishAfterDays = this.s.org.settings.dressing.republishAfterDays;
+    const items = this.s.items;
+    const stock = items.filter((i) => i.status === "in_stock" || i.status === "listed" || i.status === "reserved");
+    const online = items.filter((i) => i.status === "listed" || i.status === "reserved");
+    return {
+      active: items.filter((i) => i.status !== "archived").length,
+      inStock: items.filter((i) => i.status === "in_stock").length,
+      listed: items.filter((i) => i.status === "listed").length,
+      reserved: items.filter((i) => i.status === "reserved").length,
+      soldThisMonth: items.filter((i) => i.status === "sold" && (i.soldAt ?? "") >= monthStart).length,
+      stockValueCents: can(this.session().role, "finances.read") ? stock.reduce((s, i) => s + i.purchasePriceCents + i.purchaseFeesCents, 0) : null,
+      listedValueCents: online.reduce((s, i) => s + (i.listedPriceCents ?? 0), 0),
+      withoutPhoto: stock.filter((i) => i.photos.length === 0).length,
+      toRepublish: online.filter((i) => (daysOnline(i, now) ?? -1) >= republishAfterDays).length,
+      republishAfterDays,
+    };
+  }
+
+  // ---------- Selio Manager : journal d'activité et raccourcis ----------
+  async listActivity(query: ActivityQuery): Promise<ActivityPage> {
+    const st = this.s;
+    const names = new Map(st.users.map((u) => [u.id, u.displayName]));
+    return demoActivityPage(demoActivityRows(st, (st as DemoStudioHolder).studio?.preps ?? []), query, { role: this.session().role, memberName: (id) => names.get(id) ?? null });
+  }
+  async getPreferences(): Promise<UserPreferences> {
+    const saved = (this.s as DemoPreferencesHolder).preferences?.[this.s.user.id];
+    const parsed = userPreferencesSchema.safeParse(saved ?? {});
+    return parsed.success ? parsed.data : userPreferencesSchema.parse({});
+  }
+  async updatePreferences(patch: UserPreferencesUpdate): Promise<UserPreferences> {
+    const parsed = userPreferencesUpdateSchema.safeParse(patch ?? {});
+    if (!parsed.success) throw new DataError("validation", parsed.error.issues[0]?.message ?? "Préférences invalides", 400);
+    const holder = this.s as DemoPreferencesHolder;
+    const current = await this.getPreferences();
+    const next = { ...current, ...Object.fromEntries(Object.entries(parsed.data).filter(([, v]) => v !== undefined)) } as UserPreferences;
+    holder.preferences = { ...(holder.preferences ?? {}), [this.s.user.id]: next };
+    this.persist();
+    return next;
   }
 
   // ---------- clients ----------
@@ -1133,6 +1207,64 @@ export class DemoClient implements DataClient {
     this.audit(paused ? "automation.global_pause" : "automation.global_resume", null, null, {});
     this.persist();
     return this.getAutomationState();
+  }
+  // ---------- Selio Bot ----------
+  /** Synthèse des bots (mêmes règles que le serveur : `describeBots`) ; démonstration : rien n'est envoyé ni acheté. */
+  async botSummary(): Promise<BotSummary> {
+    this.requireCan("automations.read", "Votre rôle ne voit pas les automatisations.");
+    const st = this.s;
+    const state = await this.getAutomationState();
+    const auto = await this.autoBuyStatus();
+    const availability = this.cloudAvailabilityNow();
+    const accounts = this.cloud().accounts;
+    const activeAccounts = accounts.filter((a) => a.status === "active" && a.hasSession).length;
+    const consent = (await this.cloudConsentView()).current;
+    const cloud: BotSummary["cloud"] = {
+      available: availability.available, serverEnabled: null, reason: availability.reason, activeAccounts, accounts: accounts.length, consent,
+      ready: availability.available && consent && activeAccounts > 0, activeHours: { startHour: CLOUD_ACTIVE_HOURS_DEFAULT.startHour, endHour: CLOUD_ACTIVE_HOURS_DEFAULT.endHour },
+    };
+    const recent: Partial<Record<BotId, BotAction[]>> = {};
+    const kindOf = new Map(st.rules.map((r) => [r.id, r.kind]));
+    for (const j of [...st.jobs].sort((a, b) => (b.finishedAt ?? b.createdAt).localeCompare(a.finishedAt ?? a.createdAt))) {
+      const kind = j.ruleId ? kindOf.get(j.ruleId) : undefined;
+      const id = kind ? botForRuleKind(kind) : null;
+      if (!kind || !id) continue;
+      const list = (recent[id] ??= []);
+      if (list.length < 5) list.push({ at: j.finishedAt ?? j.createdAt, label: `${typeof j.payload.ruleName === "string" ? j.payload.ruleName : RULE_KIND_LABELS[kind]}${j.runsIn === "cloud" ? " · Selio Cloud" : ""} (démonstration)`, status: botActionStatus(j.status), source: j.runsIn === "cloud" ? "cloud" : "job" });
+    }
+    recent.auto_buy = (await this.listPurchaseRequests()).filter((p) => p.mode === "auto").slice(0, 5).map((p) => ({
+      at: p.executedAt ?? p.createdAt, label: `${p.opportunity?.title ?? "Affaire"} · ${PURCHASE_STATUS_LABELS[p.status]}`, source: "purchase" as const,
+      status: p.status === "executed" || p.status === "simulated" ? "done" as const : p.status === "blocked" ? "failed" as const : p.status === "cancelled" ? "skipped" as const : "pending" as const,
+    }));
+    const lock = (key: string) => auto.locks.find((l) => l.key === key)?.ok === true;
+    const autoBuy: BotSummary["autoBuy"] = {
+      serverEnabled: lock("server") && lock("shared_address"), realPurchase: auto.realPurchase, orgEnabled: auto.orgEnabled, active: auto.active,
+      threshold: auto.settings.threshold, dailyCapCents: auto.settings.dailyCapCents, maxItemCents: auto.settings.maxItemCents, reasons: auto.reasons, notice: auto.notice,
+    };
+    return {
+      stopped: state.globalPaused, stoppedAt: state.pausedAt, canManage: can(this.session().role, "automations.write"),
+      plan: st.subscription.plan, actionsToday: state.actionsToday, actionsPerDay: st.subscription.quotas.automationActionsPerDay,
+      cloud, autoBuy,
+      bots: describeBots({ rules: st.rules, plan: st.subscription.plan, quotas: st.subscription.quotas, cloud, stopped: state.globalPaused, autoBuy, recent }),
+      simulated: true,
+    };
+  }
+  /** « Tout arrêter » : même coupe-circuit que l'arrêt global (titulaire et administrateur). */
+  async stopBots(): Promise<BotSummary> {
+    this.requireCan("automations.write", "Seuls le titulaire et les administrateurs peuvent tout arrêter.");
+    const was = this.s.automation.globalPaused;
+    this.s.automation = { globalPaused: true, pausedAt: was ? this.s.automation.pausedAt : this.now() };
+    this.audit("bot.stopped", "organization", this.s.org.id, { alreadyStopped: was });
+    this.persist();
+    return this.botSummary();
+  }
+  async resumeBots(): Promise<BotSummary> {
+    this.requireCan("automations.write", "Seuls le titulaire et les administrateurs peuvent reprendre.");
+    const was = this.s.automation.globalPaused;
+    this.s.automation = { globalPaused: false, pausedAt: null };
+    this.audit("bot.resumed", "organization", this.s.org.id, { wasStopped: was });
+    this.persist();
+    return this.botSummary();
   }
   private async executeJob(job: Job): Promise<void> {
     const rule = this.s.rules.find((r) => r.id === job.ruleId);
@@ -2613,6 +2745,31 @@ export class DemoClient implements DataClient {
       warning: usageWatchList(counters, subsidiaries).some((c) => c.warning),
     };
   }
+  /** Démonstration : rien n'est masqué (les données sont fictives et signalées comme telles). */
+  async getCapabilities(): Promise<ServerCapabilities> {
+    return { demo: true, version: "démonstration", trackLive: true, cloud: true, radarLive: true, vision: true, pricingModel: true, payment: "revolut", paymentSandbox: true, email: false };
+  }
+  /** Récapitulatif avant paiement (démonstration) : même calcul de prix et de remise que le paiement simulé. */
+  async previewCheckout(plan: PaidPlan, opts: { cycle?: BillingCycle } = {}): Promise<CheckoutPreview> {
+    this.requireBillingManage();
+    if (!isPaid(plan)) throw new DataError("validation", "Plan invalide : choisissez Starter, Pro ou Agence.", 400);
+    this.settleSubscription();
+    const cycle: BillingCycle = opts.cycle === "yearly" ? "yearly" : "monthly";
+    const sub = this.s.subscription;
+    const priceCents = planPriceCents(plan, cycle);
+    const discount = this.demoDiscount(plan, cycle, priceCents);
+    const trial = trialRunning(sub, this.clock());
+    return {
+      plan, cycle, planLabel: PLAN_LABELS[plan], priceCents,
+      discount: discount ? { label: discount.line.label, amountCents: discount.line.amountCents } : null,
+      dueCents: Math.max(0, priceCents - (discount?.line.amountCents ?? 0)),
+      trialEndsAt: trial ? sub.currentPeriodEnd : null,
+      startsTrial: false,
+      paymentMode: "revolut",
+      noCardRequired: false,
+      blockedReason: null,
+    };
+  }
   /**
    * Démonstration du paiement : aucun formulaire, succès immédiat. Pendant l'essai, la carte est
    * « enregistrée » (rien débité, l'offre retenue sera débitée à la fin) ; hors essai, le paiement
@@ -2939,6 +3096,24 @@ export class DemoClient implements DataClient {
   async adminExtendTrial(orgId: string, days: number): Promise<AdminAccountDetail> {
     await this.delay(120);
     return this.adminMutate(orgId, (r) => extendTrialRecord(r, days, this.clock()));
+  }
+  /** Démonstration : la personne d'un compte d'exemple rejoint l'organisation de la démo (aucun mot de passe). */
+  async adminAddToMyOrg(orgId: string, input: AdminAddToMyOrgInput): Promise<AdminAccountDetail> {
+    await this.delay(120);
+    this.requireOperatorCap("admin.accounts.manage");
+    const st = this.s;
+    const rec = this.accountRecords().find((a) => a.id === orgId);
+    if (!rec) throw new DataError("not_found", "Compte introuvable.", 404);
+    const member = rec.team.find((m) => m.userId === input.userId);
+    if (!member) throw new DataError("not_found", "Cette personne n'est pas membre de ce compte.", 404);
+    if (st.memberships.some((m) => m.userId === input.userId)) throw new DataError("conflict", "Cette personne est déjà membre de votre organisation.", 409);
+    if (st.memberships.length >= st.subscription.quotas.members) throw new DataError("quota_exceeded", `Quota de membres de votre offre atteint (${st.subscription.quotas.members}).`, 402);
+    if (!st.users.some((u) => u.id === input.userId)) st.users.push({ id: input.userId, email: member.email, displayName: member.displayName, isOperator: false, createdAt: this.now() });
+    const m: Membership = { id: newId(), orgId: st.org.id, userId: input.userId, role: input.role, createdAt: this.now() };
+    st.memberships.push(m);
+    this.audit("member.added_by_operator", "membership", m.id, { role: input.role, fromAccount: orgId });
+    this.persist();
+    return this.accountDetailOf(orgId);
   }
   /** Essai de rôle d'opérateur (démonstration) : Selio Admin vu en « business » ; null revient à « tech ». */
   async previewOperatorRole(role: OperatorRole | null): Promise<Session> {

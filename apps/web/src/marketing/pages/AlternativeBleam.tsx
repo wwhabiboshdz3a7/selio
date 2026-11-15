@@ -61,7 +61,7 @@ export default function AlternativeBleam() {
       </MarketingSection>
 
       <ComparisonFootnotes />
-      <CtaBand seed={43} title="Essayez Selio avec des données fictives" lead="La démonstration ne demande ni compte ni carte bancaire, et ne touche jamais à votre compte Vinted." />
+      <CtaBand seed={43} title="Essayez Selio pendant 14 jours" lead="Sur votre propre activité, sans engagement : rien n'est débité avant la fin de l'essai, et Selio ne vous demande jamais votre mot de passe Vinted." />
     </>
   );
 }

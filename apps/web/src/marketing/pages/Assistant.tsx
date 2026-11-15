@@ -8,7 +8,7 @@ const FLOW: { k: string; title: string; text: string; gold?: boolean }[] = [
   { k: "Entrée", title: "Message reçu", text: "Traité comme une donnée, jamais comme une instruction." },
   { k: "Règles", title: "Votre politique", text: "Plancher, marge minimale, remise maximale, horaires, limite par acheteur." },
   { k: "Décision", title: "Décision expliquée", text: "Accepter, contre-proposer, refuser ou escalader : vos règles tranchent, ligne par ligne." },
-  { k: "IA", title: "Le modèle rédige", text: "Il formule la décision sans pouvoir la changer. Simulateur en démonstration." },
+  { k: "IA", title: "Le modèle rédige", text: "Il formule la décision sans pouvoir la changer. Simulateur signalé tant que le serveur n'est pas raccordé." },
   { k: "Contrôle", title: "Réponse vérifiée", text: "Schéma, prix imposé, aucun lien, aucune fuite du prix d'achat." },
   { k: "Vous", title: "Vous validez", text: "Par défaut, rien ne part sans votre accord.", gold: true },
 ];
@@ -63,11 +63,11 @@ export default function Assistant() {
           </div>
           <div className="card p-6">
             <h3 className="text-md font-semibold text-text">Où en est-on</h3>
-            <div className="mt-4"><PlannedList items={["Connexion à mon modèle perso écrite et testée sur HTTP simulé ; serveur matériel à raccorder", "Aucune latence ni capacité annoncée tant que le matériel cible n'a pas été mesuré", "La démonstration utilise un simulateur déterministe, clairement signalé", "Un autre fournisseur pourra être ajouté via la même interface, sans appel payant automatique"]} /></div>
+            <div className="mt-4"><PlannedList items={["Connexion à mon modèle perso écrite et testée sur HTTP simulé ; serveur matériel à raccorder", "Aucune latence ni capacité annoncée tant que le matériel cible n'a pas été mesuré", "Tant que le serveur n'est pas raccordé, un simulateur déterministe rédige, clairement signalé", "Un autre fournisseur pourra être ajouté via la même interface, sans appel payant automatique"]} /></div>
           </div>
         </div>
       </MarketingSection>
-      <CtaBand seed={5} title="Voyez une suggestion et sa justification" lead="Dans la démo, ouvrez une conversation avec une offre, générez une proposition et lisez pourquoi elle est acceptée, contre-proposée ou refusée." />
+      <CtaBand seed={5} title="Voyez une suggestion et sa justification" lead="Pendant l'essai, ouvrez une conversation avec une offre, générez une proposition et lisez pourquoi elle est acceptée, contre-proposée ou refusée." />
     </>
   );
 }

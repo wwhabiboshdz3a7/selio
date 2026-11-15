@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Info, Sparkles } from "lucide-react";
 import { PRICE_METHOD_LABELS, PRICE_MODEL_MIN_REFERENCES, PRICE_MODEL_RETRAIN_DAYS, PRICE_STRATEGY_LABELS, type PriceEstimate, type PriceEstimateInput, type PriceModelStatus, type PriceStrategies } from "@selio/contracts";
 import { Button, Card, DescriptionList, StatusBadge, cn, formatCents, formatDate, formatNumber, formatPercent } from "@selio/ui";
-import { useClient } from "../../lib/data/provider";
+import { useClient, useData } from "../../lib/data/provider";
 import type { PricingModelView } from "../../lib/data/types";
 import { QueryBoundary } from "./common";
 import { CONFIDENCE_LABELS, formatDelayDays, hasPrice, modelStatusView } from "../../lib/track";
@@ -140,6 +140,9 @@ export function PriceEstimateView({ estimate, modelStatus, strategies, onApply, 
   explainAction?: ReactNode;
   simulated?: boolean;
 }) {
+  const { mode } = useData();
+  // Mode connecté : une estimation tirée des ventes de démonstration n'est jamais montrée comme un prix réel.
+  if (mode === "connected" && estimate.demo) return <PricingSoon />;
   if (!hasPrice(estimate)) {
     return (
       <div className="flex flex-col gap-2">
@@ -174,6 +177,16 @@ export function suggestionReady(f: Pick<PriceEstimateInput, "brand" | "category"
  * l'estimation est demandée (une requête après 500 ms sans frappe, sans explication ni requête IA).
  * « Utiliser » recopie la stratégie dans le prix affiché, que l'utilisateur garde ou corrige.
  */
+/** Estimation des prix pas encore branchée sur de vraies ventes (mode connecté) : aucun chiffre. */
+export function PricingSoon() {
+  return (
+    <div className="flex flex-col gap-1" data-testid="pricing-soon">
+      <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-text">Estimation des prix <StatusBadge tone="accent">Disponible prochainement</StatusBadge></p>
+      <p className="text-xs text-text-muted">Le prix conseillé sera calculé sur de vraies ventes Vinted dès que la base de références et le modèle seront prêts. En attendant, fixez le prix à la main : vos ventes enregistrées dans Selio serviront à l'entraîner.</p>
+    </div>
+  );
+}
+
 export function PriceSuggestion({ features, onPick, floorCents, current }: {
   features: PriceEstimateInput;
   onPick: (cents: number) => void;
@@ -181,6 +194,7 @@ export function PriceSuggestion({ features, onPick, floorCents, current }: {
   current?: number | null;
 }) {
   const client = useClient();
+  const { mode } = useData();
   // Clé texte (stable) : l'objet des caractéristiques est recréé à chaque rendu du formulaire.
   const key = useDebouncedValue(JSON.stringify({ ...features, explain: false }), 500);
   const ready = suggestionReady(JSON.parse(key) as PriceEstimateInput);
@@ -204,6 +218,8 @@ export function PriceSuggestion({ features, onPick, floorCents, current }: {
         <p className="mt-1 text-xs text-text-muted" aria-live="polite">Estimation en cours…</p>
       ) : estimate.isError ? (
         <p className="mt-1 text-xs text-text-muted">Estimation indisponible pour le moment : fixez le prix à la main.</p>
+      ) : estimate.data && estimate.data.demo && mode === "connected" ? (
+        <p className="mt-1 text-xs text-text-muted" data-testid="pricing-soon">Disponible prochainement : le prix conseillé sera calculé sur de vraies ventes. Fixez le prix à la main pour l'instant.</p>
       ) : estimate.data && hasPrice(estimate.data) ? (
         <>
           <ul className="mt-2 grid grid-cols-3 gap-2" aria-label="Stratégies suggérées">

@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
-import { Alert } from "@selio/ui";
+import { Link } from "react-router";
+import { Alert, PageHeader, buttonClass } from "@selio/ui";
+import { ActivationState } from "../components/activation";
 import { useData } from "../../lib/data/provider";
 
 /**
@@ -9,7 +11,8 @@ import { useData } from "../../lib/data/provider";
  */
 export function PreviewNotice({ space, children }: { space: "agents" | "development"; children?: ReactNode }) {
   const { mode } = useData();
-  const title = space === "agents" ? "Selio Agents est en aperçu" : "En développement";
+  // Mode connecté : jamais d'étiquette « aperçu » ou « en développement », un état « En cours d'activation ».
+  const title = mode === "connected" ? (space === "agents" ? "Selio Agents est en cours d'activation" : "En cours d'activation") : space === "agents" ? "Selio Agents est en aperçu" : "En développement";
   return (
     <Alert tone="info" className="mb-6" title={title}>
       {children}
@@ -38,4 +41,23 @@ export function BrandMark({ initials, size = 28, accent }: { initials: string; s
 /** Étiquette « Exemple fictif » des données de démonstration de l'agence. */
 export function ExampleTag() {
   return <span className="inline-flex h-5 shrink-0 items-center rounded-sm border border-dashed border-border-strong px-1.5 text-[11px] leading-none font-medium whitespace-nowrap text-text-muted">Exemple fictif</span>;
+}
+
+/**
+ * Mode connecté : pages de Selio Agents qui, en démonstration, reposent sur des boutiques clientes d'exemple
+ * (boutiques, facturation des clients). Aucune donnée fictive : un état « En cours d'activation ».
+ */
+export function AgentsActivation({ title, does }: { title: string; does: string[] }) {
+  return (
+    <>
+      <PageHeader eyebrow="Selio Agents" title={title} description="Pour les agences qui gèrent plusieurs boutiques Vinted." />
+      <ActivationState
+        testId="agents-activation"
+        title={title}
+        does={does}
+        prepare="invitez votre équipe et réglez les rôles de chacun : ils s'appliquent déjà à toute votre organisation."
+        action={<Link to="/app/settings/access" className={buttonClass({ variant: "primary" })}>Comptes et accès</Link>}
+      />
+    </>
+  );
 }

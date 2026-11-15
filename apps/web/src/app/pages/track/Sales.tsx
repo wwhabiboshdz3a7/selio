@@ -11,7 +11,7 @@ import { TrackGate, TrackNotices } from "./shared";
  * catégorie. Aucun pseudo, aucune annonce : seulement des volumes et des prix médians.
  */
 export default function TrackSales() {
-  return <TrackGate agency={{ title: "Flux des ventes" }}>{() => <Sales />}</TrackGate>;
+  return <TrackGate agency={{ title: "Flux des ventes" }} requireLive={{ title: "Flux des ventes", does: ["Ce qui se vend, par marque et catégorie : volumes et prix médians.", "Aucun vendeur ni aucune annonce : seulement des agrégats."] }}>{() => <Sales />}</TrackGate>;
 }
 
 function Sales() {

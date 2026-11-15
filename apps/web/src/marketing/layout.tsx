@@ -66,7 +66,7 @@ export function MarketingLayout() {
             ) : (
               <>
                 <Link to="/connexion" className={buttonClass({ variant: "ghost", size: "sm", className: "mk-header-ghost max-md:hidden" })}>Connexion</Link>
-                {!authPage ? <Link to="/demo" className={buttonClass({ variant: "accent", size: "sm", className: "max-md:hidden" })}>Voir la démo</Link> : null}
+                {!authPage ? <Link to="/inscription" className={buttonClass({ variant: "accent", size: "sm", className: "max-md:hidden" })}>Essai gratuit</Link> : null}
               </>
             )}
             <IconButton label={open ? "Fermer le menu" : "Ouvrir le menu"} className="lg:hidden" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls="menu-mobile">
@@ -84,7 +84,7 @@ export function MarketingLayout() {
                 {session.data ? <Link to={HUB_PATH} className={buttonClass({ variant: "accent", className: "flex-1" })} onClick={() => setOpen(false)}>Ouvrir l'application</Link> : (
                   <>
                     <Link to="/connexion" className={buttonClass({ variant: "secondary", className: "flex-1" })} onClick={() => setOpen(false)}>Connexion</Link>
-                    <Link to="/demo" className={buttonClass({ variant: "accent", className: "flex-1" })} onClick={() => setOpen(false)}>Voir la démo</Link>
+                    <Link to="/inscription" className={buttonClass({ variant: "accent", className: "flex-1" })} onClick={() => setOpen(false)}>Essai gratuit 14 jours</Link>
                   </>
                 )}
               </li>
@@ -100,11 +100,11 @@ export function MarketingLayout() {
         <div className="mx-auto grid max-w-content gap-8 px-4 py-12 sm:grid-cols-2 md:px-8 lg:grid-cols-5">
           <div className="sm:col-span-2 lg:col-span-1">
             <Logo height={22} />
-            <p className="mt-3 max-w-xs text-sm text-text-muted">L'outil de gestion des revendeurs : stock, conversations, clients, commandes et marges au même endroit.</p>
+            <p className="mt-3 max-w-xs text-sm text-text-muted">Les outils des revendeurs Vinted : Selio Manager pour la gestion au quotidien, et toute la gamme autour, du sourcing à l'étiquette.</p>
           </div>
-          <FooterCol title="Produit" links={[["/fonctionnalites", "Fonctionnalités"], ["/plateforme", "Les espaces Selio"], ["/extension", "Extension navigateur"], ["/assistant-ia", "Assistant IA"], ["/tarifs", "Tarifs"]]} />
-          <FooterCol title="Filiales" links={[...PRODUCTS.map((p): [string, string] => [p.path, p.name]), ...(COMPARISON_READY ? ([["/selio-ou-bleam", "Selio ou Bleam ?"], ["/alternative-bleam", "Alternative à Bleam"]] as [string, string][]) : [])]} />
-          <FooterCol title="Aide" links={[["/faq", "FAQ"], ["/contact", "Contact"], ["/demo", "Démonstration"], ["/connexion", "Connexion"]]} />
+          <FooterCol title="Produit" links={[["/fonctionnalites", "Fonctionnalités"], ["/plateforme", "La gamme Selio"], ["/extension", "Extension navigateur"], ["/assistant-ia", "Assistant IA"], ["/tarifs", "Tarifs"]]} />
+          <FooterCol title="La gamme" links={[...PRODUCTS.map((p): [string, string] => [p.path, p.name]), ...(COMPARISON_READY ? ([["/selio-ou-bleam", "Selio ou Bleam ?"], ["/alternative-bleam", "Alternative à Bleam"]] as [string, string][]) : [])]} />
+          <FooterCol title="Aide" links={[["/faq", "FAQ"], ["/contact", "Contact"], ["/inscription", "Essai gratuit 14 jours"], ["/connexion", "Connexion"]]} />
           <FooterCol title="Légal" links={[["/mentions-legales", "Mentions légales"], ["/confidentialite", "Confidentialité"], ["/conditions", "Conditions d'utilisation"], ["/extension/confidentialite", "Confidentialité de l'extension"]]} />
         </div>
         <div className="border-t border-border">

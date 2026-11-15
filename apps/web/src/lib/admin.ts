@@ -1,4 +1,5 @@
 import { isGrantWithoutEnd, type OperatorRole, type OrgQualification } from "@selio/contracts";
+import { DataError } from "./data/types";
 import { operatorCan, type OperatorCapability } from "@selio/domain";
 import type { Session } from "./data/types";
 import { APP_PATH_PATTERN, HUB_PATH } from "../app/spaces/paths";
@@ -74,6 +75,8 @@ export const ADMIN_ACTION_LABELS: Record<string, string> = {
   "admin.plan_changed": "Plan changé par l'équipe",
   "billing.grant_ended": "Fin de l'accès offert",
   "billing.trial_ended": "Fin de l'essai",
+  "billing.simulated_checkout": "Offre choisie sans carte (paiement pas encore activé)",
+  "member.added_by_operator": "Membre ajouté par l'équipe Selio",
   "billing.payment_completed": "Paiement encaissé",
   "billing.payment_failed": "Paiement refusé",
   "billing.subscription_ended": "Abonnement terminé",
@@ -90,3 +93,15 @@ export function grantEndLabel(until: string | null, format: (iso: string) => str
   if (!until) return "—";
   return isGrantWithoutEnd(until) ? "sans fin" : format(until);
 }
+
+/**
+ * Serveur pas encore à jour : le frontal (Netlify) est plus récent que l'API du PC de production, qui ne connaît
+ * pas encore la route demandée (404 « Route inconnue »). Sans ce cas, Selio Admin afficherait une liste vide ou
+ * une erreur obscure (« Elias n'apparaît pas dans les comptes »).
+ */
+export function isServerOutdated(err: unknown): boolean {
+  return err instanceof DataError && err.status === 404 && /^Route inconnue/.test(err.message);
+}
+
+export const SERVER_OUTDATED_TITLE = "Le serveur n'est pas à jour";
+export const SERVER_OUTDATED_TEXT = "Cette page a besoin d'une version plus récente de l'API Selio que celle qui tourne sur le serveur. Relancez la mise à jour sur le PC de production (récupérer la dernière version, migrations, puis relance du docker compose), puis rechargez cette page.";

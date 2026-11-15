@@ -45,6 +45,17 @@ export default function AutomationHub() {
     <>
       <PageHeader eyebrow="Automatisation" title="Tout le parcours, automatisé" description="Du sourcing à la remise en ligne, chaque étape peut tourner sans vous. Activez ce que vous voulez, dans l'ordre que vous voulez : chaque page explique, réglage par réglage, avec une conversation d'exemple." actions={<Link to="/app/automations" className={buttonClass({ variant: "secondary" })}>Journal des tâches{counts.data?.awaiting ? ` (${counts.data.awaiting})` : ""}</Link>} />
 
+      <div className="card mb-8 flex flex-col gap-3 p-5 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0 max-w-2xl">
+          <h2 className="flex items-center gap-2 text-base font-bold text-text"><Bot className="size-4 text-accent" aria-hidden />Selio Bot</h2>
+          <p className="mt-1 text-sm text-text-muted">Les mêmes automatisations, vues comme des bots : leur état, où elles tournent (Selio Cloud ordinateur éteint, ou l'extension), leurs dernières actions et un bouton « Tout arrêter ».</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Link to="/bot" className={buttonClass({ variant: "secondary", size: "sm" })}>Ouvrir Selio Bot</Link>
+          <Link to="/cloud/comptes" className={buttonClass({ variant: "ghost", size: "sm" })}>Comptes dans Selio Cloud</Link>
+        </div>
+      </div>
+
       <h2 className="mb-3 text-sm font-bold tracking-wider text-text uppercase">Les quatre blocs</h2>
       <ul className="mb-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {blocks.map((b) => (

@@ -3,7 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Camera, ImagePlus, Search, ShieldCheck, Upload, X } from "lucide-react";
 import { ITEM_CATEGORY_LABELS, ITEM_CONDITION_LABELS, type TrackPhotoSearch } from "@selio/contracts";
 import { can } from "@selio/domain";
-import { Alert, Button, Card, DescriptionList, Field, IconButton, IconTile, Input, PageHeader, StatusBadge, cn, formatCents, formatDate } from "@selio/ui";
+import { Alert, Button, Card, DescriptionList, Field, IconButton, IconTile, Input, LoadingState, PageHeader, StatusBadge, cn, formatCents, formatDate } from "@selio/ui";
+import { useFeature } from "../../../lib/capabilities";
+import { ActivationState } from "../../components/activation";
 import { useClient, useData, useRequiredSession } from "../../../lib/data/provider";
 import type { TrackUsageView } from "../../../lib/data/types";
 import { errorMessage } from "../../../lib/errors";
@@ -12,7 +14,7 @@ import { QueryBoundary } from "../../components/common";
 import { useAppMutation } from "../../components/hooks";
 import { PriceEstimateView } from "../../components/pricing";
 import { UsageMeter } from "../../components/usage";
-import { TRACK_KEYS, TrackGate } from "./shared";
+import { TRACK_KEYS, TrackGate, isTrackLive } from "./shared";
 
 const PHOTO_NOT_KEPT = "La photo n'est pas conservée : seules la description lue et l'estimation sont gardées dans votre historique.";
 
@@ -22,7 +24,26 @@ const PHOTO_NOT_KEPT = "La photo n'est pas conservée : seules la description lu
  * trois stratégies, délai et méthode. LA PHOTO N'EST PAS CONSERVÉE.
  */
 export default function TrackPhoto() {
-  return <TrackGate>{(u) => <PhotoSearch usage={u} />}</TrackGate>;
+  return <TrackGate>{(u) => <PhotoGate usage={u} />}</TrackGate>;
+}
+
+/**
+ * Recherche par photo : il faut un modèle de vision (lire la photo) et des prix réels (Track en direct ou modèle de
+ * prix entraîné). Sinon, en mode connecté : « Disponible prochainement », sans estimation simulée.
+ */
+function PhotoGate({ usage }: { usage: TrackUsageView }) {
+  const { mode } = useData();
+  const vision = useFeature("vision");
+  const pricing = useFeature("pricingModel");
+  if (vision.pending || pricing.pending) return <LoadingState />;
+  const ready = mode === "demo" || (vision.live && (pricing.live || isTrackLive(usage, mode)));
+  if (!ready) return (
+    <>
+      <PageHeader eyebrow="Selio Track" title="Recherche par photo" description="Une photo de l'article, et son prix de revente estimé." />
+      <ActivationState testId="photo-activation" label="Disponible prochainement" title="Recherche par photo" does={["Selio lit la photo : marque, catégorie, matière, couleur, état.", "Il estime le prix de revente avec trois stratégies (vente rapide, équilibrée, au meilleur prix) et le délai attendu.", "La photo n'est jamais conservée."]} prepare="ajoutez vos articles avec leurs photos dans Selio Manager : ils seront prêts pour l'estimation." />
+    </>
+  );
+  return <PhotoSearch usage={usage} />;
 }
 
 function PhotoSearch({ usage }: { usage: TrackUsageView }) {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { APP_PATH_PATTERN, HUB_PATH, SPACES, SPACE_GROUPS, spaceForPath } from "./spaces";
 
-describe("Selio et ses filiales", () => {
+describe("la gamme Selio", () => {
   it("rattache chaque adresse à son espace, et laisse les pages communes à l'espace courant", () => {
     expect(spaceForPath("/app")).toBe("selio");
     expect(spaceForPath("/app/items/item-001")).toBe("selio");
@@ -12,6 +12,9 @@ describe("Selio et ses filiales", () => {
     expect(spaceForPath("/agents/marque-blanche")).toBe("agents");
     expect(spaceForPath("/track")).toBe("track");
     expect(spaceForPath("/cloud")).toBe("cloud");
+    expect(spaceForPath("/bot")).toBe("bot");
+    expect(spaceForPath("/bot/journal")).toBe("bot");
+    expect(spaceForPath("/botte")).toBe("selio");
     // Selio Comptes (identifiant historique « generateur ») vit sous /comptes.
     expect(spaceForPath("/comptes")).toBe("generateur");
     expect(spaceForPath("/app/accounts")).toBe("selio");
@@ -21,16 +24,28 @@ describe("Selio et ses filiales", () => {
   });
 
   it("présente les filiales avec un état honnête et un menu propre ; Selio Global n'est plus un espace", () => {
-    expect(SPACES.map((s) => s.id)).toEqual(["selio", "studio", "agents", "track", "cloud", "generateur"]);
+    // L'ordre de la gamme : Manager, Studio, Track, Bot, Cloud, Agents, Comptes.
+    expect(SPACES.map((s) => s.id)).toEqual(["selio", "studio", "track", "bot", "cloud", "agents", "generateur"]);
+    // « Selio » est la marque ; l'outil de gestion s'appelle Selio Manager (identifiant « selio » gardé).
+    expect(SPACES[0]).toMatchObject({ id: "selio", name: "Selio Manager", short: "Manager", home: "/app" });
+    expect(SPACES.every((s) => s.name.startsWith("Selio ") && s.name !== "Selio")).toBe(true);
+    // Selio Bot : espace /bot, état honnête, sans prix séparé ; exécuté dans Selio Cloud.
+    expect(SPACES.find((s) => s.id === "bot")).toMatchObject({ name: "Selio Bot", home: "/bot", state: "development" });
+    expect(SPACES.find((s) => s.id === "bot")!.description).toMatch(/Selio Cloud/);
+    expect(APP_PATH_PATTERN.test("/bot")).toBe(true);
+    // Selio Cloud : visible depuis Selio Agents (et le Bot), le moteur 24 h/24.
+    expect(SPACE_GROUPS.agents.flatMap((g) => g.items.map((i) => i.to))).toContain("/cloud");
+    expect(SPACE_GROUPS.bot.flatMap((g) => g.items.map((i) => i.to))).toEqual(expect.arrayContaining(["/bot", "/cloud"]));
     expect(SPACES.some((s) => /Global/.test(s.name))).toBe(false);
     expect(SPACES.find((s) => s.id === "agents")!.state).toBe("preview");
     // Selio Cloud a ses vraies pages (aperçu : actions légères seulement) ; Track reste en développement.
     expect(SPACES.find((s) => s.id === "cloud")!.state).toBe("preview");
     expect(SPACES.find((s) => s.id === "track")!.state).toBe("development");
-    // Selio Comptes : checklist et textes disponibles, sans aucune action à la place du client.
+    // Selio Comptes : à la prestation, checklist et textes disponibles, sans aucune action à la place du client.
     const comptes = SPACES.find((s) => s.id === "generateur")!;
     expect(comptes).toMatchObject({ name: "Selio Comptes", home: "/comptes", state: "available" });
     expect(comptes.description).toMatch(/ne crée aucun compte à votre place/);
+    expect(comptes.tagline).toMatch(/prestation/);
     expect(SPACE_GROUPS.generateur[0]!.items.map((i) => i.to)).toEqual(["/comptes"]);
     expect(APP_PATH_PATTERN.test("/comptes")).toBe(true);
     expect(SPACE_GROUPS.cloud[0]!.items.map((i) => i.to)).toEqual(["/cloud", "/cloud/comptes", "/cloud/journal", "/cloud/accord", "/cloud/reglages"]);
@@ -38,7 +53,7 @@ describe("Selio et ses filiales", () => {
       expect(spaceForPath(path)).toBe("cloud");
       expect(APP_PATH_PATTERN.test(path)).toBe(true);
     }
-    for (const area of ["hub", "studio", "agents", "track", "cloud", "generateur"] as const) {
+    for (const area of ["hub", "studio", "track", "bot", "cloud", "agents", "generateur"] as const) {
       const links = SPACE_GROUPS[area].flatMap((g) => g.items.map((i) => i.to));
       expect(links).toContain("/app/settings");
       expect(new Set(links).size).toBe(links.length);

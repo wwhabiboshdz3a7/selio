@@ -2,7 +2,7 @@ import { z } from "zod";
 import { aiConfigSchema } from "@selio/ai";
 import { loadStorageConfig, storageConfigSchema } from "@selio/storage";
 import { emailConfigSchema, emailStartupWarnings, loadEmailConfig } from "@selio/email";
-import { loadPaymentConfig, paymentConfigSchema, paymentStartupNotices } from "@selio/connectors";
+import { loadPaymentConfig, paymentConfigSchema, paymentStartupNotices, resolvePaymentMode } from "@selio/connectors";
 import { wornPhotos, type ServicesConfig, type radar } from "@selio/core";
 import { loadVapidConfig } from "./push";
 import { parseEmailList } from "@selio/domain";
@@ -289,7 +289,8 @@ export function startupNotices(cfg: ApiEnv): StartupNotice[] {
   if (!loadStorageConfig(cfg)) {
     out.push({ level: prod ? "warn" : "info", message: "Stockage des photos non configuré (STORAGE_ENDPOINT absent) : /api/uploads répond 503. Voir docs/STOCKAGE.md (MinIO)." });
   }
-  out.push(...paymentStartupNotices(loadPaymentConfig(cfg), cfg.NODE_ENV));
+  const payment = loadPaymentConfig(cfg);
+  out.push(...paymentStartupNotices(payment, cfg.NODE_ENV, resolvePaymentMode(cfg, payment)));
   out.push({ level: "info", message: cfg.CLOUD_ENABLED ? `Selio Cloud activé : fenêtres de connexion relayées par Redis, ${cfg.CLOUD_MAX_BROWSERS} navigateurs au plus (hypothèse à mesurer), actions lourdes ${cfg.CLOUD_HEAVY_ACTIONS ? "ouvertes" : "fermées"}.` : "Selio Cloud désactivé (CLOUD_ENABLED=false) : réglages consultables, aucune fenêtre de connexion ouverte." });
   const operators = operatorsConfig(cfg);
   out.push({ level: operators.tech.length === 0 && prod ? "warn" : "info", message: `Selio Admin : ${operators.tech.length} opérateur(s) technique(s) (OPERATOR_EMAILS), ${operators.business.length} opérateur(s) business (OPERATOR_BUSINESS_EMAILS).` });

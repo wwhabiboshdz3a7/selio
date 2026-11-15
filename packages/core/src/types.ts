@@ -15,4 +15,9 @@ export interface Session {
  */
 export interface BillingOptions {
   franchiseTva: boolean;
+  /**
+   * Mode de paiement effectif (PAYMENT_MODE, voir `effectivePaymentMode`) : « simulated » = offre enregistrée
+   * sans carte, aucune commande ni débit (API et worker) ; « revolut » (ou absent) = parcours Revolut.
+   */
+  paymentMode?: "revolut" | "simulated";
 }

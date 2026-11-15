@@ -32,5 +32,7 @@ export default async function adminAccountsRoutes(app: FastifyInstance) {
   app.post<WithId>("/api/admin/accounts/:id/note", { config: write }, async (req) => adminAccounts.setAccountNote(app.requireCtx(req), req.params.id, req.body));
   app.post<WithId>("/api/admin/accounts/:id/grant", { config: write }, async (req) => adminAccounts.grantAccess(app.requireCtx(req), req.params.id, req.body));
   app.delete<WithId>("/api/admin/accounts/:id/grant", { config: write }, async (req) => adminAccounts.revokeAccess(app.requireCtx(req), req.params.id));
+  // « Ajouter cette personne à mon organisation » : un membre du compte consulté rejoint l'organisation de l'opérateur.
+  app.post<WithId>("/api/admin/accounts/:id/add-to-my-org", { config: write }, async (req) => adminAccounts.addToMyOrg(app.requireCtx(req), req.params.id, req.body));
   app.post<WithId>("/api/admin/accounts/:id/extend-trial", { config: write }, async (req) => adminAccounts.extendTrial(app.requireCtx(req), req.params.id, req.body));
 }

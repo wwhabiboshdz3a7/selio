@@ -612,6 +612,15 @@
     background: linear-gradient(to right, color-mix(in oklab, var(--violet-400) 55%, transparent), var(--border));
   }
 }
+/* Parcours sur plusieurs rangées (accueil, huit étapes) : pas de trait après la dernière étape d'une rangée. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .cst-path-grid .cst-path-step:nth-child(2n)::after { display: none; }
+}
+@media (min-width: 1024px) {
+  .cst-path-grid .cst-path-step:nth-child(4n)::after { display: none; }
+}
+/* Étape annoncée mais pas encore ouverte (fournisseurs partenaires) : nœud en pointillé. */
+.cst-path-step[data-soon] .cst-path-node { border-style: dashed; color: var(--text-muted); }
 @media (max-width: 767px) {
   .cst-path-step { padding-left: 56px; }
   .cst-path-node { position: absolute; left: 0; top: 0; }

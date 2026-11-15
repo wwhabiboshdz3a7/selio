@@ -18,7 +18,9 @@ import { DiscountedPrice, OfferHint, useOfferBanner } from "../../components/off
 import { discountedFor, offerConditionLabel } from "../../../lib/offers";
 import { offerDiscountLabel, offerPlansLabel, redemptionDiscountFor, type OfferRedemption } from "@selio/contracts";
 import { isGrantWithoutEnd } from "@selio/contracts";
-import { Field, Input } from "@selio/ui";
+import { Dialog, Field, Input } from "@selio/ui";
+import { SIMULATED_PAYMENT_NOTICE } from "@selio/contracts";
+import { usePaymentSimulated } from "../../../lib/capabilities";
 
 const STATUS_TONE: Record<Subscription["status"], "success" | "accent" | "danger" | "muted"> = { none: "muted", trialing: "accent", active: "success", past_due: "danger", canceled: "muted", incomplete: "danger" };
 const PROVIDER_LABELS: Record<Subscription["provider"], string> = { none: "Aucun paiement enregistré", revolut: "Revolut (carte, Apple Pay, Google Pay, Revolut Pay)" };
@@ -51,8 +53,14 @@ function fingerprint(s: Subscription): string {
  * Libellé du bouton d'une offre selon l'état : enregistrer la carte pendant l'essai, choisir l'offre
  * retenue quand la carte est déjà là, payer hors essai, ou changer d'offre au prochain renouvellement.
  */
-export function offerAction(s: Subscription, plan: PaidPlan, now = new Date()): { kind: "current" | "pending" | "button"; label: string } {
+export function offerAction(s: Subscription, plan: PaidPlan, now = new Date(), simulated = false): { kind: "current" | "pending" | "button"; label: string } {
   const trial = inTrial(s, now);
+  // Paiement simulé : on choisit son offre, sans carte (aucun « Payer » ni « Enregistrer ma carte »).
+  if (simulated) {
+    if (s.pendingPlan === plan && isRunning(s)) return { kind: "pending", label: "Offre retenue" };
+    if ((s.status === "active" || s.status === "past_due") && s.plan === plan && !s.pendingPlan) return { kind: "current", label: "Offre actuelle" };
+    return { kind: "button", label: "Choisir cette offre" };
+  }
   const cardReady = s.cardOnFile && !!s.paymentMethodId && s.provider === "revolut";
   if (s.pendingPlan === plan && isRunning(s)) return { kind: "pending", label: trial ? "Offre retenue" : "Au prochain renouvellement" };
   if ((s.status === "active" || s.status === "past_due") && s.plan === plan && !s.pendingPlan) return { kind: "current", label: "Offre actuelle" };
@@ -72,6 +80,9 @@ export default function Billing() {
   const orgOffer = useQuery({ queryKey: ["org-offer"], queryFn: () => client.getOrgOffer() });
   const publicOffers = useOfferBanner("app").data;
   const manage = can(session.role, "billing.manage");
+  // Revolut pas encore configuré : parcours sans carte (récapitulatif puis confirmation), aucun débit.
+  const simulated = usePaymentSimulated();
+  const [recap, setRecap] = useState<PaidPlan | null>(null);
   const [cycleChoice, setCycleChoice] = useState<BillingCycle | null>(null);
   const cycle: BillingCycle = cycleChoice ?? sub.data?.cycle ?? "monthly";
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -121,7 +132,10 @@ export default function Billing() {
   const checkout = useAppMutation((plan: PaidPlan) => client.startCheckout(plan, { cycle }), {
     invalidate: ["subscription"],
     onSuccess: (r) => {
-      if (r.orderToken) {
+      setRecap(null);
+      if (r.simulated && mode === "connected") {
+        setNotice({ tone: "success", text: r.message });
+      } else if (r.orderToken) {
         setNotice({ tone: "info", text: r.message });
         void openWidget({ ...r, orderToken: r.orderToken }, sub.data && inTrial(sub.data) ? "trial" : "payment");
       } else {
@@ -151,7 +165,7 @@ export default function Billing() {
   return (
     <div className="flex flex-col gap-4">
       <QueryBoundary query={sub} skeleton="spinner">
-        {(sx) => <OfferCard s={sx} manage={manage} onCancel={() => setCancelOpen(true)} onReactivate={() => reactivate.mutate(undefined)} reactivating={reactivate.isPending} onCardUpdate={() => cardUpdate.mutate(undefined)} cardUpdating={cardUpdate.isPending} />}
+        {(sx) => <OfferCard s={sx} simulated={simulated} manage={manage} onCancel={() => setCancelOpen(true)} onReactivate={() => reactivate.mutate(undefined)} reactivating={reactivate.isPending} onCardUpdate={() => cardUpdate.mutate(undefined)} cardUpdating={cardUpdate.isPending} />}
       </QueryBoundary>
 
       {confirming ? (
@@ -176,7 +190,9 @@ export default function Billing() {
         </div>
         <p className="px-4 text-sm text-text-muted md:px-5">
           Starter, Pro ou Agence, au mois sans engagement ou à l'année avec {FREE_MONTHS} mois offerts.{" "}
-          {s && inTrial(s) ? `Pendant l'essai, la carte est enregistrée et rien n'est débité avant le ${periodEnd ? formatDate(periodEnd) : "terme"}.` : "Un changement d'offre s'applique au prochain renouvellement."}
+          {simulated
+            ? "Paiement pas encore activé : vous choisissez votre offre sans carte, rien n'est débité."
+            : s && inTrial(s) ? `Pendant l'essai, la carte est enregistrée et rien n'est débité avant le ${periodEnd ? formatDate(periodEnd) : "terme"}.` : "Un changement d'offre s'applique au prochain renouvellement."}
           {showIndicativePricing ? " Montants indicatifs." : ""}
         </p>
         <div className="flex flex-wrap items-center gap-3 px-4 pt-3 md:px-5">
@@ -189,7 +205,7 @@ export default function Billing() {
         </div>
         <ul className="mt-3 divide-y divide-border border-t border-border">
           {PLAN_OFFERS.map((p) => {
-            const action = s ? offerAction(s, p.key) : null;
+            const action = s ? offerAction(s, p.key, new Date(), simulated) : null;
             const price = planPriceCents(p.key, cycle);
             // Prix remisé : l'offre de l'organisation d'abord (code appliqué), sinon l'offre publique en cours.
             const own = orgOffer.data ? redemptionDiscountFor(orgOffer.data, p.key, cycle, price) : null;
@@ -213,7 +229,7 @@ export default function Billing() {
                 </p>
                 <div className="shrink-0 sm:w-40 sm:text-right">
                   {!manage || !action ? null : action.kind === "button" ? (
-                    <Button size="sm" variant={action.label === "Enregistrer ma carte" || action.label === "Payer" ? "accent" : "secondary"} onClick={() => checkout.mutate(p.key)} loading={checkout.isPending && checkout.variables === p.key} disabled={checkout.isPending}>{action.label}</Button>
+                    <Button size="sm" variant={action.label === "Enregistrer ma carte" || action.label === "Payer" ? "accent" : "secondary"} onClick={() => (simulated ? setRecap(p.key) : checkout.mutate(p.key))} loading={checkout.isPending && checkout.variables === p.key} disabled={checkout.isPending}>{action.label}</Button>
                   ) : (
                     <Tag accent>{action.label}</Tag>
                   )}
@@ -233,7 +249,11 @@ export default function Billing() {
         {!manage ? <p className="border-t border-border px-4 py-3 text-xs text-text-muted md:px-5">Seul le propriétaire peut choisir une offre, enregistrer une carte ou résilier.</p> : null}
       </Card>
 
-      <Alert tone="info">Paiement sécurisé par Revolut : le numéro de carte est saisi dans le formulaire Revolut et ne transite jamais par Selio. Les confirmations (webhooks) sont vérifiées et idempotentes ; les frais du prestataire ne vous sont pas refacturés.</Alert>
+      {simulated
+        ? <Alert tone="info" title="Paiement pas encore activé">{SIMULATED_PAYMENT_NOTICE} Le paiement en ligne (Revolut) sera ouvert prochainement : vous serez alors invité à enregistrer votre carte avant la fin de votre essai.</Alert>
+        : <Alert tone="info">Paiement sécurisé par Revolut : le numéro de carte est saisi dans le formulaire Revolut et ne transite jamais par Selio. Les confirmations (webhooks) sont vérifiées et idempotentes ; les frais du prestataire ne vous sont pas refacturés.</Alert>}
+
+      {recap ? <SimulatedCheckoutDialog plan={recap} cycle={cycle} onClose={() => setRecap(null)} onConfirm={() => checkout.mutate(recap)} confirming={checkout.isPending} /> : null}
 
       <ConfirmDialog
         open={cancelOpen}
@@ -254,7 +274,52 @@ export default function Billing() {
   );
 }
 
-function OfferCard({ s, manage, onCancel, onReactivate, reactivating, onCardUpdate, cardUpdating }: { s: Subscription; manage: boolean; onCancel: () => void; onReactivate: () => void; reactivating: boolean; onCardUpdate: () => void; cardUpdating: boolean }) {
+/**
+ * Paiement simulé : récapitulatif clair (forfait, prix, remise, première échéance, fin de l'essai) puis confirmation.
+ * Ce n'est PAS un formulaire de carte : aucun numéro, aucune date, aucun code n'est demandé.
+ */
+export function SimulatedCheckoutDialog({ plan, cycle, onClose, onConfirm, confirming }: { plan: PaidPlan; cycle: BillingCycle; onClose: () => void; onConfirm: () => void; confirming: boolean }) {
+  const client = useClient();
+  const preview = useQuery({ queryKey: ["checkout-preview", plan, cycle], queryFn: () => client.previewCheckout(plan, { cycle }), staleTime: 0 });
+  const p = preview.data;
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Confirmer l'offre ${PLAN_LABELS[plan]}`}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={confirming}>Annuler</Button>
+          <Button variant="accent" onClick={onConfirm} loading={confirming} disabled={!p || p.blockedReason !== null} data-testid="simulated-confirm">Confirmer sans carte</Button>
+        </>
+      }
+    >
+      <div data-testid="simulated-checkout" className="flex flex-col gap-4">
+        <Alert tone="warning" title="Paiement pas encore activé">Aucune carte demandée, rien ne sera débité.</Alert>
+        <QueryBoundary query={preview} skeleton="spinner">
+          {(x) => (
+            <>
+              <DescriptionList columns={2} items={[
+                { label: "Forfait", value: x.planLabel },
+                { label: "Périodicité", value: x.cycle === "yearly" ? "Annuelle" : "Mensuelle" },
+                { label: "Prix", value: <span className="num">{formatCents(x.priceCents)} / {x.cycle === "yearly" ? "an" : "mois"}</span> },
+                { label: "Remise", value: x.discount ? <span className="num">{x.discount.label} (−{formatCents(x.discount.amountCents)})</span> : "Aucune" },
+                { label: "Première échéance", value: <span className="num">{formatCents(x.dueCents)}</span> },
+                { label: "Fin de l'essai", value: x.trialEndsAt ? formatDate(x.trialEndsAt, "long") : "—" },
+              ]} />
+              <p className="text-sm text-text-muted">
+                {x.startsTrial ? `Votre essai de ${TRIAL_DAYS} jours démarre maintenant, sans carte.` : "Votre essai continue, sans carte."} À la fin de l'essai, rien n'est débité : si le paiement en ligne n'est toujours pas ouvert, votre espace passe en accès de base en attendant, et l'équipe Selio vous recontacte.
+              </p>
+              {x.blockedReason ? <Alert tone="danger">{x.blockedReason}</Alert> : null}
+            </>
+          )}
+        </QueryBoundary>
+      </div>
+    </Dialog>
+  );
+}
+
+function OfferCard({ s, simulated, manage, onCancel, onReactivate, reactivating, onCardUpdate, cardUpdating }: { s: Subscription; simulated: boolean; manage: boolean; onCancel: () => void; onReactivate: () => void; reactivating: boolean; onCardUpdate: () => void; cardUpdating: boolean }) {
   const trial = s.status === "trialing";
   const left = s.currentPeriodEnd ? daysLeft(s.currentPeriodEnd) : null;
   const running = isRunning(s);
@@ -282,14 +347,18 @@ function OfferCard({ s, manage, onCancel, onReactivate, reactivating, onCardUpda
           </p>
           <p className="mt-1 text-sm text-text-muted">
             Toutes les fonctions et les limites du plan {PLAN_LABELS[s.plan]} pendant {TRIAL_DAYS} jours.{" "}
-            {s.cardOnFile
+            {simulated
+              ? `Paiement pas encore activé : aucune carte n'est demandée.${nextPlan ? ` Offre retenue : ${nextPlan} (${CYCLE_LABELS[s.cycle]}).` : " Choisissez votre offre ci-dessous."} Rien ne sera débité à la fin de l'essai.`
+              : s.cardOnFile
               ? `Votre carte est enregistrée : rien n'est débité avant la fin de l'essai, puis l'offre ${nextPlan ?? PLAN_LABELS[s.plan]} (${CYCLE_LABELS[s.cycle]}) démarre automatiquement.`
               : `Enregistrez votre carte avant la fin de l'essai pour garder l'accès : rien n'est débité avant le ${s.currentPeriodEnd ? formatDate(s.currentPeriodEnd) : "terme"}. Sans carte, l'espace repasse à l'accès de base.`}
           </p>
         </div>
       ) : (
         <p className="mt-4 text-sm text-text-muted">
-          {s.status === "canceled"
+          {s.awaitingPaymentSince && s.status === "canceled"
+            ? `Essai terminé, en attente du paiement : votre espace est en accès de base depuis le ${formatDate(s.awaitingPaymentSince)}, rien n'a été débité.${nextPlan ? ` Offre retenue : ${nextPlan}.` : ""} L'équipe Selio vous recontacte pour la suite.`
+            : s.status === "canceled"
             ? `Abonnement résilié : accès de base (une personne, un compte Vinted).${s.dataRetentionUntil ? ` Vos données sont conservées jusqu'au ${formatDate(s.dataRetentionUntil)} : choisissez une offre pour reprendre sans rien perdre.` : " Choisissez une offre ci-dessous pour reprendre."}`
             : s.plan === "free" ? "Aucun abonnement actif : une personne et un compte Vinted." : planOffer(s.plan)?.forWhom}
         </p>
@@ -319,7 +388,7 @@ function OfferCard({ s, manage, onCancel, onReactivate, reactivating, onCardUpda
         { label: "Paiement", value: s.grantedUntil ? "Aucun (accès offert)" : PROVIDER_LABELS[s.provider] },
         { label: "Carte bancaire", value: s.cardOnFile ? <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1"><span className="inline-flex items-center gap-1.5"><CreditCard className="size-4 text-text-muted" aria-hidden />Carte enregistrée</span>{s.status === "past_due" ? null : changeCardButton}</span> : "Aucune carte enregistrée" },
         { label: s.grantedUntil ? "Fin de l'accès offert" : trial ? "Fin de l'essai" : s.cancelAtPeriodEnd ? "Fin d'accès" : running ? "Prochaine échéance" : "Fin de période", value: s.grantedUntil ? (isGrantWithoutEnd(s.grantedUntil) ? "Sans fin" : formatDate(s.grantedUntil)) : s.currentPeriodEnd ? formatDate(s.currentPeriodEnd) : "—" },
-        { label: "Renouvellement", value: s.grantedUntil ? "Aucun débit" : s.cancelAtPeriodEnd ? "Résiliation à la fin de la période" : nextPlan && running ? `Passage à ${nextPlan} au prochain renouvellement` : trial ? (s.cardOnFile ? `Automatique à la fin de l'essai (${CYCLE_LABELS[s.cycle]})` : "Carte à enregistrer") : running ? `Automatique (${CYCLE_LABELS[s.cycle]})` : "—" },
+        { label: "Renouvellement", value: s.grantedUntil ? "Aucun débit" : simulated ? "Aucun débit (paiement pas encore activé)" : s.cancelAtPeriodEnd ? "Résiliation à la fin de la période" : nextPlan && running ? `Passage à ${nextPlan} au prochain renouvellement` : trial ? (s.cardOnFile ? `Automatique à la fin de l'essai (${CYCLE_LABELS[s.cycle]})` : "Carte à enregistrer") : running ? `Automatique (${CYCLE_LABELS[s.cycle]})` : "—" },
       ]} />
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">

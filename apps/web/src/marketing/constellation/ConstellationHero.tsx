@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { Link, useNavigate } from "react-router";
 import { ArrowRight } from "lucide-react";
+import { TRIAL_DAYS } from "@selio/contracts";
 import { buttonClass } from "@selio/ui";
 import { Sparkle } from "../components";
 import { setOverNight } from "../nightHeader";
@@ -148,16 +149,16 @@ export function ConstellationHero() {
                   ))}
                 </h1>
                 <p className="cst-lead" data-cst-intro="lead">
-                  Selio relie votre stock, vos conversations, vos commandes et vos analyses. Quatorze modules pensés pour la revente, et des automatisations qui restent sous votre contrôle.
+                  Selio Manager relie votre stock, vos conversations, vos commandes, vos étiquettes et vos marges. Autour, toute la gamme Selio : Studio, Track, Radar, Bot et Cloud, avec des automatisations qui restent sous votre contrôle.
                 </p>
                 <div className="cst-ctas">
                   <Link to="/inscription" className={buttonClass({ variant: "accent", size: "lg", className: "cst-cta-link" })} data-cst-intro="cta" style={{ "--i": 0 } as CSSProperties}>
-                    Créer un compte <ArrowRight aria-hidden="true" />
+                    Commencer l'essai gratuit <ArrowRight aria-hidden="true" />
                   </Link>
-                  <Link to="/demo" className="cst-ghost" data-cst-intro="cta" style={{ "--i": 1 } as CSSProperties}>Explorer la démo</Link>
+                  <Link to="/connexion" className="cst-ghost" data-cst-intro="cta" style={{ "--i": 1 } as CSSProperties}>Se connecter</Link>
                   {live ? <a href="#application" className="cst-skip-a11y">Passer la visite des fonctionnalités</a> : null}
                 </div>
-                <p className="cst-note" data-cst-intro="note">La démonstration fonctionne sans compte ni carte bancaire, avec des données fictives.</p>
+                <p className="cst-note" data-cst-intro="note">{TRIAL_DAYS} jours gratuits avec toutes les fonctions du plan Pro. Carte enregistrée, rien n'est débité avant la fin ; résiliable à tout moment.</p>
                 {live ? (
                   <p className="cst-hint" data-cst-intro="note" aria-hidden="true">
                     <span className="cst-hint-fine">Glissez pour faire tourner la sphère, survolez une étoile, puis défilez pour entrer.</span>
@@ -221,12 +222,12 @@ export function ConstellationHero() {
             <div className="cst-finale-card">
               <p className="cst-eyebrow cst-eyebrow-center"><Sparkle className="cst-eyebrow-star" />Quinzième étoile</p>
               <h3 className="cst-finale-title">Votre constellation commence ici</h3>
-              <p className="cst-finale-text">Les quatorze modules, reliés à vos propres articles. La démonstration s'ouvre sans compte, avec des données fictives.</p>
+              <p className="cst-finale-text">Les quatorze modules, reliés à vos propres articles. Essayez-les {TRIAL_DAYS} jours sur votre activité, sans engagement.</p>
               <div className="cst-ctas cst-finale-ctas">
                 <Link to="/inscription" className={buttonClass({ variant: "accent", size: "lg", className: "cst-cta-link" })}>
-                  Créer un compte <ArrowRight aria-hidden="true" />
+                  Commencer l'essai gratuit <ArrowRight aria-hidden="true" />
                 </Link>
-                <Link to="/demo" className="cst-ghost">Explorer la démo</Link>
+                <Link to="/connexion" className="cst-ghost">Se connecter</Link>
               </div>
             </div>
           </div>

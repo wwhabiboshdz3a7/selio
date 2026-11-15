@@ -1,13 +1,13 @@
 import type { z } from "zod";
 import {
   ACCOUNT_BLOCKED_MESSAGE, GRANT_NO_END, ORG_QUALIFICATIONS, PAID_PLANS, PLANS, PLAN_LABELS, TRIAL_PLAN,
-  adminAccountsQuery, adminExtendTrialInput, adminGrantInput, adminNoteInput, adminQualificationInput, isGrantWithoutEnd, isPlan, quotasForPlan,
+  adminAccountsQuery, adminAddToMyOrgInput, adminExtendTrialInput, adminGrantInput, adminNoteInput, adminQualificationInput, isGrantWithoutEnd, isPlan, quotasForPlan,
   type AdminAccountDetail, type AdminAccountEvent, type AdminAccountRow, type AdminGrowth, type OperatorRole, type OrgQualification, type PaidPlan, type Plan,
   type Subscription, type SubscriptionStatus,
 } from "@selio/contracts";
 import { repos } from "@selio/db";
 import { resolveOperatorRole } from "@selio/domain";
-import { AppError, requireOperatorCapability, type OrgContext, type Services } from "../context";
+import { AppError, requireAction, requireOperatorCapability, type OrgContext, type Services } from "../context";
 import { planPriceCents } from "./billing";
 
 /**
@@ -75,6 +75,7 @@ function rowOf(r: repos.AdminAccountRecord): AdminAccountRow {
     cardOnFile: r.cardOnFile,
     members: r.members,
     ownerEmail: r.ownerEmail,
+    awaitingPaymentSince: r.awaitingPaymentSince ?? null,
   };
 }
 
@@ -241,7 +242,7 @@ export async function grantAccess(ctx: OrgContext, orgId: string, raw: unknown):
     if (isPaidByCard(sub)) throw new AppError("conflict", "Ce compte paie déjà son abonnement par carte : un accès offert ne peut pas le remplacer.", 409);
     await repos.subscriptions.upsert(tx, {
       plan: input.plan, quotas: quotasForPlan(input.plan), status: "active", provider: "none", currentPeriodEnd: until,
-      grantedUntil: until, grantedBy: ctx.userId, pendingPlan: null, cancelAtPeriodEnd: false, chargeAttempts: 0, nextChargeAt: null, lastChargeError: null, dataRetentionUntil: null,
+      grantedUntil: until, grantedBy: ctx.userId, pendingPlan: null, cancelAtPeriodEnd: false, chargeAttempts: 0, nextChargeAt: null, lastChargeError: null, dataRetentionUntil: null, awaitingPaymentSince: null,
     });
     await repos.audit.add(tx, {
       actorUserId: ctx.userId, action: "admin.access_granted", targetType: "subscription", targetId: orgId, ip: ctx.ip,
@@ -284,7 +285,7 @@ export async function extendTrial(ctx: OrgContext, orgId: string, raw: unknown):
     const from = running && sub?.currentPeriodEnd ? new Date(Math.max(new Date(sub.currentPeriodEnd).getTime(), now.getTime())) : now;
     const end = new Date(from.getTime() + days * 86_400_000).toISOString();
     const plan = running && sub ? sub.plan : TRIAL_PLAN;
-    await repos.subscriptions.upsert(tx, { plan, quotas: quotasForPlan(plan), status: "trialing", currentPeriodEnd: end, cancelAtPeriodEnd: false, dataRetentionUntil: null, chargeAttempts: 0, nextChargeAt: null });
+    await repos.subscriptions.upsert(tx, { plan, quotas: quotasForPlan(plan), status: "trialing", currentPeriodEnd: end, cancelAtPeriodEnd: false, dataRetentionUntil: null, chargeAttempts: 0, nextChargeAt: null, awaitingPaymentSince: null });
     await repos.audit.add(tx, {
       actorUserId: ctx.userId, action: "admin.trial_extended", targetType: "subscription", targetId: orgId, ip: ctx.ip,
       meta: { days, restarted: !running, before: subscriptionSnapshot(sub), after: { plan, status: "trialing", currentPeriodEnd: end } },
@@ -293,3 +294,28 @@ export async function extendTrial(ctx: OrgContext, orgId: string, raw: unknown):
   return getAccount(ctx, orgId);
 }
 
+
+/**
+ * « Ajouter cette personne à mon organisation » (fiche d'un compte) : la personne (membre du compte consulté)
+ * devient membre de l'organisation de l'opérateur, avec le rôle choisi (jamais titulaire). Aucun mot de passe
+ * ni lien : elle garde son compte et retrouve l'organisation dans son sélecteur. Il faut aussi pouvoir gérer les
+ * membres de sa propre organisation (titulaire ou administrateur) ; quota de membres de l'offre respecté.
+ */
+export async function addToMyOrg(ctx: OrgContext, accountOrgId: string, raw: unknown): Promise<AdminAccountDetail> {
+  requireOperatorCapability(ctx, "admin.accounts.manage");
+  requireAction(ctx, "members.manage");
+  const input = parseInput(adminAddToMyOrgInput, raw);
+  await requireOrg(ctx, accountOrgId);
+  const services = ctx.services;
+  const quotas = (await services.db.withOrg(ctx.orgId, (tx) => repos.subscriptions.get(tx)))?.quotas ?? quotasForPlan("free");
+  await services.db.withGlobal(async (tx) => {
+    const source = await repos.memberships.get(tx, accountOrgId, input.userId);
+    if (!source) throw new AppError("not_found", "Cette personne n'est pas membre de ce compte.", 404);
+    if (await repos.memberships.get(tx, ctx.orgId, input.userId)) throw new AppError("conflict", "Cette personne est déjà membre de votre organisation.", 409);
+    if ((await repos.memberships.countOrg(tx, ctx.orgId)) >= quotas.members) throw new AppError("quota_exceeded", `Quota de membres de votre offre atteint (${quotas.members}).`, 402);
+    const m = await repos.memberships.create(tx, { orgId: ctx.orgId, userId: input.userId, role: input.role });
+    await tx.query("select set_config('app.org_id', $1, true)", [ctx.orgId]);
+    await repos.audit.add(tx, { orgId: ctx.orgId, actorUserId: ctx.userId, action: "member.added_by_operator", targetType: "membership", targetId: m.id, meta: { role: input.role, fromAccount: accountOrgId }, ip: ctx.ip });
+  });
+  return getAccount(ctx, accountOrgId);
+}

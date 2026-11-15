@@ -104,6 +104,8 @@ export const router = createBrowserRouter([
       { path: "orders", lazy: lazy(() => import("./app/pages/Orders")) },
       { path: "orders/:id", lazy: lazy(() => import("./app/pages/OrderDetail")) },
       { path: "analytics", lazy: lazy(() => import("./app/pages/Analytics")) },
+      // Journal d'activité de Selio Manager : ce que Selio, Studio, Selio Bot et l'équipe ont fait.
+      { path: "journal", lazy: lazy(() => import("./app/pages/Journal")) },
       { path: "automations", lazy: lazy(() => import("./app/pages/Automations")) },
       { path: "radar", lazy: lazy(() => import("./app/pages/Radar")) },
       // Page d'une affaire (« 1 clic »), ouverte depuis une alerte sur le téléphone ; achat à valider (3-D Secure).
@@ -198,6 +200,23 @@ export const router = createBrowserRouter([
       { path: "ventes", lazy: lazy(() => import("./app/pages/track/Sales")) },
       { path: "vendeurs", lazy: lazy(() => import("./app/pages/track/Sellers")) },
       { path: "*", element: <Navigate to="/track" replace /> },
+    ]),
+  },
+  {
+    // Selio Bot : les automatisations qui agissent pour le revendeur, leur état, où elles tournent, « Tout arrêter ».
+    path: "/bot",
+    element: (
+      <RequireSession>
+        <AppLayout />
+      </RequireSession>
+    ),
+    errorElement: <RouteError />,
+    children: guarded([
+      { index: true, lazy: lazy(() => import("./app/pages/bot/BotHome")) },
+      // Achat auto : Radar Auto (deux verrous du serveur) et achat assisté, côte à côte.
+      { path: "achat-auto", lazy: lazy(() => import("./app/pages/bot/BotAutoBuy")) },
+      { path: ":botId", lazy: lazy(() => import("./app/pages/bot/BotDetail")) },
+      { path: "*", element: <Navigate to="/bot" replace /> },
     ]),
   },
   {

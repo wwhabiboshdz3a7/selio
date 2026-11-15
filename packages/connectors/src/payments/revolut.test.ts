@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { createPaymentProvider, loadPaymentConfig, paymentStartupNotices } from "./config";
+import { createPaymentProvider, loadPaymentConfig, paymentStartupNotices, resolvePaymentMode } from "./config";
 import { DEFAULT_REVOLUT_API_VERSION, REVOLUT_HOSTS, RevolutClient, computeRevolutSignature, normalizeState, orderPaymentMethodId, parseRevolutSignatures, verifyRevolutWebhook } from "./revolut";
 import { PaymentApiError, PaymentConfigError } from "./types";
 
@@ -48,6 +48,18 @@ describe("RevolutClient : configuration", () => {
     expect(createPaymentProvider(loadPaymentConfig({ REVOLUT_SECRET_KEY: KEY }))?.name).toBe("revolut");
     expect(paymentStartupNotices(null, "production")[0]?.level).toBe("warn");
     expect(paymentStartupNotices(loadPaymentConfig({ REVOLUT_SECRET_KEY: KEY }), "development").map((n) => n.message).join(" ")).toMatch(/REVOLUT_WEBHOOK_SECRET absent/);
+  });
+
+  it("PAYMENT_MODE : « auto » = Revolut avec une clé, simulé sans ; « simulated » force le simulé ; « revolut » jamais simulé", () => {
+    const withKey = loadPaymentConfig({ REVOLUT_SECRET_KEY: KEY });
+    expect(resolvePaymentMode({}, null)).toBe("simulated");
+    expect(resolvePaymentMode({ PAYMENT_MODE: "" }, withKey)).toBe("revolut");
+    expect(resolvePaymentMode({ PAYMENT_MODE: " Simulated " }, withKey)).toBe("simulated");
+    expect(resolvePaymentMode({ PAYMENT_MODE: "revolut" }, null)).toBe("revolut");
+    expect(() => loadPaymentConfig({ PAYMENT_MODE: "gratuit" })).toThrow(PaymentConfigError);
+    const notice = paymentStartupNotices(null, "production", "simulated");
+    expect(notice).toHaveLength(1);
+    expect(notice[0]).toMatchObject({ level: "info", message: expect.stringMatching(/SIMULÉ.*rien n'est jamais débité/) });
   });
 });
 

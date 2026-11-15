@@ -1,11 +1,14 @@
+import type { AdminAddToMyOrgInput, CheckoutPreview, InviteOutcome, ServerCapabilities } from "@selio/contracts";
 import type {
   AiRequest, AiStatus, AuditLog, ListingDraft, ListingGenerationInput, AutomationRule, AutomationRuleCreate, BulkItemAction, ConnectionCreate, ConnectionTestResult, ConnectionUpdate, Conversation, ConversationQuery, Customer, CustomerCreate, CustomerQuery, CustomerUpdate, ExtensionToken, InventoryEvent, InventoryItem, InventoryItemCreate, InventoryItemUpdate, InventoryQuery, Job, JobQuery, MarketplaceConnection, Membership, Message, Opportunity, Order, OrderCreate, OrderQuery, OrderStatus, Organization, OrgSettings, Page, Plan, PurchaseRequest, RadarSearch, RadarSearchCreate, Role, Shipment, Subscription, UsageEvent, User,
 } from "@selio/contracts";
 import type { WhiteLabel, WhiteLabelInput } from "@selio/contracts";
+import type { ActivityPage, ActivityQuery, ItemSummary, UserPreferences, UserPreferencesUpdate } from "@selio/contracts";
 import type { ConnectorDescriptor } from "@selio/connectors";
 import type { ReplySuggestion } from "@selio/contracts";
 import type { BillingCycle, CheckoutResult, Invoice, InvoiceView, PaidPlan, SubsidiaryUsage, TrialDays, UsageCounter } from "@selio/contracts";
 import type { HelpAnswer } from "@selio/contracts";
+import type { BotSummary } from "@selio/contracts";
 import type { CloudAccount, CloudAction, CloudActionKind, CloudActionLevel, CloudActionStatus, CloudAvailability, CloudConsentView, CloudLoginTicket } from "@selio/contracts";
 import type { AutoBuySettings, PushSubscriptionInput, PushSubscriptionView, RadarAlertPayload, RadarMetrics, RadarReadOutcome, RadarSettings, RadarSettingsUpdate, RadarSourceKind } from "@selio/contracts";
 import type { GarmentKind, GeneratorPhoto, ItemCategory, LabelFieldName, MeasurementName, NamedMeasurementField, PhotoRole, PhotoRoleSource, SellerQuestion, StudioFields, StudioPrep, StudioPrepArticle, StudioSellerHints, WornPhotoJob } from "@selio/contracts";
@@ -781,7 +784,8 @@ export interface DataClient {
   // Organisation
   updateOrg(input: { name?: string; settings?: Partial<OrgSettings> }): Promise<Organization>;
   listMembers(): Promise<(Membership & { user: User })[]>;
-  inviteMember(input: { email: string; role: Role }): Promise<Membership & { user: User }>;
+  /** Invitation : le membre, et (mode connecté) le lien à copier pour un compte créé pour l'occasion. */
+  inviteMember(input: { email: string; role: Role }): Promise<Membership & { user: User; invite?: InviteOutcome }>;
   updateMemberRole(membershipId: string, role: Role): Promise<void>;
   removeMember(membershipId: string): Promise<void>;
   completeOnboardingStep(step: string): Promise<Organization>;
@@ -817,6 +821,14 @@ export interface DataClient {
   importItems(items: InventoryItemCreate[]): Promise<{ created: number }>;
   exportItemsCsv(): Promise<string>;
   itemHistory(id: string): Promise<InventoryEvent[]>;
+  /** Compteurs de « Articles et stock » (valeur d'achat du stock : null sans « finances.read »). */
+  itemSummary(): Promise<ItemSummary>;
+  // Selio Manager : journal d'activité et raccourcis de l'utilisateur
+  /** Journal d'activité (« org.read ») : ce que Selio, Studio, Selio Bot et l'équipe ont fait, le plus récent d'abord. */
+  listActivity(query: ActivityQuery): Promise<ActivityPage>;
+  /** Préférences de l'utilisateur connecté (raccourcis), les mêmes sur chaque appareil. */
+  getPreferences(): Promise<UserPreferences>;
+  updatePreferences(patch: UserPreferencesUpdate): Promise<UserPreferences>;
   // Clients
   listCustomers(query: Partial<CustomerQuery>): Promise<Page<Customer & { orderCount: number; revenueCents: number }>>;
   getCustomerTimeline(id: string): Promise<CustomerTimeline>;
@@ -854,6 +866,10 @@ export interface DataClient {
   deleteRule(id: string): Promise<void>;
   getAutomationState(): Promise<AutomationState>;
   setGlobalPause(paused: boolean): Promise<AutomationState>;
+  // Selio Bot : état de chaque bot (règles, Selio Cloud, Radar Auto) et « Tout arrêter » (titulaire et administrateur)
+  botSummary(): Promise<BotSummary>;
+  stopBots(): Promise<BotSummary>;
+  resumeBots(): Promise<BotSummary>;
   runRuleNow(id: string): Promise<{ evaluated: number; created: number; skipped: { reason: string; count: number }[] }>;
   listJobs(query: Partial<JobQuery>): Promise<Page<Job>>;
   approveJob(id: string): Promise<Job>;
@@ -983,6 +999,11 @@ export interface DataClient {
   /** Taux de réussite, quota du mois et limites, sur les `windowDays` derniers jours (30 par défaut). */
   getAiHealth(windowDays?: number): Promise<AiHealthData>;
   // Abonnement et consommation
+  /**
+   * Capacités du serveur (GET /api/capabilities) : ce qui est réellement branché. Démonstration : `demo: true`,
+   * rien n'est masqué. Serveur pas encore à jour (404) : `LEGACY_SERVER_CAPABILITIES`.
+   */
+  getCapabilities(): Promise<ServerCapabilities>;
   getSubscription(): Promise<Subscription>;
   getUsage(): Promise<UsageSummary>;
   /**
@@ -991,6 +1012,8 @@ export interface DataClient {
    * carte est seulement enregistrée (rien débité avant la fin) ; carte déjà enregistrée = changement
    * d'offre sans formulaire (`orderToken` null). En démonstration, le succès est immédiat.
    */
+  /** Récapitulatif avant confirmation : forfait, prix, remise retenue, fin d'essai, paiement simulé ou réel. */
+  previewCheckout(plan: PaidPlan, opts?: { cycle?: BillingCycle }): Promise<CheckoutPreview>;
   startCheckout(plan: PaidPlan, opts?: { cycle?: BillingCycle }): Promise<CheckoutOutcome>;
   /** Changement de carte sans paiement (abonnement en cours) : autorisation de vérification annulée aussitôt. */
   startCardUpdate(): Promise<CheckoutOutcome>;
@@ -1032,6 +1055,8 @@ export interface DataClient {
   adminRevokeAccess(orgId: string): Promise<AdminAccountDetail>;
   /** Prolonge l'essai de 1 à 90 jours. */
   adminExtendTrial(orgId: string, days: number): Promise<AdminAccountDetail>;
+  /** « Ajouter cette personne à mon organisation » : un membre du compte consulté rejoint l'organisation de l'opérateur. */
+  adminAddToMyOrg(orgId: string, input: AdminAddToMyOrgInput): Promise<AdminAccountDetail>;
   /** Démonstration seulement : voir Selio Admin avec un autre rôle d'opérateur (null : revenir au sien, « tech »). */
   previewOperatorRole?(role: OperatorRole | null): Promise<Session>;
   /** Offres commerciales (Admin › Offres) : opérateurs « tech » et « business ». */

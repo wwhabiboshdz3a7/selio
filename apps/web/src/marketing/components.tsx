@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, type ReactNode, type RefObject } from "react";
 import { Link } from "react-router";
 import { ArrowRight, Check, Clock, Minus } from "lucide-react";
+import { TRIAL_DAYS } from "@selio/contracts";
 import { buttonClass, cn } from "@selio/ui";
 import { seeded } from "./constellation/geometry";
 import { AVAILABILITY_LABEL, type Availability } from "./catalog";
@@ -205,6 +206,10 @@ export function NightSky({ seed = 7, lines = true }: { seed?: number; lines?: bo
   );
 }
 
+/**
+ * Appel final des pages : l'essai de 14 jours (inscription) et la connexion. La vitrine ne
+ * renvoie jamais vers la démonstration (voir demoAccess.ts).
+ */
 export function CtaBand({ title, lead, seed = 7 }: { title: string; lead: string; seed?: number }) {
   return (
     <section className="py-12 md:py-20">
@@ -213,15 +218,15 @@ export function CtaBand({ title, lead, seed = 7 }: { title: string; lead: string
           <NightSky seed={seed} />
           <div className="flex flex-col items-start gap-7 lg:flex-row lg:items-center lg:justify-between">
             <div className="max-w-xl">
-              <Eyebrow>Sans compte ni carte bancaire</Eyebrow>
+              <Eyebrow>Essai gratuit de {TRIAL_DAYS} jours</Eyebrow>
               <h2 className="mk-night-title mt-3 text-xl text-balance font-semibold tracking-[-0.02em] md:text-[28px] md:leading-[34px]">{title}</h2>
               <p className="mk-night-text mt-3 text-base">{lead}</p>
             </div>
             <div className="flex flex-wrap gap-2.5">
               <Link to="/inscription" className={buttonClass({ variant: "accent", size: "lg", className: "mk-cta-link" })}>
-                Créer un compte <ArrowRight aria-hidden="true" />
+                Commencer l'essai gratuit <ArrowRight aria-hidden="true" />
               </Link>
-              <Link to="/demo" className="mk-ghost">Explorer la démo</Link>
+              <Link to="/connexion" className="mk-ghost">Se connecter</Link>
             </div>
           </div>
         </div>

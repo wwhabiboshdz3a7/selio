@@ -1,13 +1,14 @@
 import { Link, Navigate, useParams } from "react-router";
 import { ArrowRight } from "lucide-react";
+import { TRIAL_DAYS } from "@selio/contracts";
 import { buttonClass } from "@selio/ui";
-import { spaceById } from "../../app/spaces/spaces";
 import { Container, CtaBand, Eyebrow, IndependenceNotice, JsonLd, MarketingSection, NightSky, NotList } from "../components";
 import { PRODUCTS, productBySlug, type ProductDef } from "../products";
+import { productIcon } from "../spaces";
 import { PRODUCT_SHOTS } from "../productShots";
 import { breadcrumbJsonLd, softwareApplicationJsonLd, useMarketingMeta } from "../seo";
 
-/** Page d'une filiale : /produits/manager, /studio, /track, /radar, /cloud, /comptes. */
+/** Page d'un produit de la gamme : /produits/manager, /studio, /track, /radar, /bot, /cloud, /agents, /comptes. */
 export default function Product() {
   const { slug } = useParams();
   const product = productBySlug(slug);
@@ -18,7 +19,9 @@ export default function Product() {
 function ProductView({ product }: { product: ProductDef }) {
   useMarketingMeta(product.path);
   const shot = PRODUCT_SHOTS[product.slug];
-  const icon = product.spaceId ? spaceById(product.spaceId).icon : null;
+  const icon = productIcon(product);
+  // Selio Comptes est une prestation : on la demande, on ne s'y inscrit pas.
+  const service = product.slug === "comptes";
   const others = PRODUCTS.filter((p) => p.slug !== product.slug);
   return (
     <>
@@ -30,7 +33,9 @@ function ProductView({ product }: { product: ProductDef }) {
             <span className="max-w-2xl">{product.state.note}</span>
           </p>
           <div className="flex flex-wrap gap-2.5">
-            <Link to={`/demo?vers=${product.demoPath}`} className={buttonClass({ variant: "accent" })}>Voir {product.name} dans la démo</Link>
+            {service
+              ? <Link to="/contact" className={buttonClass({ variant: "accent" })}>Demander une prestation</Link>
+              : <Link to="/inscription" className={buttonClass({ variant: "accent" })}>Commencer l'essai gratuit de {TRIAL_DAYS} jours</Link>}
             <Link to="/tarifs" className={buttonClass({ variant: "secondary" })}>Voir les tarifs</Link>
           </div>
         </div>
@@ -40,7 +45,7 @@ function ProductView({ product }: { product: ProductDef }) {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {product.does.map((f) => (
             <div key={f.title} className="card mk-card flex flex-col p-5" data-reveal="">
-              {icon ? <span className="mk-icon mb-4" aria-hidden>{icon}</span> : null}
+              <span className="mk-icon mb-4" aria-hidden>{icon}</span>
               <h3 className="text-md font-semibold text-text">{f.title}</h3>
               <p className="mt-1.5 flex-1 text-sm text-text-muted">{f.text}</p>
             </div>
@@ -63,12 +68,12 @@ function ProductView({ product }: { product: ProductDef }) {
                   <img src={shot.dark} alt={product.shot.alt} width={1600} height={1000} loading="lazy" decoding="async" className="hidden dark:block" />
                 </div>
               ) : (
-                <div className="mk-night flex min-h-56 items-center justify-center px-6 py-10" role="img" aria-label={`${product.name} : illustration, capture de la démonstration à venir`}>
+                <div className="mk-night flex min-h-56 items-center justify-center px-6 py-10" role="img" aria-label={`${product.name} : illustration, capture d'écran à venir`}>
                   <NightSky seed={product.slug.length * 7} lines={false} />
                   <p className="mk-night-text relative text-center text-sm">{product.name}</p>
                 </div>
               )}
-              <figcaption className="mt-3 text-xs text-text-muted">{shot ? product.shot.caption : "Capture de la démonstration à venir."}</figcaption>
+              <figcaption className="mt-3 text-xs text-text-muted">{shot ? product.shot.caption : "Capture d'écran à venir."}</figcaption>
             </figure>
           </div>
         </Container>
@@ -78,15 +83,15 @@ function ProductView({ product }: { product: ProductDef }) {
         <div className="card flex flex-col gap-3 p-5 md:flex-row md:items-center md:justify-between md:p-6">
           <div>
             <p className="text-md font-semibold text-text">Prix : voir les tarifs</p>
-            <p className="mt-1 text-sm text-text-muted">{product.pricingNote} Montants indicatifs, non définitifs.</p>
+            <p className="mt-1 max-w-3xl text-sm text-text-muted">{product.pricingNote} Montants indicatifs, non définitifs.</p>
           </div>
           <Link to={product.pricingHref} className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">Voir les tarifs <ArrowRight className="size-4" aria-hidden /></Link>
         </div>
       </MarketingSection>
 
-      <section className="border-t border-border py-12 md:py-16" aria-labelledby="autres-filiales">
+      <section className="border-t border-border py-12 md:py-16" aria-labelledby="autres-produits">
         <Container>
-          <h2 id="autres-filiales" className="text-md font-semibold text-text">Les autres filiales</h2>
+          <h2 id="autres-produits" className="text-md font-semibold text-text">Le reste de la gamme Selio</h2>
           <ul className="mt-4 flex flex-wrap gap-2">
             {others.map((p) => (
               <li key={p.slug}>
@@ -98,7 +103,7 @@ function ProductView({ product }: { product: ProductDef }) {
         </Container>
       </section>
 
-      <CtaBand seed={product.slug.length + 3} title={`${product.name} est dans la démonstration`} lead="Données fictives, sans compte ni carte bancaire : tout ce qui est simulé est signalé à l'écran." />
+      <CtaBand seed={product.slug.length + 3} title={`Essayez Selio pendant ${TRIAL_DAYS} jours`} lead="Toutes les fonctions du plan Pro sur votre propre activité. Carte enregistrée à l'inscription, rien n'est débité avant la fin de l'essai ; tout ce qui est encore simulé est signalé à l'écran." />
     </>
   );
 }

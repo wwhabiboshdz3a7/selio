@@ -66,9 +66,14 @@ export const PRICING = {
     radarAuto: 2999,
     /** Selio Cloud en option, par mois, pour Starter et Pro (inclus dans Agence). */
     cloudOption: 999,
-    /** Selio Comptes, payés une fois. */
-    comptesAudit: 999,
-    comptesAccompagnement: 1499,
+    /**
+     * Selio Comptes à la prestation, payée une fois (trois niveaux). Un audit coûte un peu moins
+     * de 3 mois de Starter, la mise en place environ 2 mois de Pro, l'accompagnement de 30 jours
+     * moins de 2 mois d'Agence. À régler ici seulement : la page Tarifs et la page produit les lisent.
+     */
+    comptesAudit: 1900,
+    comptesMiseEnPlace: 4900,
+    comptesAccompagnement: 8900,
     /** Aucun compte à la carte : au-delà de 10 comptes, sur devis. */
     extraAccounts: "none" as const,
   },
@@ -192,13 +197,20 @@ export const PLAN_COMPARISON: readonly ComparisonGroup[] = [
     ],
   },
   {
-    title: "Mon IA perso et automatisations",
+    title: "Selio Manager et mon IA perso",
     rows: [
       { label: "Réponses de mon IA perso", hint: "Par mois. À la limite, la demande est refusée proprement, sans facturation en plus.", values: byPlan((p) => perMonth(q[p].aiRequestsPerMonth)) },
-      { label: "Relance après 24 h sans réponse", values: byPlan((p) => FOLLOW_UP_LABELS[q[p].followUp24h]) },
       { label: "Messagerie, négociation et marges", values: all(check) },
       { label: "Dressing intelligent et republications", values: all(check) },
-      { label: "Stock, commandes, clients et analyses", values: all(check) },
+      { label: "Stock, commandes, étiquettes, clients et analyses", values: all(check) },
+    ],
+  },
+  {
+    title: "Selio Bot",
+    rows: [
+      { label: "Négociation, réponses et après-vente automatiques", hint: "Sans prix séparé. Selon vos règles, tant que votre navigateur est ouvert ; 24 h/24 avec Selio Cloud.", values: all(check) },
+      { label: "Actions automatiques", hint: "Par jour, tous comptes confondus.", values: byPlan((p) => text(`${thousands(q[p].automationActionsPerDay)}${NBSP}par${NBSP}jour`)) },
+      { label: "Relance après 24 h sans réponse", values: byPlan((p) => FOLLOW_UP_LABELS[q[p].followUp24h]) },
     ],
   },
   {
@@ -220,7 +232,7 @@ export const PLAN_COMPARISON: readonly ComparisonGroup[] = [
   {
     title: "Selio Cloud",
     rows: [
-      { label: "Automatisations ordinateur éteint", hint: "En préparation. En option pour Starter et Pro, inclus dans Agence.", values: byPlan((p) => (q[p].cloudIncluded ? text("Inclus") : text("En option"))) },
+      { label: "Selio Manager et Selio Bot 24 h/24, ordinateur éteint", hint: "En préparation. En option pour Starter et Pro, inclus dans Agence.", values: byPlan((p) => (q[p].cloudIncluded ? text("Inclus") : text("En option"))) },
     ],
   },
   {

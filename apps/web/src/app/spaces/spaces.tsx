@@ -1,16 +1,17 @@
 import type { ReactNode } from "react";
-import { Bot, Calculator, Camera, CircleUser, Cloud, FileCheck, Filter, Gauge, LineChart, Scale, HandCoins, LayoutGrid, Lightbulb, FileStack, MoonStar, ListChecks, Palette, Radar, Settings, ShieldCheck, Shirt, SlidersHorizontal, Sparkles, Store, TrendingUp, UserPlus, Users, Workflow } from "lucide-react";
+import { Bot, Calculator, Camera, CircleUser, Cloud, FileCheck, Filter, Gauge, LineChart, Scale, HandCoins, LayoutGrid, Lightbulb, FileStack, MessagesSquare, MoonStar, ListChecks, Package, Palette, Radar, RefreshCw, Settings, ShieldCheck, Shirt, ShoppingCart, SlidersHorizontal, Sparkles, Store, TrendingUp, UserPlus, Users, Workflow } from "lucide-react";
 import type { NavGroup } from "../layout";
 
 /**
- * Selio et ses filiales. Selio est l'outil de gestion (l'application
- * historique, /app) ; Studio, Agents, Track, Cloud et Selio Comptes
- * s'appuient sur ses données. Chaque espace a son menu et une teinte
+ * La gamme Selio. « Selio » est la marque ; Selio Manager est l'outil de
+ * gestion (l'application historique, /app, identifiant d'espace « selio »
+ * gardé) ; Studio, Track, Bot, Cloud, Agents et Selio Comptes s'appuient sur
+ * ses données, dans cet ordre (le parcours du revendeur). Chaque espace a son menu et une teinte
  * d'identité discrète (styles.css, [data-space]) ; l'accueil central
  * (/app/espaces) les présente tous. « Selio Global » est le nom de
  * l'entreprise, pas un produit : il n'a pas d'espace.
  */
-export type SpaceId = "selio" | "studio" | "agents" | "track" | "cloud" | "generateur";
+export type SpaceId = "selio" | "studio" | "track" | "bot" | "cloud" | "agents" | "generateur";
 /** Zone affichée : un espace, ou l'accueil central. */
 export type SpaceArea = SpaceId | "hub";
 export type SpaceState = "available" | "preview" | "development";
@@ -20,6 +21,17 @@ export const SPACE_STATE_LABEL: Record<SpaceState, string> = {
   preview: "Aperçu",
   development: "En développement",
 };
+
+/**
+ * Libellé de l'état d'un espace selon le mode : la démonstration garde « Aperçu » et « En développement » ; le mode
+ * connecté n'affiche jamais ces étiquettes, mais « En cours d'activation » ou « Disponible prochainement ».
+ */
+export function spaceStateLabel(state: SpaceState, mode: "demo" | "connected"): string {
+  if (mode === "demo") return SPACE_STATE_LABEL[state];
+  return state === "available" ? "Disponible" : state === "preview" ? "En cours d'activation" : "Disponible prochainement";
+}
+/** Titre de la rubrique des espaces pas encore ouverts. */
+export const upcomingSectionTitle = (mode: "demo" | "connected") => (mode === "demo" ? "En développement" : "Bientôt disponibles");
 
 export interface SpaceDef {
   id: SpaceId;
@@ -42,11 +54,11 @@ import { HUB_PATH, SPACE_PREFIXES } from "./paths";
 
 export const SPACES: readonly SpaceDef[] = [
   {
-    id: "selio", name: "Selio", short: "Gestion", tagline: "L'outil de gestion du revendeur",
-    description: "Votre activité au quotidien, sur tous vos comptes Vinted : sourcing, achat, vente, bordereaux, après-vente et remise en ligne.",
+    id: "selio", name: "Selio Manager", short: "Manager", tagline: "La gestion quotidienne de vos comptes Vinted",
+    description: "Votre activité au quotidien, sur tous vos comptes Vinted : sourcing, achat, vente, commandes, bordereaux, après-vente et marges.",
     forWhom: "Pour chaque revendeur, chaque jour",
     home: "/app", icon: <Gauge />, state: "available",
-    does: ["Stock, dressing, messagerie et commandes", "Automatisation : favoris, réponses, négociation, après-vente", "Bonnes affaires, achat assisté et marges"],
+    does: ["Stock, dressing, messagerie et commandes", "Bonnes affaires (Radar), achat assisté et marges", "Automatisations bornées, et Selio Cloud pour les faire tourner 24 h/24"],
   },
   {
     id: "studio", name: "Selio Studio", short: "Studio", tagline: "Vos photos deviennent des annonces",
@@ -56,13 +68,6 @@ export const SPACES: readonly SpaceDef[] = [
     does: ["Annonces rédigées à partir des photos, à la suite", "Historique des annonces générées et leur note", "Ce qui performe : titres, photos, prix"],
   },
   {
-    id: "agents", name: "Selio Agents", short: "Agents", tagline: "Administrateur, équipes et accès",
-    description: "Qui fait quoi sur vos comptes : l'administrateur, les membres de l'équipe et leurs accès. Les agences et dépôts-vente y suivent aussi leurs boutiques clientes.",
-    forWhom: "Pour travailler à plusieurs",
-    home: "/agents", icon: <Users />, state: "preview",
-    does: ["Administrateur, équipes et rôles", "Accès et journal d'audit", "Boutiques clientes et marque blanche (aperçu)"],
-  },
-  {
     id: "track", name: "Selio Track", short: "Track", tagline: "Les statistiques du marché Vinted, pour sourcer au bon endroit",
     description: "Suivez des filtres Vinted (prix médian, annonces actives, ventes estimées), notez une niche sur 100 et estimez un prix à partir d'une photo. Statistiques seulement : aucune annonce, aucun pseudo.",
     forWhom: "Pour sourcer et fixer ses prix (Pro et Agence)",
@@ -70,17 +75,31 @@ export const SPACES: readonly SpaceDef[] = [
     does: ["Filtres suivis, tendances sur 30 jours", "Scans de niche notés sur 100", "Recherche par photo : fourchette et délai"],
   },
   {
-    id: "cloud", name: "Selio Cloud", short: "Cloud", tagline: "Vos automatisations, même ordinateur éteint",
-    description: "Vos réponses et vos relances continuent quand votre ordinateur est éteint : un navigateur isolé par compte Vinted sur notre machine, où vous vous connectez vous-même, au rythme humain et avec votre accord.",
+    id: "bot", name: "Selio Bot", short: "Bot", tagline: "Les automatisations qui travaillent pour vous",
+    description: "Négociation, relances, republications et achat automatique, selon vos règles et vos plafonds, exécutés dans Selio Cloud. Sans prix séparé : inclus selon votre forfait.",
+    forWhom: "Pour déléguer les tâches répétitives",
+    home: "/bot", icon: <Bot />, state: "development",
+    does: ["Négociation et relances selon vos règles", "Republications et achat automatique, avec plafonds", "Exécuté dans Selio Cloud, pause et arrêt en un clic"],
+  },
+  {
+    id: "cloud", name: "Selio Cloud", short: "Cloud", tagline: "Le moteur qui tourne 24 h/24, ordinateur éteint",
+    description: "Le moteur qui fait tourner Selio Manager, Selio Bot et vos équipes Selio Agents 24 h/24, sans ordinateur allumé : un navigateur isolé par compte Vinted sur notre machine, où vous vous connectez vous-même, au rythme humain et avec votre accord.",
     forWhom: "Pour vendre même ordinateur éteint",
     home: "/cloud", icon: <Cloud />, state: "preview",
     does: ["Répondre aux messages, relancer après 24 h", "Jusqu'à 10 comptes Vinted, pause en un clic", "Journal des actions gardé 90 jours"],
   },
   {
+    id: "agents", name: "Selio Agents", short: "Agents", tagline: "Administrateur, équipes et accès",
+    description: "Qui fait quoi sur vos comptes : l'administrateur, les membres de l'équipe et leurs accès. Les agences et dépôts-vente y suivent aussi leurs boutiques clientes.",
+    forWhom: "Pour travailler à plusieurs",
+    home: "/agents", icon: <Users />, state: "preview",
+    does: ["Administrateur, équipes et rôles", "Accès et journal d'audit", "Boutiques clientes et marque blanche (aperçu)"],
+  },
+  {
     // Identifiant historique « generateur » gardé (teinte, vitrine) ; l'espace s'appelle Selio Comptes (§5.15).
-    id: "generateur", name: "Selio Comptes", short: "Comptes", tagline: "Ouvrir sa boutique Vinted, étape par étape",
-    description: "Une checklist à suivre vous-même dans Vinted pour ouvrir et préparer un compte vendeur, et les textes prêts à copier : présentation, règles d'envoi, réponses types. Selio ne crée aucun compte à votre place.",
-    forWhom: "Pour ouvrir une nouvelle boutique",
+    id: "generateur", name: "Selio Comptes", short: "Comptes", tagline: "À la prestation : audit ou mise en place de votre boutique",
+    description: "Un service ponctuel, payé une fois : audit de boutique, mise en place complète ou accompagnement de 30 jours. Dans l'application, la checklist à suivre vous-même dans Vinted et les textes prêts à copier. Selio ne crée aucun compte à votre place.",
+    forWhom: "Pour ouvrir ou remettre à plat une boutique",
     home: "/comptes", icon: <UserPlus />, state: "available",
     does: ["Checklist à cocher, de l'inscription aux premières annonces", "Présentation et règles d'envoi rédigées à partir de vos réponses", "Réponses types à copier dans Vinted"],
   },
@@ -93,7 +112,7 @@ export function spaceById(id: SpaceId): SpaceDef {
 
 const SETTINGS: NavGroup = { items: [{ to: "/app/settings", label: "Paramètres", icon: <Settings /> }] };
 
-/** Menus propres aux espaces (celui de Selio reste dans layout.tsx). */
+/** Menus propres aux espaces (celui de Selio Manager reste dans layout.tsx). */
 export const SPACE_GROUPS: Record<Exclude<SpaceArea, "selio">, NavGroup[]> = {
   hub: [
     { items: [{ to: HUB_PATH, label: "Vos espaces", icon: <LayoutGrid />, end: true }] },
@@ -108,7 +127,7 @@ export const SPACE_GROUPS: Record<Exclude<SpaceArea, "selio">, NavGroup[]> = {
       { to: "/studio/performances", label: "Ce qui performe", icon: <Lightbulb />, hint: "Ce que vos ventes apprennent" },
       { to: "/studio/photos-portees", label: "Photos portées", icon: <MoonStar />, hint: "File de nuit et quota du mois" },
     ] },
-    { title: "Dans Selio", items: [
+    { title: "Dans Selio Manager", items: [
       { to: "/app/dressing", label: "Dressing intelligent", icon: <Shirt /> },
       { to: "/app/automatisation/negociation", label: "Négociation automatique", icon: <HandCoins /> },
     ] },
@@ -118,6 +137,7 @@ export const SPACE_GROUPS: Record<Exclude<SpaceArea, "selio">, NavGroup[]> = {
     { title: "Selio Agents", items: [
       { to: "/agents", label: "Équipe et accès", icon: <Users />, end: true, hint: "Membres, rôles et invitations" },
       { to: "/app/settings/access", label: "Comptes et accès", icon: <ShieldCheck />, hint: "Qui peut faire quoi : la matrice des rôles" },
+      { to: "/cloud", label: "Selio Cloud", icon: <Cloud />, hint: "Le moteur 24 h/24 de l'équipe, ordinateur éteint" },
     ] },
     { title: "Agences (aperçu)", items: [
       { to: "/agents/clients", label: "Boutiques clientes", icon: <Store />, hint: "Exemples fictifs" },
@@ -137,9 +157,26 @@ export const SPACE_GROUPS: Record<Exclude<SpaceArea, "selio">, NavGroup[]> = {
       { to: "/track/ventes", label: "Flux des ventes", icon: <LineChart />, hint: "Par marque et catégorie" },
       { to: "/track/vendeurs", label: "Vendeurs concurrents", icon: <Scale />, hint: "À valider juridiquement (RGPD)" },
     ] },
-    { title: "Dans Selio", items: [
+    { title: "Dans Selio Manager", items: [
       { to: "/app/radar", label: "Bonnes affaires", icon: <Radar /> },
       { to: "/app/auto-buy", label: "Achat auto", icon: <Bot /> },
+    ] },
+    SETTINGS,
+  ],
+  bot: [
+    { title: "Selio Bot", items: [
+      { to: "/bot", label: "Vue d'ensemble", icon: <Bot />, end: true, hint: "Vos bots, où ils tournent, « Tout arrêter »" },
+      { to: "/bot/negociation", label: "Négociation", icon: <HandCoins />, hint: "Répond aux offres selon vos planchers" },
+      { to: "/bot/relance", label: "Relance 24 h", icon: <RefreshCw />, hint: "Une relance par acheteur sans réponse" },
+      { to: "/bot/reponses", label: "Réponses aux messages", icon: <MessagesSquare /> },
+      { to: "/bot/republication", label: "Republication", icon: <Shirt />, hint: "Remonte les articles dormants" },
+      { to: "/bot/achat-auto", label: "Achat auto", icon: <ShoppingCart />, hint: "Radar Auto et achat assisté" },
+      { to: "/bot/apres-vente", label: "Après-vente", icon: <Package /> },
+    ] },
+    { title: "Dans Selio Manager", items: [
+      { to: "/app/automatisation", label: "Automatisation", icon: <Workflow /> },
+      { to: "/app/automations", label: "Journal des tâches", icon: <ListChecks />, hint: "Règles, file et historique" },
+      { to: "/cloud", label: "Selio Cloud", icon: <Cloud />, hint: "Là où le Bot s'exécute" },
     ] },
     SETTINGS,
   ],
@@ -151,7 +188,7 @@ export const SPACE_GROUPS: Record<Exclude<SpaceArea, "selio">, NavGroup[]> = {
       { to: "/cloud/accord", label: "Accord et risques", icon: <FileCheck />, hint: "À lire avant toute activation" },
       { to: "/cloud/reglages", label: "Réglages", icon: <SlidersHorizontal />, hint: "Heures, rythme, plafonds" },
     ] },
-    { title: "Dans Selio", items: [
+    { title: "Dans Selio Manager", items: [
       { to: "/app/automatisation", label: "Automatisation", icon: <Workflow /> },
       { to: "/app/accounts", label: "Comptes Vinted", icon: <Users /> },
     ] },
@@ -159,7 +196,7 @@ export const SPACE_GROUPS: Record<Exclude<SpaceArea, "selio">, NavGroup[]> = {
   ],
   generateur: [
     { title: "Selio Comptes", items: [{ to: "/comptes", label: "Checklist et textes", icon: <UserPlus />, end: true, hint: "À suivre vous-même dans Vinted" }] },
-    { title: "Dans Selio", items: [
+    { title: "Dans Selio Manager", items: [
       { to: "/studio", label: "Selio Studio", icon: <Sparkles />, hint: "Les premières annonces à partir de vos photos" },
       { to: "/app/accounts", label: "Comptes Vinted", icon: <Users /> },
     ] },

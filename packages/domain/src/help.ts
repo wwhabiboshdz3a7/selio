@@ -84,7 +84,7 @@ export const HELP_CATEGORIES: readonly HelpCategory[] = [
   { id: "equipe", title: "Équipe, comptes et accès", summary: "Propriétaire, administrateur, opérateur, lecture seule ; inviter et retirer." },
   { id: "tarifs", title: "Tarifs et abonnement", summary: "L'essai de 14 jours, les offres Starter, Pro et Agence, les quotas par filiale et le paiement." },
   { id: "donnees", title: "Données, sécurité et confidentialité", summary: "Où sont vos données, export, suppression, protection du compte, IA." },
-  { id: "filiales", title: "Les filiales Selio", summary: "Selio Studio, Selio Agents, Selio Track, Selio Cloud et le générateur de compte Vinted." },
+  { id: "filiales", title: "La gamme Selio", summary: "Selio Manager, Studio, Track, Radar, Bot, Cloud, Agents et Selio Comptes à la prestation." },
 ];
 
 let ENTRIES: readonly HelpEntry[] | null = null;
@@ -675,9 +675,9 @@ function buildHelpEntries(): HelpEntry[] {
   {
     id: "filiales-selio",
     categoryId: "filiales",
-    question: "Quelles sont les filiales Selio ?",
-    answer: "Selio est l'outil de gestion du revendeur. Autour de lui : Selio Studio (disponible) écrit vos annonces à partir de vos photos ; Selio Agents (en aperçu) gère l'administrateur, les équipes et les accès ; Selio Track, Selio Cloud et le générateur de compte Vinted sont en développement. On passe de l'un à l'autre depuis le bloc en haut du menu.",
-    keywords: ["filiales", "studio", "agents", "track", "cloud", "générateur de compte", "nouveaux produits", "à venir", "feuille de route"],
+    question: "Quels sont les produits de la gamme Selio ?",
+    answer: "Selio est la marque ; Selio Manager est l'outil de gestion du revendeur, disponible. Autour de lui : Selio Studio (disponible) écrit vos annonces à partir de vos photos ; Selio Radar (dans Selio Manager) repère les bonnes affaires ; Selio Cloud (en aperçu) est le moteur qui fait tourner Selio Manager et Selio Agents 24 h/24, ordinateur éteint ; Selio Agents (en aperçu) gère l'administrateur, les équipes et les accès ; Selio Comptes aide à ouvrir ou remettre à plat une boutique, à la prestation. Selio Track et Selio Bot (les automatisations : négociation, relances, republications, achat automatique) sont en développement. On passe de l'un à l'autre depuis le bloc en haut du menu.",
+    keywords: ["filiales", "gamme", "manager", "studio", "agents", "track", "bot", "cloud", "comptes", "nouveaux produits", "à venir", "feuille de route"],
     status: "planned",
   },
   {
@@ -699,16 +699,23 @@ function buildHelpEntries(): HelpEntry[] {
     id: "selio-cloud",
     categoryId: "filiales",
     question: "Qu'est-ce que Selio Cloud ?",
-    answer: `Selio Cloud est en développement : vos automatisations (messages, négociation, après-vente, stock automatique, relance après 24 h) tourneront sur notre machine, sans laisser votre ordinateur allumé avec l'extension. Il est inclus dans l'offre ${P.agence} et proposé en option avec ${P.starter} et ${P.pro}. Aujourd'hui, les actions sur Vinted passent encore par l'extension, navigateur ouvert.`,
+    answer: `Selio Cloud est le moteur de la gamme, en développement : les automatisations de Selio Manager et de Selio Bot (messages, négociation, après-vente, stock automatique, relance après 24 h) et le travail des équipes Selio Agents tourneront sur notre machine, 24 h/24, sans laisser votre ordinateur allumé avec l'extension. Il est inclus dans l'offre ${P.agence} et proposé en option avec ${P.starter} et ${P.pro}. Aujourd'hui, les actions sur Vinted passent encore par l'extension, navigateur ouvert.`,
     keywords: ["cloud", "serveur", "ordinateur éteint", "24h/24", "en continu", "sans extension"],
     status: "planned",
   },
   {
     id: "generateur-compte",
     categoryId: "filiales",
-    question: "Qu'est-ce que le générateur de compte Vinted ?",
-    answer: "Un assistant en développement pour préparer un nouveau compte vendeur : pseudo, présentation, photo de profil, réglages d'envoi et premières annonces. Le compte est créé par vous, à votre nom, dans le respect des règles de Vinted ; Selio ne crée aucun compte à votre place.",
-    keywords: ["générateur de compte", "nouveau compte", "créer un compte", "ouvrir un compte", "profil vinted"],
+    question: "Qu'est-ce que Selio Comptes ?",
+    answer: "Un service à la prestation, payé une fois, pour ouvrir ou remettre à plat une boutique Vinted : audit de boutique, mise en place complète ou accompagnement de 30 jours (prix sur la page Tarifs, commande depuis la page Contact). Dans l'application, la checklist d'ouverture et les textes à copier (présentation, règles d'envoi, réponses types) sont disponibles. Le compte est créé par vous, à votre nom, dans le respect des règles de Vinted ; Selio ne crée aucun compte à votre place.",
+    keywords: ["selio comptes", "générateur de compte", "nouveau compte", "créer un compte", "ouvrir un compte", "profil vinted", "audit", "prestation", "mise en place"],
+  },
+  {
+    id: "selio-bot",
+    categoryId: "filiales",
+    question: "Qu'est-ce que Selio Bot ?",
+    answer: `Selio Bot regroupe les automatisations qui travaillent pour vous : négociation, relances, republications et achat automatique, selon vos règles et vos plafonds, exécutées dans Selio Cloud. Il est en développement et n'a pas de prix séparé : inclus selon votre forfait (${P.starter} et ${P.pro} avec Selio Cloud en option, ${P.agence} avec la relance automatique et Selio Cloud inclus). L'achat automatique reste désactivé tant qu'aucun connecteur d'achat n'est autorisé.`,
+    keywords: ["bot", "selio bot", "automatisations", "négociation automatique", "relance", "republication", "achat automatique"],
     status: "planned",
   },
   {

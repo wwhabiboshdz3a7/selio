@@ -48,7 +48,8 @@ export default function AutoBuy() {
   );
 }
 
-function AutoBuyBody({ status }: { status: AutoBuyStatus }) {
+/** Corps de la page Radar Auto (verrous, réglages, achats) ; réutilisé tel quel par Selio Bot (« Achat auto »). */
+export function AutoBuyBody({ status }: { status: AutoBuyStatus }) {
   const client = useClient();
   const session = useRequiredSession();
   const { id: focusId } = useParams();

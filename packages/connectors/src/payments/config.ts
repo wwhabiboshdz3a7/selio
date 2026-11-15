@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PAYMENT_MODES, type PaymentMode } from "@selio/contracts";
+import { PAYMENT_MODES, PAYMENT_MODE_SETTINGS, effectivePaymentMode, type BillingPaymentMode, type PaymentMode } from "@selio/contracts";
 import { DEFAULT_REVOLUT_API_VERSION, RevolutClient } from "./revolut";
 import { PaymentConfigError, type PaymentLogger, type PaymentProvider } from "./types";
 
@@ -19,6 +19,12 @@ export const paymentConfigSchema = z.object({
   REVOLUT_MODE: z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), z.enum(PAYMENT_MODES).default("sandbox")),
   REVOLUT_API_VERSION: z.string().optional().transform((v) => (v && v.trim() ? v.trim() : DEFAULT_REVOLUT_API_VERSION)),
   REVOLUT_LIVE_ALLOWED: bool,
+  /**
+   * « auto » (défaut) : Revolut si REVOLUT_SECRET_KEY est renseignée, sinon paiement simulé (essai sans carte,
+   * aucun débit) ; « simulated » : simulé même avec Revolut ; « revolut » : Revolut seulement. Même valeur
+   * dans l'API et le worker.
+   */
+  PAYMENT_MODE: z.preprocess((v) => (typeof v === "string" ? (v.trim() === "" ? undefined : v.trim().toLowerCase()) : v), z.enum(PAYMENT_MODE_SETTINGS).default("auto")),
 });
 export type PaymentEnv = z.infer<typeof paymentConfigSchema>;
 
@@ -47,9 +53,16 @@ export function loadPaymentConfig(env: Record<string, unknown> = process.env): P
   return { provider: "revolut", secretKey: cfg.REVOLUT_SECRET_KEY, webhookSecret: cfg.REVOLUT_WEBHOOK_SECRET ?? null, mode: cfg.REVOLUT_MODE, apiVersion: cfg.REVOLUT_API_VERSION, liveAllowed: cfg.REVOLUT_LIVE_ALLOWED };
 }
 
+/** Mode de paiement effectif (PAYMENT_MODE et présence d'une clé Revolut) : « revolut » ou « simulated ». */
+export function resolvePaymentMode(env: Record<string, unknown>, cfg: PaymentConfig | null): BillingPaymentMode {
+  const parsed = paymentConfigSchema.shape.PAYMENT_MODE.safeParse(env.PAYMENT_MODE);
+  return effectivePaymentMode(parsed.success ? parsed.data : "auto", cfg !== null);
+}
+
 /** Messages de démarrage, jamais bloquants. */
-export function paymentStartupNotices(cfg: PaymentConfig | null, nodeEnv: string | undefined): { level: "warn" | "info"; message: string }[] {
+export function paymentStartupNotices(cfg: PaymentConfig | null, nodeEnv: string | undefined, mode?: BillingPaymentMode): { level: "warn" | "info"; message: string }[] {
   const prod = nodeEnv === "production";
+  if (mode === "simulated") return [{ level: "info", message: `Paiement SIMULÉ${cfg ? " (PAYMENT_MODE=simulated, Revolut ignoré)" : " (REVOLUT_SECRET_KEY absente)"} : l'offre est enregistrée sans carte, l'essai court, rien n'est jamais débité ; à la fin de l'essai, le compte passe « en attente du paiement ».` }];
   if (!cfg) return [{ level: prod ? "warn" : "info", message: "Paiement non configuré (REVOLUT_SECRET_KEY absente) : aucune commande ne peut être créée, l'abonnement reste en essai ou en accès de base." }];
   const out: { level: "warn" | "info"; message: string }[] = [];
   if (!cfg.webhookSecret) out.push({ level: "warn", message: "REVOLUT_WEBHOOK_SECRET absent : les webhooks Revolut sont refusés, aucun paiement ne sera confirmé automatiquement." });

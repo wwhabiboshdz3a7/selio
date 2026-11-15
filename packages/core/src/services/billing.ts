@@ -1,6 +1,6 @@
 import {
-  CARD_ONLY_ORDER_KINDS, CARD_VERIFICATION_AMOUNT_CENTS, DATA_RETENTION_DAYS_AFTER_END, DEFAULT_VAT_RATE, PAID_PLANS, PLAN_LABELS, REFERRAL_CREDIT_LINE_LABEL, VAT_FRANCHISE_NOTICE, buildUsageCounter, extraLinesTotal, invoiceAmounts, isGrantWithoutEnd, nextChargeDelayDays, quotasForPlan,
-  type BillingCycle, type CheckoutResult, type Invoice, type InvoiceExtraLine, type InvoiceView, type PaidPlan, type PaymentOrder, type Plan, type PlanQuotas, type Subscription, type SubsidiaryUsage, type UsageCounter,
+  CARD_ONLY_ORDER_KINDS, CARD_VERIFICATION_AMOUNT_CENTS, DATA_RETENTION_DAYS_AFTER_END, SIMULATED_PAYMENT_NOTICE, TRIAL_DAYS, TRIAL_PLAN, DEFAULT_VAT_RATE, PAID_PLANS, PLAN_LABELS, REFERRAL_CREDIT_LINE_LABEL, VAT_FRANCHISE_NOTICE, buildUsageCounter, extraLinesTotal, invoiceAmounts, isGrantWithoutEnd, nextChargeDelayDays, quotasForPlan,
+  type BillingCycle, type CheckoutPreview, type CheckoutResult, type Invoice, type InvoiceExtraLine, type InvoiceView, type PaidPlan, type PaymentOrder, type Plan, type PlanQuotas, type Subscription, type SubsidiaryUsage, type UsageCounter,
 } from "@selio/contracts";
 import { PRICING } from "@selio/demo-data";
 import { repos } from "@selio/db";
@@ -189,6 +189,8 @@ export async function startCheckout(ctx: OrgContext, plan: Plan | string, opts: 
   requireAction(ctx, "billing.manage");
   if (!isPaidPlan(plan)) throw new AppError("validation", "Plan invalide : choisissez Starter, Pro ou Agence.", 400);
   const cycle: BillingCycle = opts.cycle === "yearly" ? "yearly" : "monthly";
+  // Paiement simulé (Revolut pas encore configuré, ou PAYMENT_MODE=simulated) : offre enregistrée sans carte.
+  if (isPaymentSimulated(ctx.services)) return startSimulatedCheckout(ctx, plan, cycle);
   const planAmountCents = planPriceCents(plan, cycle);
   const payments = ctx.services.payments;
   if (!payments) {
@@ -245,6 +247,105 @@ export async function startCheckout(ctx: OrgContext, plan: Plan | string, opts: 
   };
 }
 
+// ---------------------------------------------------------------- paiement simulé (en attendant Revolut)
+
+/** Paiement simulé : Revolut pas encore configuré (PAYMENT_MODE « auto » sans clé) ou PAYMENT_MODE=simulated. */
+export function isPaymentSimulated(services: Pick<Services, "billing">): boolean {
+  return services.billing?.paymentMode === "simulated";
+}
+
+const TRIAL_OVER_SIMULATED_MESSAGE = "Votre essai est terminé et le paiement n'est pas encore activé : vous gardez l'accès de base. L'équipe Selio peut prolonger votre essai ou vous offrir l'accès en attendant.";
+
+/**
+ * Récapitulatif avant confirmation : forfait, prix, remise de l'offre retenue (code promo), première échéance et
+ * fin de l'essai. Rien n'est créé. `blockedReason` dit pourquoi la confirmation serait refusée (accès offert,
+ * période déjà payée, essai terminé en paiement simulé).
+ */
+export async function previewCheckout(ctx: OrgContext, plan: Plan | string, opts: { cycle?: BillingCycle } = {}): Promise<CheckoutPreview> {
+  requireAction(ctx, "billing.manage");
+  if (!isPaidPlan(plan)) throw new AppError("validation", "Plan invalide : choisissez Starter, Pro ou Agence.", 400);
+  const cycle: BillingCycle = opts.cycle === "yearly" ? "yearly" : "monthly";
+  const now = ctx.services.now();
+  const sub = await getSubscription(ctx);
+  const priceCents = planPriceCents(plan, cycle);
+  const discount = await withOrg(ctx, (tx) => offerDiscountLineFor(tx, ctx.orgId, plan, cycle, priceCents));
+  const simulated = isPaymentSimulated(ctx.services);
+  const inTrial = sub.status === "trialing" && !!sub.currentPeriodEnd && new Date(sub.currentPeriodEnd) > now;
+  const startsTrial = simulated && sub.status === "none";
+  let blockedReason: string | null = null;
+  if (sub.grantedUntil && new Date(sub.grantedUntil) > now) blockedReason = `Votre offre ${PLAN_LABELS[sub.plan]} vous est offerte par l'équipe Selio : aucun paiement n'est nécessaire.`;
+  else if (sub.status === "active" && sub.provider === "revolut" && sub.currentPeriodEnd && new Date(sub.currentPeriodEnd) > now) blockedReason = `Votre offre ${PLAN_LABELS[sub.plan]} est déjà payée jusqu'au ${formatDateFr(new Date(sub.currentPeriodEnd))}.`;
+  else if (simulated && !inTrial && !startsTrial) blockedReason = TRIAL_OVER_SIMULATED_MESSAGE;
+  const trialEndsAt = inTrial ? sub.currentPeriodEnd : startsTrial ? new Date(now.getTime() + TRIAL_DAYS * 86_400_000).toISOString() : null;
+  return {
+    plan,
+    cycle,
+    planLabel: PLAN_LABELS[plan],
+    priceCents,
+    discount: discount ? { label: discount.line.label, amountCents: discount.line.amountCents } : null,
+    dueCents: Math.max(0, priceCents - (discount?.line.amountCents ?? 0)),
+    trialEndsAt,
+    startsTrial,
+    paymentMode: simulated ? "simulated" : "revolut",
+    noCardRequired: simulated,
+    blockedReason,
+  };
+}
+
+/**
+ * Confirmation en paiement simulé : l'offre (forfait, périodicité ; la remise d'un code promo reste celle déjà
+ * retenue) est enregistrée pour la fin de l'essai, sans carte, sans commande, sans débit. Sans essai passé
+ * (abonnement « none »), l'essai de 14 jours démarre ici. Essai terminé : refus 409 (l'opérateur prolonge ou
+ * offre l'accès depuis Selio Admin). Quand Revolut sera configuré, la même organisation verra « Enregistrer
+ * votre carte » avant la fin de son essai (parcours réel, aucune migration manuelle).
+ */
+async function startSimulatedCheckout(ctx: OrgContext, plan: PaidPlan, cycle: BillingCycle): Promise<CheckoutResult> {
+  const preview = await previewCheckout(ctx, plan, { cycle });
+  if (preview.blockedReason) throw new AppError("conflict", preview.blockedReason, 409);
+  const now = ctx.services.now().toISOString();
+  await withOrg(ctx, async (tx) => {
+    const base = { pendingPlan: plan, cycle, simulatedCheckoutAt: now, awaitingPaymentSince: null, cancelAtPeriodEnd: false };
+    await repos.subscriptions.upsert(tx, preview.startsTrial
+      ? { ...base, plan: TRIAL_PLAN, quotas: quotasForPlan(TRIAL_PLAN), status: "trialing", provider: "none", currentPeriodEnd: preview.trialEndsAt, chargeAttempts: 0, nextChargeAt: null, dataRetentionUntil: null }
+      : base);
+    await repos.audit.add(tx, { actorUserId: ctx.userId, action: "billing.simulated_checkout", targetType: "subscription", meta: { plan, cycle, planAmountCents: preview.priceCents, dueCents: preview.dueCents, ...(preview.discount ? { discountCents: preview.discount.amountCents, discountLabel: preview.discount.label } : {}), trialEndsAt: preview.trialEndsAt, startsTrial: preview.startsTrial, simulated: true }, ip: ctx.ip });
+  });
+  const end = preview.trialEndsAt ? ` jusqu'au ${formatDateFr(new Date(preview.trialEndsAt))}` : "";
+  const discountNote = preview.discount ? `, remise « ${preview.discount.label.replace(/^Remise : /, "")} » comprise` : "";
+  return {
+    orderToken: null,
+    orderId: null,
+    mode: null,
+    amountCents: 0,
+    captureMode: null,
+    simulated: true,
+    trialEndsAt: preview.trialEndsAt,
+    message: `Offre ${PLAN_LABELS[plan]} (${cycleLabel(cycle)}, ${formatEuros(preview.dueCents)}${discountNote}) retenue. ${preview.startsTrial ? "Votre essai de 14 jours démarre" : "Votre essai continue"}${end}, sans carte. ${SIMULATED_PAYMENT_NOTICE}`,
+  };
+}
+
+/**
+ * Fin d'essai en paiement simulé : aucun débit. Le compte passe en accès de base « en attente du paiement »
+ * (l'offre retenue est gardée pour la suite), avec un email aux titulaires. L'opérateur peut prolonger l'essai
+ * ou offrir l'accès depuis Selio Admin.
+ */
+async function endTrialAwaitingPayment(services: Services, orgId: string, sub: Subscription): Promise<RenewalOutcome> {
+  const now = services.now();
+  await services.db.withOrg(orgId, async (tx) => {
+    await repos.subscriptions.upsert(tx, { plan: "free", quotas: quotasForPlan("free"), status: "canceled", chargeAttempts: 0, nextChargeAt: null, cancelAtPeriodEnd: false, dataRetentionUntil: null, awaitingPaymentSince: now.toISOString() });
+    await repos.audit.add(tx, { actorUserId: null, action: "billing.trial_ended", targetType: "subscription", meta: { reason: "trial_ended", awaitingPayment: true, simulated: true, previousPlan: sub.plan, pendingPlan: sub.pendingPlan, cardOnFile: sub.cardOnFile } });
+  });
+  const org = await services.db.withGlobal((tx) => repos.orgs.byId(tx, orgId));
+  const rendered = alertEmail({
+    title: `Votre essai Selio est terminé (« ${org.name} »)`,
+    body: `Votre essai de 14 jours est terminé. Le paiement en ligne n'est pas encore activé : rien n'a été débité et aucune carte ne vous a été demandée.\n\nVotre espace continue en accès de base et vos données sont conservées. L'équipe Selio vous recontacte pour la suite ; vous pouvez aussi répondre à cet email.`,
+    link: webLink(services, "/app/settings/billing"),
+    linkLabel: "Voir mon abonnement",
+  });
+  for (const to of await ownerEmails(services, orgId)) await sendEmail(services, { to, ...rendered });
+  return { action: "trial_ended", reason: "awaiting_payment" };
+}
+
 /**
  * Paiement couvert entièrement par une remise (offre à 100 %) : aucune commande ni débit, facture à 0 € avec la
  * ligne « Remise : … », période ouverte tout de suite, mois de l'offre décomptés. Aucune carte n'est enregistrée :
@@ -257,7 +358,7 @@ async function openDiscountedPeriod(ctx: OrgContext, plan: PaidPlan, cycle: Bill
   const invoice = await withOrg(ctx, async (tx) => {
     const created = await repos.invoices.create(tx, { plan, cycle, amountCents: 0, vatRate, vatNotice, periodStart: now.toISOString(), periodEnd: end.toISOString(), orderId: null, issuedAt: now.toISOString(), extraLines: [discount.line] });
     await consumeOfferForInvoice(tx, ctx.orgId, [discount.line], cycle, now.toISOString());
-    await repos.subscriptions.upsert(tx, { plan, quotas: quotasForPlan(plan), status: "active", provider: "revolut", currentPeriodEnd: end.toISOString(), cycle, pendingPlan: null, chargeAttempts: 0, nextChargeAt: null, lastChargeError: null, dataRetentionUntil: null, cancelAtPeriodEnd: false, testMode });
+    await repos.subscriptions.upsert(tx, { plan, quotas: quotasForPlan(plan), status: "active", provider: "revolut", currentPeriodEnd: end.toISOString(), cycle, pendingPlan: null, chargeAttempts: 0, nextChargeAt: null, lastChargeError: null, dataRetentionUntil: null, cancelAtPeriodEnd: false, testMode, awaitingPaymentSince: null });
     await repos.audit.add(tx, { actorUserId: ctx.userId, action: "billing.offer_free_period", targetType: "invoice", targetId: created.id, meta: { plan, cycle, invoiceNumber: created.number, discountCents: discount.line.amountCents, label: discount.line.label, periodStart: now.toISOString(), periodEnd: end.toISOString() }, ip: ctx.ip });
     return created;
   });
@@ -273,6 +374,7 @@ async function openDiscountedPeriod(ctx: OrgContext, plan: PaidPlan, cycle: Bill
 export async function startCardUpdate(ctx: OrgContext): Promise<CheckoutResult> {
   requireAction(ctx, "billing.manage");
   const amountCents = CARD_VERIFICATION_AMOUNT_CENTS;
+  if (isPaymentSimulated(ctx.services)) return { orderToken: null, orderId: null, mode: null, amountCents: 0, captureMode: null, simulated: true, message: `${SIMULATED_PAYMENT_NOTICE} Aucune carte n'est à enregistrer pour l'instant.` };
   const payments = ctx.services.payments;
   if (!payments) {
     await withOrg(ctx, (tx) => repos.audit.add(tx, { actorUserId: ctx.userId, action: "billing.card_update_unavailable", targetType: "subscription", meta: {}, ip: ctx.ip }));
@@ -514,6 +616,7 @@ export async function completePaidOrder(services: Services, orgId: string, po: P
       testMode: services.payments?.testMode ?? sub.testMode,
       grantedUntil: null,
       grantedBy: null,
+      awaitingPaymentSince: null,
     });
     await repos.audit.add(tx, { actorUserId: null, action: "billing.payment_completed", targetType: "invoice", targetId: invoice.id, meta: { plan, cycle: po.cycle, amountCents: po.amountCents, orderId: po.orderId, kind: po.kind, invoiceNumber: invoice.number, periodStart: start.toISOString(), periodEnd: end.toISOString(), extendedPaidPeriod: paidUntil !== null, lateCompletion: po.state === "failed", method: methodMeta(method) } });
     return { invoice, subscription };
@@ -672,6 +775,8 @@ export async function processSubscriptionRenewal(services: Services, orgId: stri
   }
   if (sub.status === "trialing") {
     if (!sub.currentPeriodEnd || new Date(sub.currentPeriodEnd) > now) return { action: "skipped", reason: "trial_running" };
+    // Paiement simulé : jamais de débit ; le compte passe « en attente du paiement » (accès de base).
+    if (isPaymentSimulated(services) && !sub.cancelAtPeriodEnd) return endTrialAwaitingPayment(services, orgId, sub);
     if (!sub.paymentMethodId && sub.revolutCustomerId && services.payments && !sub.cancelAtPeriodEnd) {
       const recovered = await recoverSavedCard(services, orgId, sub);
       if (recovered === null) return { action: "deferred", reason: "provider_unreachable" };
@@ -827,6 +932,8 @@ async function chargeDue(services: Services, orgId: string, sub: Subscription): 
     const free = await applyFullDiscountForRenewal(services, orgId, plan, cycle);
     if (free) return free;
   }
+  // Paiement simulé : aucune commande, aucun débit (l'échéance attend le paiement réel ou l'équipe Selio).
+  if (isPaymentSimulated(services)) return { action: "skipped", reason: "payment_simulated" };
   const payments = services.payments;
   if (!payments) return { action: "skipped", reason: "payments_unconfigured" };
   if (open && openRetrying) {

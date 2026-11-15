@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { PLAN_LABELS, TRIAL_DAYS, registerInput } from "@selio/contracts";
 import { Alert, Button, Field, Input, Segmented } from "@selio/ui";
@@ -13,6 +13,7 @@ import { ReferralCodeField } from "../../app/components/referral";
 import { referralCodeForSignup, referralCodeFromSearch } from "../../lib/referral";
 import { PromoCodeField } from "../../app/components/offers";
 import { promoCodeForSignup, promoCodeFromSearch } from "../../lib/offers";
+import { demoEntryAllowed } from "../demoAccess";
 
 export default function Register() {
   usePageMeta("Inscription", "Créer un compte Selio et une organisation.", { noindex: true });
@@ -27,6 +28,11 @@ export default function Register() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Production (API configurée) : aucun mode démonstration proposé, le compte est réel.
+  const demoOffered = demoEntryAllowed();
+  useEffect(() => {
+    if (!demoOffered && mode === "demo") setMode("connected");
+  }, [demoOffered, mode, setMode]);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     // Une seule durée d'essai : 14 jours (l'ancien choix 7 / 30 jours n'existe plus).
@@ -55,13 +61,15 @@ export default function Register() {
     <section className="mk-hero py-12 md:py-16">
       <Container className="max-w-md">
         <Eyebrow>Espace Selio</Eyebrow>
-        <h1 className="mt-3 text-2xl font-semibold tracking-[-0.025em] text-text">Créer un compte</h1>
-        <p className="mt-1 text-sm text-text-muted">Un compte, une organisation. Vous pourrez inviter des collègues ensuite.</p>
-        <div className="mt-4">
-          <Segmented ariaLabel="Mode" value={mode} onChange={(m: Mode) => setMode(m)} items={[{ value: "demo", label: "Démonstration" }, { value: "connected", label: "Compte connecté" }]} />
-        </div>
+        <h1 className="mt-3 text-2xl font-semibold tracking-[-0.025em] text-text">Commencer l'essai gratuit de {TRIAL_DAYS} jours</h1>
+        <p className="mt-1 text-sm text-text-muted">Un compte, une organisation, toute la gamme Selio. Vous pourrez inviter des collègues ensuite.</p>
+        {demoOffered ? (
+          <div className="mt-4">
+            <Segmented ariaLabel="Mode" value={mode} onChange={(m: Mode) => setMode(m)} items={[{ value: "demo", label: "Démonstration" }, { value: "connected", label: "Compte connecté" }]} />
+          </div>
+        ) : null}
         {mode === "connected" && !connectedModeAvailable ? <Alert tone="warning" title="Aucune API configurée" className="mt-4">Le mode connecté nécessite une API déployée (VITE_API_BASE_URL). Vous pouvez créer un compte de démonstration.</Alert> : null}
-        {mode === "demo" ? <Alert tone="info" className="mt-4">En démonstration, le compte est créé localement dans votre navigateur avec des données fictives.</Alert> : null}
+        {mode === "demo" && demoOffered ? <Alert tone="info" className="mt-4">En démonstration, le compte est créé localement dans votre navigateur avec des données fictives.</Alert> : null}
         <form onSubmit={submit} className="card mt-4 flex flex-col gap-4 p-5" noValidate>
           <Field label="Votre nom" required error={errors.displayName}>{(p) => <Input id={p.id} invalid={p.invalid} value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} autoComplete="name" />}</Field>
           <Field label="Nom de l'organisation" required error={errors.orgName} hint="Votre boutique, votre atelier, votre nom de vendeur.">{(p) => <Input id={p.id} invalid={p.invalid} aria-describedby={p.describedBy} value={form.orgName} onChange={(e) => setForm({ ...form, orgName: e.target.value })} autoComplete="organization" />}</Field>

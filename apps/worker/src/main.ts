@@ -4,7 +4,7 @@ import IORedis from "ioredis";
 import pino from "pino";
 import { BrowserSlots, PlaywrightRunner, PurchaseRunner, RadarReader, probeChromium, sweepStaleProfiles, type CloudLogger } from "@selio/cloud";
 import { createAIService } from "@selio/ai";
-import { createPaymentProvider, loadPaymentConfig, paymentStartupNotices } from "@selio/connectors";
+import { createPaymentProvider, loadPaymentConfig, paymentStartupNotices, resolvePaymentMode } from "@selio/connectors";
 import { Db, SecretBox, createPool } from "@selio/db";
 import { pricing, referralConfigFromEnv, supervision, wornPhotos, type Services, type WornRunSummary } from "@selio/core";
 import { createEmailProvider, emailStartupWarnings, loadEmailConfig } from "@selio/email";
@@ -30,7 +30,9 @@ async function main() {
   // Paiement (Revolut) et emails : mêmes variables que l'API ; sans clé, les échéances sont lues mais aucun débit n'est tenté.
   const paymentConfig = loadPaymentConfig(env);
   const emailConfig = loadEmailConfig(env);
-  for (const n of paymentStartupNotices(paymentConfig, env.NODE_ENV)) log[n.level](n.message);
+  // Paiement simulé (PAYMENT_MODE, ou Revolut pas encore configuré) : aucun débit, fin d'essai « en attente du paiement ».
+  const paymentMode = resolvePaymentMode(env, paymentConfig);
+  for (const n of paymentStartupNotices(paymentConfig, env.NODE_ENV, paymentMode)) log[n.level](n.message);
   for (const m of emailStartupWarnings(emailConfig, env.NODE_ENV)) log.warn(m);
   const services: Services = {
     db: new Db(createPool(env.DATABASE_URL, { max: 5 })),
@@ -42,7 +44,7 @@ async function main() {
     email: createEmailProvider(emailConfig, { logger: log }),
     publicWebUrl: env.PUBLIC_WEB_URL,
     payments: createPaymentProvider(paymentConfig, { logger: log }),
-    billing: { franchiseTva: env.FRANCHISE_TVA },
+    billing: { franchiseTva: env.FRANCHISE_TVA, paymentMode },
     // Parrainage : même lecture que l'API (seul « true » ouvre) ; le premier prélèvement après l'essai passe ici.
     config: { ...cloudServicesConfig(env), ...radarServicesConfig(env), ...trackServicesConfig(env), ...studioServicesConfig(env), ...referralConfigFromEnv(process.env) },
     // Photos portées : AUCUN fournisseur choisi (décision d'Ibrahim) ; « noop » refuse proprement, « mock » (tests) jamais en production.

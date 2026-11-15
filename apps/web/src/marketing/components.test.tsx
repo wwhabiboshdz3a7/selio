@@ -18,13 +18,15 @@ describe("composants de la vitrine", () => {
     vi.unstubAllGlobals();
   });
 
-  it("bandeau d'appel : vrais liens vers l'inscription et la démo, ciel décoratif masqué", () => {
+  it("bandeau d'appel : essai de 14 jours et connexion, jamais la démo, ciel décoratif masqué", () => {
     mockMotion(true);
     const { container } = render(<MemoryRouter><CtaBand title="Essayez" lead="Sans compte." /></MemoryRouter>);
     expect(screen.getByRole("heading", { level: 2, name: "Essayez" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Créer un compte/ }).getAttribute("href")).toBe("/inscription");
+    expect(screen.getByRole("link", { name: /Commencer l'essai gratuit/ }).getAttribute("href")).toBe("/inscription");
+    expect(screen.getByText("Essai gratuit de 14 jours")).toBeTruthy();
     expect(container.querySelectorAll("a button")).toHaveLength(0);
-    expect(screen.getByRole("link", { name: "Explorer la démo" }).getAttribute("href")).toBe("/demo");
+    expect(screen.getByRole("link", { name: "Se connecter" }).getAttribute("href")).toBe("/connexion");
+    expect(container.querySelector('a[href^="/demo"]')).toBeNull();
     const sky = container.querySelector("svg.mk-sky");
     expect(sky?.getAttribute("aria-hidden")).toBe("true");
     expect(sky?.querySelectorAll(".mk-sky-star").length).toBeGreaterThan(40);
@@ -65,13 +67,19 @@ describe("composants de la vitrine", () => {
         <AvailabilityBadge value="planned" />
       </>,
     );
-    expect(screen.getByText("En démonstration")).toBeTruthy();
+    expect(screen.getByText("Aperçu")).toBeTruthy();
     expect(screen.getByText("Expérimental")).toBeTruthy();
     expect(container.innerHTML).not.toMatch(/warning|amber|orange/);
   });
 });
 
 describe("entrée de la démonstration", () => {
+  it("ouverte seulement sans API (développement, tests, vidéos) ; en production, /demo renvoie à l'inscription", async () => {
+    const { demoEntryAllowed } = await import("./demoAccess");
+    expect(demoEntryAllowed("")).toBe(true);
+    expect(demoEntryAllowed("https://api.selio.fr")).toBe(false);
+  });
+
   it("n'accepte qu'une page de l'application comme destination", async () => {
     const { demoTarget } = await import("./pages/DemoEntry");
     expect(demoTarget("/app/dressing")).toBe("/app/dressing");

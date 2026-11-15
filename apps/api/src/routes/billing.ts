@@ -30,6 +30,13 @@ export default async function billingRoutes(app: FastifyInstance) {
     const cycle = checkoutInput.shape.cycle.safeParse(body.cycle);
     return billing.startCheckout(financeCtx(req), String(body.plan ?? ""), { cycle: cycle.success ? cycle.data : "monthly" });
   });
+  // Récapitulatif avant confirmation (forfait, prix, remise retenue, fin d'essai, paiement simulé ou réel) : rien n'est créé.
+  app.get("/api/billing/checkout/preview", async (req, reply) => {
+    const q = (req.query ?? {}) as { plan?: unknown; cycle?: unknown };
+    const cycle = checkoutInput.shape.cycle.safeParse(q.cycle);
+    reply.header("cache-control", "no-store");
+    return billing.previewCheckout(financeCtx(req), String(q.plan ?? ""), { cycle: cycle.success ? cycle.data : "monthly" });
+  });
   // Changement de carte sans paiement : commande de vérification (1 €) en capture manuelle, annulée dès la carte enregistrée.
   app.post("/api/billing/card", async (req) => billing.startCardUpdate(financeCtx(req)));
   app.post("/api/billing/cancel", async (req) => billing.cancelSubscription(financeCtx(req)));

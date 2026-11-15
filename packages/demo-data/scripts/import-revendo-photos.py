@@ -23,7 +23,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageFilter
+from PIL import Image, ImageFilter, ImageOps
 
 ROOT = Path(__file__).resolve().parents[3]
 OUT_DIR = ROOT / "apps/web/public/demo/photos"
@@ -114,14 +114,21 @@ def save_webp(img: Image.Image, name: str, quality: int) -> str:
 
 
 def upscale_thumb(raw: bytes) -> Image.Image:
-    im = Image.open(io.BytesIO(raw)).convert("RGB")
+    im = ImageOps.exif_transpose(Image.open(io.BytesIO(raw))).convert("RGB")
     w = 360
     im = im.resize((w, round(im.height * w / im.width)), Image.LANCZOS)
     return im.filter(ImageFilter.UnsharpMask(radius=1.4, percent=70, threshold=2))
 
 
-def fit_full(raw: bytes) -> Image.Image:
-    im = Image.open(io.BytesIO(raw)).convert("RGB")
+# Galeries photographiées tête en bas (col en bas de l'image) : remises à l'endroit à l'import.
+GALLERY_UPSIDE_DOWN = {"20261008-064028-x4iv"}
+
+
+def fit_full(raw: bytes, upside_down: bool = False) -> Image.Image:
+    # Orientation EXIF appliquée (le WebP n'en garde pas), puis demi-tour si la galerie est à l'envers.
+    im = ImageOps.exif_transpose(Image.open(io.BytesIO(raw))).convert("RGB")
+    if upside_down:
+        im = im.transpose(Image.Transpose.ROTATE_180)
     w = 800
     return im.resize((w, round(im.height * w / im.width)), Image.LANCZOS) if im.width > w else im
 
@@ -147,7 +154,7 @@ def main() -> None:
     for job_id, meta in GALLERIES.items():
         photos = []
         for n, (fname, (c, path)) in enumerate(sorted(files.get(job_id, {}).items())):
-            photos.append(save_webp(fit_full(git(repo, "show", f"{c}:{path}")), f"g-{job_id[-4:]}-{n + 1}", 68))
+            photos.append(save_webp(fit_full(git(repo, "show", f"{c}:{path}"), job_id in GALLERY_UPSIDE_DOWN), f"g-{job_id[-4:]}-{n + 1}", 68))
         if photos:
             entries.append({"key": f"g-{job_id[-4:]}", "title": meta["title"], "brand": meta["brand"], "vintedCategory": meta["category"], "category": meta["rayon"], "size": meta["size"], "color": color_of(meta["title"]), "priceCents": round(float(meta["price"]) * 100), "photos": photos, "fullSize": True})
 

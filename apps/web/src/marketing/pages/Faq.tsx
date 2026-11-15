@@ -5,6 +5,9 @@ import { useSession } from "../../lib/data/provider";
 import { CtaBand, MarketingSection } from "../components";
 import { FaqBrowser, HelpAskPanel, askFaqLocally } from "../../components/help";
 
+/** Questions sur la démonstration : propres à l'application, jamais montrées sur la vitrine. */
+const VITRINE_HIDDEN = ["contenu-demo", "reinitialiser-demo", "demo-ou-connecte"] as const;
+
 /**
  * Aide publique : la FAQ complète (contenu partagé avec l'application et le serveur) et
  * « Poser une question » par recherche locale. La vitrine n'appelle pas l'assistant IA
@@ -19,7 +22,7 @@ export default function Faq() {
         level={1}
         eyebrow="Aide"
         title="Aide et questions fréquentes"
-        lead={`${helpEntries().length} réponses en ${HELP_CATEGORIES.length} catégories, fidèles à l'application telle qu'elle est aujourd'hui : ce qui n'existe pas encore est dit « en préparation ».`}
+        lead={`${helpEntries().length - VITRINE_HIDDEN.length} réponses en ${HELP_CATEGORIES.length} catégories, fidèles à l'application telle qu'elle est aujourd'hui : ce qui n'existe pas encore est dit « en préparation ».`}
       >
         <div className="max-w-3xl">
           <HelpAskPanel
@@ -28,10 +31,10 @@ export default function Faq() {
             sourceHref={(id) => `/faq#${id}`}
             footer={<>Avec un compte connecté, l'<Link to="/app/help" className="font-medium text-accent hover:underline">aide de l'application</Link> fait rédiger la réponse par l'assistant IA, à partir des mêmes passages. Pas de réponse ? La page <Link to="/contact" className="font-medium text-accent hover:underline">Contact</Link> indique comment nous joindre.</>}
           />
-          <FaqBrowser className="mt-10" basePath="/faq" appLinks={Boolean(session.data)} />
+          <FaqBrowser className="mt-10" basePath="/faq" appLinks={Boolean(session.data)} exclude={VITRINE_HIDDEN} />
         </div>
       </MarketingSection>
-      <CtaBand seed={29} title="Le plus simple : essayer" lead="La démonstration montre tout le parcours avec des données fictives, sans compte ni carte bancaire." />
+      <CtaBand seed={29} title="Le plus simple : essayer" lead="14 jours avec toutes les fonctions du plan Pro, sur votre propre activité. Rien n'est débité avant la fin de l'essai." />
     </>
   );
 }

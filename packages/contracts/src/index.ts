@@ -24,3 +24,6 @@ export * from "./referral";
 export * from "./offers";
 export * from "./comptes";
 export * from "./admin";
+export * from "./bot";
+export * from "./capabilities";
+export * from "./activity";

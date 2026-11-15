@@ -8,6 +8,7 @@ import { createAIService } from "@selio/ai";
 import { Db, SecretBox, createPool } from "@selio/db";
 import { wornPhotos, type Services } from "@selio/core";
 import { createPaymentProvider, loadPaymentConfig } from "@selio/connectors";
+import { effectivePaymentMode } from "@selio/contracts";
 import { createEmailProvider, loadEmailConfig, type EmailLogger } from "@selio/email";
 import { createStorageClient, loadStorageConfig } from "@selio/storage";
 import { cloudServicesConfig, operatorsConfig, radarServicesConfig, referralServicesConfig, startupNotices, studioServicesConfig, trackServicesConfig, type ApiEnv } from "./config";
@@ -32,6 +33,7 @@ import studioRoutes from "./routes/studio";
 import helpRoutes from "./routes/help";
 import uploadsRoutes from "./routes/uploads";
 import cloudRoutes from "./routes/cloud";
+import botRoutes from "./routes/bot";
 import pushRoutes from "./routes/push";
 import trackRoutes from "./routes/track";
 import pricingRoutes from "./routes/pricing";
@@ -42,6 +44,8 @@ import referralRoutes from "./routes/referral";
 import offerRoutes from "./routes/offers";
 import comptesRoutes from "./routes/comptes";
 import adminAccountsRoutes from "./routes/admin-accounts";
+import activityRoutes from "./routes/activity";
+import capabilitiesRoutes from "./routes/capabilities";
 import { StoragePhotoStore } from "./studio-photos";
 import { MAINTENANCE_QUEUE, RADAR_QUEUE, createQueues, type QueueHandle } from "./queue";
 import { PRICE_MODEL_REFRESH_MS, createApiPricingServices, refreshPriceModel, schedulePriceModelRefresh } from "./pricing";
@@ -79,7 +83,8 @@ export function buildServices(env: ApiEnv, overrides: Partial<Services> = {}, lo
     email,
     publicWebUrl: overrides.publicWebUrl ?? env.PUBLIC_WEB_URL,
     payments,
-    billing: overrides.billing ?? { franchiseTva: env.FRANCHISE_TVA },
+    // Paiement simulé (PAYMENT_MODE=simulated, ou « auto » sans clé Revolut) : offre enregistrée sans carte, aucun débit.
+    billing: overrides.billing ?? { franchiseTva: env.FRANCHISE_TVA, paymentMode: effectivePaymentMode(env.PAYMENT_MODE, payments !== null) },
     // Réglages du Cloud (actions lourdes, comptes par organisation, navigateurs, option Pro, heures, ticket),
     // de Radar (verrous de Radar Auto, achat réel, délai 3-D Secure) et de Track (lecture en direct, analyse
     // d'un vendeur). Aucun navigateur dans l'API : `cloud`, `radar` et `track` restent absents (sauf
@@ -151,6 +156,8 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(authRoutes, { cookieSecure: env.COOKIE_SECURE, operatorEmails });
   await app.register(orgRoutes);
   await app.register(itemRoutes);
+  // Selio Manager : journal d'activité et raccourcis de l'utilisateur.
+  await app.register(activityRoutes);
   await app.register(customerRoutes);
   await app.register(conversationRoutes);
   await app.register(orderRoutes);
@@ -173,6 +180,8 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   const loginQueue = queues.queues.get(CLOUD_LOGIN_QUEUE);
   const cloudRelay = env.CLOUD_ENABLED && env.REDIS_URL && loginQueue ? createRedisCloudRelay(env.REDIS_URL, loginQueue, { warn: (m) => app.log.warn(m) }) : null;
   await app.register(cloudRoutes, { enabled: env.CLOUD_ENABLED, relay: cloudRelay, activeHours: env.CLOUD_ACTIVE_HOURS, allowedOrigins: origins });
+  // Selio Bot : synthèse des automatisations qui agissent pour le revendeur et « Tout arrêter » (coupe-circuit de l'organisation).
+  await app.register(botRoutes, { cloudServerEnabled: env.CLOUD_ENABLED && cloudRelay !== null, cloudActiveHours: env.CLOUD_ACTIVE_HOURS });
   // Notifications de la PWA (clé publique VAPID seulement ; la clé privée ne quitte jamais le serveur).
   const vapid = loadVapidConfig(env);
   await app.register(pushRoutes, { publicKey: vapid?.publicKey ?? null });
@@ -188,6 +197,8 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(comptesRoutes);
   // Selio Admin : croissance, comptes, qualification, accès offert, prolongation d'essai (opérateurs business et tech).
   await app.register(adminAccountsRoutes);
+  // Capacités du serveur (public) : l'application affiche « En cours d'activation » pour ce qui n'est pas branché.
+  await app.register(capabilitiesRoutes, { trackLive: services.config?.trackLiveEnabled === true, cloud: env.CLOUD_ENABLED });
 
   // Modèle de prix actif : chargé au démarrage (jamais bloquant), puis rechargé toutes les heures (nouvel
   // entraînement du worker le dimanche).

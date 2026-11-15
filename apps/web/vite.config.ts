@@ -32,7 +32,7 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon-32.png", "favicon-64.png", "apple-touch-icon.png", "logo-noir.png", "logo-blanc.png"],
       manifest: {
-        name: "Selio — Gestion pour revendeurs",
+        name: "Selio Manager — Gestion pour revendeurs",
         short_name: "Selio",
         description: "Stock, conversations, clients, commandes et marges des revendeurs Vinted, au même endroit.",
         lang: "fr",

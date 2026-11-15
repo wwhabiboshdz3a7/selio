@@ -170,13 +170,17 @@ export interface FaqBrowserProps {
   className?: string;
   /** Titre de niveau 2 au-dessus des catégories (accessibilité). */
   heading?: string;
+  /** Questions à ne pas montrer ici (la vitrine masque celles sur la démonstration). */
+  exclude?: readonly string[];
 }
 
 /**
  * FAQ complète : recherche instantanée, catégories, questions dépliables et ancres
  * partageables (#identifiant). Ouvre et montre la question visée par l'adresse.
  */
-export function FaqBrowser({ basePath, appLinks, className, heading = "Toutes les questions" }: FaqBrowserProps) {
+const NO_EXCLUSION: readonly string[] = [];
+
+export function FaqBrowser({ basePath, appLinks, className, heading = "Toutes les questions", exclude = NO_EXCLUSION }: FaqBrowserProps) {
   const location = useLocation();
   const searchId = useId();
   const [query, setQuery] = useState("");
@@ -186,7 +190,8 @@ export function FaqBrowser({ basePath, appLinks, className, heading = "Toutes le
   // Le premier résultat d'une recherche s'ouvre seul, sauf si on le referme.
   const [autoClosedFor, setAutoClosedFor] = useState<string | null>(null);
   const trimmed = query.trim();
-  const results = useMemo(() => (trimmed.length >= 2 ? searchHelp(trimmed, { limit: 12 }) : null), [trimmed]);
+  const shown = (id: string) => !exclude.includes(id);
+  const results = useMemo(() => (trimmed.length >= 2 ? searchHelp(trimmed, { limit: 12 }).filter((r) => !exclude.includes(r.entry.id)) : null), [trimmed, exclude]);
   const autoOpenId = results && autoClosedFor !== trimmed ? results[0]?.entry.id ?? null : null;
 
   // L'ancre de l'adresse (/faq#identifiant, lien partagé ou question source) ouvre la question.
@@ -249,7 +254,7 @@ export function FaqBrowser({ basePath, appLinks, className, heading = "Toutes le
       ) : (
         <div className="mt-8 flex flex-col gap-10">
           {HELP_CATEGORIES.map((c) => {
-            const entries = helpEntries().filter((e) => e.categoryId === c.id);
+            const entries = helpEntries().filter((e) => e.categoryId === c.id && shown(e.id));
             return (
               <section key={c.id} id={`categorie-${c.id}`} aria-labelledby={`titre-${c.id}`} className="scroll-mt-24">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">

@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ShieldCheck, UserPlus } from "lucide-react";
+import { can } from "@selio/domain";
 import {
   OPERATOR_ROLE_LABELS, ORG_QUALIFICATIONS, ORG_QUALIFICATION_LABELS, PAID_PLANS, PLAN_LABELS, QUALIFICATION_NOTE_MAX, ROLE_LABELS, TRIAL_EXTENSION_MAX_DAYS,
   isGrantWithoutEnd, type AdminAccountDetail, type AdminAccountEvent, type OrgQualification, type PaidPlan, type UsageCounter,
 } from "@selio/contracts";
 import { Alert, Button, Card, Checkbox, ConfirmDialog, DescriptionList, Field, Input, PageHeader, Select, StatusBadge, Textarea, formatDate, formatDateTime, formatNumber } from "@selio/ui";
-import { useClient, useData } from "../../../lib/data/provider";
-import { QUALIFICATION_TONES, adminActionLabel, grantEndLabel } from "../../../lib/admin";
+import { useClient, useData, useRequiredSession } from "../../../lib/data/provider";
+import { QUALIFICATION_TONES, adminActionLabel, grantEndLabel, isServerOutdated } from "../../../lib/admin";
+import { ServerOutdatedState } from "./AdminLayout";
 import { QueryBoundary } from "../../components/common";
 import { useAppMutation } from "../../components/hooks";
 import { AccountStatus } from "./Accounts";
@@ -167,6 +169,26 @@ function TeamShortcut({ a }: { a: AdminAccountDetail }) {
   );
 }
 
+const ADDABLE_ROLES = ["admin", "operator", "photographer", "viewer"] as const;
+
+/**
+ * « Ajouter cette personne à mon organisation » : un membre de ce compte rejoint l'organisation de l'opérateur avec
+ * le rôle choisi. Il garde son compte et sa propre organisation ; il retrouve la vôtre dans son menu (« Passer à… »).
+ */
+function AddToMyOrg({ a, member, myOrgName }: { a: AdminAccountDetail; member: AdminAccountDetail["team"][number]; myOrgName: string }) {
+  const client = useClient();
+  const [role, setRole] = useState<(typeof ADDABLE_ROLES)[number]>("admin");
+  const add = useAppMutation(() => client.adminAddToMyOrg(a.id, { userId: member.userId, role }), { invalidate: [...INVALIDATE, "members", "usage"], success: `${member.email} ajouté à « ${myOrgName} » (${ROLE_LABELS[role]})` });
+  return (
+    <span className="flex w-full flex-wrap items-center justify-end gap-1.5" data-testid="add-to-my-org">
+      <Select aria-label={`Rôle de ${member.email} dans votre organisation`} value={role} onChange={(e) => setRole(e.target.value as (typeof ADDABLE_ROLES)[number])} className="h-8 max-w-40 text-xs">
+        {ADDABLE_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+      </Select>
+      <Button size="sm" variant="secondary" icon={<UserPlus />} loading={add.isPending} onClick={() => add.mutate(undefined)}>Ajouter à mon organisation</Button>
+    </span>
+  );
+}
+
 /**
  * Selio Admin › Comptes › fiche : membres, abonnement, utilisation du mois, qualification et note interne,
  * accès offert, prolongation d'essai et historique d'audit du compte.
@@ -178,6 +200,12 @@ export default function AdminAccountDetail() {
   const q = useQuery({ queryKey: ["admin-account", id], queryFn: () => client.adminGetAccount(id) });
   const usage = useQuery({ queryKey: ["admin-usage"], queryFn: () => client.getAdminUsage(), staleTime: 60_000 });
   const u = usage.data?.orgs.find((o) => o.id === id) ?? null;
+  // Ajout à sa propre organisation : il faut pouvoir en gérer les membres (titulaire ou administrateur).
+  const session = useRequiredSession();
+  const canAdd = can(session.role, "members.manage");
+  const mine = useQuery({ queryKey: ["members"], queryFn: () => client.listMembers(), enabled: canAdd });
+  const inMyOrg = new Set((mine.data ?? []).map((m) => m.userId));
+  if (q.isError && isServerOutdated(q.error)) return <ServerOutdatedState />;
   return (
     <>
       <Link to="/admin/comptes" className="mb-3 inline-flex items-center gap-1 text-sm text-text-muted hover:text-text"><ArrowLeft className="size-4" aria-hidden /> Comptes</Link>
@@ -194,6 +222,7 @@ export default function AdminAccountDetail() {
                     { label: "Plan", value: PLAN_LABELS[a.plan] },
                     { label: "Statut", value: <AccountStatus a={a} /> },
                     { label: a.status === "trialing" ? "Fin de l'essai" : "Fin de la période", value: a.grantedUntil ? grantEndLabel(a.grantedUntil, formatDate) : a.currentPeriodEnd ? formatDate(a.currentPeriodEnd) : "—" },
+                    ...(a.awaitingPaymentSince ? [{ label: "En attente du paiement", value: `Essai terminé le ${formatDate(a.awaitingPaymentSince)} (paiement pas encore activé) : prolongez l'essai ou offrez l'accès.` }] : []),
                     { label: "Paiement", value: a.grantedUntil ? "Aucun (accès offert)" : a.provider === "revolut" ? `Carte enregistrée · ${a.cycle === "yearly" ? "annuel" : "mensuel"}` : a.cardOnFile ? "Carte enregistrée" : "Aucune carte" },
                     ...(a.cancelAtPeriodEnd ? [{ label: "Résiliation", value: "Demandée (fin de période)" }] : []),
                   ]} />
@@ -207,7 +236,9 @@ export default function AdminAccountDetail() {
                         <span className="flex items-center gap-1.5">
                           {m.operatorRole ? <StatusBadge tone="ink"><ShieldCheck className="size-3" aria-hidden /> {OPERATOR_ROLE_LABELS[m.operatorRole]}</StatusBadge> : null}
                           <StatusBadge tone="neutral" dot={false}>{ROLE_LABELS[m.role]}</StatusBadge>
+                          {inMyOrg.has(m.userId) && m.userId !== session.user.id ? <StatusBadge tone="success">Dans votre organisation</StatusBadge> : null}
                         </span>
+                        {canAdd && mine.isSuccess && !inMyOrg.has(m.userId) && m.userId !== session.user.id ? <AddToMyOrg a={a} member={m} myOrgName={session.org.name} /> : null}
                       </li>
                     ))}
                   </ul>

@@ -36,7 +36,7 @@ describe("vitrine › référencement", () => {
   });
 
   it("une page par filiale, sous /produits, sans empiéter sur les adresses de l'application", () => {
-    expect(PRODUCTS.map((p) => p.slug)).toEqual(["manager", "studio", "track", "radar", "cloud", "comptes"]);
+    expect(PRODUCTS.map((p) => p.slug)).toEqual(["manager", "studio", "track", "radar", "bot", "cloud", "agents", "comptes"]);
     for (const p of PRODUCTS) {
       expect(SEO_PAGES.some((s) => s.path === p.path && s.indexable)).toBe(true);
       const path: string = p.path;

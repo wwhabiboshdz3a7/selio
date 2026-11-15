@@ -29,7 +29,8 @@ export default function Contact() {
             <Field label="Sujet">{(p) => (
               <select id={p.id} className="h-9 w-full rounded-md border border-border-strong bg-surface px-3 text-base" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })}>
                 <option value="question">Question produit</option>
-                <option value="demo">Démonstration guidée</option>
+                <option value="comptes">Prestation Selio Comptes</option>
+                <option value="presentation">Présentation guidée</option>
                 <option value="bug">Signalement</option>
                 <option value="autre">Autre</option>
               </select>
@@ -42,7 +43,8 @@ export default function Contact() {
           <h2 className="text-md font-semibold text-text">Avant d'écrire</h2>
           <ul className="mt-3 flex list-disc flex-col gap-1.5 pl-5">
             <li>La FAQ répond aux questions sur Vinted, l'extension et l'IA.</li>
-            <li>La démonstration montre le parcours complet sans compte.</li>
+            <li>Pour une prestation Selio Comptes (audit, mise en place, accompagnement), indiquez le niveau voulu et l'adresse de votre boutique.</li>
+            <li>L'essai gratuit de 14 jours montre tout le parcours sur votre propre activité.</li>
             <li>Les données que vous saisissez ici ne sont pas conservées.</li>
           </ul>
         </aside>

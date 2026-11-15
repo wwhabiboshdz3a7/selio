@@ -478,9 +478,13 @@ export function retryJob(ctx: OrgContext, id: string): Promise<Job> {
   });
 }
 
-/** Traite les tâches serveur échues (worker). */
+/**
+ * Traite les tâches serveur échues (worker). Coupe-circuit de l'organisation (« Tout arrêter » de Selio Bot,
+ * arrêt global) : rien n'est exécuté, les tâches restent en file jusqu'à la reprise.
+ */
 export function processDueJobs(ctx: OrgContext): Promise<number> {
   return withOrg(ctx, async (tx) => {
+    if ((await repos.automationState.get(tx)).globalPaused) return 0;
     let n = 0;
     for (const job of await repos.jobs.dueQueued(tx)) {
       if (job.runsIn === "cloud") continue;

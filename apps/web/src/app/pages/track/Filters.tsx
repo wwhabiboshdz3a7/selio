@@ -5,14 +5,14 @@ import { Filter, Pencil, Plus, Trash2 } from "lucide-react";
 import { ITEM_CATEGORIES, ITEM_CATEGORY_LABELS, ITEM_CONDITIONS, ITEM_CONDITION_LABELS, TRACK_READ_INTERVAL_HOURS, type ItemCategory, type TrackFilter, type TrackFilterCreate } from "@selio/contracts";
 import { can } from "@selio/domain";
 import { Alert, Button, Card, Checkbox, ConfirmDialog, Dialog, EmptyState, Field, IconButton, Input, PageHeader, StatusBadge, Tag, Toggle, formatCents, formatDateTime, formatRelative } from "@selio/ui";
-import { useClient, useRequiredSession } from "../../../lib/data/provider";
+import { useClient, useData, useRequiredSession } from "../../../lib/data/provider";
 import type { TrackUsageView } from "../../../lib/data/types";
 import { errorMessage } from "../../../lib/errors";
 import { criteriaTags } from "../../../lib/track";
 import { MoneyInput, QueryBoundary } from "../../components/common";
 import { useAppMutation } from "../../components/hooks";
 import { UsageMeter } from "../../components/usage";
-import { TRACK_KEYS, TrackGate, quotaText } from "./shared";
+import { TRACK_KEYS, TrackGate, isTrackLive, quotaText } from "./shared";
 
 /**
  * Selio Track · filtres suivis : création, modification, pause et retrait, dans la limite de l'offre
@@ -37,6 +37,9 @@ function Filters({ usage }: { usage: TrackUsageView }) {
   const full = usage.filters.used >= usage.filters.quota;
   const toggle = useAppMutation((f: TrackFilter) => client.updateTrackFilter(f.id, { enabled: !f.enabled }), { invalidate: TRACK_KEYS, success: (f) => (f.enabled ? "Filtre repris" : "Filtre en pause") });
   const remove = useAppMutation((f: TrackFilter) => client.deleteTrackFilter(f.id), { invalidate: TRACK_KEYS, success: "Filtre retiré", onSuccess: () => setRemoving(null) });
+  // Track pas encore ouvert en direct : les filtres se préparent, aucune lecture simulée n'est affichée.
+  const { mode } = useData();
+  const live = isTrackLive(usage, mode);
   return (
     <>
       <PageHeader
@@ -46,6 +49,7 @@ function Filters({ usage }: { usage: TrackUsageView }) {
         actions={canWrite ? <Button icon={<Plus />} onClick={() => setEditing("new")} disabled={full}>Nouveau filtre</Button> : undefined}
       />
       <div className="flex flex-col gap-6">
+        {live ? null : <Alert tone="info" title="Selio Track est en cours d'activation">Créez vos filtres dès maintenant : ils seront lus dès l'ouverture de Track, sans rien refaire. Les statistiques apparaîtront alors sur le tableau de bord.</Alert>}
         <Card>
           <UsageMeter label="Filtres suivis" counter={usage.filters} hint={full ? "Retirez un filtre pour en suivre un autre." : "Limite de votre offre (pas un compteur mensuel)."} />
           {full ? <p className="mt-3 text-sm text-text-muted">Quota atteint ({quotaText(usage.filters)}). {usage.plan === "pro" ? <>L'offre Agence en suit 25. <Link to="/app/settings/billing" className="font-medium text-accent hover:underline">Voir les offres</Link></> : null}</p> : null}
@@ -64,8 +68,8 @@ function Filters({ usage }: { usage: TrackUsageView }) {
                       </div>
                       <div className="mt-1 flex flex-wrap gap-1">{criteriaTags(f.criteria).map((t) => <Tag key={t}>{t}</Tag>)}<Tag>Prix max {formatCents(f.criteria.maxPriceCents)}</Tag></div>
                       <p className="mt-1 text-xs text-text-muted">
-                        {f.lastReadAt ? <>Dernière lecture {formatRelative(f.lastReadAt)}</> : "Première lecture au prochain passage"}
-                        {f.nextReadAt && f.enabled ? <> · prochaine vers {formatDateTime(f.nextReadAt)}</> : null}
+                        {!live ? "Lu dès l'ouverture de Track" : f.lastReadAt ? <>Dernière lecture {formatRelative(f.lastReadAt)}</> : "Première lecture au prochain passage"}
+                        {live && f.nextReadAt && f.enabled ? <> · prochaine vers {formatDateTime(f.nextReadAt)}</> : null}
                       </p>
                     </div>
                     {canWrite ? (

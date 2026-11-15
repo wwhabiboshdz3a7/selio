@@ -1,4 +1,4 @@
-import { ROLES, inviteInput, orgSettings as orgSettingsSchema, orgUpdate, type Membership, type Organization, type Role, type User } from "@selio/contracts";
+import { ROLES, inviteInput, type InviteOutcome, orgSettings as orgSettingsSchema, orgUpdate, type Membership, type Organization, type Role, type User } from "@selio/contracts";
 import { repos, hashPassword, hashSecret, newSecret } from "@selio/db";
 import { PLAN_QUOTAS } from "@selio/demo-data";
 import { can, canAssignRole } from "@selio/domain";
@@ -78,7 +78,7 @@ export async function listMembers(ctx: OrgContext): Promise<(Membership & { user
  * (jeton invalidé, appartenance retirée, compte créé pour l'occasion supprimé) et
  * l'appelant reçoit 503 : l'invitation peut être refaite.
  */
-export async function inviteMember(ctx: OrgContext, raw: unknown): Promise<Membership & { user: User }> {
+export async function inviteMember(ctx: OrgContext, raw: unknown): Promise<Membership & { user: User; invite: InviteOutcome }> {
   requireAction(ctx, "members.manage");
   const parsed = inviteInput.safeParse(raw);
   if (!parsed.success) throw new AppError("validation", "Invitation invalide", 400, parsed.error.flatten());
@@ -103,15 +103,17 @@ export async function inviteMember(ctx: OrgContext, raw: unknown): Promise<Membe
     const m = await repos.memberships.create(tx, { orgId: ctx.orgId, userId: user.id, role: parsed.data.role });
     const now = ctx.services.now();
     await repos.invites.invalidateForUser(tx, ctx.orgId, user.id, now.toISOString());
-    const invite = await repos.invites.create(tx, { orgId: ctx.orgId, userId: user.id, tokenHash: hashSecret(token), expiresAt: new Date(now.getTime() + INVITE_TTL_DAYS * 86_400_000).toISOString() });
+    const expiresAt = new Date(now.getTime() + INVITE_TTL_DAYS * 86_400_000).toISOString();
+    const invite = await repos.invites.create(tx, { orgId: ctx.orgId, userId: user.id, tokenHash: hashSecret(token), expiresAt });
     const inviter = await repos.users.byId(tx, ctx.userId);
     const org = await repos.orgs.byId(tx, ctx.orgId);
     await tx.query("select set_config('app.org_id', $1, true)", [ctx.orgId]);
     await repos.audit.add(tx, { orgId: ctx.orgId, actorUserId: ctx.userId, action: "member.invited", targetType: "membership", targetId: m.id, meta: { role: m.role, inviteId: invite.id, existingAccount }, ip: ctx.ip });
-    return { m, user: await repos.users.byId(tx, user.id), inviteId: invite.id, existingAccount, orgName: org.name, inviterName: inviter.displayName };
+    return { m, user: await repos.users.byId(tx, user.id), inviteId: invite.id, existingAccount, expiresAt, orgName: org.name, inviterName: inviter.displayName };
   });
   // 2) Hors transaction : l'aller-retour SMTP n'immobilise aucune connexion du pool.
-  const rendered = invitationEmail({ orgName: created.orgName, inviterName: created.inviterName, link: webLink(ctx.services, "/invitation", { token }), expiresInDays: INVITE_TTL_DAYS, existingAccount: created.existingAccount });
+  const link = webLink(ctx.services, "/invitation", { token });
+  const rendered = invitationEmail({ orgName: created.orgName, inviterName: created.inviterName, link, expiresInDays: INVITE_TTL_DAYS, existingAccount: created.existingAccount });
   const outcome = await sendEmail(ctx.services, { to: created.user.email, ...rendered });
   if (!outcome.sent && ctx.services.email) {
     // 3) Compensation : sans email, le lien n'arrivera jamais ; on défait pour que l'invitation puisse être refaite.
@@ -125,7 +127,16 @@ export async function inviteMember(ctx: OrgContext, raw: unknown): Promise<Membe
     });
     throw new AppError("email_unavailable", "L'email d'invitation n'a pas pu être envoyé ; réessayez dans quelques minutes.", 503);
   }
-  return { ...created.m, user: created.user };
+  // Lien à copier (l'email peut ne pas partir : fournisseur « noop ») : seulement pour un compte créé pour cette
+  // invitation. Pour un compte existant, le lien permettrait de choisir le mot de passe de quelqu'un d'autre : la
+  // personne est déjà membre, elle se connecte avec son propre mot de passe et choisit l'organisation.
+  const invite: InviteOutcome = {
+    link: created.existingAccount ? null : link,
+    expiresAt: created.existingAccount ? null : created.expiresAt,
+    existingAccount: created.existingAccount,
+    emailDelivered: outcome.sent && ctx.services.email?.delivers !== false,
+  };
+  return { ...created.m, user: created.user, invite };
 }
 
 export async function updateMemberRole(ctx: OrgContext, membershipId: string, role: Role): Promise<void> {
