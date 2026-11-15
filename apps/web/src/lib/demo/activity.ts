@@ -147,10 +147,13 @@ export function demoActivityPage(rows: ActivityRow[], raw: ActivityQuery, ctx: {
     })
     .filter((r) => (q.mode === "auto" ? r.actorKind !== "member" : q.mode === "manual" ? r.actorKind === "member" : true))
     .filter((r) => (!q.from || r.at >= ms(q.from)) && (!q.to || r.at < ms(q.to)))
-    .sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id))
-    .filter((r) => !before || r.at < ms(before.at) || (r.at === ms(before.at) && r.id < before.id));
-  const page = list.slice(0, q.limit);
+    // Tri stable : à date égale, l'ordre des sources (la plus récente d'abord) est gardé.
+    .sort((a, b) => b.at.localeCompare(a.at));
+  // Curseur : la ligne qui le porte (identifiants aléatoires en démonstration), sinon la date seule.
+  const index = before ? list.findIndex((r) => r.id === before.id) : -1;
+  const rest = !before ? list : index >= 0 ? list.slice(index + 1) : list.filter((r) => r.at < ms(before.at));
+  const page = rest.slice(0, q.limit);
   const finances = can(ctx.role, "finances.read");
   const last = page[page.length - 1];
-  return { entries: page.map((r) => describeActivity(r, { finances, memberName: ctx.memberName })), nextCursor: list.length > q.limit && last ? activityCursor(last) : null };
+  return { entries: page.map((r) => describeActivity(r, { finances, memberName: ctx.memberName })), nextCursor: rest.length > q.limit && last ? activityCursor(last) : null };
 }

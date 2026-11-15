@@ -225,7 +225,7 @@ export default function Items() {
         <section aria-label="Actions groupées" className="sticky top-2 z-20 mb-3 rounded-lg border border-accent/40 bg-surface p-2.5 shadow-md max-md:bottom-[calc(var(--dock-offset,0px)+12px)] max-md:top-auto max-md:fixed max-md:inset-x-3 max-md:mb-0">
           <div className="flex flex-wrap items-center gap-1.5 text-sm">
             <span className="num mr-1 font-semibold">{selected.size} sélectionné(s)</span>
-            <Select aria-label="Changer le statut" value="" disabled={bulk.isPending} onChange={(e) => e.target.value && runBulk({ action: "set_status", status: e.target.value as ItemStatus })} className="w-40">
+            <Select aria-label="Changer le statut" value="" disabled={bulk.isPending} onChange={(e) => e.target.value && runBulk({ action: "set_status", status: e.target.value as ItemStatus })} className="w-48">
               <option value="">Changer le statut…</option>
               {(["in_stock", "listed", "reserved", "sold"] as const).map((s) => <option key={s} value={s}>{ITEM_STATUS_LABELS[s]}</option>)}
             </Select>

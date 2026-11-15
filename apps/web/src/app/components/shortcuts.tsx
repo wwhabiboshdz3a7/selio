@@ -83,16 +83,16 @@ export function ShortcutTiles({ ids, hints = {}, onEdit }: { ids: readonly Short
       {ids.length === 0 ? (
         <button type="button" onClick={onEdit} className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border-strong p-6 text-sm font-medium text-text-muted hover:border-accent hover:text-accent"><Plus className="size-4" aria-hidden />Ajouter des raccourcis</button>
       ) : (
-        <ul className="grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-border bg-border min-[420px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <ul className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border lg:grid-cols-3 xl:grid-cols-4">
           {ids.map((id, i) => {
             const s = SHORTCUTS[id];
             return (
               <li key={id} className="flex min-w-0">
-                <Link to={s.to} className="group flex min-w-0 flex-1 items-start gap-3 bg-surface p-3.5 transition-colors hover:bg-surface-muted/60 md:p-4">
+                <Link to={s.to} className="group flex min-w-0 flex-1 items-center gap-2.5 bg-surface p-3 transition-colors hover:bg-surface-muted/60 sm:items-start sm:gap-3 md:p-4">
                   <span className={cn("inline-flex size-9 shrink-0 items-center justify-center rounded-lg [&>svg]:size-[18px]", i === 0 || id === "studio" ? "bg-accent-soft text-accent" : "bg-surface-muted text-text-muted group-hover:text-accent")} aria-hidden>{s.icon}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1 text-sm font-semibold text-text"><span className="truncate">{s.label}</span><ArrowRight className="size-3 shrink-0 text-accent opacity-0 transition-opacity group-hover:opacity-100" aria-hidden /></span>
-                    <span className="line-clamp-2 block text-xs text-text-muted">{hints[id] ?? s.description}</span>
+                    <span className="flex items-center gap-1 text-sm font-semibold text-text"><span className="line-clamp-2 sm:truncate">{s.label}</span><ArrowRight className="size-3 shrink-0 text-accent opacity-0 transition-opacity group-hover:opacity-100" aria-hidden /></span>
+                    <span className="line-clamp-2 block text-xs text-text-muted max-sm:hidden">{hints[id] ?? s.description}</span>
                   </span>
                 </Link>
               </li>
@@ -161,7 +161,7 @@ export function ShortcutsEditor({ open, onClose }: { open: boolean; onClose: () 
                 <GripVertical className="size-4 shrink-0 cursor-grab text-text-subtle max-sm:hidden" aria-hidden />
                 <span className="num w-5 shrink-0 text-center text-xs text-text-muted">{i + 1}</span>
                 <span className="inline-flex shrink-0 text-text-muted [&>svg]:size-4" aria-hidden>{s.icon}</span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">{s.label}{i < 4 && dockShortcuts(draft).some((d) => d.id === id) ? <span className="ml-2 text-xs font-normal text-text-muted">dock</span> : null}</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">{s.label}{i < 4 && dockShortcuts(draft).some((d) => d.id === id) ? <span className="ml-2 rounded-full bg-surface-muted px-1.5 py-0.5 text-[11px] font-normal text-text-muted">dock mobile</span> : null}</span>
                 <IconButton size="sm" label={`Monter ${s.label}`} data-move="up" disabled={i === 0} onClick={() => move(i, i - 1)}><ArrowUp /></IconButton>
                 <IconButton size="sm" label={`Descendre ${s.label}`} data-move="down" disabled={i === draft.length - 1} onClick={() => move(i, i + 1)}><ArrowDown /></IconButton>
                 <IconButton size="sm" label={`Retirer ${s.label}`} onClick={() => remove(id)}><X /></IconButton>

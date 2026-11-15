@@ -27,6 +27,7 @@ const PAGES: { href: string; heading: RegExp }[] = [
   { href: "/app/auto-buy", heading: /Achat auto/ },
   { href: "/app/accounts", heading: /Comptes Vinted/ },
   { href: "/app/analytics", heading: /Analyses/ },
+  { href: "/app/journal", heading: /Journal d'activité/ },
   { href: "/app/help", heading: /^Aide$/ },
   { href: "/app/settings", heading: /Paramètres/ },
   { href: "/app", heading: /Bonjour/ },

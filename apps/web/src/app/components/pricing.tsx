@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Info, Sparkles } from "lucide-react";
 import { PRICE_METHOD_LABELS, PRICE_MODEL_MIN_REFERENCES, PRICE_MODEL_RETRAIN_DAYS, PRICE_STRATEGY_LABELS, type PriceEstimate, type PriceEstimateInput, type PriceModelStatus, type PriceStrategies } from "@selio/contracts";
 import { Button, Card, DescriptionList, StatusBadge, cn, formatCents, formatDate, formatNumber, formatPercent } from "@selio/ui";
-import { useClient, useData } from "../../lib/data/provider";
+import { useClient, useData, useDataMode } from "../../lib/data/provider";
 import type { PricingModelView } from "../../lib/data/types";
 import { QueryBoundary } from "./common";
 import { CONFIDENCE_LABELS, formatDelayDays, hasPrice, modelStatusView } from "../../lib/track";
@@ -140,7 +140,7 @@ export function PriceEstimateView({ estimate, modelStatus, strategies, onApply, 
   explainAction?: ReactNode;
   simulated?: boolean;
 }) {
-  const { mode } = useData();
+  const mode = useDataMode();
   // Mode connecté : une estimation tirée des ventes de démonstration n'est jamais montrée comme un prix réel.
   if (mode === "connected" && estimate.demo) return <PricingSoon />;
   if (!hasPrice(estimate)) {
