@@ -212,6 +212,8 @@ test.describe("Selio et ses filiales", () => {
     await expect(page.getByRole("link", { name: /Gérer dans Paramètres/ })).toHaveAttribute("href", "/app/settings/access");
     // Comptes et accès : dans Paramètres et dans Opérateur › Administration.
     await gotoApp(page, "/admin/acces");
+    // Sur téléphone, le menu de Selio Admin est derrière le bouton « Ouvrir le menu ».
+    if (isMobile(page)) await page.getByRole("button", { name: "Ouvrir le menu" }).click();
     await expect(page.getByRole("navigation", { name: "Sections de l'administration" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Qui peut faire quoi" })).toBeVisible();
   });

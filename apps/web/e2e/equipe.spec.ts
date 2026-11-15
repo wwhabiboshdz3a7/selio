@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { gotoApp, openDemo } from "./helpers";
+import { gotoApp, isMobile, openDemo } from "./helpers";
 
 // PNG 1×1 valide.
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
@@ -101,6 +101,8 @@ test.describe("équipe : rôles, finances masquées, contributeur photos, parrai
   test("Admin › Supervision : état de l'API, cibles et alertes", async ({ page }) => {
     await openDemo(page);
     await gotoApp(page, "/admin/supervision");
+    // Sur téléphone, le menu de Selio Admin est derrière le bouton « Ouvrir le menu ».
+    if (isMobile(page)) await page.getByRole("button", { name: "Ouvrir le menu" }).click();
     await expect(page.getByRole("navigation", { name: "Sections de l'administration" }).getByRole("link", { name: "Supervision" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("heading", { name: "Cibles vérifiées chaque minute" })).toBeVisible();
     await expect(page.getByRole("list", { name: "Alertes de supervision" }).getByRole("listitem")).toHaveCount(3);
