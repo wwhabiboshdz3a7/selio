@@ -78,7 +78,7 @@ export function ShortcutTiles({ ids, hints = {}, onEdit }: { ids: readonly Short
     <nav aria-label="Raccourcis" className="mb-8">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-text-muted">Vos raccourcis</h2>
-        <button type="button" onClick={onEdit} className="rounded-md px-2 py-1 text-sm font-medium text-accent hover:bg-surface-muted">Personnaliser les raccourcis</button>
+        <button type="button" onClick={onEdit} className="rounded-md px-2 py-1 text-sm font-medium text-accent hover:bg-surface-muted">Modifier les raccourcis</button>
       </div>
       {ids.length === 0 ? (
         <button type="button" onClick={onEdit} className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border-strong p-6 text-sm font-medium text-text-muted hover:border-accent hover:text-accent"><Plus className="size-4" aria-hidden />Ajouter des raccourcis</button>
