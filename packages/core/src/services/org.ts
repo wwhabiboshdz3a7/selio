@@ -3,13 +3,16 @@ import { repos, hashPassword, hashSecret, newSecret } from "@selio/db";
 import { PLAN_QUOTAS } from "@selio/demo-data";
 import { can, canAssignRole } from "@selio/domain";
 import { invitationEmail } from "@selio/email";
-import { AppError, requireAction, sendEmail, webLink, withOrg, type OrgContext } from "../context";
+import { AppError, operatorRoleOf, requireAction, sendEmail, webLink, withOrg, type OrgContext } from "../context";
 import type { Session } from "../types";
 import { INVITE_TTL_DAYS, TOKEN_BYTES } from "./auth";
 
 export async function getSession(ctx: OrgContext): Promise<Session> {
   return ctx.services.db.withGlobal(async (tx) => {
-    const user = await repos.users.byId(tx, ctx.userId);
+    const stored = await repos.users.byId(tx, ctx.userId);
+    // Rôle d'opérateur recalculé depuis la configuration (Selio Admin) : `isOperator` reste vrai pour les deux rôles.
+    const operatorRole = operatorRoleOf(ctx);
+    const user = { ...stored, isOperator: operatorRole !== null, operatorRole };
     const org = await repos.orgs.byId(tx, ctx.orgId);
     const memberships = await repos.memberships.forUser(tx, ctx.userId);
     return { mode: "connected", user, org, role: ctx.role, memberships };

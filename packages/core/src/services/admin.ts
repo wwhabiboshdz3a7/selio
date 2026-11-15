@@ -1,7 +1,7 @@
 import { PLANS, PROVIDERS, aiSettings, buildUsageCounter, isPlan, quotasForPlan, resolveQuotas, type Plan, type PlanQuotas, type SubsidiaryUsage, type UsageCounter } from "@selio/contracts";
 import { repos } from "@selio/db";
 import { effectiveAiQuota } from "@selio/domain";
-import { AppError, type OrgContext, type Services } from "../context";
+import { AppError, requireOperatorCapability, type OrgContext, type Services } from "../context";
 import type { AdminOverview, ServiceStatus } from "../types-data";
 import { subsidiaryUsageFrom, usageDayStart, usagePeriodStart } from "./billing";
 
@@ -59,7 +59,7 @@ function orgAiMonthlyQuota(raw: unknown): number {
  * requêtes du mois de la table ai_requests (échecs compris, aide exclue) face au plus petit entre
  * le quota du plan et le réglage de l'organisation — jamais « 33 % » quand la 501e requête est refusée.
  */
-export function orgUsageFrom(row: AdminOrgUsageRow): AdminOrgUsage {
+export function orgUsageFrom(row: AdminOrgUsageRow, trackFilters = 0): AdminOrgUsage {
   const plan: Plan = isPlan(row.plan) ? row.plan : "free";
   const quotas = quotasOfRow(row, plan);
   const month = row.monthUsage ?? {};
@@ -69,8 +69,10 @@ export function orgUsageFrom(row: AdminOrgUsageRow): AdminOrgUsage {
     connections: buildUsageCounter(row.connections, quotas.connections),
     members: buildUsageCounter(row.members, quotas.members),
   };
-  const { studio, track, cloud } = subsidiaryUsageFrom(month, quotas, row.cloudToday);
-  // Les filtres Track suivis n'ont pas encore de stockage (toujours 0) : ils ne pèsent pas dans l'alerte.
+  // Filtres Track suivis : ceux de l'organisation (actifs ou non), même décompte que le refus à la création.
+  const { studio, track, cloud } = subsidiaryUsageFrom(month, quotas, row.cloudToday, trackFilters);
+  // Les filtres suivis sont une limite, pas une consommation du mois : affichés, ils ne pèsent pas dans
+  // l'alerte à 80 % (même règle que la page « Mon utilisation » et la démonstration).
   const watched = [...Object.values(counters), studio.listings, studio.wornPhotos, track.scans, track.photoSearches, cloud.actions];
   // Un quota nul (fonction non incluse) et rien d'utilisé : ce n'est pas un dépassement.
   const live = watched.filter((c) => c.quota > 0 || c.used > 0);
@@ -93,11 +95,12 @@ export function orgUsageFrom(row: AdminOrgUsageRow): AdminOrgUsage {
 
 /** Vue « utilisation par client » : réservée aux opérateurs, triée du client le plus proche de sa limite au plus loin. */
 export async function adminUsage(ctx: OrgContext): Promise<AdminUsageReport> {
-  if (!ctx.isOperator) throw new AppError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+  // Lecture de l'usage par client (Track compris) : opérateurs technique et business.
+  requireOperatorCapability(ctx, "admin.usage.read");
   const now = ctx.services.now();
   const from = usagePeriodStart(now);
-  const rows = await ctx.services.db.withGlobal((tx) => repos.admin.orgUsage(tx, from, usageDayStart(now)));
-  const orgs = rows.map(orgUsageFrom).sort((a, b) => b.maxPercent - a.maxPercent || a.name.localeCompare(b.name, "fr"));
+  const { rows, filters } = await ctx.services.db.withGlobal(async (tx) => ({ rows: await repos.admin.orgUsage(tx, from, usageDayStart(now)), filters: await repos.trackReads.filterCounts(tx) }));
+  const orgs = rows.map((r) => orgUsageFrom(r, filters.get(r.id) ?? 0)).sort((a, b) => b.maxPercent - a.maxPercent || a.name.localeCompare(b.name, "fr"));
   return { period: { from, to: now.toISOString() }, orgs };
 }
 
@@ -128,7 +131,7 @@ export async function serviceStatus(services: Services, extra: { redis?: () => P
 }
 
 export async function adminOverview(ctx: OrgContext, deps: { queues: QueueStatsProvider; redis?: () => Promise<number | null> }): Promise<AdminOverview> {
-  if (!ctx.isOperator) throw new AppError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+  requireOperatorCapability(ctx, "admin.health");
   const services = ctx.services;
   const orgs = await services.db.withGlobal((tx) => repos.admin.orgSummary(tx));
   const since = new Date(services.now().getTime() - 86_400_000).toISOString();
@@ -161,7 +164,7 @@ export async function adminOverview(ctx: OrgContext, deps: { queues: QueueStatsP
 }
 
 export async function adminSetPlan(ctx: OrgContext, orgId: string, plan: Plan): Promise<void> {
-  if (!ctx.isOperator) throw new AppError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+  requireOperatorCapability(ctx, "admin.plans");
   if (!isPlan(plan)) throw new AppError("validation", "Plan inconnu", 400);
   await ctx.services.db.withGlobal((tx) => repos.orgs.byId(tx, orgId));
   await ctx.services.db.withOrg(orgId, async (tx) => {
@@ -171,7 +174,7 @@ export async function adminSetPlan(ctx: OrgContext, orgId: string, plan: Plan): 
 }
 
 export async function adminAudit(ctx: OrgContext, limit: number) {
-  if (!ctx.isOperator) throw new AppError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+  requireOperatorCapability(ctx, "admin.audit");
   return ctx.services.db.withGlobal((tx) => tx.query("select * from audit_logs where action like 'admin.%' or action like 'auth.%' or action like 'token.%' or action like 'connection.%' order by created_at desc limit $1", [Math.min(500, limit)]));
 }
 

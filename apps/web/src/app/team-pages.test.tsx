@@ -14,6 +14,7 @@ import Settings from "./pages/Settings";
 import Items from "./pages/Items";
 import Overview from "./pages/Overview";
 import AdminSupervision from "./pages/AdminSupervision";
+import AdminLayout from "./pages/admin/AdminLayout";
 import ItemPhotos from "./pages/ItemPhotos";
 import Comptes from "./spaces/pages/Comptes";
 
@@ -26,6 +27,19 @@ function renderRoutes(children: RouteObject[], initial: string) {
     ],
     { initialEntries: [initial] },
   );
+  render(
+    <DataProvider forceMode="demo">
+      <ToastProvider>
+        <RouterProvider router={router} />
+      </ToastProvider>
+    </DataProvider>,
+  );
+  return router;
+}
+
+/** Pages de Selio Admin : rendues dans sa propre mise en page (barre latérale des sections). */
+function renderAdminRoutes(children: RouteObject[], initial: string) {
+  const router = createMemoryRouter([{ path: "/admin", element: <RequireSession><AdminLayout /></RequireSession>, children }], { initialEntries: [initial] });
   render(
     <DataProvider forceMode="demo">
       <ToastProvider>
@@ -203,7 +217,7 @@ describe("essai « verre liquide »", () => {
 
 describe("Admin › Supervision", () => {
   it("état de l'API, cibles vérifiées, alertes et dernières vérifications (exemple de la démo)", async () => {
-    renderRoutes([{ path: "admin/supervision", element: <AdminSupervision /> }], "/admin/supervision");
+    renderAdminRoutes([{ path: "supervision", element: <AdminSupervision /> }], "/admin/supervision");
     expect(await screen.findByRole("heading", { name: "Cibles vérifiées chaque minute" })).toBeTruthy();
     expect(screen.getByText(/Exemple fixe : aucune vérification réelle/)).toBeTruthy();
     const alerts = screen.getByRole("list", { name: "Alertes de supervision" });
@@ -218,7 +232,7 @@ describe("Admin › Supervision", () => {
     const real = await client.getHealthDetails();
     const old = new Date(Date.now() - 2 * 86_400_000).toISOString();
     vi.spyOn(client, "getHealthDetails").mockResolvedValue({ ...real, simulated: false, supervision: { ...real.supervision, recent: real.supervision.recent.filter((c) => c.event === null), alerts: [{ target: "api", ok: false, statusCode: 503, latencyMs: 12, error: "HTTP 503", event: "alert", delivered: 0, checkedAt: old }] } });
-    renderRoutes([{ path: "admin/supervision", element: <AdminSupervision /> }], "/admin/supervision");
+    renderAdminRoutes([{ path: "supervision", element: <AdminSupervision /> }], "/admin/supervision");
     const alerts = await screen.findByRole("list", { name: "Alertes de supervision" });
     expect(within(alerts).getAllByRole("listitem").map((li) => li.textContent)).toEqual([expect.stringContaining("Alerte NON délivrée")]);
     expect(within(alerts).queryByText(/Alerte envoyée/)).toBeNull();

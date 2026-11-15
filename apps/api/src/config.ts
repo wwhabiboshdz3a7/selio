@@ -5,6 +5,7 @@ import { emailConfigSchema, emailStartupWarnings, loadEmailConfig } from "@selio
 import { loadPaymentConfig, paymentConfigSchema, paymentStartupNotices } from "@selio/connectors";
 import { wornPhotos, type ServicesConfig, type radar } from "@selio/core";
 import { loadVapidConfig } from "./push";
+import { parseEmailList } from "@selio/domain";
 
 const bool = z.string().optional().transform((v) => v === "true" || v === "1");
 /** Texte facultatif : vide ou blanc = absent. */
@@ -82,7 +83,13 @@ export const apiEnvSchema = z
     DATABASE_URL: z.string().min(1, "DATABASE_URL requise"),
     REDIS_URL: z.string().optional(),
     SECRETS_ENCRYPTION_KEY: z.string().min(40, "SECRETS_ENCRYPTION_KEY : clé base64 de 32 octets requise"),
+    /** Opérateurs Selio « tech » (Selio Admin : tout, santé, IA, modèle de prix, interrupteurs), séparés par des virgules. */
     OPERATOR_EMAILS: z.string().default(""),
+    /**
+     * Opérateurs Selio « business » (Selio Admin : croissance, comptes, offres commerciales, usage de Track), séparés
+     * par des virgules. Relu à chaque requête : un compte déjà créé devient opérateur sans réinscription.
+     */
+    OPERATOR_BUSINESS_EMAILS: z.string().default(""),
     ALLOW_AI_FALLBACK: bool,
     /** Franchise en base de TVA (art. 293 B du CGI) : factures à 0 % avec la mention légale. */
     FRANCHISE_TVA: bool,
@@ -284,6 +291,8 @@ export function startupNotices(cfg: ApiEnv): StartupNotice[] {
   }
   out.push(...paymentStartupNotices(loadPaymentConfig(cfg), cfg.NODE_ENV));
   out.push({ level: "info", message: cfg.CLOUD_ENABLED ? `Selio Cloud activé : fenêtres de connexion relayées par Redis, ${cfg.CLOUD_MAX_BROWSERS} navigateurs au plus (hypothèse à mesurer), actions lourdes ${cfg.CLOUD_HEAVY_ACTIONS ? "ouvertes" : "fermées"}.` : "Selio Cloud désactivé (CLOUD_ENABLED=false) : réglages consultables, aucune fenêtre de connexion ouverte." });
+  const operators = operatorsConfig(cfg);
+  out.push({ level: operators.tech.length === 0 && prod ? "warn" : "info", message: `Selio Admin : ${operators.tech.length} opérateur(s) technique(s) (OPERATOR_EMAILS), ${operators.business.length} opérateur(s) business (OPERATOR_BUSINESS_EMAILS).` });
   if (cfg.FRANCHISE_TVA) out.push({ level: "info", message: "FRANCHISE_TVA=true : factures sans TVA (« TVA non applicable, art. 293 B du CGI »)." });
   out.push({ level: !loadVapidConfig(cfg) && prod ? "warn" : "info", message: loadVapidConfig(cfg) ? "Notifications Web Push activées (clés VAPID)." : "Notifications Web Push désactivées (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY absentes) : les alertes Radar restent en file." });
   if (cfg.RADAR_AUTO_ENABLED) {
@@ -303,4 +312,9 @@ export function startupNotices(cfg: ApiEnv): StartupNotice[] {
   out.push({ level: "info", message: cfg.REFERRAL_ENABLED ? "Parrainage ouvert (REFERRAL_ENABLED=true) : un mois offert aux deux au premier paiement de la filleule." : "Parrainage fermé (REFERRAL_ENABLED=false) : ni code ni page, les codes saisis à l'inscription sont ignorés." });
   if (cfg.WORN_OVERAGE_ENABLED) out.push({ level: "warn", message: `Photos portées au-delà du quota OUVERTES (WORN_OVERAGE_ENABLED=true) : ${(wornOverageCents(cfg) / 100).toFixed(2).replace(".", ",")} € la photo (PROPOSITION), avec l'accord explicite du client, facturées au renouvellement.` });
   return out;
+}
+
+/** Opérateurs Selio (Selio Admin) : emails en minuscules, rôle « tech » puis « business ». */
+export function operatorsConfig(cfg: Pick<ApiEnv, "OPERATOR_EMAILS" | "OPERATOR_BUSINESS_EMAILS">): { tech: string[]; business: string[] } {
+  return { tech: parseEmailList(cfg.OPERATOR_EMAILS), business: parseEmailList(cfg.OPERATOR_BUSINESS_EMAILS) };
 }

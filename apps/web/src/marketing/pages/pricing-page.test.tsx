@@ -4,6 +4,8 @@ import { MemoryRouter } from "react-router";
 import { PLAN_OFFERS, PRICING } from "@selio/demo-data";
 import { formatCents, formatNumber } from "@selio/ui";
 import Pricing from "./Pricing";
+// La page lit l'offre commerciale en cours (bandeau) pour afficher les prix remisés : fournisseur de données requis.
+import { DataProvider } from "../../lib/data/provider";
 
 function mockMotion() {
   vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("reduce"), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }));
@@ -20,7 +22,7 @@ describe("vitrine › Tarifs", () => {
 
   it("essai de 14 jours, trois offres depuis la configuration, annuel, fondateurs, sur devis, montants non définitifs", () => {
     mockMotion();
-    render(<MemoryRouter><Pricing /></MemoryRouter>);
+    render(<DataProvider forceMode="demo"><MemoryRouter><Pricing /></MemoryRouter></DataProvider>);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("14 jours pour essayer");
     const trial = screen.getByRole("article", { name: "Essai 14 jours" });
     expect(trial.textContent).toContain("carte enregistrée, rien débité avant la fin");
@@ -51,7 +53,7 @@ describe("vitrine › Tarifs", () => {
 
   it("les autres filiales : Studio seul au curseur (plancher et minimum), Radar, Radar Auto, Cloud en option, Selio Comptes", () => {
     mockMotion();
-    render(<MemoryRouter><Pricing /></MemoryRouter>);
+    render(<DataProvider forceMode="demo"><MemoryRouter><Pricing /></MemoryRouter></DataProvider>);
     const studio = screen.getByRole("article", { name: "Selio Studio seul" });
     expect(studio.textContent).toContain(`Plancher ${eur(PRICING.subsidiaries.studio.floorCentsPerPhoto)} la photo`);
     expect(studio.textContent).toContain(`${eur(PRICING.subsidiaries.studio.minPurchaseCents)} minimum par achat`);
@@ -76,7 +78,7 @@ describe("vitrine › Tarifs", () => {
 
   it("comparatif : l'essai et les trois offres, « non inclus » lisible par un lecteur d'écran", () => {
     mockMotion();
-    render(<MemoryRouter><Pricing /></MemoryRouter>);
+    render(<DataProvider forceMode="demo"><MemoryRouter><Pricing /></MemoryRouter></DataProvider>);
     const table = screen.getByRole("table");
     for (const name of ["Essai 14 jours", "Starter", "Pro", "Agence"]) expect(within(table).getByRole("columnheader", { name: new RegExp(name) })).toBeTruthy();
     const studioRow = within(table).getByRole("row", { name: /Annonces rédigées à partir des photos/ });

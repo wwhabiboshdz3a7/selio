@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Plan } from "@selio/contracts";
 import { repos } from "@selio/db";
-import { AppError, admin, isFinanceAuditAction, requireAction, seesFinances, supervision, withOrg } from "@selio/core";
+import { admin, adminAccounts, isFinanceAuditAction, requireAction, requireOperatorCapability, seesFinances, supervision, withOrg } from "@selio/core";
 import type { QueueStatsProvider } from "@selio/core";
 
 export default async function miscRoutes(app: FastifyInstance, opts: { queues: QueueStatsProvider; redisPing: () => Promise<number | null>; version: string }) {
@@ -21,7 +21,7 @@ export default async function miscRoutes(app: FastifyInstance, opts: { queues: Q
   /** Détail pour les opérateurs : latences, files, état de chaque cible supervisée et dernières vérifications. */
   app.get("/api/health/details", async (req, reply) => {
     const ctx = app.requireCtx(req);
-    if (!ctx.isOperator) throw new AppError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+    requireOperatorCapability(ctx, "admin.supervision");
     const [health, queues, checks] = await Promise.all([
       supervision.healthReport(app.services, healthDeps),
       opts.queues().catch(() => []),
@@ -43,7 +43,9 @@ export default async function miscRoutes(app: FastifyInstance, opts: { queues: Q
     const ctx = app.requireCtx(req);
     requireAction(ctx, "org.read");
     const list = await withOrg(ctx, (tx) => repos.audit.list(tx, Math.min(500, Number((req.query as { limit?: string }).limit ?? 100))));
-    return seesFinances(ctx.role) ? list : list.filter((a) => !isFinanceAuditAction(a.action));
+    // Actions internes de Selio Admin (qualification, note, accès offert, essai prolongé) : jamais montrées au client.
+    const visible = list.filter((a) => !adminAccounts.isInternalAdminAuditAction(a.action));
+    return seesFinances(ctx.role) ? visible : visible.filter((a) => !isFinanceAuditAction(a.action));
   });
   app.get("/api/admin/overview", async (req) => admin.adminOverview(app.requireCtx(req), { queues: opts.queues, redis: opts.redisPing }));
   app.post<{ Params: { id: string } }>("/api/admin/orgs/:id/plan", async (req, reply) => { await admin.adminSetPlan(app.requireCtx(req), req.params.id, (req.body as { plan: Plan }).plan); reply.status(204); });

@@ -10,11 +10,14 @@ import type { CloudAccount, CloudAction, CloudActionKind, CloudActionLevel, Clou
 import type { AutoBuySettings, PushSubscriptionInput, PushSubscriptionView, RadarAlertPayload, RadarMetrics, RadarReadOutcome, RadarSettings, RadarSettingsUpdate, RadarSourceKind } from "@selio/contracts";
 import type { GarmentKind, GeneratorPhoto, ItemCategory, LabelFieldName, MeasurementName, NamedMeasurementField, PhotoRole, PhotoRoleSource, SellerQuestion, StudioFields, StudioPrep, StudioPrepArticle, StudioSellerHints, WornPhotoJob } from "@selio/contracts";
 import type { StudioSimulatorHints } from "@selio/ai";
+import type { TrackAdminStatus, TrackAlertRulesInput, TrackFilterAlerts, TrackManualPauseInput } from "@selio/contracts";
 import type { PriceEstimate, PriceEstimateInput, PriceModelStatus, TrackSource, TrackBrandShare, TrackFilter, TrackFilterCreate, TrackFilterUpdate, TrackPhotoSearch, TrackPhotoSearchInput, TrackSalesFeed, TrackScan, TrackScanInput, TrackTrends } from "@selio/contracts";
 import type { AccountStats, AiHealthSummary, BreakdownRow, DashboardData, DressingSummary, ListingPerformance, MarketInsights, NegotiationResult, PeriodPreset, RepublicationPlan, SalesKpis, SeriesPoint, StockKpis, variantLeaderboard } from "@selio/domain";
 
 import type { BundleSuggestion, MarginsByPeriod, MarginTotals, ThresholdStatus } from "@selio/domain";
 import type { Photo, ReferralOverview } from "@selio/contracts";
+import type { AdminAccountDetail, AdminAccountRow, AdminAccountsQuery, AdminGrantInput, AdminGrowth, AdminQualificationInput, OperatorRole } from "@selio/contracts";
+import type { CommercialOffer, OfferInput, OfferRedemption, OfferUpdate, PromoCheckResult, PublicOffer } from "@selio/contracts";
 import type { MigrationApplyInput, MigrationConvertInput, MigrationFileInput, MigrationMapping, RuleKind, VintedLimits, VintedLimitsMeasurementInput } from "@selio/contracts";
 
 export type VariantLeaderboardRow = ReturnType<typeof variantLeaderboard>[number];
@@ -48,6 +51,8 @@ export interface Session {
   memberships: (Membership & { orgName: string })[];
   /** Inscription seulement : réponse du serveur sur le code de parrainage saisi (jamais bloquante). */
   referral?: { applied: boolean; reason?: string; message: string };
+  /** Inscription seulement : réponse du serveur sur le code promo saisi (offre commerciale, jamais bloquante). */
+  promo?: { applied: boolean; reason?: string; message: string };
 }
 
 export interface OverviewData {
@@ -687,6 +692,16 @@ export interface VintedLimitsView {
  */
 export type ReferralView = ReferralOverview & { proposal: boolean };
 
+/** Application d'un code promo (POST /api/billing/offer) : la vérification, plus l'offre enregistrée. */
+export type PromoApplyResult = PromoCheckResult & { applied: boolean; redemption?: OfferRedemption };
+
+/** DELETE /api/admin/offers/:id : supprimée (jamais utilisée) ou archivée (déjà utilisée). */
+export interface OfferDeleteResult {
+  deleted: boolean;
+  archived: boolean;
+  offer: CommercialOffer | null;
+}
+
 /** Santé d'un composant de l'API (miroir de `ComponentStatus`, packages/core/src/services/supervision.ts). */
 export type HealthComponentStatus = "ok" | "inline" | "down";
 
@@ -750,7 +765,8 @@ export interface DataClient {
   login(input: { email: string; password: string }): Promise<Session>;
   /** `trialDays` : durée de l'essai, 14 jours (seule valeur ; carte enregistrée, rien débité avant la fin). */
   /** `referralCode` : code de parrainage saisi (facultatif, jamais bloquant : un code refusé est ignoré). */
-  register(input: { email: string; password: string; displayName: string; orgName: string; trialDays?: TrialDays; referralCode?: string }): Promise<Session>;
+  /** `promoCode` : code promo d'une offre commerciale (facultatif, jamais bloquant ; appliqué au premier paiement). */
+  register(input: { email: string; password: string; displayName: string; orgName: string; trialDays?: TrialDays; referralCode?: string; promoCode?: string }): Promise<Session>;
   logout(): Promise<void>;
   switchOrg(orgId: string): Promise<Session>;
   /**
@@ -776,6 +792,15 @@ export interface DataClient {
   previewRole?(role: Role | null): Promise<Session>;
   // Parrainage (§5.15) : désactivé par défaut (REFERRAL_ENABLED), page masquée tant qu'il l'est
   getReferral(): Promise<ReferralView>;
+  // Offres commerciales (promotions sur les forfaits, gérées par l'équipe Selio)
+  /** Bandeau public (sans session) : offres actives avec bandeau. Démonstration : aucune tant qu'aucune n'est créée dans l'admin démo. */
+  getOfferBanner(): Promise<PublicOffer[]>;
+  /** Vérifie un code promo sans rien enregistrer (offre active, dans sa période, sous son maximum, forfait concerné). */
+  checkPromoCode(input: { code: string; plan?: PaidPlan; cycle?: BillingCycle }): Promise<PromoCheckResult>;
+  /** Offre appliquée à l'organisation (instantané de la remise), ou null. */
+  getOrgOffer(): Promise<OfferRedemption | null>;
+  /** Page Abonnement › « Ajouter un code promo » : une seule offre par organisation (refus 409 sinon). */
+  applyPromoCode(input: { code: string; plan?: PaidPlan }): Promise<PromoApplyResult>;
   // Articles
   listItems(query: Partial<InventoryQuery>): Promise<Page<InventoryItem>>;
   listItemBrands(): Promise<string[]>;
@@ -918,6 +943,14 @@ export interface DataClient {
   trackSalesFeed(): Promise<TrackSalesFeed>;
   /** Quotas et utilisation de Track sur le mois, et disponibilité selon l'offre. */
   trackUsage(): Promise<TrackUsageView>;
+  /** Alertes de tendance d'un filtre : réglage (coupé par défaut) et dernières alertes déclenchées. */
+  trackFilterAlerts(filterId: string): Promise<TrackFilterAlerts>;
+  /** Modifie le réglage des alertes d'un filtre (`enabled: false` coupe tout). Une alerte par règle et par 24 h au plus. */
+  updateTrackFilterAlerts(filterId: string, rules: TrackAlertRulesInput): Promise<TrackFilterAlerts>;
+  // Selio Track dans l'administration (opérateurs ; pause et reprise : rôle « tech »)
+  adminTrack(): Promise<TrackAdminStatus>;
+  adminPauseTrack(input: TrackManualPauseInput): Promise<TrackAdminStatus>;
+  adminResumeTrack(): Promise<TrackAdminStatus>;
   // Estimation des prix
   /** Fourchette P25 / P50 / P75, trois stratégies, délai, méthode ; explication en mots si demandée (facultative). */
   estimatePrice(input: PriceEstimateInput): Promise<PriceEstimate>;
@@ -985,6 +1018,29 @@ export interface DataClient {
   adminListAudit(limit?: number): Promise<AuditLog[]>;
   /** Supervision (Admin › Supervision) : dernières vérifications de /api/health et /api/ai/health, état, alertes. */
   getHealthDetails(): Promise<HealthDetailsView>;
+  // Selio Admin : croissance et comptes (opérateurs « business » et « tech »)
+  /** Tableau de croissance : comptes, essais, payants, accès offerts, qualifications, inscriptions, revenu mensuel estimé. */
+  getAdminGrowth(): Promise<AdminGrowth>;
+  /** Comptes (organisations) : recherche et filtres (qualification, plan, statut ou « granted » pour les accès offerts). */
+  adminListAccounts(query?: AdminAccountsQuery): Promise<AdminAccountRow[]>;
+  adminGetAccount(orgId: string): Promise<AdminAccountDetail>;
+  /** Qualification (client, bêta, partenaire, équipe, test, bloqué) et note interne facultative. */
+  adminQualifyAccount(orgId: string, input: AdminQualificationInput): Promise<AdminAccountDetail>;
+  adminSetAccountNote(orgId: string, note: string): Promise<AdminAccountDetail>;
+  /** Accès offert : plan payant jusqu'à une date (null : sans fin, équipe Selio seulement), sans débit. */
+  adminGrantAccess(orgId: string, input: AdminGrantInput): Promise<AdminAccountDetail>;
+  adminRevokeAccess(orgId: string): Promise<AdminAccountDetail>;
+  /** Prolonge l'essai de 1 à 90 jours. */
+  adminExtendTrial(orgId: string, days: number): Promise<AdminAccountDetail>;
+  /** Démonstration seulement : voir Selio Admin avec un autre rôle d'opérateur (null : revenir au sien, « tech »). */
+  previewOperatorRole?(role: OperatorRole | null): Promise<Session>;
+  /** Offres commerciales (Admin › Offres) : opérateurs « tech » et « business ». */
+  adminListOffers(): Promise<CommercialOffer[]>;
+  adminCreateOffer(input: OfferInput): Promise<CommercialOffer>;
+  /** Modifier, activer ou désactiver, régler le bandeau. */
+  adminUpdateOffer(id: string, input: OfferUpdate): Promise<CommercialOffer>;
+  /** Suppression réelle si l'offre n'a jamais servi, sinon archivage. */
+  adminDeleteOffer(id: string): Promise<OfferDeleteResult>;
   // Selio Agents (aperçu) : marque blanche
   /** Marque blanche enregistrée (null tant qu'elle n'est pas personnalisée, et toujours en mode connecté). */
   getWhiteLabel(): Promise<WhiteLabel | null>;

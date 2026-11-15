@@ -51,10 +51,12 @@ function hasSession(session: StorageState | null): session is StorageState {
 
 /** Issue de `fetchPage` pour un scénario (exportée pour les tests d'autres paquets). */
 export async function fakeFetchOutcome(scenario: FakeFetchScenario, input: FetchPageInput, pageHtml: (url: string) => string): Promise<FetchPageOutcome> {
-  if (!hasSession(input.session)) {
+  // Page publique (Selio Track) : lue sans session, aucune session rendue.
+  const isPublic = input.publicPage === true && !hasSession(input.session);
+  if (!isPublic && !hasSession(input.session)) {
     return { ok: false, code: "not_logged_in", message: "Aucune session enregistrée pour le compte Achat (simulé).", launched: false, durationMs: 0 };
   }
-  const session = filterStorageState(input.session);
+  const session = isPublic ? undefined : filterStorageState(input.session!);
   if (typeof scenario === "function") return scenario(input);
   if (typeof scenario === "object" && "ok" in scenario) return scenario;
   if (typeof scenario === "object") {

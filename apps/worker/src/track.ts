@@ -87,7 +87,9 @@ export class CloudTrackReader implements TrackReader {
       return { ok: false, code: "error", message: "Domaine Vinted refusé : aucune page lue.", launched: false, durationMs: 0 };
     }
     // Page entière (aucun filtre dans le lecteur) : le filtre local est appliqué par `toTrackReaderOutcome`.
-    const r = await this.reader.readSearch({ session: null, url });
+    // `publicPage` : l'exécuteur ouvre un contexte vierge (aucun cookie, aucune session relue) pour une page
+    // catalogue seulement ; sans ce drapeau, l'absence de session serait refusée (« not_logged_in »).
+    const r = await this.reader.readSearch({ session: null, publicPage: true, url });
     const out = toTrackReaderOutcome(r, input.criteria);
     const meta = { fingerprint: shortFp(input.fingerprint), outcome: r.outcome, items: out.ok ? out.items.length : 0, seen: r.seenCount, ms: r.durationMs };
     if (r.outcome === "blocked") this.log.warn({ ...meta, code: r.blocked?.code ?? null }, "track : Vinted a arrêté la lecture (aucun contournement, Track mis en pause)");
@@ -145,6 +147,10 @@ export interface TrackTickSummary {
   errors: number;
   /** Track en pause (signal pendant ce passage, ou pause en cours). */
   paused: boolean;
+  /** Pause manuelle posée par un opérateur depuis /admin/track (relue à chaque lecture, sans redémarrage). */
+  manualPause: boolean;
+  /** Alertes de tendance déclenchées après les instantanés du passage (notifications en file). */
+  alerts: number;
   /** Coupe-circuit de la machine déclenché pendant ce passage, sinon null. */
   circuitUntil: string | null;
   /** Facteur de ralentissement partagé après le passage (lectures en direct). */
@@ -164,7 +170,7 @@ export async function trackTick(services: Services, log: TaskLogger, deps: Track
   const clock = () => deps.now?.() ?? services.now();
   const live = track.trackLiveEnabled(services) && !!services.track?.reader;
   const source: TrackSource = live ? "cloud" : "demo";
-  const summary: TrackTickSummary = { source, due: 0, reads: 0, ok: 0, references: 0, gone: 0, anomalies: 0, blocked: 0, skipped: {}, errors: 0, paused: false, circuitUntil: null, factor: 1, waitedMs: 0 };
+  const summary: TrackTickSummary = { source, due: 0, reads: 0, ok: 0, references: 0, gone: 0, anomalies: 0, blocked: 0, skipped: {}, errors: 0, paused: false, manualPause: false, alerts: 0, circuitUntil: null, factor: 1, waitedMs: 0 };
   const sleep = deps.sleep ?? realSleep;
   const maxWaitMs = Math.max(0, deps.maxWaitMs ?? 0);
   const skip = (reason: string) => { summary.skipped[reason] = (summary.skipped[reason] ?? 0) + 1; };
@@ -209,8 +215,9 @@ export async function trackTick(services: Services, log: TaskLogger, deps: Track
     if (res.outcome === null) for (const x of taken) x.limiter.release(x.token);
     if (res.skipped) {
       skip(res.skipped);
-      if (res.skipped === "paused" || res.skipped === "machine_paused") {
+      if (res.skipped === "paused" || res.skipped === "machine_paused" || res.skipped === "manual_pause") {
         summary.paused = true;
+        if (res.skipped === "manual_pause") summary.manualPause = true;
         break;
       }
       continue;
@@ -222,6 +229,7 @@ export async function trackTick(services: Services, log: TaskLogger, deps: Track
       summary.ok++;
       summary.references += res.references;
       summary.gone += res.goneCount;
+      summary.alerts += res.alerts;
     } else if (!res.paused) {
       summary.anomalies++;
       log.warn({ fingerprint: shortFp(p.fingerprint), outcome: res.outcome, factor: res.factor }, "track : lecture anormale (comptée ; l'empreinte ralentit après 3 de suite)");

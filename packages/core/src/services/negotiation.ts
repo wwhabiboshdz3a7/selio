@@ -4,7 +4,7 @@ import {
   VINTED_LIMITS_MEASUREMENT_PROTOCOL, bundlePolicyFor, can, escalatingSituation, evaluateBundleOffer, extractOfferCents, isAutomatable, keywordMatches, matchSituation, normalizeKeyword, recordMeasuredLimits, vintedLimitsStatus,
   type BundleNegotiationResult, type LimitsContext, type MeasurementStep, type SituationMatch,
 } from "@selio/domain";
-import { AppError, requireAction, withOrg, type OrgContext } from "../context";
+import { AppError, isTechOperator, requireAction, withOrg, type OrgContext } from "../context";
 
 type NegotiationLimitsRecord = repos.NegotiationLimitsRecord;
 
@@ -56,7 +56,7 @@ export async function effectiveLimitsTx(tx: Tx, org: Pick<Organization, "setting
 }
 
 function canRecordOrg(ctx: OrgContext): boolean {
-  return ctx.isOperator || can(ctx.role, "org.update");
+  return isTechOperator(ctx) || can(ctx.role, "org.update");
 }
 
 export async function getLimits(ctx: OrgContext): Promise<LimitsView> {
@@ -64,7 +64,7 @@ export async function getLimits(ctx: OrgContext): Promise<LimitsView> {
   return withOrg(ctx, async (tx) => {
     const org = await repos.orgs.byId(tx, ctx.orgId);
     const eff = await effectiveLimitsTx(tx, org);
-    return { ...eff, status: vintedLimitsStatus(eff.limits), protocol: VINTED_LIMITS_MEASUREMENT_PROTOCOL, history: await repos.negotiationLimits.history(tx), canRecord: { org: canRecordOrg(ctx), global: ctx.isOperator } };
+    return { ...eff, status: vintedLimitsStatus(eff.limits), protocol: VINTED_LIMITS_MEASUREMENT_PROTOCOL, history: await repos.negotiationLimits.history(tx), canRecord: { org: canRecordOrg(ctx), global: isTechOperator(ctx) } };
   });
 }
 
@@ -76,7 +76,7 @@ export async function getLimits(ctx: OrgContext): Promise<LimitsView> {
 export async function recordLimits(ctx: OrgContext, raw: unknown): Promise<LimitsView> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const scope = body.scope === "global" ? "global" : "org";
-  if (scope === "global" && !ctx.isOperator) throw new AppError("forbidden", "Seul un opérateur Selio peut enregistrer une mesure pour toute l'équipe.", 403);
+  if (scope === "global" && !isTechOperator(ctx)) throw new AppError("forbidden", "Seul un opérateur Selio peut enregistrer une mesure pour toute l'équipe.", 403);
   if (scope === "org" && !canRecordOrg(ctx)) throw new AppError("forbidden", "Action réservée à un administrateur de l'organisation.", 403);
   const parsed = vintedLimitsMeasurementInput.safeParse(body);
   if (!parsed.success) throw new AppError("validation", "Mesure invalide", 400, parsed.error.flatten());

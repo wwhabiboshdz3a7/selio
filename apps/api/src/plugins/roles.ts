@@ -44,6 +44,8 @@ export const PHOTOGRAPHER_ROUTES: ReadonlySet<string> = new Set([
   "GET /api/billing/usage",
   "GET /api/health",
   "GET /api/status",
+  // Bandeau des offres commerciales : public (vitrine comprise), sans donnée de l'organisation.
+  "GET /api/offers/banner",
 ]);
 
 /** Préfixes toujours permis : la session et le compte de la personne (connexion, déconnexion, mot de passe). */

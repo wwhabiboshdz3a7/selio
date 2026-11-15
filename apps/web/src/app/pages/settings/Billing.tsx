@@ -14,6 +14,11 @@ import { WIDGET_LOAD_ERROR, payWithRevolutPopup } from "../../../lib/payments/re
 import { QueryBoundary } from "../../components/common";
 import { useAppMutation } from "../../components/hooks";
 import { UsageMeter } from "../../components/usage";
+import { DiscountedPrice, OfferHint, useOfferBanner } from "../../components/offers";
+import { discountedFor, offerConditionLabel } from "../../../lib/offers";
+import { offerDiscountLabel, offerPlansLabel, redemptionDiscountFor, type OfferRedemption } from "@selio/contracts";
+import { isGrantWithoutEnd } from "@selio/contracts";
+import { Field, Input } from "@selio/ui";
 
 const STATUS_TONE: Record<Subscription["status"], "success" | "accent" | "danger" | "muted"> = { none: "muted", trialing: "accent", active: "success", past_due: "danger", canceled: "muted", incomplete: "danger" };
 const PROVIDER_LABELS: Record<Subscription["provider"], string> = { none: "Aucun paiement enregistré", revolut: "Revolut (carte, Apple Pay, Google Pay, Revolut Pay)" };
@@ -63,6 +68,9 @@ export default function Billing() {
   const qc = useQueryClient();
   const sub = useQuery({ queryKey: ["subscription"], queryFn: () => client.getSubscription() });
   const usage = useQuery({ queryKey: ["usage"], queryFn: () => client.getUsage() });
+  // Offre commerciale : celle appliquée à l'organisation (code promo), sinon l'offre publique du bandeau.
+  const orgOffer = useQuery({ queryKey: ["org-offer"], queryFn: () => client.getOrgOffer() });
+  const publicOffers = useOfferBanner("app").data;
   const manage = can(session.role, "billing.manage");
   const [cycleChoice, setCycleChoice] = useState<BillingCycle | null>(null);
   const cycle: BillingCycle = cycleChoice ?? sub.data?.cycle ?? "monthly";
@@ -159,6 +167,8 @@ export default function Billing() {
         {(u) => <CapacityCard u={u} />}
       </QueryBoundary>
 
+      <PromoCard redemption={orgOffer.data ?? null} loading={orgOffer.isLoading} manage={manage} />
+
       <Card padding="none">
         <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-4 md:px-5">
           <h2 className="text-md font-semibold">{s && isRunning(s) && s.status !== "trialing" ? "Changer d'offre" : "Choisir une offre"}</h2>
@@ -181,6 +191,11 @@ export default function Billing() {
           {PLAN_OFFERS.map((p) => {
             const action = s ? offerAction(s, p.key) : null;
             const price = planPriceCents(p.key, cycle);
+            // Prix remisé : l'offre de l'organisation d'abord (code appliqué), sinon l'offre publique en cours.
+            const own = orgOffer.data ? redemptionDiscountFor(orgOffer.data, p.key, cycle, price) : null;
+            const pub = own || orgOffer.data ? null : discountedFor(publicOffers, p.key, price);
+            const discounted = own ? price - own.discountCents : pub?.cents ?? null;
+            const hint = own ? `Votre offre « ${orgOffer.data!.name} »` : pub ? offerConditionLabel(pub.offer, cycle) : null;
             return (
               <li key={p.key} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center md:px-5">
                 <div className="min-w-0 flex-1">
@@ -190,7 +205,8 @@ export default function Billing() {
                 <p className="num shrink-0 text-sm text-text sm:text-right">
                   {showIndicativePricing ? (
                     <>
-                      {formatCents(price)}<span className="text-text-muted"> / {cycle === "yearly" ? "an" : "mois"}</span>
+                      {discounted !== null ? <DiscountedPrice normalCents={price} discountedCents={discounted} className="sm:justify-end" /> : formatCents(price)}<span className="text-text-muted"> / {cycle === "yearly" ? "an" : "mois"}</span>
+                      {discounted !== null && hint ? <OfferHint text={hint} title={pub?.offer.name} /> : null}
                       {cycle === "yearly" ? <span className="block text-xs text-text-muted">soit {formatCents(Math.round(price / 12))} par mois</span> : null}
                     </>
                   ) : "À définir"}
@@ -293,17 +309,92 @@ function OfferCard({ s, manage, onCancel, onReactivate, reactivating, onCardUpda
         </Alert>
       ) : null}
 
+      {s.grantedUntil ? (
+        <Alert tone="success" className="mt-4" title="Accès offert par l'équipe Selio">
+          Votre offre {PLAN_LABELS[s.plan]} vous est offerte {isGrantWithoutEnd(s.grantedUntil) ? "sans date de fin" : `jusqu'au ${formatDate(s.grantedUntil, "long")}`} : rien n'est débité. {isGrantWithoutEnd(s.grantedUntil) ? "" : "Ensuite, l'espace repasse à l'accès de base, sauf si vous choisissez une offre."}
+        </Alert>
+      ) : null}
+
       <DescriptionList className="mt-4" columns={2} items={[
-        { label: "Paiement", value: PROVIDER_LABELS[s.provider] },
+        { label: "Paiement", value: s.grantedUntil ? "Aucun (accès offert)" : PROVIDER_LABELS[s.provider] },
         { label: "Carte bancaire", value: s.cardOnFile ? <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1"><span className="inline-flex items-center gap-1.5"><CreditCard className="size-4 text-text-muted" aria-hidden />Carte enregistrée</span>{s.status === "past_due" ? null : changeCardButton}</span> : "Aucune carte enregistrée" },
-        { label: trial ? "Fin de l'essai" : s.cancelAtPeriodEnd ? "Fin d'accès" : running ? "Prochaine échéance" : "Fin de période", value: s.currentPeriodEnd ? formatDate(s.currentPeriodEnd) : "—" },
-        { label: "Renouvellement", value: s.cancelAtPeriodEnd ? "Résiliation à la fin de la période" : nextPlan && running ? `Passage à ${nextPlan} au prochain renouvellement` : trial ? (s.cardOnFile ? `Automatique à la fin de l'essai (${CYCLE_LABELS[s.cycle]})` : "Carte à enregistrer") : running ? `Automatique (${CYCLE_LABELS[s.cycle]})` : "—" },
+        { label: s.grantedUntil ? "Fin de l'accès offert" : trial ? "Fin de l'essai" : s.cancelAtPeriodEnd ? "Fin d'accès" : running ? "Prochaine échéance" : "Fin de période", value: s.grantedUntil ? (isGrantWithoutEnd(s.grantedUntil) ? "Sans fin" : formatDate(s.grantedUntil)) : s.currentPeriodEnd ? formatDate(s.currentPeriodEnd) : "—" },
+        { label: "Renouvellement", value: s.grantedUntil ? "Aucun débit" : s.cancelAtPeriodEnd ? "Résiliation à la fin de la période" : nextPlan && running ? `Passage à ${nextPlan} au prochain renouvellement` : trial ? (s.cardOnFile ? `Automatique à la fin de l'essai (${CYCLE_LABELS[s.cycle]})` : "Carte à enregistrer") : running ? `Automatique (${CYCLE_LABELS[s.cycle]})` : "—" },
       ]} />
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
         <Link to="/app/settings/invoices" className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"><Receipt className="size-4" aria-hidden />Voir mes factures</Link>
-        {manage && running && !s.cancelAtPeriodEnd ? <Button size="sm" variant="danger" onClick={onCancel}>Résilier</Button> : null}
+        {manage && running && !s.cancelAtPeriodEnd && !s.grantedUntil ? <Button size="sm" variant="danger" onClick={onCancel}>Résilier</Button> : null}
       </div>
+    </Card>
+  );
+}
+
+/**
+ * Code promo (offre commerciale) : l'offre appliquée (remise, forfaits, mois restants) ou « Ajouter un code
+ * promo » pour le titulaire. Une seule offre par organisation ; le serveur vérifie tout et répond par un message.
+ */
+function PromoCard({ redemption, loading, manage }: { redemption: OfferRedemption | null; loading: boolean; manage: boolean }) {
+  const client = useClient();
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const apply = useAppMutation((c: string) => client.applyPromoCode({ code: c }), {
+    invalidate: ["org-offer"],
+    success: "Code promo enregistré",
+    onSuccess: () => {
+      setOpen(false);
+      setCode("");
+      setError(null);
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : "Code promo refusé."),
+  });
+  if (loading) return null;
+  if (redemption) {
+    const remaining = redemption.monthsRemaining === null ? "tant que l'abonnement dure" : redemption.monthsRemaining === 0 ? "remise terminée" : `encore ${redemption.monthsRemaining} échéance${redemption.monthsRemaining > 1 ? "s" : ""} mensuelle${redemption.monthsRemaining > 1 ? "s" : ""} remisée${redemption.monthsRemaining > 1 ? "s" : ""}`;
+    return (
+      <Card data-testid="promo-card">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-md font-semibold">Votre offre en cours</h2>
+          <Tag accent>{offerDiscountLabel(redemption)}</Tag>
+        </div>
+        <p className="mt-2 text-sm text-text">« {redemption.name} »{redemption.code ? <> · code <span className="num font-medium">{redemption.code}</span></> : null}</p>
+        <p className="mt-1 text-sm text-text-muted">{offerDiscountLabel(redemption)} sur {offerPlansLabel(redemption.plans)}, {remaining}. La remise apparaît sur chaque facture concernée ; un mois offert du parrainage passe avant elle (jamais les deux sur la même échéance).</p>
+      </Card>
+    );
+  }
+  if (!manage) return null;
+  return (
+    <Card data-testid="promo-card">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-md font-semibold">Code promo</h2>
+        {!open ? <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>Ajouter un code promo</Button> : null}
+      </div>
+      {open ? (
+        <form
+          className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end"
+          noValidate
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!code.trim()) {
+              setError("Saisissez un code promo.");
+              return;
+            }
+            setError(null);
+            apply.mutate(code.trim());
+          }}
+        >
+          <div className="min-w-0 flex-1">
+            <Field label="Code promo" error={error ?? undefined} hint="Une seule offre par abonnement ; la remise s'applique à vos prochains paiements.">
+              {(p) => <Input id={p.id} invalid={p.invalid} aria-describedby={p.describedBy} value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} autoComplete="off" spellCheck={false} maxLength={40} placeholder="ex. PRINTEMPS" className="num tracking-[0.1em]" />}
+            </Field>
+          </div>
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" variant="accent" loading={apply.isPending}>Appliquer</Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => { setOpen(false); setError(null); }}>Annuler</Button>
+          </div>
+        </form>
+      ) : <p className="mt-1 text-sm text-text-muted">Vous avez reçu un code ? Ajoutez-le ici : la remise s'appliquera à votre prochain paiement.</p>}
     </Card>
   );
 }

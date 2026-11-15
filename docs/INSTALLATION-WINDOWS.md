@@ -95,6 +95,7 @@ CORS_ORIGINS=https://seliovprod.netlify.app
 COOKIE_SECURE=true
 TRUST_PROXY=true
 OPERATOR_EMAILS=<email d'Ibrahim>
+OPERATOR_BUSINESS_EMAILS=<email d'Elias>
 
 AI_PROVIDER=ollama
 ALLOW_AI_FALLBACK=false
@@ -116,6 +117,8 @@ REVOLUT_WEBHOOK_SECRET=
 EMAIL_PROVIDER=noop
 ```
 
+`OPERATOR_EMAILS` donne le rôle **technique** de Selio Admin (`/admin` : tout, santé, supervision, IA, modèle de prix) ; `OPERATOR_BUSINESS_EMAILS` le rôle **business** (tableau de croissance, comptes, offres commerciales, usage de Track). Plusieurs adresses : séparées par des virgules. Ces listes sont relues à chaque requête : un compte **déjà créé** (comme celui d'Ibrahim, ou celui d'Elias) devient opérateur sans se réinscrire, il suffit de relancer `docker compose -f docker-compose.prod.yml up -d` après la modification de `.env`.
+
 Sans Revolut, l'application affiche « Le paiement n'est pas configuré » et l'essai de 14 jours fonctionne. Sans email, rien ne part (invitations et mot de passe oublié inactifs) : c'est signalé au démarrage, ce n'est pas une erreur.
 
 ## 5. Démarrer le serveur
@@ -127,7 +130,7 @@ docker compose -f docker-compose.prod.yml logs --tail=50 migrate api worker
 curl -s http://127.0.0.1:8787/api/health
 ```
 
-Les migrations (0001 à 0018) s'appliquent toutes seules. Puis vérifier l'IA depuis le projet :
+Les migrations (0001 à 0021) s'appliquent toutes seules. Puis vérifier l'IA depuis le projet :
 
 ```bash
 cd ~/selio
@@ -159,7 +162,7 @@ Noter l'adresse affichée (`https://xxxx.trycloudflare.com`). Elle change à cha
    `VITE_API_BASE_URL = https://seliovprod.netlify.app`
    puis Deploys › Trigger deploy › Clear cache and deploy site.
 3. Ouvrir `https://seliovprod.netlify.app/api/health` : doit répondre `{"ok":true,…}`.
-4. Créer le premier compte sur `https://seliovprod.netlify.app/inscription` avec l'email mis dans `OPERATOR_EMAILS` : il aura l'accès `/admin`.
+4. Créer le premier compte sur `https://seliovprod.netlify.app/inscription` avec l'email mis dans `OPERATOR_EMAILS` : à chaque connexion, il arrive sur Selio Admin (`/admin`). Un compte déjà créé avant l'ajout de son email dans `.env` y a accès dès la relance de l'API.
 
 ## 8. Où vont les variables
 
@@ -172,6 +175,11 @@ Noter l'adresse affichée (`https://xxxx.trycloudflare.com`). Elle change à cha
 | Mentions des factures (`VITE_INVOICE_ISSUER_*`) | Netlify | avant la première vraie facture |
 
 Après une modification de `deploy/.env` : `docker compose -f docker-compose.prod.yml up -d` (redémarre l'API et le worker). Après une modification sur Netlify : redéployer le site.
+
+**Accès d'Elias à Selio Admin** (une fois) :
+1. Dans `deploy/.env`, ajouter son email : `OPERATOR_BUSINESS_EMAILS=<email d'Elias>` (rôle business ; Ibrahim reste dans `OPERATOR_EMAILS`, rôle technique).
+2. Relancer : `docker compose -f docker-compose.prod.yml up -d`. Elias, déjà inscrit, se reconnecte : il arrive sur `/admin` avec le badge « Business ».
+3. Ibrahim ouvre `/admin/comptes`, puis la fiche de son propre compte et celle du compte d'Elias : bouton **« Qualifier « Équipe Selio » »** (qualification « Équipe Selio » et plan Agence offert sans fin). L'essai et son bandeau disparaissent, rien n'est jamais débité ; l'action est inscrite dans l'historique de la fiche.
 
 ## 9. Chiffres à relever et renvoyer
 

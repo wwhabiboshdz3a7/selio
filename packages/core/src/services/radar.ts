@@ -12,7 +12,7 @@ import {
   rankOpportunities, resolvePurchaseAccount, runPurchaseChecks, scoreOpportunity,
   type Estimate, type PurchaseCost,
 } from "@selio/domain";
-import { AppError, nowIso, requireAction, withOrg, type OrgContext, type Services, type ServicesConfig } from "../context";
+import { AppError, nowIso, requireAction, requireOperatorCapability, withOrg, type OrgContext, type Services, type ServicesConfig } from "../context";
 import { enqueueAutoSuspendedAlert, enqueueBlockedAlert, enqueueOpportunityAlert, enqueuePaymentAlert, enqueueSearchSuspendedAlert, localDayStart, sendDueAlerts, type SendAlertsSummary } from "./alerts";
 import * as cloud from "./cloud";
 import * as pricing from "./pricing";
@@ -1396,7 +1396,7 @@ export interface AdminRadarOverview {
  * donnée de vendeur ni d'annonce (ni titre, ni pseudo, ni photo, ni adresse) : seulement des compteurs.
  */
 export async function adminRadarOverview(ctx: OrgContext, opts: { days?: number } = {}): Promise<AdminRadarOverview> {
-  if (!ctx.isOperator) throw new AppError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+  requireOperatorCapability(ctx, "admin.radar");
   const services = ctx.services;
   const days = Math.min(90, Math.max(1, Math.round(opts.days ?? 7)));
   const now = services.now();

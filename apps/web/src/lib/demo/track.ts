@@ -2,6 +2,8 @@ import {
   ITEM_CATEGORY_LABELS, TRACK_BRAND_SHARES_MAX, TRACK_DEMO_NOTICE, TRACK_GONE_NOTICE, TRACK_INSUFFICIENT_DATA, TRACK_LEGAL_NOTICE, TRACK_READ_INTERVAL_HOURS,
   TRACK_SALES_FEED_DAYS, TRACK_SCAN_MIN_REFERENCES, TRACK_SCAN_MIN_SOLD, TRACK_SCAN_WINDOW_DAYS, TRACK_TRENDS_DAYS, TRACK_TRENDS_DEFAULT_DAYS,
   type InventoryItem, type ItemCategory, type MarketObservation, type TrackBrandShare, type TrackCriteria, type TrackFilter, type TrackPhotoSearch, type TrackSalesFeed, type TrackSalesFeedRow, type TrackScan, type TrackTrendPoint,
+  TRACK_ALERT_COOLDOWN_HOURS, TRACK_ALERT_MIN_REFERENCE_SNAPSHOTS, TRACK_ALERT_NOTICE, TRACK_ALERT_REFERENCE_DAYS, TRACK_SOURCE_LABELS, trackAlertRules,
+  type TrackAdminOrgUsage, type TrackAdminRead, type TrackAdminStatus, type TrackAlertEvent, type TrackAlertRules, type TrackFilterAlerts,
 } from "@selio/contracts";
 import { hashString, newId, seededRandom } from "@selio/domain";
 import type { TrackTrendsView } from "../data/types";
@@ -20,7 +22,12 @@ export interface DemoTrackState {
   scans: TrackScan[];
   /** Description et estimation seulement : la photo n'est jamais gardée. */
   photoSearches: TrackPhotoSearch[];
+  /** Pause manuelle posée depuis l'administration (démonstration : aucun worker, aucun effet réel). */
+  manualPause?: { paused: boolean; since: string | null; by: string | null; reason: string | null };
 }
+
+/** Réglage des alertes par défaut : tout est coupé. */
+export const DEFAULT_ALERT_RULES: TrackAlertRules = trackAlertRules.parse({});
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -60,7 +67,7 @@ export function completeCriteria(c: Partial<TrackCriteria>): TrackCriteria {
 
 function filter(orgId: string, name: string, criteria: TrackCriteria, createdAt: Date): TrackFilter {
   const iso = createdAt.toISOString();
-  return { id: newId(), orgId, name, criteria, fingerprint: demoFingerprint(criteria), enabled: true, lastReadAt: null, nextReadAt: null, createdAt: iso, updatedAt: iso };
+  return { id: newId(), orgId, name, criteria, fingerprint: demoFingerprint(criteria), enabled: true, alertRules: DEFAULT_ALERT_RULES, lastReadAt: null, nextReadAt: null, createdAt: iso, updatedAt: iso };
 }
 
 // ---------------------------------------------------------------- simulateur de lectures (déterministe)
@@ -209,4 +216,99 @@ export function seedDemoTrack(orgId: string, market: readonly MarketObservation[
   ];
   const scans = [demoNicheScan(orgId, { brand: "Ralph Lauren", category: "men" }, market, items, new Date(t - 3 * DAY))];
   return { version: 1, filters, scans, photoSearches: [] };
+}
+
+// ---------------------------------------------------------------- alertes de tendance (démonstration)
+
+const eur = (cents: number) => `${(Math.round(cents) / 100).toFixed(2).replace(".", ",")} €`;
+const medianOf = (xs: readonly number[]) => {
+  const s = [...xs].sort((a, b) => a - b);
+  if (!s.length) return null;
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
+};
+
+/**
+ * Alertes d'un filtre en démonstration : les règles allumées sont rejouées sur les 14 derniers jours de la
+ * tendance simulée (un point par jour, une alerte par règle et par jour au plus), mêmes textes que le
+ * serveur. Le délai de vente n'est pas simulé : sa règle ne déclenche rien ici. Tout est signalé comme
+ * données de démonstration ; aucune notification n'est envoyée.
+ */
+export function demoFilterAlerts(f: TrackFilter, historyMonths: number, now: Date): TrackFilterAlerts {
+  const rules = trackAlertRules.parse(f.alertRules ?? {});
+  const events: TrackAlertEvent[] = [];
+  if (rules.enabled) {
+    const points = demoTrends(f, 30, historyMonths, now).points;
+    const from = Math.max(TRACK_ALERT_MIN_REFERENCE_SNAPSHOTS, points.length - 14);
+    for (let i = from; i < points.length; i++) {
+      const p = points[i]!;
+      const at = `${p.day}T12:00:00.000Z`;
+      const base = { orgId: f.orgId, filterId: f.id, source: "demo" as const, notified: false, readAt: at, createdAt: at };
+      const ref = medianOf(points.slice(Math.max(0, i - TRACK_ALERT_REFERENCE_DAYS), i).map((x) => x.medianPriceCents).filter((v): v is number => v !== null));
+      if (rules.medianPrice.enabled && p.medianPriceCents !== null && ref) {
+        const change = (p.medianPriceCents - ref) / ref;
+        if (Math.round(Math.abs(change) * 100) >= rules.medianPrice.percent) {
+          events.push({ ...base, id: `demo-${f.id}-prix-${p.day}`, rule: "median_price", value: Math.round(change * 1000) / 1000, reference: Math.round(ref), message: `Prix médian en ${change > 0 ? "hausse" : "baisse"} de ${Math.round(Math.abs(change) * 100)} % : ${eur(p.medianPriceCents)} contre ${eur(ref)} sur les ${TRACK_ALERT_REFERENCE_DAYS} jours précédents.` });
+        }
+      }
+      // Nouvelles annonces d'une lecture (12 lectures par jour) au-dessus du seuil.
+      const perRead = Math.round(p.newCount / 12);
+      if (rules.newListings.enabled && perRead >= rules.newListings.threshold) {
+        events.push({ ...base, id: `demo-${f.id}-nouvelles-${p.day}`, rule: "new_listings", value: perRead, reference: rules.newListings.threshold, message: `${perRead} nouvelles annonces depuis la lecture précédente (seuil : ${rules.newListings.threshold}).` });
+      }
+    }
+  }
+  return { filterId: f.id, rules, events: events.reverse().slice(0, 30), cooldownHours: TRACK_ALERT_COOLDOWN_HOURS, notices: [TRACK_ALERT_NOTICE, TRACK_DEMO_NOTICE, "Démonstration : les alertes sont rejouées sur l'historique simulé et aucune notification n'est envoyée."] };
+}
+
+// ---------------------------------------------------------------- administration (démonstration)
+
+/**
+ * Vue « Track » de l'administration en démonstration : simulateur, interrupteur fermé, lectures simulées
+ * des filtres de la démo (empreintes abrégées), aucun blocage (aucune page de Vinted n'est jamais lue),
+ * usage de l'organisation de la démo et de trois organisations d'exemple. La pause manuelle est gardée
+ * dans l'état de la démo (aucun worker).
+ */
+export function demoAdminTrack(input: { state: DemoTrackState; org: { id: string; name: string; plan: string }; quotas: { filters: number; scans: number; photoSearches: number }; month: { scans: number; photoSearches: number }; canControl: boolean; now: Date }): TrackAdminStatus {
+  const { state, now } = input;
+  const manual = state.manualPause ?? { paused: false, since: null, by: null, reason: null };
+  const reads: TrackAdminRead[] = [];
+  for (const f of state.filters.filter((x) => x.enabled)) {
+    const t = demoReadTimes(f.fingerprint, f.createdAt, now);
+    const trend = demoTrends(f, 7, 12, now).points.at(-1);
+    for (let k = 0; k < 3; k++) {
+      const at = new Date(new Date(t.lastReadAt).getTime() - k * READ_MS);
+      if (at.getTime() < new Date(f.createdAt).getTime()) break;
+      if (manual.paused && manual.since && at.toISOString() > manual.since) continue;
+      reads.push({ fingerprint: f.fingerprint.slice(0, 12), readAt: at.toISOString(), source: "demo", outcome: "ok", listed: trend?.listedCount ?? 0, newCount: Math.round((trend?.newCount ?? 0) / 12), goneCount: Math.round((trend?.goneCount ?? 0) / 12), factor: 1, message: null });
+    }
+  }
+  reads.sort((a, b) => b.readAt.localeCompare(a.readAt));
+  const sample = (orgId: string, name: string, plan: "pro" | "agence", filters: number, enabled: number, scans: number, photoSearches: number, alertFilters: number): TrackAdminOrgUsage => {
+    const q = plan === "pro" ? { f: 5, s: 10, p: 30 } : { f: 25, s: 50, p: 150 };
+    return { orgId, name, plan, filters: { used: filters, quota: q.f, enabled }, scans: { used: scans, quota: q.s }, photoSearches: { used: photoSearches, quota: q.p }, alertFilters };
+  };
+  const usage: TrackAdminOrgUsage[] = [
+    ...(input.quotas.filters > 0 || state.filters.length > 0 ? [{ orgId: input.org.id, name: input.org.name, plan: input.org.plan, filters: { used: state.filters.length, quota: input.quotas.filters, enabled: state.filters.filter((f) => f.enabled).length }, scans: { used: input.month.scans, quota: input.quotas.scans }, photoSearches: { used: input.month.photoSearches, quota: input.quotas.photoSearches }, alertFilters: state.filters.filter((f) => f.enabled && f.alertRules?.enabled).length }] : []),
+    sample("org-exemple-pro", "Atelier Lune (exemple)", "pro", 5, 5, 6, 11, 2),
+    sample("org-exemple-agence", "Dressing Nomade (exemple)", "agence", 12, 11, 20, 40, 4),
+  ];
+  const ratio = (u: TrackAdminOrgUsage) => Math.max(u.filters.quota ? u.filters.used / u.filters.quota : 0, u.scans.quota ? u.scans.used / u.scans.quota : 0, u.photoSearches.quota ? u.photoSearches.used / u.photoSearches.quota : 0);
+  usage.sort((a, b) => ratio(b) - ratio(a) || a.name.localeCompare(b.name, "fr"));
+  const dayAgo = new Date(now.getTime() - DAY).toISOString();
+  const last24 = reads.filter((r) => r.readAt >= dayAgo).length;
+  return {
+    source: "demo", sourceLabel: TRACK_SOURCE_LABELS.demo, liveEnabled: false,
+    manualPause: manual,
+    signalPause: { until: null, reason: null, active: false },
+    machinePausedUntil: null,
+    slowdown: { factor: 1, storedFactor: 1, lastBlockAt: null, windowReads: 0, windowBlocks: 0, blocksPer1000: null },
+    fingerprints: { followed: new Set(state.filters.filter((f) => f.enabled).map((f) => f.fingerprint)).size, due: 0, slowed: 0 },
+    last24h: { reads: last24, ok: last24, anomalies: 0, blocked: 0, skipped: 0 },
+    recentReads: reads.slice(0, 20),
+    recentProblems: [],
+    usage,
+    canControl: input.canControl,
+    notices: ["Démonstration : interrupteur fermé (TRACK_LIVE_ENABLED=false), lectures simulées. Aucune page de Vinted n'est lue.", TRACK_DEMO_NOTICE],
+  };
 }

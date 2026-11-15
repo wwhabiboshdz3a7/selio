@@ -1,7 +1,8 @@
 import {
-  priceModelRecord as priceModelRecordSchema, priceReference as priceReferenceSchema, trackFilter as trackFilterSchema, trackPhotoSearch as trackPhotoSearchSchema, trackScan as trackScanSchema, trackSnapshot as trackSnapshotSchema,
-  type ItemCategory, type PriceModelMetrics, type PriceModelRecord, type PriceReference, type PriceReferenceInput, type PriceReferenceSource, type TrackCriteria, type TrackFilter, type TrackPhotoSearch, type TrackScan, type TrackSnapshot, type TrackSource,
+  priceModelRecord as priceModelRecordSchema, priceReference as priceReferenceSchema, trackFilter as trackFilterSchema, trackAlertEvent as trackAlertEventSchema, trackPhotoSearch as trackPhotoSearchSchema, trackScan as trackScanSchema, trackSnapshot as trackSnapshotSchema,
+  type ItemCategory, type PriceModelMetrics, type PriceModelRecord, type PriceReference, type PriceReferenceInput, type PriceReferenceSource, type TrackAlertEvent, type TrackAlertRule, type TrackAlertRules, type TrackCriteria, type TrackFilter, type TrackPhotoSearch, type TrackScan, type TrackSnapshot, type TrackSource,
   referral as referralSchema, subscriptionCredit as subscriptionCreditSchema, type Referral, type ReferralStatus, type SubscriptionCredit,
+  commercialOfferRow as commercialOfferSchema, offerRedemptionRow as offerRedemptionSchema, type CommercialOffer, type OfferInput, type OfferRedemption, type PublicOffer, offerBannerText,
   aiRequest, auditLog, cloudAccount as cloudAccountSchema, cloudAction as cloudActionSchema, cloudConsent as cloudConsentSchema, cloudLoginSession as cloudLoginSessionSchema, automationRule, conversation as conversationSchema, customer as customerSchema, extensionToken, inventoryEvent, inventoryItem, invoice as invoiceSchema, job as jobSchema, marketplaceConnection, membership as membershipSchema, message as messageSchema, opportunity as opportunitySchema, order as orderSchema, organization as organizationSchema, paymentOrder as paymentOrderSchema, purchaseRequest as purchaseSchema, radarSearch as radarSchema, radarRead as radarReadSchema, radarAlert as radarAlertSchema, pushSubscription as pushSubscriptionSchema, RADAR_BLOCK_OUTCOMES, shipment as shipmentSchema, subscription as subscriptionSchema, usageEvent, user as userSchema, quotasForPlan, isLegacyQuotas, resolveQuotas,
   type AiRequest, type AuditLog, type AutomationRule, type CloudAccount, type CloudAction, type CloudActionDetail, type CloudConsent, type CloudJournalQuery, type CloudLoginSession, type Conversation, type ConversationQuery, type Customer, type CustomerQuery, type ExtensionToken, type InventoryEvent, type InventoryItem, type InventoryQuery, type Invoice, type Job, type JobQuery, type MarketplaceConnection, type Membership, type Message, type Opportunity, type Order, type OrderQuery, type Organization, type Page, type PaymentOrder, type PurchaseRequest, type RadarSearch, type RadarRead, type RadarReadOutcome, type RadarSourceKind, type RadarAlert, type RadarAlertKind, type RadarAlertPayload, type PushSubscription, type Shipment, type Subscription, type UsageEvent, type User,
 } from "@selio/contracts";
@@ -258,6 +259,98 @@ export const subscriptionCredits = {
   },
   async countAvailable(tx: Tx, orgId: string): Promise<number> {
     return tx.count("select count(*) from subscription_credits where org_id = $1 and consumed_at is null", [orgId]);
+  },
+};
+
+/**
+ * Offres commerciales (table globale, migration 0020) : écrites par les routes d'administration seulement.
+ * `plans` est un tableau PostgreSQL (text[]) : passé tel quel au pilote, jamais en JSON.
+ */
+const OFFER_COLUMNS: (keyof OfferInput)[] = ["name", "code", "discountPercent", "discountCents", "plans", "durationMonths", "startsAt", "endsAt", "maxRedemptions", "bannerEnabled", "bannerText", "active"];
+const OFFER_SQL_COLUMN: Record<keyof OfferInput, string> = {
+  name: "name", code: "code", discountPercent: "discount_percent", discountCents: "discount_cents", plans: "plans", durationMonths: "duration_months", startsAt: "starts_at", endsAt: "ends_at",
+  maxRedemptions: "max_redemptions", bannerEnabled: "banner_enabled", bannerText: "banner_text", active: "active",
+};
+const toOffer = (r: unknown): CommercialOffer => parse(commercialOfferSchema, r);
+
+export const offers = {
+  /** Toutes les offres (les archivées en dernier), les plus récentes d'abord. */
+  async list(tx: Tx): Promise<CommercialOffer[]> {
+    return (await tx.query("select * from commercial_offers order by (archived_at is not null), created_at desc, id")).map(toOffer);
+  },
+  async byId(tx: Tx, id: string): Promise<CommercialOffer | null> {
+    const r = await tx.maybeOne("select * from commercial_offers where id = $1", [id]);
+    return r ? toOffer(r) : null;
+  },
+  /** Recherche par code, sans tenir compte de la casse. */
+  async byCode(tx: Tx, code: string): Promise<CommercialOffer | null> {
+    const r = await tx.maybeOne("select * from commercial_offers where upper(code) = upper($1)", [code]);
+    return r ? toOffer(r) : null;
+  },
+  async create(tx: Tx, input: OfferInput & { createdBy: string | null }): Promise<CommercialOffer> {
+    const cols = [...OFFER_COLUMNS.map((k) => OFFER_SQL_COLUMN[k]), "created_by"];
+    const values = [...OFFER_COLUMNS.map((k) => input[k]), input.createdBy];
+    const placeholders = cols.map((c, i) => (c === "plans" ? `$${i + 1}::text[]` : `$${i + 1}`));
+    return toOffer(await tx.one(`insert into commercial_offers (${cols.join(", ")}) values (${placeholders.join(", ")}) returning *`, values));
+  },
+  async update(tx: Tx, id: string, patch: Partial<OfferInput>, at: string): Promise<CommercialOffer | null> {
+    const keys = OFFER_COLUMNS.filter((k) => patch[k] !== undefined);
+    const sets = keys.map((k, i) => `${OFFER_SQL_COLUMN[k]} = $${i + 2}${k === "plans" ? "::text[]" : ""}`);
+    sets.push(`updated_at = $${keys.length + 2}`);
+    const r = await tx.maybeOne(`update commercial_offers set ${sets.join(", ")} where id = $1 returning *`, [id, ...keys.map((k) => patch[k]), at]);
+    return r ? toOffer(r) : null;
+  },
+  /**
+   * Une utilisation de plus, atomiquement et sous le maximum (null si l'offre est inactive, archivée ou pleine) :
+   * deux applications concurrentes du dernier code disponible n'en retiennent qu'une.
+   */
+  async claim(tx: Tx, id: string, at: string): Promise<CommercialOffer | null> {
+    const r = await tx.maybeOne(
+      `update commercial_offers set redemptions = redemptions + 1, updated_at = $2
+       where id = $1 and active and archived_at is null and (max_redemptions is null or redemptions < max_redemptions) returning *`,
+      [id, at],
+    );
+    return r ? toOffer(r) : null;
+  },
+  /** Suppression réelle, seulement si l'offre n'a jamais servi (sinon false : à archiver). */
+  async deleteUnused(tx: Tx, id: string): Promise<boolean> {
+    return (await tx.query("delete from commercial_offers where id = $1 and redemptions = 0 returning id", [id])).length > 0;
+  },
+  async archive(tx: Tx, id: string, at: string): Promise<CommercialOffer | null> {
+    const r = await tx.maybeOne("update commercial_offers set archived_at = coalesce(archived_at, $2), active = false, banner_enabled = false, updated_at = $2 where id = $1 returning *", [id, at]);
+    return r ? toOffer(r) : null;
+  },
+  /** Bandeau public (fonction SQL bornée) : nom, texte, code, remise, forfaits, durée et fin seulement. */
+  async publicBanners(tx: Tx, now: string): Promise<PublicOffer[]> {
+    const rows = await tx.query<{ id: string; name: string; code: string | null; discountPercent: number | null; discountCents: number | null; plans: PublicOffer["plans"] | null; durationMonths: number | null; endsAt: string | null; bannerText: string | null }>("select * from app_public_offer_banners($1)", [now]);
+    return rows.map((r) => {
+      const o = { ...r, plans: r.plans ?? [] };
+      return { id: o.id, name: o.name, bannerText: offerBannerText(o), code: o.code, discountPercent: o.discountPercent, discountCents: o.discountCents, plans: o.plans, durationMonths: o.durationMonths, endsAt: o.endsAt };
+    });
+  },
+};
+
+/**
+ * Offre appliquée à une organisation (RLS : app.org_id doit valoir l'organisation). Une seule par organisation
+ * (org_id unique) : `create` ne remplace jamais une offre existante (null).
+ */
+export const offerRedemptions = {
+  async get(tx: Tx, orgId: string): Promise<OfferRedemption | null> {
+    const r = await tx.maybeOne("select * from offer_redemptions where org_id = $1", [orgId]);
+    return r ? parse(offerRedemptionSchema, r) : null;
+  },
+  async create(tx: Tx, input: Omit<OfferRedemption, "id" | "createdAt" | "updatedAt">): Promise<OfferRedemption | null> {
+    const r = await tx.maybeOne(
+      `insert into offer_redemptions (org_id, offer_id, name, code, discount_percent, discount_cents, plans, duration_months, months_remaining)
+       values ($1, $2, $3, $4, $5, $6, $7::text[], $8, $9) on conflict (org_id) do nothing returning *`,
+      [input.orgId, input.offerId, input.name, input.code, input.discountPercent, input.discountCents, input.plans, input.durationMonths, input.monthsRemaining],
+    );
+    return r ? parse(offerRedemptionSchema, r) : null;
+  },
+  /** Échéance payée ou facturée à 0 € : mois restants ramenés à `monthsRemaining` (sans effet si l'offre est sans limite). */
+  async consume(tx: Tx, id: string, monthsRemaining: number | null, at: string): Promise<OfferRedemption | null> {
+    const r = await tx.maybeOne("update offer_redemptions set months_remaining = case when months_remaining is null then null else greatest(0, coalesce($2::int, 0)) end, updated_at = $3 where id = $1 returning *", [id, monthsRemaining, at]);
+    return r ? parse(offerRedemptionSchema, r) : null;
   },
 };
 
@@ -1002,7 +1095,8 @@ export const subscriptions = {
     const r = await tx.maybeOne<Record<string, unknown>>("select * from subscriptions where org_id = $1", [tx.orgId]);
     return r ? toSubscription(r) : null;
   },
-  async upsert(tx: Tx, input: Partial<Subscription>): Promise<Subscription> {
+  /** `grantedBy` : auteur d'un accès offert (Selio Admin), hors du contrat public de l'abonnement. */
+  async upsert(tx: Tx, input: Partial<Subscription> & { grantedBy?: string | null }): Promise<Subscription> {
     const existing = await subscriptions.get(tx);
     if (existing) return toSubscription(await tx.update<Record<string, unknown>>("subscriptions", existing.id, input, "Abonnement"));
     const plan = input.plan ?? "free";
@@ -1595,6 +1689,28 @@ export const trackFilters = {
   async delete(tx: Tx, id: string): Promise<boolean> {
     return (await tx.query("delete from track_filters where org_id = $1 and id = $2 returning id", [tx.orgId, id])).length > 0;
   },
+  /** Réglage des alertes de tendance du filtre (0021). */
+  async setAlertRules(tx: Tx, id: string, rules: TrackAlertRules): Promise<TrackFilter> {
+    return parse(trackFilterSchema, await tx.one("update track_filters set alert_rules = $3::jsonb, updated_at = now() where org_id = $1 and id = $2 returning *", [tx.orgId, id, JSON.stringify(rules)], "Filtre Track"));
+  },
+};
+
+/** Alertes de tendance déclenchées (RLS, 0021) : agrégats seulement. */
+export const trackAlertEvents = {
+  async add(tx: Tx, input: { filterId: string; rule: TrackAlertRule; source: TrackSource; value: number; reference: number | null; message: string; notified: boolean; readAt: string; createdAt?: string }): Promise<TrackAlertEvent> {
+    return parse(trackAlertEventSchema, await tx.insert("track_alert_events", { ...input, message: input.message.slice(0, 400), orgId: tx.orgId }));
+  },
+  async list(tx: Tx, filterId: string, limit = 30): Promise<TrackAlertEvent[]> {
+    return (await tx.query("select * from track_alert_events where org_id = $1 and filter_id = $2 order by created_at desc, id limit $3", [tx.orgId, filterId, Math.min(200, Math.max(1, limit))])).map((r) => parse(trackAlertEventSchema, r));
+  },
+  /** Dernière alerte d'une règle du filtre depuis `since` (une par filtre et par règle toutes les 24 h). */
+  async lastSince(tx: Tx, filterId: string, rule: TrackAlertRule, since: string): Promise<TrackAlertEvent | null> {
+    const r = await tx.maybeOne("select * from track_alert_events where org_id = $1 and filter_id = $2 and rule = $3 and created_at >= $4 order by created_at desc limit 1", [tx.orgId, filterId, rule, since]);
+    return r ? parse(trackAlertEventSchema, r) : null;
+  },
+  async purgeBefore(tx: Tx, before: string): Promise<number> {
+    return (await tx.query("delete from track_alert_events where org_id = $1 and created_at < $2 returning id", [tx.orgId, before])).length;
+  },
 };
 
 /** État de lecture d'une empreinte suivie par l'organisation courante. */
@@ -1636,6 +1752,40 @@ export interface TrackRuntime {
   lastBlockAt: string | null;
   pausedUntil: string | null;
   pauseReason: string | null;
+}
+
+/** Pause manuelle de Track (opérateur « tech »), 0021. */
+export interface TrackManualPause {
+  paused: boolean;
+  since: string | null;
+  by: string | null;
+  reason: string | null;
+}
+
+/** Ligne du journal partagé des lectures (0021). */
+export interface TrackLoggedRead {
+  fingerprint: string;
+  readAt: string;
+  source: TrackSource;
+  outcome: string;
+  listed: number;
+  newCount: number;
+  goneCount: number;
+  factor: number;
+  message: string | null;
+}
+
+/** Utilisation de Track d'une organisation (administration, 0021). */
+export interface TrackAdminOrgUsageRow {
+  orgId: string;
+  name: string;
+  plan: string;
+  quotas: Record<string, unknown>;
+  filters: number;
+  enabledFilters: number;
+  alertFilters: number;
+  scans: number;
+  photoSearches: number;
 }
 
 const iso = (v: unknown): string | null => (v === null || v === undefined ? null : new Date(v as string).toISOString());
@@ -1709,6 +1859,44 @@ export const trackReads = {
    */
   async recordRuntime(tx: Tx, input: { blocked: boolean; factor: number | null; blockAt: string | null; pauseUntil: string | null; pauseReason: string | null }): Promise<void> {
     await tx.query("select app_track_runtime_record($1, $2, $3, $4, $5)", [input.blocked, input.factor === null ? null : Math.max(1, Math.round(input.factor)), input.blockAt, input.pauseUntil, input.pauseReason]);
+  },
+  /** Pause manuelle posée par un opérateur (0021) : respectée par le worker à chaque lecture. */
+  async manualPause(tx: Tx): Promise<TrackManualPause> {
+    const r = await tx.maybeOne<Record<string, unknown>>("select * from app_track_manual_pause()");
+    return { paused: r?.paused === true, since: iso(r?.since), by: (r?.byUser as string | null) ?? null, reason: (r?.reason as string | null) ?? null };
+  },
+  async setManualPause(tx: Tx, input: { paused: boolean; by: string | null; reason: string | null }): Promise<TrackManualPause> {
+    const r = await tx.maybeOne<Record<string, unknown>>("select * from app_track_set_manual_pause($1, $2, $3)", [input.paused, input.by, input.reason]);
+    return { paused: r?.paused === true, since: iso(r?.since), by: (r?.byUser as string | null) ?? null, reason: (r?.reason as string | null) ?? null };
+  },
+  /** Journal partagé d'une lecture (7 jours) : empreinte, source, résultat, compteurs, code. */
+  async log(tx: Tx, input: { fingerprint: string; readAt: string; source: TrackSource; outcome: string; listed: number; newCount: number; goneCount: number; factor: number; message: string | null }): Promise<void> {
+    await tx.query("select app_track_log_read($1, $2, $3, $4, $5, $6, $7, $8, $9)", [input.fingerprint, input.readAt, input.source, input.outcome, input.listed, input.newCount, input.goneCount, Math.max(1, Math.round(input.factor)), input.message]);
+  },
+  /** Dernières lectures du journal (administration). */
+  async adminReads(tx: Tx, limit: number, problemsOnly: boolean): Promise<TrackLoggedRead[]> {
+    const rows = await tx.query<Record<string, unknown>>("select * from app_track_admin_reads($1, $2)", [limit, problemsOnly]);
+    return rows.map((r) => ({ fingerprint: String(r.fingerprint), readAt: iso(r.readAt)!, source: r.source as TrackSource, outcome: String(r.outcome), listed: Number(r.listed ?? 0), newCount: Number(r.newCount ?? 0), goneCount: Number(r.goneCount ?? 0), factor: Number(r.factor ?? 1), message: (r.message as string | null) ?? null }));
+  },
+  /** Empreintes suivies, dues, ralenties ; lectures des dernières 24 h (administration). */
+  async adminCounts(tx: Tx, now: string): Promise<{ followed: number; due: number; slowed: number; reads24h: number; ok24h: number; anomalies24h: number; blocked24h: number }> {
+    const r = await tx.maybeOne<Record<string, unknown>>("select * from app_track_admin_counts($1)", [now]);
+    const n = (k: string) => Number(r?.[k] ?? 0);
+    return { followed: n("followed"), due: n("due"), slowed: n("slowed"), reads24h: n("reads24h"), ok24h: n("ok24h"), anomalies24h: n("anomalies24h"), blocked24h: n("blocked24h") };
+  },
+  /** Utilisation de Track par organisation (administration). */
+  async adminOrgUsage(tx: Tx, monthStart: string): Promise<TrackAdminOrgUsageRow[]> {
+    const rows = await tx.query<Record<string, unknown>>("select * from app_track_admin_org_usage($1)", [monthStart]);
+    return rows.map((r) => ({ orgId: String(r.orgId), name: String(r.name), plan: String(r.plan), quotas: r.quotas && typeof r.quotas === "object" ? (r.quotas as Record<string, unknown>) : {}, filters: Number(r.filters ?? 0), enabledFilters: Number(r.enabledFilters ?? 0), alertFilters: Number(r.alertFilters ?? 0), scans: Number(r.scans ?? 0), photoSearches: Number(r.photoSearches ?? 0) }));
+  },
+  /** Filtres suivis par organisation (vue « utilisation par client »). */
+  async filterCounts(tx: Tx): Promise<Map<string, number>> {
+    const rows = await tx.query<{ orgId: string; filters: number | string }>("select * from app_track_filter_counts()");
+    return new Map(rows.map((r) => [r.orgId, Number(r.filters)]));
+  },
+  /** Filtres (et leur organisation) dont les alertes de tendance sont à évaluer après un instantané. */
+  async alertTargets(tx: Tx, fingerprint: string): Promise<{ orgId: string; filterId: string }[]> {
+    return tx.query<{ orgId: string; filterId: string }>("select * from app_track_alert_targets($1)", [fingerprint]);
   },
   /** Rétention des instantanés (historique du plan le plus long, 12 mois au plus) et des empreintes plus suivies. */
   async purge(tx: Tx, now: string): Promise<{ snapshots: number; fingerprints: number }> {
@@ -2059,6 +2247,75 @@ export const admin = {
       aiSettings: r.aiSettings && typeof r.aiSettings === "object" ? r.aiSettings : {},
       monthUsage: Object.fromEntries(Object.entries(r.monthUsage ?? {}).map(([k, v]) => [k, Number(v)])),
     }));
+  },
+};
+
+/** Ligne de la vue opérateur des comptes (fonction SQL security definer app_admin_accounts, migration 0019). */
+export interface AdminAccountRecord {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+  qualification: string;
+  qualificationNote: string | null;
+  qualifiedBy: string | null;
+  qualifiedAt: string | null;
+  plan: string;
+  status: string;
+  provider: string;
+  cycle: string;
+  currentPeriodEnd: string | null;
+  cardOnFile: boolean;
+  cancelAtPeriodEnd: boolean;
+  grantedUntil: string | null;
+  grantedBy: string | null;
+  members: number;
+  ownerEmail: string | null;
+}
+
+/**
+ * Selio Admin (migration 0019) : comptes vus par les opérateurs, qualification et note interne d'une
+ * organisation, contrôle d'accès d'une session (compte bloqué). `organizations`, `users`, `memberships` et
+ * `referrals` sont globales ; l'abonnement de chaque compte est lu par app_admin_accounts().
+ */
+export const adminAccounts = {
+  async list(tx: Tx): Promise<AdminAccountRecord[]> {
+    const rows = await tx.query<AdminAccountRecord>("select * from app_admin_accounts()");
+    return rows.map((r) => ({ ...r, members: Number(r.members ?? 0), cardOnFile: r.cardOnFile === true, cancelAtPeriodEnd: r.cancelAtPeriodEnd === true }));
+  },
+  /** Email, ancien drapeau d'opérateur et qualification du compte : une seule requête par requête HTTP. */
+  async accessInfo(tx: Tx, userId: string, orgId: string): Promise<{ email: string; isOperator: boolean; qualification: string } | null> {
+    return tx.maybeOne<{ email: string; isOperator: boolean; qualification: string }>(
+      "select u.email, u.is_operator, o.qualification from users u cross join organizations o where u.id = $1 and o.id = $2",
+      [userId, orgId],
+    );
+  },
+  async qualificationOf(tx: Tx, orgId: string): Promise<{ qualification: string; qualificationNote: string | null; qualifiedBy: string | null; qualifiedAt: string | null } | null> {
+    return tx.maybeOne("select qualification, qualification_note, qualified_by, qualified_at from organizations where id = $1", [orgId]);
+  },
+  /** Qualification (et note si fournie : `undefined` la laisse inchangée, chaîne vide l'efface). */
+  async setQualification(tx: Tx, orgId: string, input: { qualification: string; note?: string | null; by: string; at: string }): Promise<void> {
+    const keepNote = input.note === undefined;
+    await tx.query(
+      `update organizations set qualification = $2, qualification_note = case when $3::boolean then qualification_note else nullif($4, '') end,
+         qualified_by = $5, qualified_at = $6, updated_at = now() where id = $1`,
+      [orgId, input.qualification, keepNote, input.note ?? null, input.by, input.at],
+    );
+  },
+  async setNote(tx: Tx, orgId: string, input: { note: string; by: string; at: string }): Promise<void> {
+    await tx.query("update organizations set qualification_note = nullif($2, ''), qualified_by = $3, qualified_at = $4, updated_at = now() where id = $1", [orgId, input.note, input.by, input.at]);
+  },
+  /** Emails des utilisateurs (auteurs des actions de l'historique). */
+  async userEmails(tx: Tx, ids: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return new Map();
+    const rows = await tx.query<{ id: string; email: string }>("select id, email from users where id = any($1::text[])", [unique]);
+    return new Map(rows.map((r) => [r.id, r.email]));
+  },
+  /** Parrainages par état (tableau de croissance). */
+  async referralCounts(tx: Tx): Promise<Record<string, number>> {
+    const rows = await tx.query<{ status: string; n: string }>("select status, count(*) as n from referrals group by status");
+    return Object.fromEntries(rows.map((r) => [r.status, Number(r.n)]));
   },
 };
 

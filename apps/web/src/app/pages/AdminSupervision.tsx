@@ -5,7 +5,6 @@ import { useClient } from "../../lib/data/provider";
 import type { HealthComponentStatus, HealthDetailsView, SupervisionCheckView, SupervisionTargetView } from "../../lib/data/types";
 import { formatUptime } from "../../lib/supervision";
 import { QueryBoundary } from "../components/common";
-import { AdminTabs } from "./admin-tabs";
 
 const COMPONENT_LABELS: Record<keyof HealthDetailsView["health"]["checks"], string> = { database: "Base de données", redis: "Redis", queue: "File de tâches" };
 
@@ -42,8 +41,7 @@ export default function AdminSupervision() {
   const q = useQuery({ queryKey: ["health-details"], queryFn: () => client.getHealthDetails(), refetchInterval: 30_000 });
   return (
     <>
-      <PageHeader eyebrow="Opérateur" title="Administration" description="Supervision de la plateforme : l'API et l'assistant IA sont vérifiés chaque minute ; une panne prévient l'équipe sur le téléphone. Aucun secret ni adresse interne n'est affiché." />
-      <AdminTabs />
+      <PageHeader eyebrow="Selio Admin · Technique" title="Supervision" description="Supervision de la plateforme : l'API et l'assistant IA sont vérifiés chaque minute ; une panne prévient l'équipe sur le téléphone. Aucun secret ni adresse interne n'est affiché." />
       <QueryBoundary query={q} skeleton="spinner">
         {(d) => <SupervisionContent d={d} />}
       </QueryBoundary>

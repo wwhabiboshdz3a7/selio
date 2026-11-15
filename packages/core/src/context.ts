@@ -1,9 +1,9 @@
-import type { Role } from "@selio/contracts";
+import type { OperatorRole, Role } from "@selio/contracts";
 import type { AIService } from "@selio/ai";
 import type { Db, SecretBox, Tx } from "@selio/db";
 import type { EmailMessage, EmailProvider } from "@selio/email";
 import type { PaymentProvider } from "@selio/connectors";
-import { can, reasonsWithoutFinances, type Action } from "@selio/domain";
+import { can, operatorCan, operatorHasLevel, reasonsWithoutFinances, type Action, type OperatorCapability } from "@selio/domain";
 import type { BillingOptions } from "./types";
 import type { CloudExecutor } from "./services/cloud";
 import type { PushSender } from "./services/alerts";
@@ -88,6 +88,11 @@ export interface Services {
   supervision?: SupervisionServices;
   /** Réglages serveur lus dans l'environnement (`cloudConfigFromEnv`, `radarConfigFromEnv`, `trackConfigFromEnv`). Valeurs prudentes par défaut. */
   config?: ServicesConfig;
+  /**
+   * Opérateurs Selio (Selio Admin), en minuscules : OPERATOR_EMAILS → rôle « tech », OPERATOR_BUSINESS_EMAILS →
+   * rôle « business ». Relu à chaque requête (un compte existant devient opérateur sans réinscription).
+   */
+  operators?: { tech: string[]; business: string[] };
 }
 
 /** Réglages serveur des fonctions risquées : tout ce qui ouvre davantage est désactivé par défaut. */
@@ -148,12 +153,50 @@ export interface OrgContext {
   orgId: string;
   userId: string;
   role: Role;
+  /** Opérateur Selio (rôle « tech » ou « business »). */
   isOperator: boolean;
+  /**
+   * Rôle d'opérateur recalculé depuis la configuration à chaque requête (null : client). Absent (contextes
+   * système du worker, tests anciens) : `isOperator` vaut « tech ».
+   */
+  operatorRole?: OperatorRole | null;
   ip: string | null;
 }
 
 export function requireAction(ctx: OrgContext, action: Action): void {
   if (!can(ctx.role, action)) throw new AppError("forbidden", `Action non autorisée pour le rôle ${ctx.role}.`, 403);
+}
+
+// ---------------------------------------------------------------- opérateurs Selio (Selio Admin)
+
+/** Rôle d'opérateur du contexte : `operatorRole`, sinon « tech » si `isOperator` (compatibilité), sinon null. */
+export function operatorRoleOf(ctx: Pick<OrgContext, "isOperator" | "operatorRole">): OperatorRole | null {
+  if (ctx.operatorRole !== undefined) return ctx.operatorRole;
+  return ctx.isOperator ? "tech" : null;
+}
+
+/** Vrai pour un opérateur technique (tout l'admin, santé, IA, modèle de prix, interrupteurs). */
+export function isTechOperator(ctx: Pick<OrgContext, "isOperator" | "operatorRole">): boolean {
+  return operatorRoleOf(ctx) === "tech";
+}
+
+/**
+ * Garde des routes de Selio Admin. `level` « business » : tout opérateur (croissance, comptes, offres
+ * commerciales, usage de Track) ; « tech » (défaut) : opérateur technique seulement. Refus 403 propre.
+ */
+export function requireOperator(ctx: Pick<OrgContext, "isOperator" | "operatorRole">, level: OperatorRole = "tech"): OperatorRole {
+  const role = operatorRoleOf(ctx);
+  if (!role) throw new AppError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+  if (!operatorHasLevel(role, level)) throw new AppError("forbidden", "Accès réservé à l'opérateur technique de Selio.", 403);
+  return role;
+}
+
+/** Garde par droit de la matrice (`operatorCan`) : refus 403 propre. */
+export function requireOperatorCapability(ctx: Pick<OrgContext, "isOperator" | "operatorRole">, capability: OperatorCapability): OperatorRole {
+  const role = operatorRoleOf(ctx);
+  if (!role) throw new AppError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+  if (!operatorCan(role, capability)) throw new AppError("forbidden", "Accès réservé à l'opérateur technique de Selio.", 403);
+  return role;
 }
 
 // ---------------------------------------------------------------- finances masquées (§5.15)

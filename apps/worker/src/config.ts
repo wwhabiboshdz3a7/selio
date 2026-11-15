@@ -166,7 +166,10 @@ export const workerEnvSchema = z
     CRON_SUPERVISION: z.string().default("* * * * *"),
     /** Adresse de l'API vue depuis le worker (même machine : adresse locale). */
     PUBLIC_API_URL: z.string().url().default("http://127.0.0.1:8787"),
-    /** Opérateurs Selio (mêmes adresses que l'API) : destinataires des alertes de supervision. */
+    /**
+     * Opérateurs techniques de Selio (mêmes adresses que l'API) : destinataires des alertes de supervision. Les
+     * opérateurs « business » (OPERATOR_BUSINESS_EMAILS, API seulement) ne reçoivent pas les alertes techniques.
+     */
     OPERATOR_EMAILS: z.string().default(""),
     SUPERVISION_TARGETS: supervisionTargetsSchema,
     SUPERVISION_FAILURES_BEFORE_ALERT: intDefault(1, 60, 3),

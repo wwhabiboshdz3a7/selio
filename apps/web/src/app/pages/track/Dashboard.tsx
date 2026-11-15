@@ -29,7 +29,7 @@ function Dashboard({ usage }: { usage: TrackUsageView }) {
         eyebrow="Selio Track"
         title="Tableau de bord"
         description="Les statistiques du marché Vinted sur vos filtres : prix médian, annonces actives, nouvelles et disparues. Aucune annonce n'est republiée."
-        actions={<Link to="/track/filtres" className={buttonClass({ variant: "primary" })}><Plus aria-hidden />Suivre un filtre</Link>}
+        actions={<Link to="/track/filtres" className={buttonClass({ variant: "primary" })}><Plus aria-hidden />{usage.filters.exceeded ? "Gérer les filtres" : "Suivre un filtre"}</Link>}
       />
       <div className="flex flex-col gap-6">
         <TrackNotices notices={usage.notices} />
@@ -46,7 +46,7 @@ function Dashboard({ usage }: { usage: TrackUsageView }) {
             <QueryBoundary query={filters} empty={(d) => (d.length === 0 ? <EmptyState className="py-10" icon={<Filter />} title="Aucun filtre suivi" description="Suivez une recherche (marques, catégories, tailles, prix) : Track en tire le prix médian et le rythme des ventes." action={<Link to="/track/filtres" className={buttonClass({ variant: "secondary" })}>Suivre un filtre</Link>} /> : null)}>
               {(d) => (
                 <ul className="mt-3 divide-y divide-border border-t border-border">
-                  {d.map((f, i) => <FilterRow key={f.id} filter={f} trends={trends[i]?.data ?? null} loading={trends[i]?.isPending ?? false} />)}
+                  {d.map((f, i) => <FilterRow key={f.id} filter={f} trends={trends[i]?.data ?? null} loading={trends[i]?.isPending ?? false} failed={trends[i]?.isError ?? false} />)}
                 </ul>
               )}
             </QueryBoundary>
@@ -67,7 +67,7 @@ function Dashboard({ usage }: { usage: TrackUsageView }) {
   );
 }
 
-function FilterRow({ filter, trends, loading }: { filter: TrackFilter; trends: TrackTrendsView | null; loading: boolean }) {
+function FilterRow({ filter, trends, loading, failed }: { filter: TrackFilter; trends: TrackTrendsView | null; loading: boolean; failed: boolean }) {
   const last = trends?.points[trends.points.length - 1] ?? null;
   const prices = (trends?.points ?? []).map((p) => p.medianPriceCents).filter((v): v is number => v !== null);
   return (
@@ -79,7 +79,7 @@ function FilterRow({ filter, trends, loading }: { filter: TrackFilter; trends: T
           <span className="mt-1 block text-xs text-text-muted">{filter.lastReadAt ? `Lu ${formatRelative(filter.lastReadAt)}` : "Première lecture à venir"}</span>
         </span>
         <span className="flex items-center gap-3">
-          {prices.length > 1 ? <Sparkline values={prices} className="h-8 w-28" /> : <span className="w-28 text-xs text-text-muted">{loading ? "…" : "Pas encore de tendance"}</span>}
+          {prices.length > 1 ? <Sparkline values={prices} className="h-8 w-28" /> : <span className="w-28 text-xs text-text-muted">{loading ? "Chargement…" : failed ? "Tendance indisponible, réessayez plus tard" : "Pas encore de tendance"}</span>}
         </span>
         <span className="num text-right text-sm">
           <span className="block font-semibold text-text">{last?.medianPriceCents != null ? formatCents(last.medianPriceCents) : "—"}</span>

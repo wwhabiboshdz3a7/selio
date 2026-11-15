@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { repos } from "@selio/db";
-import { AppError, withOrg, type OrgContext } from "@selio/core";
+import { AppError, requireOperatorCapability, withOrg, type OrgContext } from "@selio/core";
 import { SIZE_REFERENCE_IMPORT_MAX_ROWS, parseSizeReferenceImport } from "../size-references";
 
 /**
@@ -30,8 +30,9 @@ const listQuery = z.object({
   limit: z.coerce.number().int().min(1).max(500).optional(),
 });
 
+/** Références de tailles : opérateur technique seulement (matrice de Selio Admin). */
 function requireOperator(ctx: OrgContext): void {
-  if (!ctx.isOperator) throw new AppError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+  requireOperatorCapability(ctx, "admin.size_references");
 }
 
 export default async function adminRoutes(app: FastifyInstance) {

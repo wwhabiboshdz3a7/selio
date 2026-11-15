@@ -10,7 +10,7 @@ import { wornPhotos, type Services } from "@selio/core";
 import { createPaymentProvider, loadPaymentConfig } from "@selio/connectors";
 import { createEmailProvider, loadEmailConfig, type EmailLogger } from "@selio/email";
 import { createStorageClient, loadStorageConfig } from "@selio/storage";
-import { cloudServicesConfig, radarServicesConfig, referralServicesConfig, startupNotices, studioServicesConfig, trackServicesConfig, type ApiEnv } from "./config";
+import { cloudServicesConfig, operatorsConfig, radarServicesConfig, referralServicesConfig, startupNotices, studioServicesConfig, trackServicesConfig, type ApiEnv } from "./config";
 import { errorHandler } from "./errors";
 import authPlugin from "./plugins/auth";
 import rolesPlugin from "./plugins/roles";
@@ -39,7 +39,9 @@ import adminRoutes from "./routes/admin";
 import negotiationRoutes from "./routes/negotiation";
 import migrationRoutes from "./routes/migration";
 import referralRoutes from "./routes/referral";
+import offerRoutes from "./routes/offers";
 import comptesRoutes from "./routes/comptes";
+import adminAccountsRoutes from "./routes/admin-accounts";
 import { StoragePhotoStore } from "./studio-photos";
 import { MAINTENANCE_QUEUE, RADAR_QUEUE, createQueues, type QueueHandle } from "./queue";
 import { PRICE_MODEL_REFRESH_MS, createApiPricingServices, refreshPriceModel, schedulePriceModelRefresh } from "./pricing";
@@ -83,6 +85,8 @@ export function buildServices(env: ApiEnv, overrides: Partial<Services> = {}, lo
     // d'un vendeur). Aucun navigateur dans l'API : `cloud`, `radar` et `track` restent absents (sauf
     // injection par les tests), seul le worker lit et achète.
     // Studio : dépassement des photos portées fermé par défaut, 0,25 € la photo (proposition), file de nuit 22 h – 6 h.
+    // Opérateurs Selio (Selio Admin) : rôles « tech » et « business », relus à chaque requête.
+    operators: overrides.operators ?? operatorsConfig(env),
     config: overrides.config ?? { ...cloudServicesConfig(env), ...radarServicesConfig(env), ...trackServicesConfig(env), ...studioServicesConfig(env), ...referralServicesConfig(env) },
     // Modèle de prix : chargé depuis `price_models` (jamais entraîné ici) ; les tests injectent le leur.
     pricing: overrides.pricing ?? createApiPricingServices(now),
@@ -134,13 +138,15 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(rateLimit, { global: true, max: 300, timeWindow: "1 minute", allowList: [], keyGenerator: (req) => req.ip });
   // WebSocket de la fenêtre de connexion du Cloud : messages d'entrée courts (4 Kio au plus).
   await app.register(websocket, { options: { maxPayload: 4096 } });
-  await app.register(authPlugin, { services, operatorEmails: env.OPERATOR_EMAILS.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean) });
+  // Session : rôle d'opérateur recalculé depuis la configuration à chaque requête, compte « bloqué » refusé.
+  await app.register(authPlugin, { services });
   // Rôles d'équipe : contributeur photos limité à sa liste de routes, finances masquées pour qui ne les voit pas.
   await app.register(rolesPlugin);
   app.setErrorHandler(errorHandler);
   app.setNotFoundHandler((req, reply) => reply.status(404).send({ error: { code: "not_found", message: `Route inconnue : ${req.method} ${req.url}` } }));
 
-  const operatorEmails = env.OPERATOR_EMAILS.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  // Inscription : le drapeau `users.is_operator` reste posé pour OPERATOR_EMAILS (compatibilité, rôle « tech »).
+  const operatorEmails = services.operators?.tech ?? [];
 
   await app.register(authRoutes, { cookieSecure: env.COOKIE_SECURE, operatorEmails });
   await app.register(orgRoutes);
@@ -177,7 +183,11 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(adminRoutes);
   // Parrainage (404 tant que REFERRAL_ENABLED est faux) et Selio Comptes (checklists et textes, aucune action sur Vinted).
   await app.register(referralRoutes);
+  // Offres commerciales : bandeau public (sans session), code promo, administration par l'équipe Selio.
+  await app.register(offerRoutes);
   await app.register(comptesRoutes);
+  // Selio Admin : croissance, comptes, qualification, accès offert, prolongation d'essai (opérateurs business et tech).
+  await app.register(adminAccountsRoutes);
 
   // Modèle de prix actif : chargé au démarrage (jamais bloquant), puis rechargé toutes les heures (nouvel
   // entraînement du worker le dimanche).

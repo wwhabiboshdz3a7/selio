@@ -70,7 +70,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 À stocker dans le gestionnaire de secrets de l'hébergeur ou dans `/etc/selio/*.env` (jamais en Git). Sauvegardée séparément de la base.
 
 ### Opérateurs
-`OPERATOR_EMAILS=admin@exemple.fr` : les comptes créés avec ces emails obtiennent l'accès `/admin`. Pour un compte existant : `update users set is_operator = true where email = '…'`.
+`OPERATOR_EMAILS=admin@exemple.fr` (rôle technique) et `OPERATOR_BUSINESS_EMAILS=associe@exemple.fr` (rôle business) : ces comptes obtiennent l'accès à Selio Admin (`/admin`). La configuration est relue à chaque requête : un compte existant devient opérateur après la relance de l'API, sans réinscription ni requête SQL.
 
 ### Photos (MinIO) et emails (SMTP)
 - **Photos** : stockage objet compatible S3 sur la machine. En local, `docker compose up -d minio` (racine du dépôt) démarre MinIO (API `:9000`, console `:9001`) et crée le bucket `selio-photos` sans accès anonyme. Côté API : `STORAGE_ENDPOINT`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` (compte dédié au bucket, pas le compte racine). En production, publier MinIO derrière Caddy sur un sous-domaine (ex. `photos.votre-domaine.fr`) avec CORS `PUT`/`GET` pour l'origine du site : les URLs signées sont appelées directement par le navigateur. Le volume `selio_minio` entre dans la sauvegarde chiffrée nocturne. Sans `STORAGE_ENDPOINT`, l'API démarre, avertit, et `/api/uploads` répond 503. Détails : STOCKAGE.md.

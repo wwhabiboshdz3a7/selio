@@ -9,7 +9,7 @@ import type { TrackUsageView } from "../../../lib/data/types";
 import { QueryBoundary } from "../../components/common";
 
 /** Clés de requête de Track (invalidées après chaque action). */
-export const TRACK_KEYS = ["track-usage", "track-filters", "track-trends", "track-scans", "track-photo-searches", "track-sales", "usage"];
+export const TRACK_KEYS = ["track-usage", "track-filters", "track-trends", "track-alerts", "track-scans", "track-photo-searches", "track-sales", "usage"];
 
 export function useTrackUsage() {
   const client = useClient();

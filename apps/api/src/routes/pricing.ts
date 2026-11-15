@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Queue } from "bullmq";
 import { PRICE_MODEL_MIN_REFERENCES } from "@selio/contracts";
 import { repos } from "@selio/db";
-import { AppError, pricing, requireAction } from "@selio/core";
+import { AppError, pricing, requireAction, requireOperatorCapability } from "@selio/core";
 import { PRICING_TRAIN_JOB } from "../queue";
 
 /**
@@ -51,7 +51,7 @@ export default async function pricingRoutes(app: FastifyInstance, opts: PricingR
   /** Modèles enregistrés (sans le JSON) et base de références par source : opérateurs seulement. */
   app.get("/api/admin/pricing", async (req) => {
     const ctx = app.requireCtx(req);
-    if (!ctx.isOperator) throw new AppError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+    requireOperatorCapability(ctx, "admin.pricing");
     return app.services.db.withGlobal(async (tx) => ({
       models: await repos.priceModels.list(tx, 20),
       references: await repos.priceReferences.countBySource(tx),
@@ -65,7 +65,7 @@ export default async function pricingRoutes(app: FastifyInstance, opts: PricingR
    */
   app.post("/api/admin/pricing/train", { config: perUser("pricing-train", 5, "10 minutes") }, async (req, reply) => {
     const ctx = app.requireCtx(req);
-    if (!ctx.isOperator) throw new AppError("forbidden", "Accès réservé aux opérateurs Selio.", 403);
+    requireOperatorCapability(ctx, "admin.pricing");
     requireAction(ctx, "org.read");
     if (!opts.maintenanceQueue) throw new AppError("pricing_trainer_unavailable", "L'entraînement s'exécute dans le worker, injoignable ici (Redis absent).", 503);
     try {

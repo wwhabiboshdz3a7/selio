@@ -76,6 +76,73 @@ export type TrackCriteria = z.infer<typeof trackCriteria>;
 /** Empreinte normalisée des critères (SHA-256 hexadécimal) : partagée entre organisations. */
 export const trackFingerprint = z.string().regex(/^[a-f0-9]{64}$/, "Empreinte invalide");
 
+// ---------------------------------------------------------------- alertes de tendance (par filtre)
+
+/** Une alerte par filtre et par règle au plus toutes les 24 h (pas de rafale de notifications). */
+export const TRACK_ALERT_COOLDOWN_HOURS = 24;
+/** Référence d'une variation : les instantanés des 7 jours précédents, de même source. */
+export const TRACK_ALERT_REFERENCE_DAYS = 7;
+/** Instantanés de référence au moins (prix médian, délai de vente) : en dessous, aucune alerte. */
+export const TRACK_ALERT_MIN_REFERENCE_SNAPSHOTS = 3;
+
+/**
+ * Règles d'une alerte de tendance :
+ * - `median_price` : prix médian qui s'écarte de ± X % de la médiane des 7 jours précédents ;
+ * - `new_listings` : nouvelles annonces d'une lecture au-dessus d'un seuil ;
+ * - `days_to_sell` : délai médian des disparues (estimation) qui baisse de X % face aux 7 jours précédents.
+ */
+export const TRACK_ALERT_RULES = ["median_price", "new_listings", "days_to_sell"] as const;
+export const trackAlertRule = z.enum(TRACK_ALERT_RULES);
+export type TrackAlertRule = z.infer<typeof trackAlertRule>;
+
+export const TRACK_ALERT_RULE_LABELS: Record<TrackAlertRule, string> = {
+  median_price: "Prix médian qui bouge",
+  new_listings: "Nouvelles annonces au-dessus d'un seuil",
+  days_to_sell: "Délai de vente qui baisse (estimation)",
+};
+
+export const TRACK_ALERT_NOTICE =
+  "Une alerte par filtre et par règle au plus toutes les 24 h, évaluée après chaque lecture et envoyée sur les appareils abonnés aux notifications (Radar › Notifications). Les disparitions et le délai de vente restent des estimations.";
+
+/** Réglage des alertes d'un filtre : tout est coupé par défaut ; désactivable d'un geste (`enabled`). */
+export const trackAlertRules = z.object({
+  enabled: z.boolean().default(false),
+  medianPrice: z.object({ enabled: z.boolean().default(false), percent: z.number().int().min(5).max(90).default(15) }).default({}),
+  newListings: z.object({ enabled: z.boolean().default(false), threshold: z.number().int().min(1).max(96).default(10) }).default({}),
+  daysToSell: z.object({ enabled: z.boolean().default(false), percent: z.number().int().min(10).max(90).default(25) }).default({}),
+});
+export type TrackAlertRules = z.infer<typeof trackAlertRules>;
+export type TrackAlertRulesInput = z.input<typeof trackAlertRules>;
+
+/** Alerte déclenchée (listée dans la page du filtre) : agrégats seulement, aucune annonce. */
+export const trackAlertEvent = z.object({
+  id,
+  orgId: id,
+  filterId: id,
+  rule: trackAlertRule,
+  source: z.enum(["demo", "cloud"]),
+  /** Variation (ratio, ex. 0,18) pour le prix et le délai ; nombre d'annonces pour les nouvelles. */
+  value: z.number(),
+  /** Référence comparée : prix médian (centimes), délai médian (jours) ou seuil. */
+  reference: z.number().nullable().default(null),
+  message: z.string().max(400),
+  /** Notification mise en file (Web Push de la PWA). */
+  notified: z.boolean().default(false),
+  /** Lecture (instantané) qui a déclenché l'alerte. */
+  readAt: isoDate,
+  createdAt: isoDate,
+});
+export type TrackAlertEvent = z.infer<typeof trackAlertEvent>;
+
+/** Réglage et dernières alertes d'un filtre (page du filtre). */
+export interface TrackFilterAlerts {
+  filterId: string;
+  rules: TrackAlertRules;
+  events: TrackAlertEvent[];
+  cooldownHours: number;
+  notices: string[];
+}
+
 export const trackFilter = z.object({
   id,
   orgId: id,
@@ -83,6 +150,8 @@ export const trackFilter = z.object({
   criteria: trackCriteria.default({}),
   fingerprint: trackFingerprint,
   enabled: z.boolean().default(true),
+  /** Alertes de tendance du filtre (coupées par défaut). */
+  alertRules: trackAlertRules.default({}),
   /** Dernière lecture de l'empreinte (par Selio, quelle que soit l'organisation qui la suit). */
   lastReadAt: isoDate.nullable().default(null),
   /** Prochaine lecture prévue de l'empreinte. */
@@ -277,5 +346,62 @@ export interface TrackSalesFeed {
   days: number;
   rows: TrackSalesFeedRow[];
   demo: boolean;
+  notices: string[];
+}
+
+// ---------------------------------------------------------------- administration (opérateurs Selio)
+
+/** Pause manuelle de Track posée par un opérateur « tech » : respectée par le worker sans redémarrage. */
+export const trackManualPauseInput = z.object({
+  reason: z.string().trim().min(3, "Indiquez la raison de la pause (3 caractères au moins).").max(300),
+});
+export type TrackManualPauseInput = z.input<typeof trackManualPauseInput>;
+
+/** Lecture récente (journal partagé, 7 jours) : empreinte abrégée, résultat, compteurs. Aucune donnée de personne. */
+export interface TrackAdminRead {
+  fingerprint: string;
+  readAt: string;
+  source: TrackSource;
+  outcome: string;
+  listed: number;
+  newCount: number;
+  goneCount: number;
+  factor: number;
+  message: string | null;
+}
+
+/** Utilisation de Track par client (filtres suivis, scans et recherches par photo du mois face aux quotas). */
+export interface TrackAdminOrgUsage {
+  orgId: string;
+  name: string;
+  plan: string;
+  filters: { used: number; quota: number; enabled: number };
+  scans: { used: number; quota: number };
+  photoSearches: { used: number; quota: number };
+  /** Filtres avec des alertes de tendance actives. */
+  alertFilters: number;
+}
+
+/** Vue « Track » de l'administration. */
+export interface TrackAdminStatus {
+  /** Source effective du worker : simulateur tant que l'interrupteur est fermé. */
+  source: TrackSource;
+  sourceLabel: string;
+  /** Interrupteur TRACK_LIVE_ENABLED tel que lu par l'API (le worker lit le sien au démarrage). */
+  liveEnabled: boolean;
+  /** Pause manuelle posée par un opérateur (respectée par le worker, toutes sources). */
+  manualPause: { paused: boolean; since: string | null; by: string | null; reason: string | null };
+  /** Pause automatique après un signal de Vinted (lectures en direct seulement). */
+  signalPause: { until: string | null; reason: string | null; active: boolean };
+  /** Coupe-circuit de la machine (Cloud, Radar et Track en direct). */
+  machinePausedUntil: string | null;
+  slowdown: { factor: number; storedFactor: number; lastBlockAt: string | null; windowReads: number; windowBlocks: number; blocksPer1000: number | null };
+  fingerprints: { followed: number; due: number; slowed: number };
+  last24h: { reads: number; ok: number; anomalies: number; blocked: number; skipped: number };
+  recentReads: TrackAdminRead[];
+  recentProblems: TrackAdminRead[];
+  usage: TrackAdminOrgUsage[];
+  /** Le rôle de l'opérateur permet la pause et la reprise (rôle « tech »). */
+  canControl: boolean;
   notices: string[];
 }

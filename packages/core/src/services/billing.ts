@@ -1,5 +1,5 @@
 import {
-  CARD_ONLY_ORDER_KINDS, CARD_VERIFICATION_AMOUNT_CENTS, DATA_RETENTION_DAYS_AFTER_END, DEFAULT_VAT_RATE, PAID_PLANS, PLAN_LABELS, REFERRAL_CREDIT_LINE_LABEL, VAT_FRANCHISE_NOTICE, buildUsageCounter, extraLinesTotal, invoiceAmounts, nextChargeDelayDays, quotasForPlan,
+  CARD_ONLY_ORDER_KINDS, CARD_VERIFICATION_AMOUNT_CENTS, DATA_RETENTION_DAYS_AFTER_END, DEFAULT_VAT_RATE, PAID_PLANS, PLAN_LABELS, REFERRAL_CREDIT_LINE_LABEL, VAT_FRANCHISE_NOTICE, buildUsageCounter, extraLinesTotal, invoiceAmounts, isGrantWithoutEnd, nextChargeDelayDays, quotasForPlan,
   type BillingCycle, type CheckoutResult, type Invoice, type InvoiceExtraLine, type InvoiceView, type PaidPlan, type PaymentOrder, type Plan, type PlanQuotas, type Subscription, type SubsidiaryUsage, type UsageCounter,
 } from "@selio/contracts";
 import { PRICING } from "@selio/demo-data";
@@ -11,6 +11,7 @@ import { AppError, requireAction, sendEmail, webLink, withOrg, type OrgContext, 
 import type { UsageSummary } from "../types-data";
 import { markWornOverageBilled, wornOverageLines } from "./worn-photos";
 import { qualify as qualifyReferral } from "./referral";
+import { consumeForInvoice as consumeOfferForInvoice, discountLineFor as offerDiscountLineFor, type InstallmentDiscount } from "./offers";
 
 export { USAGE_WARNING_RATE, buildUsageCounter, usagePercent } from "@selio/contracts";
 
@@ -202,22 +203,33 @@ export async function startCheckout(ctx: OrgContext, plan: Plan | string, opts: 
     await changePlan(ctx, plan);
     return { orderToken: null, orderId: null, mode: payments.testMode ? "sandbox" : "live", amountCents: planAmountCents, captureMode: null, simulated: false, message: inTrial ? `Offre ${PLAN_LABELS[plan]} retenue : elle sera débitée à la fin de l'essai avec la carte enregistrée.` : `Changement d'offre enregistré : ${PLAN_LABELS[plan]} s'appliquera au prochain renouvellement.` };
   }
+  // Accès offert par l'équipe Selio (Selio Admin) : rien à payer tant qu'il court.
+  if (sub.grantedUntil && new Date(sub.grantedUntil) > now) {
+    throw new AppError("conflict", isGrantWithoutEnd(sub.grantedUntil) ? `Votre offre ${PLAN_LABELS[sub.plan]} vous est offerte par l'équipe Selio, sans date de fin : aucun paiement n'est nécessaire.` : `Votre offre ${PLAN_LABELS[sub.plan]} vous est offerte par l'équipe Selio jusqu'au ${formatDateFr(new Date(sub.grantedUntil))} : aucun paiement n'est nécessaire d'ici là.`, 409);
+  }
   // Période déjà payée : un paiement à capture automatique maintenant écraserait les jours restants (payés deux fois).
   if (sub.status === "active" && sub.currentPeriodEnd && new Date(sub.currentPeriodEnd) > now) {
     throw new AppError("conflict", `Votre offre ${PLAN_LABELS[sub.plan]} est déjà payée jusqu'au ${formatDateFr(new Date(sub.currentPeriodEnd))} : changez d'offre (appliqué au prochain renouvellement) ou mettez votre carte à jour, sans nouveau paiement.`, 409);
   }
+  // Offre commerciale appliquée (code promo) : remise sur le prix du forfait, jamais en dessous de 0. Pendant
+  // l'essai, elle s'appliquera à la première échéance (débit de fin d'essai) : seul le message l'annonce ici.
+  const discount = await withOrg(ctx, (tx) => offerDiscountLineFor(tx, ctx.orgId, plan, cycle, planAmountCents));
+  const dueCents = planAmountCents - (discount?.line.amountCents ?? 0);
+  const discountNote = discount ? `, remise « ${discount.line.label.replace(/^Remise : /, "")} » de ${formatEuros(discount.line.amountCents)} comprise` : "";
+  if (!inTrial && discount && dueCents <= 0) return openDiscountedPeriod(ctx, plan, cycle, discount, payments.testMode);
   const { customerId, email } = await ensureCustomer(ctx, sub);
   const captureMode = inTrial ? "manual" : "automatic";
   const kind: PaymentOrder["kind"] = inTrial ? "trial_authorisation" : "checkout";
-  const amountCents = inTrial ? CARD_VERIFICATION_AMOUNT_CENTS : planAmountCents;
+  const amountCents = inTrial ? CARD_VERIFICATION_AMOUNT_CENTS : dueCents;
+  const extraLines = !inTrial && discount ? [discount.line] : [];
   const description = inTrial
     ? `Selio ${PLAN_LABELS[plan]} — vérification de la carte pendant l'essai (${formatEuros(amountCents)} autorisé puis annulé, aucun débit avant la fin de l'essai)`
-    : `Selio ${PLAN_LABELS[plan]} — abonnement ${cycleLabel(cycle)}`;
-  const order = await payments.createCheckoutOrder({ orgId: ctx.orgId, plan, amountCents, currency: "EUR", customerId, customerEmail: email, captureMode, description, metadata: { kind, cycle, planAmountCents: String(planAmountCents) }, merchantOrderRef: ctx.orgId });
+    : `Selio ${PLAN_LABELS[plan]} — abonnement ${cycleLabel(cycle)}${discount ? ` (${discount.line.label})` : ""}`;
+  const order = await payments.createCheckoutOrder({ orgId: ctx.orgId, plan, amountCents, currency: "EUR", customerId, customerEmail: email, captureMode, description, metadata: { kind, cycle, planAmountCents: String(planAmountCents), ...(extraLines.length ? { discountCents: String(discount!.line.amountCents) } : {}) }, merchantOrderRef: ctx.orgId });
   await withOrg(ctx, async (tx) => {
-    await repos.paymentOrders.create(tx, { orderId: order.orderId, kind, plan, cycle, amountCents, captureMode, createdAt: now.toISOString() });
+    await repos.paymentOrders.create(tx, { orderId: order.orderId, kind, plan, cycle, amountCents, captureMode, createdAt: now.toISOString(), ...(extraLines.length ? { extraLines } : {}) });
     await repos.subscriptions.upsert(tx, { revolutCustomerId: order.customerId ?? customerId, pendingPlan: plan, cycle, testMode: payments.testMode });
-    await repos.audit.add(tx, { actorUserId: ctx.userId, action: "billing.checkout_started", targetType: "subscription", meta: { plan, cycle, captureMode, kind, amountCents, planAmountCents, testMode: payments.testMode }, ip: ctx.ip });
+    await repos.audit.add(tx, { actorUserId: ctx.userId, action: "billing.checkout_started", targetType: "subscription", meta: { plan, cycle, captureMode, kind, amountCents, planAmountCents, ...(discount ? { discountCents: discount.line.amountCents } : {}), testMode: payments.testMode }, ip: ctx.ip });
   });
   const sandbox = payments.testMode ? " (bac à sable Revolut)" : "";
   return {
@@ -228,9 +240,28 @@ export async function startCheckout(ctx: OrgContext, plan: Plan | string, opts: 
     captureMode,
     simulated: false,
     message: inTrial
-      ? `Carte à enregistrer pour l'offre ${PLAN_LABELS[plan]} : une autorisation de ${formatEuros(amountCents)} vérifie la carte puis est annulée aussitôt. Rien n'est débité avant la fin de l'essai (${formatEuros(planAmountCents)} ${cycleLabel(cycle)} ensuite).${sandbox}`
-      : `Paiement de ${formatEuros(amountCents)} (${PLAN_LABELS[plan]}, ${cycleLabel(cycle)}).${sandbox}`,
+      ? `Carte à enregistrer pour l'offre ${PLAN_LABELS[plan]} : une autorisation de ${formatEuros(amountCents)} vérifie la carte puis est annulée aussitôt. Rien n'est débité avant la fin de l'essai (${formatEuros(Math.max(0, dueCents))} ${cycleLabel(cycle)} ensuite${discountNote}).${sandbox}`
+      : `Paiement de ${formatEuros(amountCents)} (${PLAN_LABELS[plan]}, ${cycleLabel(cycle)}${discountNote}).${sandbox}`,
   };
+}
+
+/**
+ * Paiement couvert entièrement par une remise (offre à 100 %) : aucune commande ni débit, facture à 0 € avec la
+ * ligne « Remise : … », période ouverte tout de suite, mois de l'offre décomptés. Aucune carte n'est enregistrée :
+ * elle sera demandée (« Changer de carte ») avant la première échéance payante, sinon la relance habituelle s'applique.
+ */
+async function openDiscountedPeriod(ctx: OrgContext, plan: PaidPlan, cycle: BillingCycle, discount: InstallmentDiscount, testMode: boolean): Promise<CheckoutResult> {
+  const now = ctx.services.now();
+  const { vatRate, vatNotice } = vatFor(ctx.services);
+  const end = addCycle(now, cycle);
+  const invoice = await withOrg(ctx, async (tx) => {
+    const created = await repos.invoices.create(tx, { plan, cycle, amountCents: 0, vatRate, vatNotice, periodStart: now.toISOString(), periodEnd: end.toISOString(), orderId: null, issuedAt: now.toISOString(), extraLines: [discount.line] });
+    await consumeOfferForInvoice(tx, ctx.orgId, [discount.line], cycle, now.toISOString());
+    await repos.subscriptions.upsert(tx, { plan, quotas: quotasForPlan(plan), status: "active", provider: "revolut", currentPeriodEnd: end.toISOString(), cycle, pendingPlan: null, chargeAttempts: 0, nextChargeAt: null, lastChargeError: null, dataRetentionUntil: null, cancelAtPeriodEnd: false, testMode });
+    await repos.audit.add(tx, { actorUserId: ctx.userId, action: "billing.offer_free_period", targetType: "invoice", targetId: created.id, meta: { plan, cycle, invoiceNumber: created.number, discountCents: discount.line.amountCents, label: discount.line.label, periodStart: now.toISOString(), periodEnd: end.toISOString() }, ip: ctx.ip });
+    return created;
+  });
+  return { orderToken: null, orderId: null, mode: testMode ? "sandbox" : "live", amountCents: 0, captureMode: null, simulated: false, message: `${discount.line.label} : ${PLAN_LABELS[plan]} (${cycleLabel(cycle)}) ouvert jusqu'au ${formatDateFr(end)} sans aucun débit, facture ${invoice.number} à 0 €. Enregistrez une carte avant la première échéance payante.` };
 }
 
 /**
@@ -453,8 +484,10 @@ export async function completePaidOrder(services: Services, orgId: string, po: P
     if (!closed) return { invoice: null, subscription: (await repos.subscriptions.get(tx)) ?? before };
     const sub = (await repos.subscriptions.get(tx)) ?? before;
     const previousEnd = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null;
-    const paidUntil = previousEnd && previousEnd > now && (sub.status === "active" || sub.status === "past_due") ? previousEnd : null;
-    const start = po.kind === "renewal" || sub.status === "past_due" ? (previousEnd ?? now) : (paidUntil ?? now);
+    // Accès offert (Selio Admin) : sa fin n'est pas une période payée ; le paiement le remplace à partir d'aujourd'hui.
+    const granted = Boolean(sub.grantedUntil);
+    const paidUntil = !granted && previousEnd && previousEnd > now && (sub.status === "active" || sub.status === "past_due") ? previousEnd : null;
+    const start = !granted && (po.kind === "renewal" || sub.status === "past_due") ? (previousEnd ?? now) : (paidUntil ?? now);
     const end = addCycle(start, po.cycle);
     const paymentMethodId = method?.id ?? sub.paymentMethodId ?? null;
     // Lignes de dépassement (photos portées) comprises dans le montant de la commande : reprises sur la facture,
@@ -462,6 +495,8 @@ export async function completePaidOrder(services: Services, orgId: string, po: P
     const extraLines = po.extraLines ?? [];
     const invoice = await repos.invoices.create(tx, { plan, cycle: po.cycle, amountCents: po.amountCents, vatRate, vatNotice, periodStart: start.toISOString(), periodEnd: end.toISOString(), orderId: po.orderId, issuedAt: now.toISOString(), extraLines });
     if (extraLines.length > 0) await markWornOverageBilled(tx, invoice.id, extraLines, po.createdAt, now.toISOString());
+    // Remise d'une offre commerciale comprise dans la commande : l'échéance est réellement payée, ses mois sont décomptés.
+    if (extraLines.length > 0) await consumeOfferForInvoice(tx, orgId, extraLines, po.cycle, now.toISOString());
     const subscription = await repos.subscriptions.upsert(tx, {
       plan,
       quotas: quotasForPlan(plan),
@@ -477,6 +512,8 @@ export async function completePaidOrder(services: Services, orgId: string, po: P
       lastChargeError: null,
       dataRetentionUntil: null,
       testMode: services.payments?.testMode ?? sub.testMode,
+      grantedUntil: null,
+      grantedBy: null,
     });
     await repos.audit.add(tx, { actorUserId: null, action: "billing.payment_completed", targetType: "invoice", targetId: invoice.id, meta: { plan, cycle: po.cycle, amountCents: po.amountCents, orderId: po.orderId, kind: po.kind, invoiceNumber: invoice.number, periodStart: start.toISOString(), periodEnd: end.toISOString(), extendedPaidPeriod: paidUntil !== null, lateCompletion: po.state === "failed", method: methodMeta(method) } });
     return { invoice, subscription };
@@ -627,6 +664,12 @@ export async function processSubscriptionRenewal(services: Services, orgId: stri
   let sub = await services.db.withOrg(orgId, (tx) => repos.subscriptions.get(tx));
   if (!sub) return { action: "skipped", reason: "no_subscription" };
   await releaseStaleAuthorisations(services, orgId).catch(() => 0);
+  // Accès offert (Selio Admin) : jamais débité ni rétrogradé avant sa fin ; à l'échéance, accès de base.
+  if (sub.grantedUntil) {
+    if (new Date(sub.grantedUntil) > now) return { action: "skipped", reason: "granted_running" };
+    await endGrantedAccess(services, orgId, sub);
+    return { action: "ended", reason: "granted_ended" };
+  }
   if (sub.status === "trialing") {
     if (!sub.currentPeriodEnd || new Date(sub.currentPeriodEnd) > now) return { action: "skipped", reason: "trial_running" };
     if (!sub.paymentMethodId && sub.revolutCustomerId && services.payments && !sub.cancelAtPeriodEnd) {
@@ -680,6 +723,21 @@ async function endSubscription(services: Services, orgId: string, sub: Subscript
 }
 
 /**
+ * Fin d'un accès offert par l'équipe Selio : retour à l'accès de base comme une fin d'abonnement (aucun débit,
+ * données conservées 30 jours), avec une ligne d'audit. Conditionnelle : un accès prolongé entre-temps par un
+ * opérateur n'est pas fermé.
+ */
+async function endGrantedAccess(services: Services, orgId: string, sub: Subscription): Promise<void> {
+  const now = services.now();
+  await services.db.withOrg(orgId, async (tx) => {
+    const fresh = await repos.subscriptions.get(tx);
+    if (!fresh?.grantedUntil || new Date(fresh.grantedUntil) > now) return;
+    await repos.subscriptions.upsert(tx, { plan: "free", quotas: quotasForPlan("free"), status: "canceled", grantedUntil: null, grantedBy: null, pendingPlan: null, chargeAttempts: 0, nextChargeAt: null, cancelAtPeriodEnd: false, dataRetentionUntil: new Date(now.getTime() + DATA_RETENTION_DAYS_AFTER_END * 86_400_000).toISOString() });
+    await repos.audit.add(tx, { actorUserId: null, action: "billing.grant_ended", targetType: "subscription", meta: { reason: "granted_ended", previousPlan: sub.plan, grantedUntil: sub.grantedUntil } });
+  });
+}
+
+/**
  * Échéance couverte par un mois offert (parrainage) : aucun débit, facture à 0 € avec la ligne « Mois offert —
  * parrainage », période prolongée d'un mois à partir de l'échéance (essai terminé, renouvellement ou relance),
  * relances remises à zéro. Atomique : le crédit est verrouillé, consommé conditionnellement et lié à la facture
@@ -723,6 +781,35 @@ async function applyCreditForRenewal(services: Services, orgId: string, plan: Pa
   return { action: "renewed", reason: "referral_credit", invoiceNumber: applied.invoice.number };
 }
 
+/**
+ * Échéance couverte entièrement par la remise d'une offre commerciale (100 %, ou montant fixe ≥ prix) : comme
+ * un mois offert du parrainage, aucun débit ni commande, facture à 0 € avec la ligne « Remise : … », période
+ * prolongée d'un cycle à partir de l'échéance, relances remises à zéro, mois de l'offre décomptés (atomique).
+ * Retourne null s'il reste quelque chose à payer (remise partielle, aucune offre, dépassement à facturer).
+ */
+async function applyFullDiscountForRenewal(services: Services, orgId: string, plan: PaidPlan, cycle: BillingCycle): Promise<RenewalOutcome | null> {
+  const now = services.now();
+  const planCents = planPriceCents(plan, cycle);
+  const probe = await services.db.withOrg(orgId, (tx) => offerDiscountLineFor(tx, orgId, plan, cycle, planCents));
+  if (!probe || probe.line.amountCents < planCents) return null;
+  // Un dépassement (photos portées) reste dû : l'échéance passe par un vrai débit, remise comprise.
+  if (extraLinesTotal(await wornOverageLines(services, orgId, now.toISOString())) > 0) return null;
+  const { vatRate, vatNotice } = vatFor(services);
+  const invoice = await services.db.withOrg(orgId, async (tx) => {
+    const discount = await offerDiscountLineFor(tx, orgId, plan, cycle, planCents);
+    if (!discount || discount.line.amountCents < planCents) return null;
+    const sub = (await repos.subscriptions.get(tx))!;
+    const start = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : now;
+    const end = addCycle(start, cycle);
+    const created = await repos.invoices.create(tx, { plan, cycle, amountCents: 0, vatRate, vatNotice, periodStart: start.toISOString(), periodEnd: end.toISOString(), orderId: null, issuedAt: now.toISOString(), extraLines: [discount.line] });
+    await consumeOfferForInvoice(tx, orgId, [discount.line], cycle, now.toISOString());
+    await repos.subscriptions.upsert(tx, { plan, quotas: quotasForPlan(plan), status: "active", currentPeriodEnd: end.toISOString(), pendingPlan: null, chargeAttempts: 0, nextChargeAt: null, lastChargeError: null, dataRetentionUntil: null });
+    await repos.audit.add(tx, { actorUserId: null, action: "billing.offer_free_period", targetType: "invoice", targetId: created.id, meta: { plan, cycle, invoiceNumber: created.number, discountCents: discount.line.amountCents, label: discount.line.label, periodStart: start.toISOString(), periodEnd: end.toISOString(), previousStatus: sub.status } });
+    return created;
+  });
+  return invoice ? { action: "renewed", reason: "offer_discount", invoiceNumber: invoice.number } : null;
+}
+
 async function chargeDue(services: Services, orgId: string, sub: Subscription): Promise<RenewalOutcome> {
   const plan = isPaidPlan(sub.pendingPlan) ? sub.pendingPlan : isPaidPlan(sub.plan) ? sub.plan : null;
   if (!plan) return { action: "skipped", reason: "no_paid_plan" };
@@ -736,6 +823,9 @@ async function chargeDue(services: Services, orgId: string, sub: Subscription): 
   if (!openRetrying) {
     const credited = await applyCreditForRenewal(services, orgId, plan);
     if (credited) return credited;
+    // Offre commerciale à 100 % sur cette échéance (et aucun dépassement à facturer) : facture à 0 €, sans débit.
+    const free = await applyFullDiscountForRenewal(services, orgId, plan, cycle);
+    if (free) return free;
   }
   const payments = services.payments;
   if (!payments) return { action: "skipped", reason: "payments_unconfigured" };
@@ -780,14 +870,23 @@ async function chargeDue(services: Services, orgId: string, sub: Subscription): 
   }
   // Dépassement des photos portées (WORN_OVERAGE_ENABLED seulement) : photos produites au-delà du quota avec
   // l'accord du client, pas encore facturées, ajoutées à l'échéance comme lignes de dépassement.
-  const extraLines = await wornOverageLines(services, orgId, now.toISOString());
-  const overageCents = extraLinesTotal(extraLines);
-  const amountCents = planPriceCents(plan, cycle) + overageCents;
+  const overageLines = await wornOverageLines(services, orgId, now.toISOString());
+  const overageCents = extraLinesTotal(overageLines);
+  // Offre commerciale : remise sur le prix du forfait seulement (jamais sur le dépassement), décomptée au paiement.
+  const planCents = planPriceCents(plan, cycle);
+  const discount = await services.db.withOrg(orgId, (tx) => offerDiscountLineFor(tx, orgId, plan, cycle, planCents));
+  const extraLines = discount ? [...overageLines, discount.line] : overageLines;
+  const amountCents = planCents - (discount?.line.amountCents ?? 0) + overageCents;
+  if (amountCents <= 0) {
+    // Remise totale après le remplacement d'une commande jamais présentée : facture à 0 €, jamais une commande à 0.
+    const free = await applyFullDiscountForRenewal(services, orgId, plan, cycle);
+    if (free) return free;
+  }
   const attempt = sub.chargeAttempts + 1;
   let orderId: string;
   try {
-    const description = `Selio ${PLAN_LABELS[plan]} — renouvellement ${cycleLabel(cycle)}${overageCents > 0 ? ` + photos portées au-delà du quota (${formatEuros(overageCents)})` : ""}`;
-    const order = await payments.createOrder({ orgId, plan, amountCents, currency: "EUR", customerId: sub.revolutCustomerId, captureMode: "automatic", description, metadata: { kind: "renewal", cycle, attempt: String(attempt), ...(overageCents > 0 ? { overageCents: String(overageCents) } : {}) }, merchantOrderRef: orgId });
+    const description = `Selio ${PLAN_LABELS[plan]} — renouvellement ${cycleLabel(cycle)}${discount ? ` (${discount.line.label})` : ""}${overageCents > 0 ? ` + photos portées au-delà du quota (${formatEuros(overageCents)})` : ""}`;
+    const order = await payments.createOrder({ orgId, plan, amountCents, currency: "EUR", customerId: sub.revolutCustomerId, captureMode: "automatic", description, metadata: { kind: "renewal", cycle, attempt: String(attempt), ...(overageCents > 0 ? { overageCents: String(overageCents) } : {}), ...(discount ? { discountCents: String(discount.line.amountCents) } : {}) }, merchantOrderRef: orgId });
     orderId = order.orderId;
   } catch (err) {
     if (isTransient(err)) return { action: "deferred", reason: (err as PaymentApiError).code };
@@ -892,7 +991,10 @@ export function invoiceView(invoice: Invoice, customer: { orgName: string; email
       { kind: "plan", label: `Abonnement Selio ${PLAN_LABELS[invoice.plan]} — ${cycleLabel(invoice.cycle)}`, periodLabel: `du ${formatDateFr(start)} au ${formatDateFr(end)}`, amountCents: baseCents },
       ...extra.map((l) => l.kind === "credit"
         ? { kind: "credit" as const, label: l.label, periodLabel: `du ${formatDateFr(start)} au ${formatDateFr(end)}`, amountCents: l.amountCents, quantity: l.quantity, unitCents: l.unitCents }
-        : { kind: "overage" as const, label: l.label, periodLabel: `produites avant le ${formatDateFr(start)}`, amountCents: l.amountCents, quantity: l.quantity, unitCents: l.unitCents }),
+        : l.kind === "discount"
+          // Remise d'une offre : montant négatif (la somme des lignes reste le TTC).
+          ? { kind: "discount" as const, label: l.label, periodLabel: `du ${formatDateFr(start)} au ${formatDateFr(end)}`, amountCents: -l.amountCents, quantity: l.quantity, unitCents: l.unitCents }
+          : { kind: "overage" as const, label: l.label, periodLabel: `produites avant le ${formatDateFr(start)}`, amountCents: l.amountCents, quantity: l.quantity, unitCents: l.unitCents }),
     ],
     totals: { ...totals, vatRate: invoice.vatRate },
     paymentProvider: invoice.orderId ? "revolut" : null,
