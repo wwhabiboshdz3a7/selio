@@ -18,7 +18,7 @@ declare module "fastify" {
 }
 
 /** Adresses qui restent ouvertes (sans contexte) à un membre d'un compte bloqué : se déconnecter, se reconnecter, santé. */
-const OPEN_WHEN_BLOCKED = ["/api/auth/logout", "/api/auth/login", "/api/auth/register", "/api/health"];
+const OPEN_WHEN_BLOCKED = ["/api/auth/logout", "/api/auth/login", "/api/auth/register", "/api/health", "/api/capabilities"];
 
 export function clientIp(req: FastifyRequest): string | null {
   return req.ip ?? null;

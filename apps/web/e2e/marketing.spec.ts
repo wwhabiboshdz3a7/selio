@@ -11,9 +11,18 @@ test.describe("vitrine", () => {
     await page.goto("/");
     await expect(page).toHaveTitle(/Selio/);
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Vos articles, vos conversations et votre marge");
-    await expect(page.getByRole("link", { name: "Créer un compte" }).first()).toBeVisible();
-    await expect(page.getByRole("link", { name: "Explorer la démo" }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /Commencer l'essai gratuit/ }).first()).toBeVisible();
+    await expect(page.getByRole("main").getByRole("link", { name: "Se connecter" }).first()).toBeVisible();
+    // Plus aucun renvoi vers la démonstration depuis la vitrine.
+    await expect(page.locator('a[href^="/demo"]')).toHaveCount(0);
+    expect(await page.locator("body").innerText()).not.toMatch(/démo/i);
     await expect(page.getByText("Ce qui est disponible aujourd'hui")).toBeVisible();
+    // Le parcours, de l'achat à l'étiquette, avec les fournisseurs partenaires annoncés honnêtement.
+    const journey = page.locator("#parcours");
+    await expect(journey.getByRole("heading", { name: "De l'achat à l'étiquette, sans rien ressaisir" })).toBeVisible();
+    await expect(journey.getByRole("heading", { level: 3 })).toHaveCount(8);
+    await expect(journey.getByRole("heading", { name: "Sourcing auprès de fournisseurs partenaires" })).toBeVisible();
+    await expect(journey.getByText("Aucun partenariat n'est encore signé.", { exact: false })).toBeVisible();
     // Mention d'indépendance, mot pour mot, dans le pied de page.
     await expect(page.getByTestId("footer-independence")).toHaveText(INDEPENDENCE_NOTICE);
     // Une seule règle d'action : la conversion (« Créer un compte ») est toujours en
@@ -63,6 +72,12 @@ test.describe("vitrine", () => {
     await expect(studio).toContainText("29,99 €");
     await expect(page.getByText("Selio Radar Auto", { exact: true })).toBeVisible();
     await expect(page.getByText("Selio Cloud en option", { exact: true })).toBeVisible();
+    // Selio Bot inclus selon le forfait ; Selio Comptes à la prestation, en trois niveaux payés une fois.
+    await expect(page.getByRole("article", { name: "Selio Bot" })).toContainText("Inclus");
+    const comptes = page.getByRole("list", { name: "Niveaux de la prestation Selio Comptes" });
+    await expect(comptes).toContainText("19,00 €");
+    await expect(comptes).toContainText("49,00 €");
+    await expect(comptes).toContainText("89,00 €");
     // Comparatif : l'essai et les trois offres, « — » pour ce qui n'est pas inclus.
     const table = page.getByRole("table");
     const columns = ["Essai 14 jours", "Starter", "Pro", "Agence"];
@@ -103,18 +118,19 @@ test.describe("vitrine", () => {
     await expect(page.locator("details#essai-decouverte")).toHaveAttribute("open", "");
   });
 
-  test("plateforme : Selio et ses filiales, chacune avec son état honnête", async ({ page }) => {
+  test("plateforme : la gamme Selio dans l'ordre, chacune avec son état honnête", async ({ page }) => {
     await page.goto("/plateforme");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Une plateforme, puis des filiales");
-    for (const name of ["Selio", "Selio Studio", "Selio Agents", "Selio Track", "Selio Cloud", "Selio Comptes"]) await expect(page.getByRole("article", { name, exact: true })).toBeVisible();
+    for (const p of PRODUCTS) await expect(page.getByRole("article", { name: p.name, exact: true })).toBeVisible();
     await expect(page.getByRole("article", { name: "Selio Global" })).toHaveCount(0);
-    await expect(page.getByRole("article", { name: "Selio Agents" }).getByText("Aperçu dans la démo")).toBeVisible();
+    await expect(page.getByRole("article", { name: "Selio Agents" }).getByText("Aperçu")).toBeVisible();
     await expect(page.getByRole("article", { name: "Selio Cloud" }).getByText("En développement")).toBeVisible();
-    await expect(page.getByRole("link", { name: /Ouvrir Selio Studio dans la démo/ })).toHaveAttribute("href", "/demo?vers=/studio");
+    await expect(page.getByRole("article", { name: "Selio Bot" }).getByText("En développement")).toBeVisible();
+    await expect(page.locator('a[href^="/demo"]')).toHaveCount(0);
     await expect(page.getByText(/ni affilié, ni approuvé, ni sponsorisé par Vinted/).first()).toBeVisible();
-    // Chaque espace qui a sa page de filiale y mène.
-    await expect(page.getByRole("link", { name: "En savoir plus sur Selio Studio" })).toHaveAttribute("href", "/produits/studio");
-    await expect(page.getByRole("article", { name: "Selio Comptes", exact: true }).getByText("Disponible")).toBeVisible();
+    // Chaque produit mène à sa page.
+    await expect(page.getByRole("link", { name: "Découvrir Selio Studio" })).toHaveAttribute("href", "/produits/studio");
+    await expect(page.getByRole("article", { name: "Selio Comptes", exact: true }).getByText("Sur demande")).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
     expect(overflow).toBe(false);
   });
@@ -129,9 +145,11 @@ test.describe("vitrine", () => {
       await expect(page.getByText(product.doesNot[0]!)).toBeVisible();
       await expect(page.getByText("Prix : voir les tarifs")).toBeVisible();
       await expect(page.getByRole("link", { name: "Voir les tarifs" }).first()).toHaveAttribute("href", /^\/tarifs/);
-      await expect(page.getByRole("link", { name: `Voir ${product.name} dans la démo` })).toHaveAttribute("href", `/demo?vers=${product.demoPath}`);
+      if (product.slug === "comptes") await expect(page.getByRole("link", { name: "Demander une prestation" })).toHaveAttribute("href", "/contact");
+      else await expect(page.getByRole("link", { name: "Commencer l'essai gratuit de 14 jours" })).toHaveAttribute("href", "/inscription");
+      await expect(page.locator('a[href^="/demo"]')).toHaveCount(0);
       await expect(page.getByTestId("independence-notice")).toHaveText(INDEPENDENCE_NOTICE);
-      // Capture de la démonstration (ou illustration), décrite pour les lecteurs d'écran.
+      // Capture d'écran (ou illustration), décrite pour les lecteurs d'écran.
       await expect(page.locator("figure").getByRole("img").filter({ visible: true }).first()).toBeVisible();
       expect(await page.locator('meta[name="robots"]').getAttribute("content")).toBe("index, follow");
       expect((await page.locator('meta[name="description"]').getAttribute("content"))?.length).toBeLessThanOrEqual(160);
@@ -140,7 +158,7 @@ test.describe("vitrine", () => {
       expect(types).toEqual(expect.arrayContaining(["SoftwareApplication", "BreadcrumbList"]));
       expect(await noOverflow(page)).toBe(true);
     }
-    // Le pied de page relie les six filiales ; une adresse inconnue ramène à la plateforme.
+    // Le pied de page relie toute la gamme ; une adresse inconnue ramène à la plateforme.
     await expect(page.getByRole("contentinfo").getByRole("link", { name: "Selio Radar" })).toHaveAttribute("href", "/produits/radar");
     await page.goto("/produits/inconnue");
     await expect(page).toHaveURL(/\/plateforme$/);

@@ -3,9 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Clock, UserPlus } from "lucide-react";
 import { AGENCY_CLIENT_KIND_LABELS, AGENCY_CLIENT_STATUS_LABELS, AGENCY_EXAMPLE_CLIENTS, type AgencyClientStatus } from "@selio/demo-data";
 import { Button, Card, PageHeader, StatusBadge, Table, TableWrap, Tag, Td, Th, Tr, cn, formatCents, formatNumber } from "@selio/ui";
-import { useClient, useRequiredSession } from "../../../lib/data/provider";
+import { useClient, useData, useRequiredSession } from "../../../lib/data/provider";
 import { ScoreRing } from "../../../components/charts";
-import { ExampleTag, PreviewNotice } from "../components";
+import { AgentsActivation, ExampleTag, PreviewNotice } from "../components";
 
 type Tone = "success" | "accent" | "neutral";
 const STATUS_TONE: Record<AgencyClientStatus, Tone> = { active: "success", onboarding: "accent", invited: "neutral" };
@@ -28,6 +28,14 @@ const PLANNED = [
 ];
 
 export default function AgencyClients() {
+  const { mode } = useData();
+  // Mode connecté : les boutiques clientes d'exemple ne sont jamais montrées.
+  if (mode === "connected") return <AgentsActivation title="Boutiques clientes" does={["Les boutiques de vos clients au même endroit : chiffre d'affaires, stock, messages en attente.", "Des accès limités à une seule boutique pour chaque membre de l'équipe.", "Le suivi de chaque boutique, sans changer d'outil."]} />;
+  return <AgencyClientsPreview />;
+}
+
+/** Démonstration : la page avec les boutiques clientes d'exemple (marquées « Exemple fictif »). */
+function AgencyClientsPreview() {
   const client = useClient();
   const session = useRequiredSession();
   const overview = useQuery({ queryKey: ["overview", "month"], queryFn: () => client.getOverview("month") });

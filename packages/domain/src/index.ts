@@ -33,3 +33,5 @@ export * from "./bundles";
 export * from "./thresholds";
 export * from "./migration";
 export * from "./operator-permissions";
+export * from "./bot";
+export * from "./activity";

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Check, Eye, Lock, Minus } from "lucide-react";
-import { ROLES, ROLE_LABELS, type Role } from "@selio/contracts";
+import { Check, Copy, Eye, Lock, Minus } from "lucide-react";
+import { ROLES, ROLE_LABELS, type InviteOutcome, type Role } from "@selio/contracts";
 import { ACTIONS, ACTION_LABELS, PERMISSION_GROUPS, ROLES_BY_RANK, actionsUnlockedAt, baseRoleOf, can, canAssignRole, type Action } from "@selio/domain";
 import { Alert, Avatar, Button, Card, ConfirmDialog, Field, Input, PageHeader, Select, Table, TableWrap, Tag, Td, Th, Tr, cn, formatDate } from "@selio/ui";
 import { useClient, useData, useRequiredSession } from "../../../lib/data/provider";
@@ -25,11 +25,21 @@ const GROUPS = [...PERMISSION_GROUPS, ...(ACTIONS.some((a) => !grouped.has(a)) ?
 export default function Access() {
   const client = useClient();
   const session = useRequiredSession();
+  const { mode } = useData();
   const q = useQuery({ queryKey: ["members"], queryFn: () => client.listMembers() });
   const usage = useQuery({ queryKey: ["usage"], queryFn: () => client.getUsage() });
   const [form, setForm] = useState({ email: "", role: "operator" as Role });
   const [removing, setRemoving] = useState<string | null>(null);
-  const invite = useAppMutation(() => client.inviteMember(form), { invalidate: ["members", "usage"], success: "Invitation enregistrée", onSuccess: () => setForm({ email: "", role: "operator" }) });
+  // Dernière invitation : lien à copier (l'email peut ne pas partir tant que le service d'email n'est pas branché).
+  const [sent, setSent] = useState<{ email: string; invite: InviteOutcome } | null>(null);
+  const invite = useAppMutation(() => client.inviteMember(form), {
+    invalidate: ["members", "usage"],
+    success: (r) => (r.invite?.existingAccount ? "Membre ajouté : il a déjà un compte Selio" : "Invitation enregistrée"),
+    onSuccess: (r) => {
+      setSent(r.invite ? { email: r.user.email, invite: r.invite } : null);
+      setForm({ email: "", role: "operator" });
+    },
+  });
   const setRole = useAppMutation(({ id, role }: { id: string; role: Role }) => client.updateMemberRole(id, role), { invalidate: ["members"], success: "Rôle mis à jour" });
   const remove = useAppMutation((id: string) => client.removeMember(id), { invalidate: ["members", "usage"], success: "Membre retiré", onSuccess: () => setRemoving(null) });
   const manage = can(session.role, "members.manage");
@@ -112,13 +122,14 @@ export default function Access() {
       {manage ? (
         <Card>
           <h2 className="text-md font-semibold">Inviter un membre</h2>
-          <p className="mt-1 text-sm text-text-muted">En mode connecté, un email d'invitation sera envoyé quand le service d'email sera configuré ; en attendant, le compte est créé avec un mot de passe à définir par l'administrateur.</p>
+          <p className="mt-1 text-sm text-text-muted">{mode === "demo" ? "En démonstration, le membre est ajouté tout de suite, sans email." : "La personne reçoit un email d'invitation quand le service d'email est branché ; dans tous les cas, un lien d'invitation à copier s'affiche ici, à lui envoyer vous-même (SMS, WhatsApp…). Si elle a déjà un compte Selio, elle est ajoutée tout de suite et retrouve votre organisation dans son menu."}</p>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
             <Field label="Email" className="flex-1">{(p) => <Input id={p.id} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />}</Field>
             <Field label="Rôle">{(p) => <Select id={p.id} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>{invitable.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}</Select>}</Field>
             <Button onClick={() => invite.mutate(undefined)} loading={invite.isPending} disabled={!form.email}>Inviter</Button>
           </div>
           <p className="mt-2 text-sm text-text-muted"><span className="font-medium text-text">{ROLE_LABELS[form.role]} :</span> {ROLE_GUIDE[form.role].summary}</p>
+          {sent ? <InviteResult email={sent.email} invite={sent.invite} onClose={() => setSent(null)} /> : null}
         </Card>
       ) : <Alert tone="info">Seuls le titulaire et les administrateurs peuvent inviter, retirer ou changer le rôle d'un membre.</Alert>}
 
@@ -134,6 +145,40 @@ export default function Access() {
       </Card>
 
       <ConfirmDialog open={removing !== null} onClose={() => setRemoving(null)} onConfirm={() => removing && remove.mutate(removing)} loading={remove.isPending} danger title="Retirer ce membre ?" description="Il perdra immédiatement l'accès à l'organisation." confirmLabel="Retirer" />
+    </div>
+  );
+}
+
+/**
+ * Résultat d'une invitation : lien à copier (compte créé pour l'occasion), ou « déjà un compte » (ajouté tout de
+ * suite, aucun lien : il permettrait de choisir le mot de passe de quelqu'un d'autre).
+ */
+export function InviteResult({ email, invite, onClose }: { email: string; invite: InviteOutcome; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    if (!invite.link) return;
+    try {
+      await navigator.clipboard.writeText(invite.link);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+  if (invite.existingAccount) {
+    return (
+      <Alert tone="success" className="mt-3" title={`${email} a déjà un compte Selio`} action={<Button size="sm" variant="ghost" onClick={onClose}>Fermer</Button>}>
+        Elle est ajoutée à votre organisation dès maintenant, sans nouveau mot de passe : à sa prochaine connexion, elle choisit votre organisation dans son menu (« Passer à… »).
+      </Alert>
+    );
+  }
+  return (
+    <div data-testid="invite-link" className="mt-3 rounded-lg border border-border bg-surface-muted/50 p-3">
+      <p className="text-sm font-medium text-text">Lien d'invitation pour {email}</p>
+      <p className="mt-0.5 text-xs text-text-muted">{invite.emailDelivered ? "L'email d'invitation est parti. Vous pouvez aussi lui envoyer ce lien vous-même." : "Aucun email n'est parti (service d'email pas encore branché) : copiez ce lien et envoyez-le-lui vous-même."} Valable 7 jours{invite.expiresAt ? ` (jusqu'au ${formatDate(invite.expiresAt)})` : ""}, utilisable une fois ; ne le partagez qu'avec cette personne.</p>
+      <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+        <Input readOnly value={invite.link ?? ""} aria-label="Lien d'invitation" onFocus={(e) => e.currentTarget.select()} className="font-mono text-xs" />
+        <Button size="sm" variant="secondary" icon={<Copy />} onClick={() => void copy()}>{copied ? "Copié" : "Copier le lien"}</Button>
+      </div>
     </div>
   );
 }

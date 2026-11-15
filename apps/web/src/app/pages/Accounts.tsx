@@ -363,7 +363,10 @@ function EditAccountDialog({ account: c, onClose }: { account: MarketplaceConnec
 /** Mode connecté sans simulateur : on peut l'ajouter pour essayer le parcours sans compte réel. */
 function SimulatorShortcut() {
   const client = useClient();
+  const { mode } = useData();
   const add = useAppMutation(() => client.createConnection({ provider: "demo", label: "Simulateur de démonstration", usage: "sale" }), { invalidate: INV, success: "Simulateur ajouté" });
+  // Mode connecté : aucun compte d'exemple proposé, seulement de vrais comptes Vinted.
+  if (mode === "connected") return null;
   return (
     <p className="mt-2 text-xs text-text-muted">
       Pour essayer sans compte réel :{" "}

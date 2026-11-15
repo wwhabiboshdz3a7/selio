@@ -5,6 +5,8 @@ import { Card, Field, Input, PageHeader, Select, StatusBadge, Table, TableWrap, 
 import { useClient } from "../../../lib/data/provider";
 import { QUALIFICATION_TONES, grantEndLabel } from "../../../lib/admin";
 import { QueryBoundary } from "../../components/common";
+import { isServerOutdated } from "../../../lib/admin";
+import { ServerOutdatedState } from "./AdminLayout";
 import { useDebouncedValue } from "../../components/hooks";
 
 const STATUS_FILTERS: { value: NonNullable<AdminAccountsQuery["status"]>; label: string }[] = [
@@ -16,7 +18,9 @@ const STATUS_FILTERS: { value: NonNullable<AdminAccountsQuery["status"]>; label:
 ];
 
 /** Statut lisible d'un compte : accès offert, essai (avec sa fin), ou l'état de l'abonnement. */
-export function AccountStatus({ a }: { a: Pick<AdminAccountRow, "status" | "grantedUntil" | "currentPeriodEnd"> }) {
+export function AccountStatus({ a }: { a: Pick<AdminAccountRow, "status" | "grantedUntil" | "currentPeriodEnd" | "awaitingPaymentSince"> }) {
+  // Essai terminé pendant que le paiement n'était pas activé : à relancer (prolonger l'essai ou offrir l'accès).
+  if (a.status === "canceled" && a.awaitingPaymentSince && !a.grantedUntil) return <StatusBadge tone="warning">En attente du paiement</StatusBadge>;
   if (a.grantedUntil) return <StatusBadge tone="success">Offert · {grantEndLabel(a.grantedUntil, (d) => `jusqu'au ${formatDate(d)}`)}</StatusBadge>;
   if (a.status === "trialing") return <StatusBadge tone="accent">Essai{a.currentPeriodEnd ? ` · fin ${formatDate(a.currentPeriodEnd)}` : ""}</StatusBadge>;
   const tone = a.status === "active" ? "success" : a.status === "past_due" ? "warning" : "muted";
@@ -69,7 +73,7 @@ export default function AdminAccounts() {
           )}</Field>
         </div>
       </Card>
-      <QueryBoundary query={q}>
+      {q.isError && isServerOutdated(q.error) ? <ServerOutdatedState /> : <QueryBoundary query={q}>
         {(rows) => (
           <Card padding="none">
             <p className="px-4 pt-4 text-sm text-text-muted md:px-5" aria-live="polite">{rows.length} compte{rows.length > 1 ? "s" : ""}</p>
@@ -95,7 +99,7 @@ export default function AdminAccounts() {
             </TableWrap>
           </Card>
         )}
-      </QueryBoundary>
+      </QueryBoundary>}
     </>
   );
 }

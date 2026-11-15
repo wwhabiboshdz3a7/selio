@@ -70,10 +70,21 @@ describe("vitrine › Tarifs", () => {
     expect(rows.textContent).toContain(eur(PRICING.subsidiaries.radar));
     expect(rows.textContent).toContain(eur(PRICING.subsidiaries.radarAuto));
     expect(rows.textContent).toContain(eur(PRICING.subsidiaries.cloudOption));
-    expect(rows.textContent).toContain(eur(PRICING.subsidiaries.comptesAudit));
-    expect(rows.textContent).toContain(eur(PRICING.subsidiaries.comptesAccompagnement));
-    expect(within(rows).getAllByText("une fois").length).toBe(2);
     expect(within(rows).getAllByText("par mois").length).toBe(3);
+    // Selio Bot : pas de prix séparé, inclus selon le forfait.
+    const bot = screen.getByRole("article", { name: "Selio Bot" });
+    expect(bot.textContent).toContain("Inclus");
+    expect(bot.textContent).toMatch(/Agence : relance automatique et Selio Cloud inclus/);
+    // Selio Comptes à la prestation : trois niveaux payés une fois, lus dans PRICING.
+    const tiers = screen.getByRole("list", { name: "Niveaux de la prestation Selio Comptes" });
+    const items = within(tiers).getAllByRole("listitem");
+    expect(items.map((li) => li.querySelector("p")?.textContent)).toEqual(["Audit de boutique", "Mise en place complète", "Accompagnement 30 jours"]);
+    expect(items[0]!.textContent).toContain(eur(PRICING.subsidiaries.comptesAudit));
+    expect(items[1]!.textContent).toContain(eur(PRICING.subsidiaries.comptesMiseEnPlace));
+    expect(items[2]!.textContent).toContain(eur(PRICING.subsidiaries.comptesAccompagnement));
+    expect([PRICING.subsidiaries.comptesAudit, PRICING.subsidiaries.comptesMiseEnPlace, PRICING.subsidiaries.comptesAccompagnement]).toEqual([1900, 4900, 8900]);
+    expect(within(tiers).getAllByText("une fois").length).toBe(3);
+    expect(screen.queryByText(/explorer la démo/i)).toBeNull();
   });
 
   it("comparatif : l'essai et les trois offres, « non inclus » lisible par un lecteur d'écran", () => {

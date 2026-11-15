@@ -6,12 +6,14 @@ Disallow: /app
 Disallow: /studio
 Disallow: /agents
 Disallow: /track
+Disallow: /bot
 Disallow: /cloud
 Disallow: /comptes
 Disallow: /generateur
 Disallow: /agence
 Disallow: /global
 Disallow: /admin
+Disallow: /demo
 Disallow: /api/
 
 Sitemap: https://selio.fr/sitemap.xml

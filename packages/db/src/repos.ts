@@ -416,6 +416,13 @@ export const items = {
     // Dernière mise en ligne : republication la plus récente, sinon mise en vente.
     const onlineSince = "greatest(listed_at, (select max((r->>'at')::timestamptz) from jsonb_array_elements(republications) r))";
     if (q.minDaysOnline !== undefined) { params.push(String(q.minDaysOnline)); where.push(`status in ('listed','reserved') and ${onlineSince} <= now() - ($${params.length} || ' days')::interval`); }
+    if (q.connectionId) { params.push(q.connectionId); where.push(`connection_id = $${params.length}`); }
+    if (q.photos === "none") where.push("jsonb_array_length(photos) = 0");
+    // Marge projetée au prix affiché (hors port) : sous le coût, moins de 30 % du prix, 30 % ou plus.
+    const projected = "(listed_price_cents - purchase_price_cents - purchase_fees_cents)";
+    if (q.margin === "negative") where.push(`listed_price_cents is not null and ${projected} < 0`);
+    if (q.margin === "low") where.push(`listed_price_cents > 0 and ${projected} >= 0 and ${projected} < listed_price_cents * 0.3`);
+    if (q.margin === "good") where.push(`listed_price_cents > 0 and ${projected} >= listed_price_cents * 0.3`);
     const order = { updated_desc: "updated_at desc", created_desc: "created_at desc", title_asc: "title asc", price_asc: "listed_price_cents asc nulls first", price_desc: "listed_price_cents desc nulls last", margin_desc: "(coalesce(listed_price_cents, 0) - purchase_price_cents - purchase_fees_cents) desc", online_desc: `${onlineSince} asc nulls last` }[q.sort ?? "updated_desc"];
     const pageSize = q.pageSize ?? 25;
     const p = q.page ?? 1;
@@ -451,6 +458,26 @@ export const items = {
   },
   async delete(tx: Tx, id: string): Promise<void> {
     await tx.query("delete from inventory_items where org_id = $1 and id = $2", [tx.orgId, id]);
+  },
+  /** Compteurs de « Articles et stock » (articles actifs, vendus du mois, valeurs du stock, à republier). */
+  async summary(tx: Tx, opts: { monthStart: string; republishAfterDays: number }): Promise<{ active: number; inStock: number; listed: number; reserved: number; soldThisMonth: number; stockValueCents: number; listedValueCents: number; withoutPhoto: number; toRepublish: number }> {
+    const onlineSince = "greatest(listed_at, (select max((r->>'at')::timestamptz) from jsonb_array_elements(republications) r))";
+    const r = await tx.one<Record<string, number>>(
+      `select
+         count(*) filter (where status <> 'archived') as active,
+         count(*) filter (where status = 'in_stock') as in_stock,
+         count(*) filter (where status = 'listed') as listed,
+         count(*) filter (where status = 'reserved') as reserved,
+         count(*) filter (where status = 'sold' and sold_at >= $2::timestamptz) as sold_this_month,
+         coalesce(sum(purchase_price_cents + purchase_fees_cents) filter (where status in ('in_stock', 'listed', 'reserved')), 0) as stock_value_cents,
+         coalesce(sum(listed_price_cents) filter (where status in ('listed', 'reserved')), 0) as listed_value_cents,
+         count(*) filter (where status in ('in_stock', 'listed', 'reserved') and jsonb_array_length(photos) = 0) as without_photo,
+         count(*) filter (where status in ('listed', 'reserved') and ${onlineSince} <= now() - ($3 || ' days')::interval) as to_republish
+       from inventory_items where org_id = $1`,
+      [tx.orgId, opts.monthStart, String(opts.republishAfterDays)],
+    );
+    const n = (k: string) => Number(r[k] ?? 0);
+    return { active: n("active"), inStock: n("inStock"), listed: n("listed"), reserved: n("reserved"), soldThisMonth: n("soldThisMonth"), stockValueCents: n("stockValueCents"), listedValueCents: n("listedValueCents"), withoutPhoto: n("withoutPhoto"), toRepublish: n("toRepublish") };
   },
   async stale(tx: Tx, statuses: string[], days: number, limit = 5): Promise<InventoryItem[]> {
     return (await tx.query("select * from inventory_items where org_id = $1 and status = any($2) and coalesce(purchased_at, created_at) < now() - ($3 || ' days')::interval order by coalesce(purchased_at, created_at) limit $4", [tx.orgId, statuses, String(days), limit])).map((r) => parse(inventoryItem, r));
@@ -2271,6 +2298,8 @@ export interface AdminAccountRecord {
   grantedBy: string | null;
   members: number;
   ownerEmail: string | null;
+  /** Essai terminé en paiement simulé : accès de base « en attente du paiement » depuis cette date (0023). */
+  awaitingPaymentSince: string | null;
 }
 
 /**
@@ -2281,7 +2310,7 @@ export interface AdminAccountRecord {
 export const adminAccounts = {
   async list(tx: Tx): Promise<AdminAccountRecord[]> {
     const rows = await tx.query<AdminAccountRecord>("select * from app_admin_accounts()");
-    return rows.map((r) => ({ ...r, members: Number(r.members ?? 0), cardOnFile: r.cardOnFile === true, cancelAtPeriodEnd: r.cancelAtPeriodEnd === true }));
+    return rows.map((r) => ({ ...r, members: Number(r.members ?? 0), cardOnFile: r.cardOnFile === true, cancelAtPeriodEnd: r.cancelAtPeriodEnd === true, awaitingPaymentSince: r.awaitingPaymentSince ?? null }));
   },
   /** Email, ancien drapeau d'opérateur et qualification du compte : une seule requête par requête HTTP. */
   async accessInfo(tx: Tx, userId: string, orgId: string): Promise<{ email: string; isOperator: boolean; qualification: string } | null> {
@@ -2819,5 +2848,223 @@ export const migrationMappings = {
   async purgeRawInputsAll(tx: Tx, now: string): Promise<number> {
     const r = await tx.maybeOne<{ appMigrationPurgeRawInputs: number }>("select app_migration_purge_raw_inputs($1)", [now]);
     return Number(r?.appMigrationPurgeRawInputs ?? 0);
+  },
+};
+
+// ---------------------------------------------------------------- journal d'activité de Selio Manager
+
+/** Filtres du journal, déjà validés (activityQuery) et traduits par @selio/core. */
+export interface ActivityFeedFilter {
+  verbs?: string[];
+  actorKind?: string;
+  actorUserId?: string;
+  /** true : Selio, Studio, Selio Bot ; false : un membre. */
+  automatic?: boolean;
+  from?: string;
+  to?: string;
+  before?: { at: string; id: string } | null;
+  limit: number;
+}
+
+/** Ligne brute du journal (voir ActivityRow, @selio/contracts) ; `verb` est vérifié par @selio/core. */
+export interface ActivityFeedRow {
+  id: string;
+  at: string;
+  verb: string;
+  actorKind: string;
+  actorUserId: string | null;
+  targetType: string | null;
+  targetId: string | null;
+  itemId: string | null;
+  itemTitle: string | null;
+  counterpart: string | null;
+  priceCents: number | null;
+  purchaseCents: number | null;
+  status: string;
+  data: Record<string, unknown>;
+}
+
+const MS = (expr: string) => `date_trunc('milliseconds', ${expr})`;
+const COUNTERPART = "coalesce(nullif(split_part(trim(cu.display_name), ' ', 1), ''), cu.handle)";
+const JSON_INT = (expr: string) => `case when jsonb_typeof(${expr}) = 'number' then (${expr})::text::numeric::integer end`;
+
+/**
+ * Le journal n'a pas de table : chaque branche lit une trace existante (historique des articles, préparations
+ * Studio, messages envoyés à la main, tâches des automatisations, commandes, bordereaux, achats, journal
+ * d'audit) et la ramène aux mêmes colonnes. Toutes ces tables sont isolées par RLS (org_isolation) et chaque
+ * branche filtre aussi sur l'organisation. Jamais le texte d'un message : seulement le prénom de l'acheteur.
+ */
+const ACTIVITY_FEED_SQL = `
+  select 'ie:' || e.id as id, ${MS("e.created_at")} as at,
+    case
+      when e.kind = 'imported' then 'item.imported'
+      when e.kind = 'captured' then 'item.captured'
+      when e.kind = 'created' and e.note = 'Brouillon du générateur' then 'item.studio_draft'
+      when e.kind = 'created' and e.changes->'source'->>'to' = 'radar' then 'item.radar_bought'
+      when e.kind = 'created' then 'item.created'
+      when e.note like 'Republication%' then 'item.republished'
+      when e.note = 'Photos ajoutées' or (e.changes ? 'photos' and (e.changes - 'photos') = '{}'::jsonb) then 'item.photos_added'
+      when e.kind in ('status_changed', 'archived', 'restored') then 'item.status_changed'
+      when e.kind = 'price_changed' then 'item.price_changed'
+      else 'item.updated' end as verb,
+    case
+      when e.kind = 'created' and e.note = 'Brouillon du générateur' then 'studio'
+      when e.kind = 'created' and e.changes->'source'->>'to' = 'radar' then 'selio'
+      when e.actor_user_id is null then 'selio' else 'member' end as actor_kind,
+    e.actor_user_id, 'item' as target_type, e.item_id as target_id, e.item_id, i.title as item_title, null::text as counterpart,
+    null::integer as price_cents,
+    case when e.changes->'source'->>'to' = 'radar' then i.purchase_price_cents end as purchase_cents,
+    'done' as status,
+    jsonb_build_object('changes', e.changes, 'variant', case when e.note like 'Republication%' then substring(e.note from 'variante .*') end) as data
+  from inventory_events e left join inventory_items i on i.id = e.item_id
+  where e.org_id = $1
+
+  union all
+  select 'sp:' || p.id, ${MS("p.created_at")}, 'studio.prepared', 'studio', null, 'studio_prep', p.id, p.item_id,
+    coalesce(i.title, nullif(concat_ws(' ', p.fields->'brand'->>'value', p.fields->'size'->>'value'), '')), null, null, null, 'done',
+    jsonb_build_object('photos', jsonb_array_length(p.photos),
+      'labelRead', exists (select 1 from jsonb_each(p.fields) f where jsonb_typeof(f.value) = 'object' and f.value->>'source' = 'label'),
+      'brand', case when p.fields->'brand'->>'source' = 'label' then p.fields->'brand'->>'value' end,
+      'size', case when p.fields->'size'->>'source' = 'label' then p.fields->'size'->>'value' end)
+  from studio_preps p left join inventory_items i on i.id = p.item_id
+  where p.org_id = $1
+
+  union all
+  select 'sl:' || p.id, ${MS("p.listing_generated_at")}, 'studio.listing_written', 'studio', null,
+    case when p.item_id is not null then 'item' else 'studio_prep' end, coalesce(p.item_id, p.id), p.item_id,
+    coalesce(i.title, nullif(concat_ws(' ', p.fields->'brand'->>'value', p.fields->'size'->>'value'), '')), null, i.listed_price_cents, null, 'done', '{}'::jsonb
+  from studio_preps p left join inventory_items i on i.id = p.item_id
+  where p.org_id = $1 and p.listing_generated_at is not null
+
+  union all
+  select 'ms:' || m.id, ${MS("coalesce(m.sent_at, m.created_at)")}, 'message.sent',
+    case when a.actor_user_id is null and m.source not in ('user', 'ai') then 'selio' else 'member' end, a.actor_user_id,
+    'conversation', m.conversation_id, c.item_id, i.title, ${COUNTERPART}, m.offer_cents, null, 'done',
+    jsonb_build_object('ai', m.source = 'ai')
+  from messages m
+    join conversations c on c.id = m.conversation_id
+    join customers cu on cu.id = c.customer_id
+    left join inventory_items i on i.id = c.item_id
+    left join lateral (select a.actor_user_id from audit_logs a where a.org_id = m.org_id and a.action = 'message.sent' and a.target_id = m.id limit 1) a on true
+  where m.org_id = $1 and m.direction = 'outbound' and m.status = 'sent' and m.source <> 'automation'
+
+  union all
+  select 'jb:' || j.id, ${MS("coalesce(j.finished_at, j.created_at)")},
+    case when j.kind = 'automation.send_message' then
+      case
+        when j.payload->>'decision' = 'accept' then 'negotiation.accepted'
+        when j.payload->>'decision' = 'counter' then 'negotiation.countered'
+        when j.payload->>'decision' in ('decline', 'refuse') then 'negotiation.refused'
+        when j.payload->>'followUp' = 'true' then 'followup.sent'
+        when j.payload->>'handoff' = 'true' then 'automation.handoff'
+        else 'automation.reply_sent' end
+    else 'automation.action' end,
+    'selio', null,
+    case when j.payload ? 'conversationId' then 'conversation' when j.payload ? 'itemId' then 'item' else 'job' end,
+    coalesce(j.payload->>'conversationId', j.payload->>'itemId', j.id),
+    coalesce(c.item_id, j.payload->>'itemId'), i.title, ${COUNTERPART}, ${JSON_INT("j.payload->'offerCents'")}, null,
+    case j.status when 'succeeded' then 'done' when 'awaiting_approval' then 'pending' else 'failed' end,
+    jsonb_build_object('ruleName', coalesce(j.payload->>'ruleName', r.name))
+  from jobs j
+    left join automation_rules r on r.id = j.rule_id
+    left join conversations c on c.id = j.payload->>'conversationId'
+    left join customers cu on cu.id = c.customer_id
+    left join inventory_items i on i.id = coalesce(c.item_id, j.payload->>'itemId')
+  where j.org_id = $1 and j.kind like 'automation.%' and j.status in ('succeeded', 'awaiting_approval', 'failed')
+
+  union all
+  select 'or:' || o.id, ${MS("o.created_at")}, 'order.created', case when a.actor_user_id is null then 'selio' else 'member' end, a.actor_user_id,
+    'order', o.id, o.item_id, i.title, ${COUNTERPART}, o.sale_price_cents, null, 'done', '{}'::jsonb
+  from orders o
+    join inventory_items i on i.id = o.item_id
+    join customers cu on cu.id = o.customer_id
+    left join lateral (select a.actor_user_id from audit_logs a where a.org_id = o.org_id and a.action = 'order.created' and a.target_id = o.id limit 1) a on true
+  where o.org_id = $1
+
+  union all
+  select 'ot:' || a.id, ${MS("a.created_at")}, case a.meta->>'status' when 'shipped' then 'order.shipped' else 'order.delivered' end,
+    case when a.actor_user_id is null then 'selio' else 'member' end, a.actor_user_id,
+    'order', o.id, o.item_id, i.title, ${COUNTERPART}, null, null, 'done', '{}'::jsonb
+  from audit_logs a
+    join orders o on o.id = a.target_id
+    join inventory_items i on i.id = o.item_id
+    join customers cu on cu.id = o.customer_id
+  where a.org_id = $1 and a.action = 'order.transition' and a.meta->>'status' in ('shipped', 'delivered')
+
+  union all
+  select 'sh:' || s.id, ${MS("s.created_at")}, 'shipment.label_ready', 'selio', null, 'order', o.id, o.item_id, i.title, null, null, null, 'done', '{}'::jsonb
+  from shipments s join orders o on o.id = s.order_id join inventory_items i on i.id = o.item_id
+  where s.org_id = $1 and s.document is not null
+
+  union all
+  select 'pv:' || pr.id, ${MS("pr.confirmed_at")}, 'purchase.validated', 'member', a.actor_user_id, 'purchase', pr.id, null, op.title, null, null, coalesce(pr.total_cents, pr.max_price_cents), 'done', '{}'::jsonb
+  from purchase_requests pr
+    join opportunities op on op.id = pr.opportunity_id
+    left join lateral (select a.actor_user_id from audit_logs a where a.org_id = pr.org_id and a.action = 'purchase.confirmed' and a.target_id = pr.id limit 1) a on true
+  where pr.org_id = $1 and pr.confirmed_at is not null and pr.mode <> 'auto'
+
+  union all
+  select 'pd:' || pr.id, ${MS("pr.executed_at")}, 'purchase.done', 'selio', null, 'purchase', pr.id, pr.reported_item_id, op.title, null, null, coalesce(pr.total_cents, pr.max_price_cents),
+    case when pr.status in ('simulated', 'executed') then 'done' else 'failed' end, jsonb_build_object('simulated', pr.status = 'simulated')
+  from purchase_requests pr join opportunities op on op.id = pr.opportunity_id
+  where pr.org_id = $1 and pr.executed_at is not null
+
+  union all
+  select 'au:' || a.id, ${MS("a.created_at")},
+    case a.action
+      when 'rule.run' then 'automation.rule_run'
+      when 'job.approved' then 'automation.approved'
+      when 'automation.global_pause' then 'automation.paused'
+      when 'automation.global_resume' then 'automation.resumed'
+      when 'item.deleted' then 'item.deleted'
+      when 'item.bulk' then 'item.bulk'
+      else substr(a.action, 10) end,
+    case when a.action like 'activity.%' then coalesce(a.meta->>'actor', 'bot') when a.actor_user_id is null then 'selio' else 'member' end,
+    a.actor_user_id,
+    case when a.action like 'activity.%' then a.meta->>'targetType' when a.action = 'rule.run' then 'rule' when a.action = 'job.approved' then 'job' end,
+    case when a.action like 'activity.%' then a.meta->>'targetId' else a.target_id end,
+    case when a.action like 'activity.%' then a.meta->>'itemId' end,
+    case when a.action = 'item.deleted' then a.meta->>'title' when a.action like 'activity.%' then a.meta->>'itemTitle' end,
+    case when a.action like 'activity.%' then a.meta->>'counterpart' end,
+    case when a.action like 'activity.%' then ${JSON_INT("a.meta->'priceCents'")} end,
+    case when a.action like 'activity.%' then ${JSON_INT("a.meta->'purchaseCents'")} end,
+    coalesce(a.meta->>'status', 'done'),
+    jsonb_strip_nulls(jsonb_build_object('summary', a.meta->>'summary', 'ruleName', r.name, 'created', a.meta->'created', 'affected', a.meta->'affected', 'action', a.meta->>'action'))
+  from audit_logs a left join automation_rules r on a.action = 'rule.run' and r.id = a.target_id
+  where a.org_id = $1
+    and (a.action in ('rule.run', 'job.approved', 'automation.global_pause', 'automation.global_resume', 'item.deleted') or a.action like 'activity.%'
+      or (a.action = 'item.bulk' and coalesce(a.meta->>'affected', '0') <> '0'))
+`;
+
+export const activity = {
+  async list(tx: Tx, f: ActivityFeedFilter): Promise<ActivityFeedRow[]> {
+    const params: unknown[] = [tx.orgId];
+    const where: string[] = ["at is not null"];
+    const add = (v: unknown) => { params.push(v); return `$${params.length}`; };
+    if (f.verbs) where.push(`verb = any(${add(f.verbs)}::text[])`);
+    if (f.actorKind) where.push(`actor_kind = ${add(f.actorKind)}`);
+    if (f.actorUserId) where.push(`actor_kind = 'member' and actor_user_id = ${add(f.actorUserId)}`);
+    if (f.automatic === true) where.push("actor_kind <> 'member'");
+    if (f.automatic === false) where.push("actor_kind = 'member'");
+    if (f.from) where.push(`at >= ${add(f.from)}::timestamptz`);
+    if (f.to) where.push(`at < ${add(f.to)}::timestamptz`);
+    if (f.before) where.push(`(at, id) < (${add(f.before.at)}::timestamptz, ${add(f.before.id)})`);
+    const limit = Math.min(500, Math.max(1, f.limit));
+    return tx.query<ActivityFeedRow>(`select * from (${ACTIVITY_FEED_SQL}) feed where ${where.join(" and ")} order by at desc, id desc limit ${limit}`, params);
+  },
+};
+
+// ---------------------------------------------------------------- préférences de l'utilisateur (raccourcis)
+
+export const preferences = {
+  /** Préférences brutes (validées par @selio/core) de l'utilisateur connecté. Table globale : jamais une autre ligne. */
+  async get(tx: Tx, userId: string): Promise<Record<string, unknown>> {
+    const r = await tx.maybeOne<{ preferences: unknown }>("select preferences from users where id = $1", [userId]);
+    return r?.preferences && typeof r.preferences === "object" && !Array.isArray(r.preferences) ? (r.preferences as Record<string, unknown>) : {};
+  },
+  /** Fusion superficielle des clés données (les autres préférences sont gardées). */
+  async merge(tx: Tx, userId: string, patch: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const r = await tx.one<{ preferences: Record<string, unknown> }>("update users set preferences = preferences || $2::jsonb, updated_at = now() where id = $1 returning preferences", [userId, JSON.stringify(patch)], "Utilisateur");
+    return r.preferences;
   },
 };

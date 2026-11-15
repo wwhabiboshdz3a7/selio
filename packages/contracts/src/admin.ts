@@ -75,6 +75,17 @@ export const adminExtendTrialInput = z.object({
 });
 export type AdminExtendTrialInput = z.infer<typeof adminExtendTrialInput>;
 
+/**
+ * Selio Admin › fiche d'un compte : « Ajouter cette personne à mon organisation » (rôle au choix, jamais
+ * titulaire). La personne garde son propre compte et sa propre organisation ; elle retrouve la vôtre dans le
+ * sélecteur d'organisation, sans nouveau mot de passe.
+ */
+export const adminAddToMyOrgInput = z.object({
+  userId: z.string().trim().min(1).max(120),
+  role: z.enum(["admin", "operator", "photographer", "viewer"]),
+});
+export type AdminAddToMyOrgInput = z.infer<typeof adminAddToMyOrgInput>;
+
 /** Filtres de la liste des comptes. */
 export const adminAccountsQuery = z.object({
   q: z.string().trim().max(120).optional(),
@@ -101,6 +112,8 @@ export interface AdminAccountRow {
   members: number;
   /** Email du titulaire (premier propriétaire). */
   ownerEmail: string | null;
+  /** Essai terminé alors que le paiement n'était pas encore activé (paiement simulé) : depuis cette date. */
+  awaitingPaymentSince?: string | null;
 }
 
 export interface AdminAccountMember {

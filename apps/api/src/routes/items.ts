@@ -11,6 +11,8 @@ export default async function itemRoutes(app: FastifyInstance) {
     return items.listItems(ctx, query);
   });
   app.get("/api/items/brands", async (req) => items.listBrands(app.requireCtx(req)));
+  /** Compteurs de « Articles et stock » (valeur d'achat du stock : null sans « finances.read »). */
+  app.get("/api/items/summary", async (req) => items.itemSummary(app.requireCtx(req)));
   app.get("/api/items/export.csv", async (req, reply) => {
     const csv = await items.exportItemsCsv(app.requireCtx(req));
     reply.header("content-type", "text/csv; charset=utf-8").header("content-disposition", "attachment; filename=selio-articles.csv");

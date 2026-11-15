@@ -74,6 +74,11 @@ tr[tabindex]:focus-visible {
   --space-tint-soft: var(--tone-sky-soft);
   --space-tint-ink: var(--tone-sky);
 }
+[data-space="bot"] {
+  --space-tint: var(--tone-emerald);
+  --space-tint-soft: var(--tone-emerald-soft);
+  --space-tint-ink: var(--tone-emerald);
+}
 [data-space="generateur"] {
   --space-tint: var(--tone-rose);
   --space-tint-soft: var(--tone-rose-soft);

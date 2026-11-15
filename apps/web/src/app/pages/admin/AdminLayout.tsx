@@ -1,13 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router";
-import { ArrowUpRight, Building2, ChevronDown, Gauge, HeartPulse, LayoutDashboard, Lock, LogOut, Menu as MenuIcon, Moon, ShieldCheck, Sun, Tags, TrendingUp, Users, X } from "lucide-react";
+import { ArrowUpRight, Building2, ServerCrash, ChevronDown, Gauge, HeartPulse, LayoutDashboard, Lock, LogOut, Menu as MenuIcon, Moon, ShieldCheck, Sun, Tags, TrendingUp, Users, X } from "lucide-react";
 import { OPERATOR_ROLE_LABELS, type OperatorRole } from "@selio/contracts";
 import { operatorCan, type OperatorCapability } from "@selio/domain";
 import { Avatar, Banner, Button, IconButton, Menu, cn } from "@selio/ui";
 import { useClient, useData, useRequiredSession, useSession } from "../../../lib/data/provider";
 import { useTheme } from "../../../lib/theme";
 import { unsubscribeOnLogout } from "../../../lib/push";
-import { adminSectionsFor, operatorRoleOfSession, type AdminSection } from "../../../lib/admin";
+import { SERVER_OUTDATED_TEXT, SERVER_OUTDATED_TITLE, adminSectionsFor, operatorRoleOfSession, type AdminSection } from "../../../lib/admin";
+import { useCapabilities } from "../../../lib/capabilities";
 import { Logo } from "../../../components/Logo";
 
 const SECTION_ICONS: Record<string, ReactNode> = {
@@ -74,6 +75,18 @@ function SectionList({ sections }: { sections: AdminSection[] }) {
   );
 }
 
+/** Page de Selio Admin dont la route n'existe pas encore sur l'API (serveur pas à jour) : message clair, pas de liste vide. */
+export function ServerOutdatedState() {
+  return (
+    <div data-testid="server-outdated" className="mx-auto flex max-w-lg flex-col items-center gap-3 py-16 text-center">
+      <ServerCrash className="size-6 text-warning" aria-hidden />
+      <h1 className="text-xl font-semibold text-text">{SERVER_OUTDATED_TITLE} : relancez la mise à jour</h1>
+      <p className="text-sm text-text-muted">{SERVER_OUTDATED_TEXT}</p>
+      <Button variant="secondary" onClick={() => window.location.reload()}>Recharger la page</Button>
+    </div>
+  );
+}
+
 /** Démonstration : voir Selio Admin comme l'opérateur business (Elias) ou technique (Ibrahim). */
 function OperatorRolePreview({ role }: { role: OperatorRole }) {
   const client = useClient();
@@ -108,6 +121,9 @@ export default function AdminLayout() {
   const sections = adminSectionsFor(role);
   const pilotage = sections.filter((x) => x.group === "pilotage");
   const technique = sections.filter((x) => x.group === "technique");
+  // API plus ancienne que ce frontal (GET /api/capabilities inconnue) : bandeau « relancez la mise à jour ».
+  const caps = useCapabilities();
+  const outdated = mode === "connected" && caps.data?.version === "inconnue";
   useEffect(() => {
     setOpen(false);
   }, [location.pathname]);
@@ -182,6 +198,14 @@ export default function AdminLayout() {
       ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
         {mode === "demo" ? <OperatorRolePreview role={role} /> : null}
+        {outdated ? (
+          <Banner tone="neutral">
+            <span data-testid="server-outdated-banner" className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+              <ServerCrash className="size-3.5 shrink-0 text-warning" aria-hidden />
+              <span><span className="font-medium text-text">{SERVER_OUTDATED_TITLE}</span> — relancez la mise à jour du PC de production : certaines pages de l'administration ne peuvent pas s'afficher.</span>
+            </span>
+          </Banner>
+        ) : null}
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-surface/90 px-4 backdrop-blur md:hidden">
           <IconButton label="Ouvrir le menu" onClick={() => setOpen(true)}><MenuIcon /></IconButton>
           <Link to="/admin" className="flex min-w-0 flex-1 items-center gap-2" aria-label="Selio Admin"><Logo height={20} /><span className="font-semibold text-text">Admin</span></Link>

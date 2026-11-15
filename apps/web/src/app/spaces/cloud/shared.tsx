@@ -137,8 +137,8 @@ export function ConsentRequired({ hadPrevious, className = "mb-6" }: { hadPrevio
 /** Mode connecté : le Cloud n'est pas activé sur ce serveur (CLOUD_ENABLED) — rien ne s'exécute. */
 export function ServerOffNotice({ className = "mb-4" }: { className?: string }) {
   return (
-    <Alert tone="info" className={className} title="Selio Cloud n'est pas encore activé sur ce serveur">
-      La fenêtre de connexion est indisponible et aucune action n'est lancée. Vos réglages, l'accord et le journal restent consultables.
+    <Alert tone="info" className={className} title="Selio Cloud est en cours d'activation">
+      Bientôt, vos réponses et relances continueront quand votre ordinateur est éteint, compte par compte et avec votre accord. Dès maintenant, vous pouvez lire et donner l'accord et préparer vos réglages : rien n'est lancé tant que le Cloud n'est pas ouvert.
     </Alert>
   );
 }

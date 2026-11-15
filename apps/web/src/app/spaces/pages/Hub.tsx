@@ -7,12 +7,12 @@ import { ROLE_LABELS } from "@selio/contracts";
 import { PageHeader, StatusBadge, Tag, buttonClass, cn, formatCents, formatNumber } from "@selio/ui";
 import { seesFinances } from "../../../lib/roles";
 import { checklistProgress, loadComptes } from "../../../lib/comptes";
-import { useClient, useRequiredSession } from "../../../lib/data/provider";
+import { useClient, useData, useRequiredSession } from "../../../lib/data/provider";
 import { Sparkline } from "../../../components/charts";
 import { ItemThumb } from "../../components/common";
 import { BrandMark, initialsOf } from "../components";
 import { useNavCounts } from "../../layout";
-import { SPACES, SPACE_STATE_LABEL, type SpaceDef, type SpaceState } from "../spaces";
+import { SPACES, spaceStateLabel, upcomingSectionTitle, type SpaceDef, type SpaceState } from "../spaces";
 import { summarizeGenerated, useAllItems, useDressingScores } from "../studio-data";
 
 interface Figure { label: string; value: ReactNode; hint?: string }
@@ -20,6 +20,7 @@ interface Figure { label: string; value: ReactNode; hint?: string }
 const STATE_TONE: Record<SpaceState, "success" | "accent" | "neutral"> = { available: "success", preview: "accent", development: "neutral" };
 
 function SpaceCard({ space, figures, figuresNote, signal, secondary }: { space: SpaceDef; figures: Figure[]; figuresNote?: ReactNode; signal?: ReactNode; secondary?: { to: string; label: string } }) {
+  const { mode } = useData();
   const available = space.state === "available";
   return (
     <article data-space={space.id} aria-labelledby={`espace-${space.id}`} className="card flex min-w-0 flex-col overflow-hidden">
@@ -31,7 +32,7 @@ function SpaceCard({ space, figures, figuresNote, signal, secondary }: { space: 
             <h2 id={`espace-${space.id}`} className="text-lg font-bold text-text">{space.name}</h2>
             <p className="text-sm text-text-muted">{space.tagline}</p>
           </div>
-          <StatusBadge tone={STATE_TONE[space.state]} className="shrink-0">{SPACE_STATE_LABEL[space.state]}</StatusBadge>
+          <StatusBadge tone={STATE_TONE[space.state]} className="shrink-0">{spaceStateLabel(space.state, mode)}</StatusBadge>
         </div>
         <p className="text-sm text-text-muted">{space.description}</p>
         {signal ? <div className="min-h-10">{signal}</div> : null}
@@ -55,7 +56,7 @@ function SpaceCard({ space, figures, figuresNote, signal, secondary }: { space: 
         </ul>
         <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-border pt-4">
           <Link to={space.home} className={buttonClass({ variant: available ? "primary" : "secondary" })} aria-label={`Ouvrir ${space.name}`}>
-            Ouvrir {space.id === "selio" ? "Selio" : space.short} <ArrowRight aria-hidden />
+            Ouvrir {space.id === "selio" ? space.name : space.short} <ArrowRight aria-hidden />
           </Link>
           {secondary ? <Link to={secondary.to} className={buttonClass({ variant: "ghost" })}>{secondary.label}</Link> : null}
         </div>
@@ -65,13 +66,15 @@ function SpaceCard({ space, figures, figuresNote, signal, secondary }: { space: 
 }
 
 const STEPS = [
-  { id: "selio", step: "Gérer", title: "Selio, chaque jour", text: "Sourcing, achat, vente, bordereaux, après-vente et remise en ligne : chaque vente enregistrée devient une donnée utile." },
-  { id: "studio", step: "Créer", title: "Studio et Track s'en servent", text: "Studio écrit les annonces à partir de ce qui marche ; Track montre ce que vendent les autres comptes, pour sourcer au bon endroit." },
-  { id: "agents", step: "Élargir", title: "Agents, Cloud, nouveaux comptes", text: "Travailler à plusieurs avec les bons accès, faire tourner les automatisations en continu, ouvrir une nouvelle boutique." },
+  { id: "selio", step: "Gérer", title: "Selio Manager, chaque jour", text: "Sourcing, achat, vente, bordereaux, après-vente et remise en ligne : chaque vente enregistrée devient une donnée utile." },
+  { id: "studio", step: "Créer", title: "Studio, Track et Radar s'en servent", text: "Studio écrit les annonces à partir de ce qui marche ; Track montre où sourcer ; Radar repère les bonnes affaires." },
+  { id: "bot", step: "Automatiser", title: "Selio Bot, exécuté dans Selio Cloud", text: "Négociation, relances, republications et achat automatique selon vos règles, 24 h/24, ordinateur éteint." },
+  { id: "agents", step: "Élargir", title: "Agents et Selio Comptes", text: "Travailler à plusieurs avec les bons accès ; ouvrir ou remettre à plat une boutique, à la prestation." },
 ] as const;
 
 /** Carte compacte d'une filiale en développement. */
 function DevCard({ space }: { space: SpaceDef }) {
+  const { mode } = useData();
   return (
     <article data-space={space.id} aria-labelledby={`espace-${space.id}`} className="card flex min-w-0 flex-col overflow-hidden">
       <div className="space-rule" aria-hidden />
@@ -85,7 +88,7 @@ function DevCard({ space }: { space: SpaceDef }) {
         </div>
         <p className="text-sm text-text-muted">{space.description}</p>
         <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-          <StatusBadge tone="neutral">{SPACE_STATE_LABEL[space.state]}</StatusBadge>
+          <StatusBadge tone="neutral">{spaceStateLabel(space.state, mode)}</StatusBadge>
           <Link to={space.home} className={buttonClass({ variant: "ghost", size: "sm" })} aria-label={`Découvrir ${space.name}`}>Découvrir <ArrowRight aria-hidden /></Link>
         </div>
       </div>
@@ -95,6 +98,7 @@ function DevCard({ space }: { space: SpaceDef }) {
 
 export default function Hub() {
   const client = useClient();
+  const { mode } = useData();
   const session = useRequiredSession();
   const overview = useQuery({ queryKey: ["overview", "month"], queryFn: () => client.getOverview("month") });
   const counts = useNavCounts();
@@ -181,7 +185,7 @@ export default function Hub() {
       <PageHeader
         eyebrow={`Bonjour ${first}`}
         title="Selio et ses filiales"
-        description="Un compte, une IA, plusieurs outils. Selio gère votre activité au quotidien ; les filiales s'appuient sur ses données, sans rien ressaisir. Pour passer de l'une à l'autre, utilisez le bloc « Vous êtes dans » en haut du menu."
+        description="Un compte, une IA, plusieurs outils. Selio Manager gère votre activité au quotidien ; les filiales s'appuient sur ses données, sans rien ressaisir. Pour passer de l'une à l'autre, utilisez le bloc « Vous êtes dans » en haut du menu."
       />
 
       <h2 className="mb-3 text-sm font-bold tracking-wider text-text uppercase">Disponibles</h2>
@@ -192,13 +196,13 @@ export default function Hub() {
             space={space}
             figures={figures[space.id] ?? []}
             signal={signals[space.id]}
-            figuresNote={space.id === "selio" ? "Calculés depuis vos données, ce mois-ci." : space.id === "studio" ? "Note du dressing des annonces en ligne." : space.id === "cloud" ? <><Tag className="mr-1.5">Aperçu</Tag>Actions légères seulement (répondre, relancer).</> : <><Tag className="mr-1.5">Aperçu</Tag>Boutiques clientes fictives, rien n'est facturé.</>}
+            figuresNote={space.id === "selio" ? "Calculés depuis vos données, ce mois-ci." : space.id === "studio" ? "Note du dressing des annonces en ligne." : space.id === "cloud" ? (mode === "demo" ? <><Tag className="mr-1.5">Aperçu</Tag>Actions légères seulement (répondre, relancer).</> : "Actions légères seulement (répondre, relancer), avec votre accord.") : mode === "demo" ? <><Tag className="mr-1.5">Aperçu</Tag>Boutiques clientes fictives, rien n'est facturé.</> : "L'équipe et les rôles sont actifs ; les boutiques clientes arrivent."}
             secondary={space.id === "selio" ? { to: "/app/automatisation", label: "Automatisation" } : space.id === "studio" ? { to: "/studio/performances", label: "Ce qui performe" } : space.id === "cloud" ? { to: "/cloud/journal", label: "Journal des actions" } : { to: "/app/settings/access", label: "Comptes et accès" }}
           />
         ))}
       </div>
 
-      <h2 className="mt-8 mb-1 text-sm font-bold tracking-wider text-text uppercase">En développement</h2>
+      <h2 className="mt-8 mb-1 text-sm font-bold tracking-wider text-text uppercase">{upcomingSectionTitle(mode)}</h2>
       <p className="mb-3 text-sm text-text-muted">Ce qui arrive. Rien n'est activé ni facturé ; chaque page montre aussi ce qui marche déjà dans Selio.</p>
       <div className="grid gap-4 md:grid-cols-3">
         {SPACES.filter((s) => s.state === "development").map((space) => <DevCard key={space.id} space={space} />)}
@@ -207,7 +211,7 @@ export default function Hub() {
       <section aria-labelledby="enchainement" className="card mt-8 p-5 md:p-6">
         <h2 id="enchainement" className="text-md font-bold text-text">Comment les filiales s'enchaînent</h2>
         <p className="mt-1 max-w-3xl text-sm text-text-muted">D'abord l'outil de gestion, ensuite les filiales spécialisées : rien n'est à ressaisir de l'une à l'autre.</p>
-        <ol className="mt-5 grid gap-5 md:grid-cols-3 md:gap-6">
+        <ol className="mt-5 grid gap-5 md:grid-cols-2 md:gap-6 xl:grid-cols-4">
           {STEPS.map((s, i) => (
             <li key={s.id} data-space={s.id} className="relative flex gap-3 md:flex-col">
               <span className="flex items-center gap-2 md:w-full">
@@ -222,7 +226,7 @@ export default function Hub() {
             </li>
           ))}
         </ol>
-        <p className="mt-5 border-t border-border pt-4 text-xs text-text-muted">Les filiales en aperçu ou en développement ne sont pas facturées à part ; Selio Cloud ne s'active qu'avec votre accord, compte par compte. Vos données restent celles de votre organisation : elles alimentent vos propres analyses. Selio est un outil indépendant, ni affilié à Vinted ni approuvé par Vinted.</p>
+        <p className="mt-5 border-t border-border pt-4 text-xs text-text-muted">{mode === "demo" ? "Les filiales en aperçu ou en développement ne sont pas facturées à part ;" : "Les filiales en cours d'activation ne sont pas facturées à part ;"} Selio Cloud ne s'active qu'avec votre accord, compte par compte. Vos données restent celles de votre organisation : elles alimentent vos propres analyses. Selio est un outil indépendant, ni affilié à Vinted ni approuvé par Vinted.</p>
       </section>
     </>
   );

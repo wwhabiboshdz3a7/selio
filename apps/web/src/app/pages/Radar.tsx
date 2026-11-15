@@ -6,6 +6,8 @@ import { ITEM_CATEGORIES, ITEM_CATEGORY_LABELS, RADAR_MAX_PRIORITY_SEARCHES, RAD
 import { REVIEW_THRESHOLD, can, isActiveAccount } from "@selio/domain";
 import { Button, Card, ConfirmDialog, Dialog, EmptyState, Field, Input, Money, PageHeader, Segmented, Select, Tag, Toggle, cn, formatPercent, formatRelative, useToast } from "@selio/ui";
 import { useClient, useData, useRequiredSession } from "../../lib/data/provider";
+import { useFeature } from "../../lib/capabilities";
+import { ActivationState } from "../components/activation";
 import type { AutoBuyStatus, RadarRunResult } from "../../lib/data/types";
 import { canAddPriority, formatDuration, priorityCount, type LiveReadiness } from "../../lib/radar";
 import { MoneyInput, QueryBoundary } from "../components/common";
@@ -35,8 +37,12 @@ export default function Radar() {
   const readiness = useLiveReadiness();
   const [selected, setSelected] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusFilter>("good");
-  const opps = useQuery({ queryKey: ["opportunities", selected, status], queryFn: async () => {
-    const list = await client.listOpportunities({ searchId: selected ?? undefined, status: status === "all" || status === "good" ? undefined : status });
+  // Mode connecté sans lecture en direct (Selio Cloud pas encore ouvert) : jamais d'affaire du simulateur à l'écran.
+  const radarLive = useFeature("radarLive");
+  const hideSimulated = mode === "connected" && !radarLive.live;
+  const opps = useQuery({ queryKey: ["opportunities", selected, status, hideSimulated], queryFn: async () => {
+    const all = await client.listOpportunities({ searchId: selected ?? undefined, status: status === "all" || status === "good" ? undefined : status });
+    const list = hideSimulated ? all.filter((o) => o.observed.source !== "demo_simulator") : all;
     return status === "good" ? list.filter((o) => o.score >= REVIEW_THRESHOLD && o.status !== "dismissed") : list;
   } });
   const [editing, setEditing] = useState<RadarSearch | "new" | null>(null);
@@ -81,7 +87,16 @@ export default function Radar() {
 
       {mode === "demo" ? <p className="mb-4 text-xs text-text-muted">Démonstration : les annonces proviennent d'un simulateur (aucune page Vinted lue). La recherche « en direct » est simulée et ses mesures sont fictives.</p> : null}
 
-      <QueryBoundary query={metrics} skeleton="spinner">{(m) => <RadarMetricsPanel metrics={m} className="mb-6" />}</QueryBoundary>
+      {hideSimulated ? (
+        <div className="mb-6">
+          <ActivationState
+            testId="radar-activation"
+            title="Radar en direct"
+            does={["Lecture de vos recherches sur Vinted depuis votre compte Achat, avec Selio Cloud, toutes les 60 s au plus.", "Chaque annonce notée sur 100 (prix, marge de revente estimée, vendeur, état), alerte sur votre téléphone pour les meilleures.", "Achat en un clic, par vous : rien n'est acheté sans votre validation."]}
+            prepare="créez vos recherches (marques, tailles, prix maximal, marge cible) : elles seront lues dès l'ouverture. Les annonces que vous capturez avec l'extension Selio apparaissent déjà ici."
+          />
+        </div>
+      ) : <QueryBoundary query={metrics} skeleton="spinner">{(m) => <RadarMetricsPanel metrics={m} className="mb-6" />}</QueryBoundary>}
 
       <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="flex min-w-0 flex-col gap-2">

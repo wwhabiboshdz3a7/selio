@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Camera, Gauge, LineChart, ShieldCheck, TrendingUp } from "lucide-react";
 import { PLAN_LABELS, TRACK_LEGAL_NOTICE, TRACK_SOURCE_LABELS, TRACK_UNAVAILABLE_MESSAGE, quotasForPlan } from "@selio/contracts";
 import { Alert, Card, PageHeader, StatStrip, StatusBadge, buttonClass, formatNumber } from "@selio/ui";
-import { useClient } from "../../../lib/data/provider";
+import { useClient, useData } from "../../../lib/data/provider";
+import { ActivationState } from "../../components/activation";
 import type { TrackUsageView } from "../../../lib/data/types";
 import { QueryBoundary } from "../../components/common";
 
@@ -91,12 +92,37 @@ export function AgencyOnly({ title, children }: { title: string; children?: Reac
  * Garde des pages Track : Pro et Agence seulement (sinon la page d'explication « compris à partir de
  * Pro ») ; `agency` : Agence seulement.
  */
-export function TrackGate({ children, agency }: { children: (u: TrackUsageView) => ReactNode; agency?: { title: string } }) {
+export function TrackGate({ children, agency, requireLive }: { children: (u: TrackUsageView) => ReactNode; agency?: { title: string }; requireLive?: { title: string; does: string[] } }) {
   const usage = useTrackUsage();
+  const { mode } = useData();
   return (
     <QueryBoundary query={usage} skeleton="spinner">
-      {(u) => (!u.available ? <TrackUpsell plan={u.plan} /> : agency && !u.salesFeed ? <AgencyOnly title={agency.title} /> : <>{children(u)}</>)}
+      {(u) => (!u.available ? <TrackUpsell plan={u.plan} /> : agency && !u.salesFeed ? <AgencyOnly title={agency.title} /> : requireLive && !isTrackLive(u, mode) ? <TrackActivation title={requireLive.title} does={requireLive.does} /> : <>{children(u)}</>)}
     </QueryBoundary>
+  );
+}
+
+/**
+ * Track lit-il Vinted en direct ? En mode connecté, tant que la source est le simulateur (TRACK_LIVE_ENABLED=false),
+ * ses chiffres ne sont jamais montrés : on affiche « En cours d'activation ». Démonstration : toujours visible.
+ */
+export function isTrackLive(usage: Pick<TrackUsageView, "source">, mode: "demo" | "connected"): boolean {
+  return mode === "demo" || usage.source === "cloud";
+}
+
+/** État « En cours d'activation » d'une page Track : ce qu'elle montrera, et créer ses filtres dès maintenant. */
+export function TrackActivation({ title, does }: { title: string; does: string[] }) {
+  return (
+    <>
+      <PageHeader eyebrow="Selio Track" title={title} description="Les statistiques du marché Vinted, calculées sur des lectures réelles." />
+      <ActivationState
+        testId="track-activation"
+        title={`Selio Track — ${title.toLowerCase()}`}
+        does={does}
+        prepare="créez vos filtres (marques, catégories, tailles, prix) : ils seront lus dès l'ouverture, sans rien refaire."
+        action={<Link to="/track/filtres" className={buttonClass({ variant: "primary" })}>Créer mes filtres</Link>}
+      />
+    </>
   );
 }
 

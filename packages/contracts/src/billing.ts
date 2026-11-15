@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { id, isoDate, nonNegCents } from "./common";
-import { billingCycle, paidPlan, plan } from "./org";
+import { billingCycle, paidPlan, plan, type BillingCycle, type PaidPlan } from "./org";
 
 /**
  * Facturation : factures, commandes de paiement (tentatives) et règles de relance,
@@ -223,9 +223,61 @@ export interface CheckoutResult {
    */
   amountCents: number;
   captureMode: CaptureMode | null;
-  /** Jamais simulé : sans configuration, aucune commande n'est créée et `orderToken` est null. */
-  simulated: false;
+  /**
+   * Vrai en mode de paiement simulé (Revolut pas encore configuré, ou PAYMENT_MODE=simulated) : l'offre est
+   * enregistrée, l'essai court SANS carte, aucune commande n'est créée et rien n'est débité. Jamais un faux
+   * formulaire de carte. Faux sinon (y compris « paiement non configuré » quand PAYMENT_MODE=revolut).
+   */
+  simulated: boolean;
   message: string;
+  /** Mode simulé : la fin de l'essai (rien n'est débité à cette date, le compte passe « en attente du paiement »). */
+  trialEndsAt?: string | null;
+}
+
+/**
+ * Mode de paiement demandé dans la configuration (PAYMENT_MODE, API et worker) :
+ * - « auto » (défaut) : Revolut quand REVOLUT_SECRET_KEY est renseignée, paiement simulé sinon ;
+ * - « revolut » : Revolut seulement (sans clé, « Le paiement n'est pas configuré ») ;
+ * - « simulated » : paiement simulé même si Revolut est configuré (essais sans paiement).
+ */
+export const PAYMENT_MODE_SETTINGS = ["auto", "revolut", "simulated"] as const;
+export type PaymentModeSetting = (typeof PAYMENT_MODE_SETTINGS)[number];
+/** Mode effectif : « revolut » (réel ou bac à sable) ou « simulated » (aucune carte, aucun débit). */
+export type BillingPaymentMode = "revolut" | "simulated";
+
+/** Mode effectif à partir du réglage et de la présence d'une configuration Revolut. */
+export function effectivePaymentMode(setting: PaymentModeSetting | undefined, revolutConfigured: boolean): BillingPaymentMode {
+  if (setting === "simulated") return "simulated";
+  if (setting === "revolut") return "revolut";
+  return revolutConfigured ? "revolut" : "simulated";
+}
+
+/** Bandeau de l'écran de confirmation en mode simulé : affiché tel quel, jamais un formulaire de carte. */
+export const SIMULATED_PAYMENT_NOTICE = "Paiement pas encore activé : aucune carte demandée, rien ne sera débité.";
+
+/**
+ * Récapitulatif avant confirmation (GET /api/billing/checkout/preview?plan=&cycle=) : forfait, prix,
+ * remise d'une offre commerciale retenue, montant de la première échéance et fin de l'essai.
+ */
+export interface CheckoutPreview {
+  plan: PaidPlan;
+  cycle: BillingCycle;
+  planLabel: string;
+  /** Prix du forfait (TTC, centimes) pour la périodicité choisie. */
+  priceCents: number;
+  /** Remise de l'offre retenue (code promo), ou null. */
+  discount: { label: string; amountCents: number } | null;
+  /** Première échéance après remise (jamais négative). */
+  dueCents: number;
+  /** Fin de l'essai (essai en cours, ou essai de 14 jours qui démarrerait à la confirmation). */
+  trialEndsAt: string | null;
+  /** Vrai si la confirmation démarre l'essai de 14 jours (aucun essai en cours ni passé). */
+  startsTrial: boolean;
+  paymentMode: BillingPaymentMode;
+  /** Mode simulé : aucune carte n'est demandée et rien n'est débité. */
+  noCardRequired: boolean;
+  /** Confirmation impossible (essai terminé en mode simulé, accès offert…) : la raison, sinon null. */
+  blockedReason: string | null;
 }
 
 /** POST /api/billing/plan : changement d'offre appliqué au prochain renouvellement. */

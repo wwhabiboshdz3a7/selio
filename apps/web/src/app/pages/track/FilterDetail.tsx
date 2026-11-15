@@ -20,7 +20,7 @@ const dayLabel = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateStrin
  * retirées », une estimation), parts de marques. Sur 7, 30 ou 90 jours, dans la limite de l'historique.
  */
 export default function TrackFilterDetail() {
-  return <TrackGate>{(u) => <Detail usage={u} />}</TrackGate>;
+  return <TrackGate requireLive={{ title: "Détail du filtre", does: ["La tendance du prix médian et du nombre d'annonces de ce filtre, jour par jour.", "Les annonces nouvelles et disparues (vendues ou retirées, estimation), sans aucun pseudo.", "Les alertes de tendance que vous réglez sur ce filtre."] }}>{(u) => <Detail usage={u} />}</TrackGate>;
 }
 
 function Detail({ usage }: { usage: TrackUsageView }) {

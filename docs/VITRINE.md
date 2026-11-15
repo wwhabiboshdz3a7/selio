@@ -1,22 +1,47 @@
 # Vitrine
 
-_Version du 8 novembre 2026_
+_Version du 16 novembre 2026_
 
 La vitrine est la partie publique de `apps/web` (`src/marketing/`), servie en statique par Netlify avec l'application. Ce document dit quelles pages existent, comment elles sont référencées, où figure la mention d'indépendance, et ce qui attend Elias (textes) et l'avocat (pages légales, comparatifs).
+
+## Noms et gamme
+
+« Selio » est la marque (l'entreprise, le logo). L'outil de gestion s'appelle **Selio Manager** (espace `selio`, `/app` ; l'identifiant de code est gardé). La gamme, toujours présentée dans cet ordre (accueil, plateforme, pied de page, accueil des espaces) :
+
+1. **Selio Manager** — la gestion quotidienne ;
+2. **Selio Studio** — les annonces à partir des photos ;
+3. **Selio Track** — les statistiques du marché ;
+4. **Selio Radar** — les bonnes affaires (vit dans Selio Manager, a sa page) ;
+5. **Selio Bot** — les automatisations qui travaillent pour vous (négociation, relances, republications, achat automatique), exécutées dans Selio Cloud ; sans prix séparé, inclus selon le forfait ;
+6. **Selio Cloud** — le moteur qui fait tourner Selio Manager, Selio Bot et les équipes Selio Agents 24 h/24, ordinateur éteint ;
+7. **Selio Agents** — équipes, rôles, accès, boutiques clientes des agences ;
+8. **Selio Comptes** — à la prestation : audit de boutique, mise en place complète, accompagnement 30 jours, payés une fois (prix dans `PRICING.subsidiaries`, `packages/demo-data/src/plans.ts`).
+
+Source unique des pages : `src/marketing/products.ts` (`PRODUCTS`) ; les cartes de la gamme (`RangeCard`, `RangeConstellation`) sont dans `src/marketing/spaces.tsx`. Les espaces de l'application (`app/spaces/spaces.tsx`) suivent le même ordre, Radar en moins.
+
+## Pas de démonstration sur la vitrine
+
+La vitrine ne renvoie jamais vers la démonstration : chaque appel mène à l'inscription (**essai gratuit de 14 jours**) ou à la connexion (`CtaBand`, héro, en-tête, pages produit ; Selio Comptes mène à Contact). Les captures sont légendées « données d'exemple ». En production (`VITE_API_BASE_URL` renseignée, `src/marketing/demoAccess.ts`), `/demo` redirige vers `/inscription` et la connexion comme l'inscription ne proposent plus le choix « Démonstration ». En développement sans API, `/demo` reste ouvert (tests de bout en bout, vidéos, captures). La FAQ de la vitrine masque les trois questions sur la démonstration (`VITRINE_HIDDEN`, `pages/Faq.tsx`).
+
+## Le parcours de l'accueil
+
+« De l'achat à l'étiquette », en huit étapes, chacune avec le produit qui s'en charge : sourcing sur le marché (Track), **sourcing auprès de fournisseurs partenaires (Bientôt)**, achat (Radar), photos et annonce (Studio), vente et négociation (Bot), commande, étiquette et envoi, après-vente (Manager). Les fournisseurs partenaires sont une piste annoncée comme telle : **aucun accord n'est signé, aucun nom ni logo n'est cité** ; la phrase « Aucun partenariat n'est encore signé » est à retirer seulement quand un accord existe. Un article réel (le pull torsadé, photo de la démo) sert de fil rouge.
 
 ## Pages
 
 | Adresse | Page | Indexée | Source |
 |---|---|---|---|
-| `/` | Accueil (constellation, parcours, filiales, transparence) | oui | `pages/Home.tsx` |
+| `/` | Accueil (constellation, capture de Selio Manager, parcours, gamme, transparence) | oui | `pages/Home.tsx` |
 | `/fonctionnalites` | Les quatorze modules et leur état | oui | `pages/Features.tsx`, `catalog.ts` |
-| `/plateforme` | Selio et ses filiales, liens vers chaque page de filiale | oui | `pages/Platform.tsx`, `spaces.tsx` |
+| `/plateforme` | La gamme Selio, liens vers chaque page produit | oui | `pages/Platform.tsx`, `spaces.tsx` |
 | `/produits/manager` | Selio Manager (l'outil de gestion, `/app`) | oui | `pages/Product.tsx`, `products.ts` |
 | `/produits/studio` | Selio Studio | oui | idem |
 | `/produits/track` | Selio Track | oui | idem |
 | `/produits/radar` | Selio Radar | oui | idem |
+| `/produits/bot` | Selio Bot | oui | idem |
 | `/produits/cloud` | Selio Cloud | oui | idem |
-| `/produits/comptes` | Selio Comptes | oui | idem |
+| `/produits/agents` | Selio Agents | oui | idem |
+| `/produits/comptes` | Selio Comptes (à la prestation) | oui | idem |
 | `/selio-ou-bleam` | « Selio ou Bleam ? » | **non, tant que `COMPARISON_READY` est faux** | `pages/SelioOrBleam.tsx`, `comparison.ts` |
 | `/alternative-bleam` | « Alternative à Bleam » | **non, idem** | `pages/AlternativeBleam.tsx` |
 | `/extension` | Extension navigateur (fiche) | oui | `pages/Extension.tsx` |
@@ -24,28 +49,28 @@ La vitrine est la partie publique de `apps/web` (`src/marketing/`), servie en st
 | `/assistant-ia`, `/tarifs`, `/faq`, `/contact` | inchangées | oui | |
 | `/mentions-legales`, `/confidentialite`, `/conditions` | pages légales, **version provisoire, définitive après l'avocat** | non | `pages/Legal.tsx` |
 
-Les pages de filiales vivent sous `/produits/…` : `/studio`, `/track`, `/cloud`, `/comptes` et `/agents` sont les adresses des espaces de l'application (`app/spaces/paths.ts`), un test vérifie qu'aucune page de filiale ne les recouvre. `/produits` et une filiale inconnue renvoient à `/plateforme`. Selio Agents (équipe et accès) n'a pas de page propre : ses rôles sont présentés sur la page Manager.
+Les pages produit vivent sous `/produits/…` : `/studio`, `/track`, `/bot`, `/cloud`, `/agents` et `/comptes` sont les adresses des espaces de l'application (`app/spaces/paths.ts`), un test vérifie qu'aucune page produit ne les recouvre. `/produits` et un produit inconnu renvoient à `/plateforme`.
 
 ### Structure commune des pages de filiale
 
 Une seule source (`src/marketing/products.ts`), un seul gabarit (`pages/Product.tsx`) :
 
-1. **Promesse honnête** (titre) et état réel : Disponible, En démonstration ou En développement, avec une phrase qui dit ce qui est simulé (repris de `docs/BUILD_STATUS.md`).
+1. **Promesse honnête** (titre) et état réel : Disponible, Aperçu, En développement ou Sur demande (Selio Comptes), avec une phrase qui dit ce qui est simulé (repris de `docs/BUILD_STATUS.md`).
 2. **Ce que fait le module** : trois à six fonctions, telles qu'elles existent dans le code.
 3. **Ce qu'il ne fait pas** : limites assumées (pas de mot de passe, pas de contournement, pas d'achat à votre place, pas de donnée inventée…).
-4. **Capture** de la démonstration, en clair et en sombre (voir « Captures »).
+4. **Capture d'écran** sur données d'exemple, en clair et en sombre (voir « Captures ») ; Selio Bot affiche une illustration en attendant ses pages.
 5. **Prix : voir les tarifs**, avec un lien vers l'ancre de `/tarifs` où le module est chiffré. Aucun montant n'est écrit sur la page (les montants restent indicatifs, dans `PRICING`).
-6. Les autres filiales, la **mention d'indépendance**, et l'appel à la démonstration.
+6. Le reste de la gamme, la **mention d'indépendance**, et l'appel à l'essai de 14 jours (Selio Comptes : « Demander une prestation », vers Contact).
 
 ### Captures
 
-Les captures des filiales (`src/marketing/assets/produit-<filiale>-clair.webp` et `-sombre.webp`, 1600 × 1000) sont prises dans la démonstration (données fictives, bandeau « Démonstration » visible) avec Chromium : `pnpm build:web`, `vite preview` sur le port 4173, puis pour chaque espace `/demo?vers=<adresse>` en clair et en sombre (`localStorage["selio.theme"]`), capture PNG convertie en WebP (qualité 0,78) par un `canvas` du navigateur. Manager reprend la capture du dressing de l'accueil. À refaire quand un écran change beaucoup.
+Les captures (`src/marketing/assets/produit-<produit>-clair.webp` et `-sombre.webp`, 1600 × 1000) sont prises sur les données d'exemple, en développement sans API, avec Chromium : `vite` en local, `/demo?vers=/app` pour ouvrir la session, puis chaque espace (`/app/dressing` pour `apercu-*`, `/studio`, `/track`, `/app/radar`, `/cloud`, `/agents`, `/comptes`) en clair et en sombre (`localStorage["selio.theme"]`). Le bandeau « Démonstration — données fictives » de l'application est masqué au moment de la capture (les légendes disent « données d'exemple ») ; les encarts « simulé » des pages restent visibles. Capture PNG convertie en WebP (qualité 0,78) par un `canvas` du navigateur. Manager reprend la capture du dressing de l'accueil. À refaire quand un écran change beaucoup. Dernière série : 16 novembre 2026, après la remise à l'endroit des photos du pull torsadé (`g-x4iv-*`, voir `packages/demo-data/scripts/import-revendo-photos.py`, `GALLERY_UPSIDE_DOWN`).
 
 ## Référencement
 
 - **Une liste** : `SEO_PAGES` dans `src/marketing/seo.ts` (titre, description de 160 caractères au plus, indexation, priorité). Chaque page l'utilise par `useMarketingMeta(chemin)`. Les tests (`seo.test.ts`) vérifient que chaque page a sa route, que les titres sont uniques et que les descriptions tiennent dans la limite.
 - **Sitemap** : `public/sitemap.xml`, exactement les pages indexables (test). Une page ajoutée à la liste sans être ajoutée au sitemap, ou l'inverse, fait échouer les tests.
-- **robots.txt** : l'application et les espaces sont exclus (`/app`, `/studio`, `/agents`, `/track`, `/cloud`, `/comptes`, `/generateur`, `/admin`, `/api/`), le sitemap est déclaré. Les pages de connexion, d'inscription, de démonstration et les pages légales portent `noindex`.
+- **robots.txt** : l'application et les espaces sont exclus (`/app`, `/studio`, `/track`, `/bot`, `/cloud`, `/agents`, `/comptes`, `/generateur`, `/admin`, `/demo`, `/api/`), le sitemap est déclaré. Les pages de connexion, d'inscription, de démonstration et les pages légales portent `noindex`.
 - **Données structurées** (schema.org, JSON-LD) : `Organization` et `WebSite` dans `index.html` (lus même sans JavaScript) ; `SoftwareApplication` et `BreadcrumbList` sur chaque page de filiale et sur la page Extension ; `BreadcrumbList` sur les comparatifs. **Aucun prix, aucune note, aucun avis** dans ces données : les montants sont indicatifs et aucun avis client n'est publié.
 - **Domaine** : `SITE_ORIGIN = "https://selio.fr"` dans `seo.ts`, repris dans `sitemap.xml`, `robots.txt` et `index.html` (un test vérifie qu'ils concordent). **Le domaine n'est pas confirmé** : à changer aux quatre endroits avant la mise en ligne.
 - La vitrine est une application monopage : le titre, la description et les données structurées des pages sont posés par JavaScript. Google l'exécute ; d'autres moteurs et les aperçus de liens ne voient que ce que dit `index.html`. Un rendu statique des pages publiques (pré-rendu au build) améliorerait cela ; non fait, à décider.

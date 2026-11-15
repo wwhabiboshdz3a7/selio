@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
 import { PLAN_LABELS, buildUsageCounter, type UsageCounter } from "@selio/contracts";
 import { Alert, Card, DescriptionList, Tag, formatDate, formatNumber } from "@selio/ui";
-import { useClient } from "../../../lib/data/provider";
+import { useCapabilities } from "../../../lib/capabilities";
+import { useClient, useData } from "../../../lib/data/provider";
 import type { UsageSummary } from "../../../lib/data/types";
 import { QueryBoundary } from "../../components/common";
 import { UsageMeter } from "../../components/usage";
@@ -47,6 +48,11 @@ function Section({ title, tag, description, children }: { title: string; tag?: R
 }
 
 function UsageReport({ u, actionsToday, planLabel, trackFilters }: { u: UsageSummary; actionsToday: number | null; planLabel: string | null; trackFilters: UsageCounter | null }) {
+  const { mode } = useData();
+  // Mode connecté : jamais « Aperçu » ni « En développement » ; Track et Cloud « En cours d'activation » tant qu'ils ne sont pas ouverts.
+  const caps = useCapabilities();
+  const trackTag = mode === "demo" ? "En développement" : caps.data?.trackLive ? null : "En cours d'activation";
+  const cloudTag = mode === "demo" ? "Aperçu" : caps.data?.cloud ? null : "En cours d'activation";
   const reset = nextResetDate(u.period.from);
   const automationToday = buildUsageCounter(actionsToday ?? 0, u.quotas.automationActionsPerDay);
   const warning = u.warning || automationToday.warning;
@@ -80,13 +86,13 @@ function UsageReport({ u, actionsToday, planLabel, trackFilters }: { u: UsageSum
         <UsageMeter label="Photos portées" counter={u.studio.wornPhotos} hint={<>Par mois · <Link to="/studio/photos-portees" className="font-medium text-accent hover:underline">File de nuit</Link> (aucun fournisseur choisi)</>} planned />
       </Section>
 
-      <Section title="Selio Track" tag={<Tag>En développement</Tag>} description="Statistiques de marché seulement : Track ne republie jamais d'annonce. Inclus dans Pro (essentiel) et Agence (complet).">
+      <Section title="Selio Track" tag={trackTag ? <Tag>{trackTag}</Tag> : undefined} description="Statistiques de marché seulement : Track ne republie jamais d'annonce. Inclus dans Pro (essentiel) et Agence (complet).">
         <UsageMeter label="Scans de niche" counter={u.track.scans} hint="Par mois." />
         <UsageMeter label="Recherches par photo" counter={u.track.photoSearches} hint="Par mois." />
         <UsageMeter label="Filtres suivis" counter={trackFilters ?? u.track.filtersFollowed} hint={<>Relus toutes les 2 h · <Link to="/track/filtres" className="font-medium text-accent hover:underline">Gérer</Link></>} />
       </Section>
 
-      <Section title="Selio Cloud" tag={<Tag>Aperçu</Tag>} description={u.cloud.included ? "Inclus dans votre offre : vos réponses et relances continuent quand votre ordinateur est éteint." : "Inclus dans Agence ; en option avec Pro, prix à décider."}>
+      <Section title="Selio Cloud" tag={cloudTag ? <Tag>{cloudTag}</Tag> : undefined} description={u.cloud.included ? "Inclus dans votre offre : vos réponses et relances continuent quand votre ordinateur est éteint." : "Inclus dans Agence ; en option avec Pro, prix à décider."}>
         <UsageMeter label="Actions Cloud aujourd'hui" counter={u.cloud.actions} hint="Plafond par jour, au rythme humain." excludedHint="Plafond par jour de votre offre" />
       </Section>
 

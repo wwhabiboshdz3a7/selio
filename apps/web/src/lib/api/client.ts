@@ -1,7 +1,9 @@
+import { LEGACY_SERVER_CAPABILITIES, type AdminAddToMyOrgInput, type CheckoutPreview, type InviteOutcome, type ServerCapabilities } from "@selio/contracts";
 import type {
   AiRequest, AiStatus, AuditLog, ListingGenerationInput, AutomationRule, AutomationRuleCreate, BulkItemAction, ConnectionCreate, ConnectionTestResult, ConnectionUpdate, Conversation, ConversationQuery, Customer, CustomerCreate, CustomerQuery, CustomerUpdate, ExtensionToken, InventoryEvent, InventoryItem, InventoryItemCreate, InventoryItemUpdate, InventoryQuery, Job, JobQuery, MarketplaceConnection, Membership, Message, Opportunity, Order, OrderCreate, OrderQuery, OrderStatus, Organization, OrgSettings, Page, Plan, PurchaseRequest, RadarSearch, RadarSearchCreate, Role, Shipment, Subscription, UsageEvent, User,
 } from "@selio/contracts";
 import type { ConnectorDescriptor } from "@selio/connectors";
+import type { ActivityPage, ActivityQuery, ItemSummary, UserPreferences, UserPreferencesUpdate } from "@selio/contracts";
 import type { HelpAnswer } from "@selio/contracts";
 import type { AccountStats, NegotiationResult, PeriodPreset } from "@selio/domain";
 import { DataError, type AdminOverview, type AdminUsageReport, type AnalyticsData, type AnalyticsFilters, type AutoBuyRunResult, type AutomationState, type DressingData, type DressingQuery, type MarketData, type MarketQuery, type ConversationDetail, type CustomerTimeline, type DataClient, type OverviewData, type ServiceStatus, type Session, type SuggestionResult, type UsageSummary } from "../data/types";
@@ -11,6 +13,7 @@ import { normalizeAutoBuyStatus, normalizePushConfig } from "../radar";
 import type { AiHealthData } from "../data/types";
 import type { BillingCycle, Invoice, InvoiceView, PaidPlan, TrackSource, UsageCounter, WhiteLabel, WhiteLabelInput } from "@selio/contracts";
 import type { CheckoutOutcome, CloudAccountView, CloudAvailabilityView, CloudJournalFilters, CloudLoginStart } from "../data/types";
+import type { BotSummary } from "@selio/contracts";
 import type { CloudAccount, CloudAction, CloudActionLevel, CloudConsentView, CloudLoginTicket } from "@selio/contracts";
 import { loginSocketUrl } from "../cloud/login-protocol";
 import type { TrackAdminStatus, TrackAlertRulesInput, TrackFilterAlerts, TrackManualPauseInput } from "@selio/contracts";
@@ -133,7 +136,7 @@ export class ApiClient implements DataClient {
 
   updateOrg(input: { name?: string; settings?: Partial<OrgSettings> }) { return this.patch<Organization>("/api/org", input); }
   listMembers() { return this.get<(Membership & { user: User })[]>("/api/org/members"); }
-  inviteMember(input: { email: string; role: Role }) { return this.post<Membership & { user: User }>("/api/org/members", input); }
+  inviteMember(input: { email: string; role: Role }) { return this.post<Membership & { user: User; invite?: InviteOutcome }>("/api/org/members", input); }
   updateMemberRole(membershipId: string, role: Role) { return this.patch<void>(`/api/org/members/${membershipId}`, { role }); }
   removeMember(membershipId: string) { return this.del<void>(`/api/org/members/${membershipId}`); }
   completeOnboardingStep(step: string) { return this.post<Organization>(`/api/org/onboarding/${encodeURIComponent(step)}`); }
@@ -175,6 +178,10 @@ export class ApiClient implements DataClient {
   importItems(items: InventoryItemCreate[]) { return this.post<{ created: number }>("/api/items/import", { items }); }
   exportItemsCsv() { return this.request<string>("GET", "/api/items/export.csv", undefined, { raw: true }); }
   itemHistory(id: string) { return this.get<InventoryEvent[]>(`/api/items/${id}/history`); }
+  itemSummary() { return this.get<ItemSummary>("/api/items/summary"); }
+  listActivity(query: ActivityQuery) { return this.get<ActivityPage>("/api/activity", query as Query); }
+  getPreferences() { return this.get<UserPreferences>("/api/auth/preferences"); }
+  updatePreferences(patch: UserPreferencesUpdate) { return this.patch<UserPreferences>("/api/auth/preferences", patch); }
 
   listCustomers(query: Partial<CustomerQuery>) { return this.get<Page<Customer & { orderCount: number; revenueCents: number }>>("/api/customers", query as Query); }
   getCustomerTimeline(id: string) { return this.get<CustomerTimeline>(`/api/customers/${id}/timeline`); }
@@ -212,6 +219,9 @@ export class ApiClient implements DataClient {
   deleteRule(id: string) { return this.del<void>(`/api/automations/rules/${id}`); }
   getAutomationState() { return this.get<AutomationState>("/api/automations/state"); }
   setGlobalPause(paused: boolean) { return this.post<AutomationState>("/api/automations/pause", { paused }); }
+  botSummary() { return this.get<BotSummary>("/api/bot"); }
+  stopBots() { return this.post<BotSummary>("/api/bot/stop", {}); }
+  resumeBots() { return this.post<BotSummary>("/api/bot/resume", {}); }
   runRuleNow(id: string) { return this.post<{ evaluated: number; created: number; skipped: { reason: string; count: number }[] }>(`/api/automations/rules/${id}/run`); }
   listJobs(query: Partial<JobQuery>) { return this.get<Page<Job>>("/api/automations/jobs", query as Query); }
   approveJob(id: string) { return this.post<Job>(`/api/automations/jobs/${id}/approve`); }
@@ -357,6 +367,15 @@ export class ApiClient implements DataClient {
   listAiRequests() { return this.get<AiRequest[]>("/api/ai/requests"); }
   getAiHealth(windowDays?: number) { return this.get<AiHealthData>("/api/ai/stats", { days: windowDays }); }
 
+  /** Capacités du serveur ; un serveur pas encore à jour (route inconnue, 404) donne les capacités prudentes. */
+  async getCapabilities(): Promise<ServerCapabilities> {
+    try {
+      return await this.get<ServerCapabilities>("/api/capabilities");
+    } catch (err) {
+      if (err instanceof DataError && err.status === 404) return LEGACY_SERVER_CAPABILITIES;
+      throw err;
+    }
+  }
   getSubscription() { return this.get<Subscription>("/api/billing/subscription"); }
   /**
    * Offre et quotas seulement (GET /api/org/plan, ouvert à tout membre, sans donnée de paiement) : l'abonnement
@@ -364,6 +383,7 @@ export class ApiClient implements DataClient {
    */
   private planQuotas() { return this.get<Pick<Subscription, "plan" | "quotas">>("/api/org/plan"); }
   getUsage() { return this.get<UsageSummary>("/api/billing/usage"); }
+  previewCheckout(plan: PaidPlan, opts: { cycle?: BillingCycle } = {}) { return this.get<CheckoutPreview>("/api/billing/checkout/preview", { plan, cycle: opts.cycle ?? "monthly" }); }
   startCheckout(plan: PaidPlan, opts: { cycle?: BillingCycle } = {}) { return this.post<CheckoutOutcome>("/api/billing/checkout", { plan, cycle: opts.cycle ?? "monthly" }); }
   startCardUpdate() { return this.post<CheckoutOutcome>("/api/billing/card"); }
   cancelSubscription() { return this.post<Subscription>("/api/billing/cancel"); }
@@ -395,6 +415,7 @@ export class ApiClient implements DataClient {
   adminGrantAccess(orgId: string, input: AdminGrantInput) { return this.post<AdminAccountDetail>(`/api/admin/accounts/${encodeURIComponent(orgId)}/grant`, input); }
   adminRevokeAccess(orgId: string) { return this.del<AdminAccountDetail>(`/api/admin/accounts/${encodeURIComponent(orgId)}/grant`); }
   adminExtendTrial(orgId: string, days: number) { return this.post<AdminAccountDetail>(`/api/admin/accounts/${encodeURIComponent(orgId)}/extend-trial`, { days }); }
+  adminAddToMyOrg(orgId: string, input: AdminAddToMyOrgInput) { return this.post<AdminAccountDetail>(`/api/admin/accounts/${encodeURIComponent(orgId)}/add-to-my-org`, input); }
   /** GET /api/health/details (opérateurs seulement) : santé, files, cibles supervisées, dernières vérifications. */
   getHealthDetails() { return this.get<HealthDetailsView>("/api/health/details", { perTarget: 20 }); }
   adminListOffers() { return this.get<CommercialOffer[]>("/api/admin/offers"); }

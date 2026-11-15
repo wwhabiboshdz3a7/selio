@@ -26,11 +26,11 @@ const DETAILS: Record<string, Detail> = {
   "achat-auto": { icon: <Bot />, lead: "Au-dessus de votre seuil, l'application achète seule, avec garde-fous.", items: ["Seuil réglable (85/100 conseillé)", "Plafond de dépense par jour et prix maximal par article", "Délai pour vérifier et annuler l'achat", "Désactivé par défaut, simulé tant qu'aucun connecteur d'achat n'est autorisé"] },
   messagerie: { icon: <MessageSquare />, lead: "Chaque conversation connaît l'article, son plancher et sa marge.", items: ["Recherche, filtres, non-lus", "Brouillons et suggestions de réponse", "Explication de la décision : accepter, contre-proposer, refuser, escalader", "Validation avant envoi par défaut", "Statut réel : brouillon, en attente, envoyé, échec", "Blocage clair si le connecteur ne permet pas l'envoi"] },
   stock: { icon: <Boxes />, lead: "Un inventaire conçu pour la revente, pas un catalogue générique.", items: ["Photos, marque, taille, catégorie, état", "Prix d'achat, frais, prix affiché et prix plancher", "Statuts stock, en vente, réservé, vendu, archivé avec transitions contrôlées", "Recherche, tri, filtres, pagination", "Import et export CSV avec prévisualisation ligne par ligne des erreurs", "Actions en lot avec confirmation, historique de modification"] },
-  commandes: { icon: <Package />, lead: "Une commande = un article, un client, une marge figée.", items: ["Création sans doublon grâce à une clé d'idempotence", "Transitions contrôlées : en attente, payée, expédiée, livrée, terminée, annulée, remboursée", "Prix final, frais, marge brute", "Suivi d'expédition et document uniquement s'il est fourni par le connecteur", "Aucun faux bordereau : un document de démonstration est toujours marqué comme tel"] },
+  commandes: { icon: <Package />, lead: "Une commande = un article, un client, une marge figée.", items: ["Création sans doublon grâce à une clé d'idempotence", "Transitions contrôlées : en attente, payée, expédiée, livrée, terminée, annulée, remboursée", "Prix final, frais, marge brute", "Suivi d'expédition et document uniquement s'il est fourni par le connecteur", "Aucun faux bordereau : un document d'exemple est toujours marqué comme tel"] },
   analyses: { icon: <ClipboardList />, lead: "Des chiffres calculés depuis vos données, avec les conventions affichées.", items: ["Ventes, marge brute, panier moyen, rotation du stock", "Séries temporelles, ventilation par catégorie, canal et marque", "Filtres par période, catégorie et canal", "Export CSV", "La marge brute n'est jamais présentée comme un bénéfice net comptable"] },
   automatisations: { icon: <Workflow />, lead: "Des règles explicites, une file de tâches visible et un bouton d'arrêt.", items: ["Règles avec horaires, limites par jour et par acheteur", "Validation humaine par défaut pour les actions sensibles", "File de tâches, historique d'exécution, nouvelle tentative maîtrisée", "Prévention des doublons par clé d'idempotence", "Pause par règle et arrêt global", "Indication claire de ce qui exige un navigateur ouvert"] },
   extension: { icon: <Puzzle />, lead: "Depuis la page Vinted que vous avez ouverte, avec confirmation avant toute action.", items: ["Capture d'un article visible vers votre stock, avec prévisualisation", "Brouillon de réponse conforme à vos règles, que vous relisez et envoyez", "Permissions minimales, jeton révocable, aucun mot de passe stocké", "Construite et testée sur des fixtures : à valider dans un navigateur réel"], more: { to: "/extension", label: "Tout savoir sur l'extension" } },
-  "ia-perso": { icon: <Cpu />, lead: "Mon modèle perso, un modèle privé appelé par le serveur Selio, jamais depuis le navigateur.", items: ["Vos règles décident, le modèle ne fait que rédiger la réponse", "File de demandes, délai maximal, disjoncteur vers des gabarits déterministes", "Connexion écrite et testée sur HTTP simulé ; serveur matériel à raccorder", "La démonstration utilise un simulateur, clairement signalé"], more: { to: "/assistant-ia", label: "Voir l'assistant IA" } },
+  "ia-perso": { icon: <Cpu />, lead: "Mon modèle perso, un modèle privé appelé par le serveur Selio, jamais depuis le navigateur.", items: ["Vos règles décident, le modèle ne fait que rédiger la réponse", "File de demandes, délai maximal, disjoncteur vers des gabarits déterministes", "Connexion écrite et testée sur HTTP simulé ; serveur matériel à raccorder", "Tant que le serveur n'est pas raccordé, un simulateur rédige, clairement signalé"], more: { to: "/assistant-ia", label: "Voir l'assistant IA" } },
 };
 
 /** Le socle commun aux quatorze modules. */
@@ -44,7 +44,7 @@ export default function Features() {
   useMarketingMeta("/fonctionnalites");
   return (
     <>
-      <MarketingSection level={1} reveal eyebrow="Fonctionnalités" title="Quatorze modules, un par problème concret de revendeur" lead="Les quatorze étoiles de la constellation, chacune avec son état honnête : disponible, en démonstration, expérimental ou en préparation. Le socle commun (clients, paramètres, sécurité) est détaillé plus bas.">
+      <MarketingSection level={1} reveal eyebrow="Fonctionnalités" title="Quatorze modules, un par problème concret de revendeur" lead="Les quatorze étoiles de la constellation, chacune avec son état honnête : disponible, aperçu, expérimental ou en préparation. Le socle commun (clients, paramètres, sécurité) est détaillé plus bas.">
         <nav aria-label="Aller à un module" className="mk-index">
           {MODULES.map((m) => (
             <a key={m.id} href={`#${m.id}`} data-tone={m.tone === "gold" ? "gold" : undefined}>{m.title}</a>
@@ -92,7 +92,7 @@ export default function Features() {
           ))}
         </div>
       </MarketingSection>
-      <CtaBand seed={11} title="Voyez les modules fonctionner ensemble" lead="La démonstration enchaîne le parcours complet avec des données fictives persistantes." />
+      <CtaBand seed={11} title="Voyez les modules fonctionner ensemble" lead="Pendant l'essai de 14 jours, les quatorze modules travaillent sur vos propres articles, de l'achat à l'étiquette." />
     </>
   );
 }

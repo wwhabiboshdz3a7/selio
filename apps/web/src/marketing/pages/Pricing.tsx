@@ -49,7 +49,7 @@ export default function Pricing() {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h2 id="offre-trial" className="text-md font-semibold text-text">{TRIAL_OFFER.name}</h2>
-              <span className="mk-badge" data-value="demo">Pour commencer</span>
+              <span className="mk-badge" data-value="available">Pour commencer</span>
             </div>
             <p className="mt-1 text-sm text-text-muted">{TRIAL_OFFER.profile}</p>
             <div className="mt-4"><CheckList items={TRIAL_OFFER.highlights} /></div>
@@ -58,7 +58,7 @@ export default function Pricing() {
             <p className="text-2xl font-semibold text-text">Gratuit <span className="text-sm font-normal text-text-muted">pendant {TRIAL_DAYS} jours</span></p>
             <p className="text-xs text-text-muted">{TRIAL_OFFER.tagline}.</p>
             <Link to="/inscription" className={buttonClass({ variant: "accent", fullWidth: true })}>Commencer l'essai de {TRIAL_DAYS} jours</Link>
-            <Link to="/demo" className="text-center text-sm text-text-muted hover:text-text">ou explorer la démo, sans compte</Link>
+            <Link to="/connexion" className="text-center text-sm text-text-muted hover:text-text">Déjà inscrit ? Se connecter</Link>
           </div>
         </article>
 
@@ -142,38 +142,84 @@ function PlanCard({ offer, period, offers }: { offer: PlanOffer; period: Period;
   );
 }
 
-/** Les autres filiales : Studio seul au curseur, Radar, Radar Auto, Cloud en option, Selio Comptes. */
+/** Les autres filiales : Studio seul au curseur, Radar, Radar Auto, Cloud en option ; Selio Bot inclus ; Selio Comptes à la prestation. */
 function Subsidiaries() {
   const s = PRICING.subsidiaries;
   const rows: { name: string; text: string; price: string; unit: string }[] = [
     { name: "Selio Radar", text: "Alertes sur le téléphone et achat en un clic, vous achetez vous-même.", price: price(s.radar), unit: "par mois" },
     { name: "Selio Radar Auto", text: "Achat automatique avec seuil de note, prix maximum et plafond par jour ; derrière un réglage désactivé par défaut.", price: price(s.radarAuto), unit: "par mois" },
-    { name: "Selio Cloud en option", text: "Automatisations quand votre ordinateur est éteint. En option pour Starter et Pro, inclus dans Agence.", price: price(s.cloudOption), unit: "par mois" },
-    { name: "Selio Comptes · audit", text: "Audit de votre compte Vinted, payé une fois.", price: price(s.comptesAudit), unit: "une fois" },
-    { name: "Selio Comptes · accompagnement", text: "Accompagnement avec checklists et textes, sans action à votre place, payé une fois.", price: price(s.comptesAccompagnement), unit: "une fois" },
+    { name: "Selio Cloud en option", text: "Le moteur qui fait tourner Selio Manager et Selio Bot ordinateur éteint. En option pour Starter et Pro, inclus dans Agence.", price: price(s.cloudOption), unit: "par mois" },
   ];
   return (
     <section className="py-12 md:py-16" aria-labelledby="filiales">
       <Container>
-        <Eyebrow>Les autres filiales</Eyebrow>
-        <h2 id="filiales" className="mt-3 text-xl font-semibold tracking-[-0.015em] text-balance text-text md:text-[28px] md:leading-[34px]">Studio seul, Radar, Cloud et Selio Comptes</h2>
-        <p className="mt-3 max-w-2xl text-base text-text-muted">Chaque filiale a son prix, sans passer par un abonnement Selio. Studio est inclus dans Pro et Agence ; seul, il se paie à la photo. Montants indicatifs, à confirmer.</p>
-        <div className="mt-8 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+        <Eyebrow>Le reste de la gamme</Eyebrow>
+        <h2 id="filiales" className="mt-3 text-xl font-semibold tracking-[-0.015em] text-balance text-text md:text-[28px] md:leading-[34px]">Studio seul, Radar, Cloud, Selio Bot et Selio Comptes</h2>
+        <p className="mt-3 max-w-2xl text-base text-text-muted">Studio est inclus dans Pro et Agence ; seul, il se paie à la photo. Radar et Cloud ont leur prix au mois, Selio Bot est inclus selon votre forfait, Selio Comptes se paie une fois. Montants indicatifs, à confirmer.</p>
+        <div className="mt-8 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start">
           <StudioCard />
-          <ul className="card divide-y divide-border">
-            {rows.map((r) => (
-              <li key={r.name} className="flex items-start justify-between gap-4 p-5">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-text">{r.name}</p>
-                  <p className="mt-0.5 text-xs text-text-muted">{r.text}</p>
-                </div>
-                <p className="num shrink-0 text-right text-sm font-semibold text-text">{r.price}<span className="block text-xs font-normal text-text-muted">{r.unit}</span></p>
-              </li>
-            ))}
-          </ul>
+          <div className="flex flex-col gap-4">
+            <ul className="card divide-y divide-border">
+              {rows.map((r) => (
+                <li key={r.name} className="flex items-start justify-between gap-4 p-5">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-text">{r.name}</p>
+                    <p className="mt-0.5 text-xs text-text-muted">{r.text}</p>
+                  </div>
+                  <p className="num shrink-0 text-right text-sm font-semibold text-text">{r.price}<span className="block text-xs font-normal text-text-muted">{r.unit}</span></p>
+                </li>
+              ))}
+            </ul>
+            <BotCard />
+          </div>
         </div>
+        <ComptesOffer />
       </Container>
     </section>
+  );
+}
+
+/** Selio Bot : pas de prix séparé, ce que chaque forfait en donne (quotas de PLAN_QUOTAS). */
+function BotCard() {
+  return (
+    <article className="card p-5" aria-labelledby="selio-bot">
+      <div className="flex items-start justify-between gap-4">
+        <h3 id="selio-bot" className="text-sm font-semibold text-text">Selio Bot</h3>
+        <p className="shrink-0 text-right text-sm font-semibold text-text">Inclus<span className="block text-xs font-normal text-text-muted">selon le forfait</span></p>
+      </div>
+      <ul className="mt-2 flex flex-col gap-1.5 text-xs text-text-muted">
+        <li><span className="font-medium text-text">Starter</span> : négociation, réponses et après-vente automatiques tant que votre navigateur est ouvert ; Selio Cloud en option.</li>
+        <li><span className="font-medium text-text">Pro</span> : en plus, la relance après 24 h proposée ; Selio Cloud en option.</li>
+        <li><span className="font-medium text-text">Agence</span> : relance automatique et Selio Cloud inclus, 24 h/24.</li>
+      </ul>
+      <Link to="/produits/bot" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">Découvrir Selio Bot <ArrowRight className="size-3.5" aria-hidden /></Link>
+    </article>
+  );
+}
+
+/** Selio Comptes à la prestation : trois niveaux, payés une fois (PRICING.subsidiaries). */
+function ComptesOffer() {
+  const s = PRICING.subsidiaries;
+  const tiers = [
+    { key: "audit", name: "Audit de boutique", cents: s.comptesAudit, text: "Votre boutique relue de l'extérieur : présentation, photos, titres, prix, règles d'envoi. Un rapport et les corrections prioritaires." },
+    { key: "mise-en-place", name: "Mise en place complète", cents: s.comptesMiseEnPlace, text: "Présentation, règles d'envoi, réponses types et premières annonces préparées avec vous, prêtes à copier dans Vinted." },
+    { key: "accompagnement", name: "Accompagnement 30 jours", cents: s.comptesAccompagnement, text: "La mise en place, puis deux points d'étape sur vos premières ventes : prix, republications, réglages de Selio Manager." },
+  ];
+  return (
+    <div className="mt-10" id="comptes">
+      <h3 className="text-lg font-semibold tracking-[-0.01em] text-text">Selio Comptes à la prestation</h3>
+      <p className="mt-1 max-w-2xl text-sm text-text-muted">Un service ponctuel, payé une fois, sans abonnement. Vous gardez la main : Selio ne crée aucun compte et ne se connecte jamais à Vinted à votre place.</p>
+      <ul className="mt-4 grid gap-4 md:grid-cols-3" aria-label="Niveaux de la prestation Selio Comptes">
+        {tiers.map((t) => (
+          <li key={t.key} className="card mk-card flex flex-col p-5">
+            <p className="text-sm font-semibold text-text">{t.name}</p>
+            <p className="num mt-2 text-2xl font-semibold text-text">{price(t.cents)}<span className="text-sm font-normal text-text-muted"> une fois</span></p>
+            <p className="mt-2 flex-1 text-sm text-text-muted">{t.text}</p>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-xs text-text-muted">Prestation commandée depuis la page <Link to="/contact" className="font-medium text-accent hover:underline">Contact</Link> : le paiement en ligne n'est pas encore ouvert.</p>
+    </div>
   );
 }
 

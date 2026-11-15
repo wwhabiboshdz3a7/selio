@@ -1,6 +1,7 @@
+import { useData } from "../../../lib/data/provider";
 import { AGENCY_EXAMPLE_CLIENTS } from "@selio/demo-data";
 import { Card, PageHeader, StatusBadge, Table, TableWrap, Td, Th, Tr, formatCents, formatPercent } from "@selio/ui";
-import { ExampleTag, PreviewNotice } from "../components";
+import { AgentsActivation, ExampleTag, PreviewNotice } from "../components";
 
 /** Montant qu'une agence facturerait à un client : forfait mensuel + commission sur le chiffre d'affaires du mois. */
 function invoiceCents(c: (typeof AGENCY_EXAMPLE_CLIENTS)[number]): number {
@@ -10,6 +11,14 @@ function invoiceCents(c: (typeof AGENCY_EXAMPLE_CLIENTS)[number]): number {
 const commission = (rate: number) => (rate > 0 ? formatPercent(rate) : "—");
 
 export default function AgencyBilling() {
+  const { mode } = useData();
+  // Mode connecté : les boutiques clientes d'exemple ne sont jamais montrées.
+  if (mode === "connected") return <AgentsActivation title="Facturation des clients" does={["Ce que chaque boutique cliente vous doit, calculé chaque mois.", "L'encaissement par votre propre prestataire de paiement : Selio ne prélève rien pour vous."]} />;
+  return <AgencyBillingPreview />;
+}
+
+/** Démonstration : la page avec les boutiques clientes d'exemple (marquées « Exemple fictif »). */
+function AgencyBillingPreview() {
   const total = AGENCY_EXAMPLE_CLIENTS.reduce((s, c) => s + invoiceCents(c), 0);
   return (
     <>

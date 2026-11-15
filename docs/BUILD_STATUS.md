@@ -325,6 +325,17 @@ Demande d'Ibrahim : « c'est moi qui choisis qui la nomme et qui fixe la réduc 
 
 **À décider (Ibrahim)** : remplacer l'offre d'une organisation depuis l'admin (aujourd'hui : une seule offre, non remplaçable par le client) ; offres réservées à certaines organisations.
 
+## Marque et vitrine : Selio Manager, la gamme, vitrine sans démo (16 novembre 2026)
+
+- **Noms** — IT : l'outil de gestion s'appelle **Selio Manager** (espace `selio`, `/app`, identifiant gardé) ; « Selio » reste la marque. Gamme dans l'ordre : Manager, Studio, Track, Radar, **Bot** (nouvel espace `bot`, `/bot`, « En développement », pages construites à part), Cloud (« le moteur 24 h/24 », relié depuis Selio Agents et Selio Bot), Agents, Selio Comptes **à la prestation**. Pages `/produits/bot` et `/produits/agents` ajoutées (sitemap, SEO).
+- **Prix** — indicatifs, dans `PRICING` : Selio Comptes 19 € (audit), 49 € (mise en place), 89 € (accompagnement 30 jours), payés une fois, commandés par Contact ; Selio Bot sans prix séparé (Starter et Pro : Cloud en option ; Agence : relance automatique et Cloud inclus). **À confirmer par Ibrahim.**
+- **Vitrine sans démo** — IT : aucun lien ni mention « démo » (boutons : essai de 14 jours et connexion) ; `/demo` redirige vers `/inscription` quand `VITE_API_BASE_URL` est renseignée (`marketing/demoAccess.ts`), reste ouvert en développement sans API ; connexion et inscription sans choix « Démonstration » en production ; FAQ de la vitrine sans les trois questions sur la démo.
+- **Parcours de l'accueil** — de l'achat à l'étiquette en 8 étapes, dont « Sourcing auprès de fournisseurs partenaires » marqué **Bientôt** (aucun accord signé, aucun nom). Photos du pull torsadé (`g-x4iv-*`) remises à l'endroit (rotation 180°, script d'import corrigé : EXIF + `GALLERY_UPSIDE_DOWN`) et captures de la vitrine refaites.
+
+## Selio Bot (16 novembre 2026)
+
+- **Selio Bot** — IT (démonstration et serveur) : espace `/bot` (tableau des bots, page de chaque bot, « Achat auto » avec Radar Auto et achat assisté côte à côte, deux verrous du serveur expliqués), `GET /api/bot`, `POST /api/bot/stop` et `/resume` (titulaire et administrateur, audit `bot.*`, journal d'activité), coupe-circuit = arrêt global, désormais aussi respecté par la file des tâches serveur et la file de l'extension ; aucune migration ; Favoris « bientôt » ; Cloud et achat automatique toujours fermés par défaut. Voir [BOT.md](BOT.md).
+
 ## Commandes exécutées et résultats (session du 15 novembre 2026, offres commerciales)
 
 Migration 0020 appliquée sur les bases de test dédiées (`selio_test_api_offers`, `selio_test_api_referral`, `selio_test_api`). `vitest` ciblé : contracts `offers.test.ts` + `contracts.test.ts` ✔ (26 tests) ; core `billing.test.ts` + `referral.test.ts` ✔ (18) ; API `offers.test.ts` ✔ (6), `referral.test.ts` ✔ (5), `api.test.ts` ✔ (70) ; web `admin/offers.test.tsx`, Paramètres, vitrine, mise en page, équipe et client démo ✔ (126). `pnpm -r typecheck` : voir le compte rendu de la session (chantiers parallèles en cours).

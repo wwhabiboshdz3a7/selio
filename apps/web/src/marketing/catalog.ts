@@ -9,7 +9,7 @@ export type ModuleTone = "violet" | "gold";
 /** Une seule formulation de l'état, partout sur la vitrine. */
 export const AVAILABILITY_LABEL: Record<Availability, string> = {
   available: "Disponible",
-  demo: "En démonstration",
+  demo: "Aperçu",
   experimental: "Expérimental",
   planned: "En préparation",
 };

@@ -155,6 +155,7 @@ export default async function extRoutes(app: FastifyInstance) {
   app.get("/api/ext/jobs", async (req) => {
     const ctx = app.requireCtx(req);
     requireScope(req, "sync:conversations");
-    return withOrg(ctx, async (tx) => (await repos.jobs.list(tx, { status: "queued", pageSize: 20 })).items.filter((j) => j.runsIn === "browser"));
+    // « Tout arrêter » (Selio Bot) : l'extension ne reçoit plus aucune tâche jusqu'à la reprise.
+    return withOrg(ctx, async (tx) => ((await repos.automationState.get(tx)).globalPaused ? [] : (await repos.jobs.list(tx, { status: "queued", pageSize: 20 })).items.filter((j) => j.runsIn === "browser")));
   });
 }

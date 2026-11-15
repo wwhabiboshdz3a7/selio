@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Alert, Button, Field, Input, Segmented } from "@selio/ui";
 import { usePageMeta } from "../../lib/seo";
@@ -8,6 +8,7 @@ import { connectedModeAvailable } from "../../lib/env";
 import { errorMessage } from "../../lib/errors";
 import type { Mode } from "../../lib/data/types";
 import { landingPath } from "../../lib/admin";
+import { demoEntryAllowed } from "../demoAccess";
 
 export default function Login() {
   usePageMeta("Connexion", "Connexion à l'application Selio.", { noindex: true });
@@ -18,6 +19,11 @@ export default function Login() {
   const [password, setPassword] = useState(mode === "demo" ? "demo" : "");
   const [error, setError] = useState<string | null>(location.state?.error ?? null);
   const [loading, setLoading] = useState(false);
+  // Production (API configurée) : aucun mode démonstration proposé, la connexion est réelle.
+  const demoOffered = demoEntryAllowed();
+  useEffect(() => {
+    if (!demoOffered && mode === "demo") setMode("connected");
+  }, [demoOffered, mode, setMode]);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -39,14 +45,16 @@ export default function Login() {
       <Container className="max-w-md">
         <Eyebrow>Espace Selio</Eyebrow>
         <h1 className="mt-3 text-2xl font-semibold tracking-[-0.025em] text-text">Connexion</h1>
-        <p className="mt-1 text-sm text-text-muted">Choisissez le mode, puis identifiez-vous.</p>
-        <div className="mt-4">
-          <Segmented ariaLabel="Mode" value={mode} onChange={(m: Mode) => { setMode(m); setEmail(m === "demo" ? "marie@demo.selio.local" : ""); setPassword(m === "demo" ? "demo" : ""); setError(null); }} items={[{ value: "demo", label: "Démonstration" }, { value: "connected", label: "Compte connecté" }]} />
-        </div>
+        <p className="mt-1 text-sm text-text-muted">{demoOffered ? "Choisissez le mode, puis identifiez-vous." : "Identifiez-vous pour retrouver vos espaces Selio."}</p>
+        {demoOffered ? (
+          <div className="mt-4">
+            <Segmented ariaLabel="Mode" value={mode} onChange={(m: Mode) => { setMode(m); setEmail(m === "demo" ? "marie@demo.selio.local" : ""); setPassword(m === "demo" ? "demo" : ""); setError(null); }} items={[{ value: "demo", label: "Démonstration" }, { value: "connected", label: "Compte connecté" }]} />
+          </div>
+        ) : null}
         {mode === "connected" && !connectedModeAvailable ? (
           <Alert tone="warning" title="Aucune API configurée" className="mt-4">Cette installation n'a pas d'URL d'API (VITE_API_BASE_URL). Le mode connecté est indisponible ici ; la démonstration reste accessible.</Alert>
         ) : null}
-        {mode === "demo" ? <Alert tone="info" className="mt-4">En démonstration, les identifiants pré-remplis suffisent : aucune donnée réelle n'est utilisée.</Alert> : null}
+        {mode === "demo" && demoOffered ? <Alert tone="info" className="mt-4">En démonstration, les identifiants pré-remplis suffisent : aucune donnée réelle n'est utilisée.</Alert> : null}
         <form onSubmit={submit} className="card mt-4 flex flex-col gap-4 p-5" noValidate>
           <Field label="Email" required>{(p) => <Input id={p.id} type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" required />}</Field>
           <Field label="Mot de passe" required>{(p) => <Input id={p.id} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />}</Field>

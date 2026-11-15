@@ -21,7 +21,7 @@ import { TRACK_KEYS, TrackGate } from "./shared";
  * « données insuffisantes » : aucune note, et le scan n'est pas décompté.
  */
 export default function TrackNiches() {
-  return <TrackGate>{(u) => <Niches usage={u} />}</TrackGate>;
+  return <TrackGate requireLive={{ title: "Scans de niche", does: ["Une marque et une catégorie notées sur 100 : demande, vitesse de vente, concurrence et marge.", "La fourchette de prix observée et le délai de vente estimé."] }}>{(u) => <Niches usage={u} />}</TrackGate>;
 }
 
 const COMPONENT_KEYS = Object.keys(TRACK_SCAN_WEIGHTS) as (keyof TrackScanComponents)[];

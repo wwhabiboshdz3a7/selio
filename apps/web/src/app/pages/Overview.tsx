@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, BarChart3, CalendarDays, Clock, Coins, Gauge as GaugeIcon, Hourglass, Info, LayoutGrid, LineChart, Package, PieChart, Plus, Radar, Shirt, ShoppingBag, Sparkles, Store, Tags, Target, TrendingUp, Trophy, Wallet, X, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowRight, BarChart3, CalendarDays, Clock, Coins, Gauge as GaugeIcon, Hourglass, Info, LayoutGrid, LineChart, Package, PieChart, Plus, Shirt, ShoppingBag, Tags, Target, TrendingUp, Trophy, Wallet, X, XCircle } from "lucide-react";
 import type { PeriodPreset } from "@selio/domain";
 import { ORDER_STATUS_LABELS, type OrderStatus } from "@selio/contracts";
 import { Button, Dialog, EmptyState, IconTile, PageHeader, StatStrip, Tag, cn, formatCents, formatNumber, formatPercent, formatRelative } from "@selio/ui";
@@ -10,6 +10,10 @@ import type { OverviewData } from "../../lib/data/types";
 import { AreaChart, BarChart, ColumnChart, DonutChart, Gauge, HorizontalBars, ScoreRing, Sparkline, StackedBar, scoreTone } from "../../components/charts";
 import { Delta, OrderStatusBadge, PeriodPicker, QueryBoundary } from "../components/common";
 import { MaskedAmount, FinanceMaskedNote, useSeesFinances } from "../components/finance";
+import { ShortcutTiles, ShortcutsEditor, useShortcuts } from "../components/shortcuts";
+import { ActivityLine } from "../components/activity";
+import { can, REVIEW_THRESHOLD } from "@selio/domain";
+import type { ShortcutId } from "@selio/contracts";
 import { useNavCounts } from "../layout";
 
 type WidgetId = "sales" | "cumulative" | "goal" | "categoryMix" | "weekday" | "hours" | "stockAging" | "daysToSell" | "brandMargin" | "priceBands" | "buyVsSell" | "sellThrough" | "stockValue" | "marginRate" | "basket" | "dressing" | "orderStatus" | "stale";
@@ -109,6 +113,15 @@ export default function Overview() {
   const first = session.user.displayName.split(" ")[0];
   const active = useMemo(() => widgets.map((id) => available.find((w) => w.id === id)!).filter(Boolean), [widgets, available]);
   const toggle = (id: WidgetId) => setWidgets(widgets.includes(id) ? widgets.filter((x) => x !== id) : [...widgets, id]);
+  // Raccourcis personnalisés (serveur, par utilisateur) et dernières actions du journal d'activité.
+  const shortcuts = useShortcuts();
+  const [editShortcuts, setEditShortcuts] = useState(false);
+  const recent = useQuery({ queryKey: ["activity", "overview"], queryFn: () => client.listActivity({ limit: 6 }), enabled: can(session.role, "org.read") });
+  const shortcutHints: Partial<Record<ShortcutId, string>> = {
+    ...(q.data ? { dressing: `Note moyenne ${q.data.dressing.averageScore}/100 · ${counts.data?.dressingDue ?? q.data.dressing.toRepublish} annonce(s) à republier`, orders_to_ship: `${q.data.counts.pendingOrders} commande(s) à traiter` } : {}),
+    ...(counts.data ? { messages: `${counts.data.unread} conversation(s) non lue(s)`, radar: `${counts.data.toReview} affaire(s) notée(s) ${REVIEW_THRESHOLD}/100 ou plus à valider`, purchase: `${counts.data.toReview} achat(s) à valider`, automations: `${counts.data.awaiting} action(s) à valider` } : {}),
+    ...(market.data?.opportunities[0] ? { track: `Niche à saisir : ${market.data.opportunities[0].label} (demande ${market.data.opportunities[0].demand}/100)` } : {}),
+  };
 
   return (
     <>
@@ -119,12 +132,7 @@ export default function Overview() {
       />
 
       <FinanceMaskedNote />
-      <nav aria-label="Raccourcis" className="mb-8 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border xl:grid-cols-4">
-        <FeatureTile to="/studio" icon={<Sparkles />} title="Générer une annonce" text="Vos photos → annonce rédigée par l'IA, en brouillon ou publiée." cta="Commencer" primary />
-        <FeatureTile to="/app/dressing?filter=due" icon={<Shirt />} title="Dressing intelligent" text={q.data ? `Note moyenne ${q.data.dressing.averageScore}/100 · ${counts.data?.dressingDue ?? q.data.dressing.toRepublish} annonce(s) à republier` : "Notes et rendement de vos annonces"} cta="Republier" />
-        <FeatureTile to="/app/purchase" icon={<Radar />} title="Bonnes affaires" text={counts.data ? `${counts.data.toReview} affaire(s) notée(s) 75/100 ou plus à valider` : "Le radar note chaque affaire sur 100"} cta="Valider" />
-        <FeatureTile to="/track" icon={<Store />} title="Selio Track" text={market.data?.opportunities[0] ? `Niche à saisir : ${market.data.opportunities[0].label} (demande ${market.data.opportunities[0].demand}/100)` : "Niches, tendances et prix du marché"} cta="Explorer" />
-      </nav>
+      <ShortcutTiles ids={shortcuts.ids} hints={shortcutHints} onEdit={() => setEditShortcuts(true)} />
 
       <QueryBoundary query={q}>
         {(d) => (
@@ -173,6 +181,15 @@ export default function Overview() {
               </div>
             )}
 
+            {recent.data ? (
+              <section aria-label="Dernières actions" className="card p-0">
+                <div className="flex items-center justify-between px-4 pt-4 md:px-5"><h2 className="text-md font-semibold">Dernières actions</h2><Link to="/app/journal" className="text-sm text-text-muted hover:text-text">Tout le journal</Link></div>
+                {recent.data.entries.length === 0 ? <p className="p-4 text-sm text-text-muted md:px-5">Rien pour l'instant : vos actions et celles de Selio apparaîtront ici.</p> : (
+                  <ol className="mt-2 divide-y divide-border">{recent.data.entries.map((e) => <li key={e.id}><ActivityLine entry={e} showDate /></li>)}</ol>
+                )}
+              </section>
+            ) : null}
+
             <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2">
               <section className="card p-0">
                 <div className="flex items-center justify-between px-4 pt-4"><h2 className="text-md font-semibold">Dernières conversations</h2><Link to="/app/messages" className="text-sm text-text-muted hover:text-text">Tout voir</Link></div>
@@ -218,6 +235,7 @@ export default function Overview() {
           })}
         </ul>
       </Dialog>
+      <ShortcutsEditor open={editShortcuts} onClose={() => setEditShortcuts(false)} />
     </>
   );
 }
@@ -227,18 +245,6 @@ const ALERT_ICON: Record<OverviewData["alerts"][number]["tone"], ReactNode> = {
   warning: <AlertTriangle className="size-4 text-warning" aria-hidden />,
   info: <Info className="size-4 text-text-muted" aria-hidden />,
 };
-
-/** Raccourci vers un module : icône neutre (améthyste pour l'action principale), lien d'action en violet. */
-function FeatureTile({ to, icon, title, text, cta, primary = false }: { to: string; icon: ReactNode; title: string; text: string; cta: string; primary?: boolean }) {
-  return (
-    <Link to={to} className="group flex min-w-0 flex-col gap-1 bg-surface p-4 transition-colors hover:bg-surface-muted/60 md:p-5">
-      <span className={cn("mb-1.5 inline-flex [&>svg]:size-5", primary ? "text-accent" : "text-text-muted")} aria-hidden>{icon}</span>
-      <span className="block text-sm font-semibold text-text md:text-base">{title}</span>
-      <span className="line-clamp-2 block text-xs text-text-muted">{text}</span>
-      <span className="mt-auto inline-flex items-center gap-1 pt-1.5 text-xs font-medium text-accent">{cta}<ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" aria-hidden /></span>
-    </Link>
-  );
-}
 
 function Spark({ values }: { values: number[] }) {
   return values.some((v) => v !== 0) ? <Sparkline values={values} className="h-8 w-full" /> : null;

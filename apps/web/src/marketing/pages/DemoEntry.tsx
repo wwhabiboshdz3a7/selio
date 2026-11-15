@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { Navigate, useNavigate, useSearchParams } from "react-router";
 import { LoadingState, ErrorState } from "@selio/ui";
 import { usePageMeta } from "../../lib/seo";
 import { Container } from "../components";
 import { useData } from "../../lib/data/provider";
 import { errorMessage } from "../../lib/errors";
 import { APP_PATH_PATTERN, HUB_PATH } from "../../app/spaces/paths";
+import { demoEntryAllowed } from "../demoAccess";
 
 /**
  * Page d'arrivée demandée (?vers=/app/…, /studio, /agence, /global), limitée à l'application :
@@ -15,8 +16,17 @@ export function demoTarget(raw: string | null): string {
   return raw && APP_PATH_PATTERN.test(raw) ? raw : HUB_PATH;
 }
 
-/** Entrée directe dans la démonstration : force le mode démo, ouvre la session, redirige. */
+/**
+ * Entrée directe dans la démonstration (développement sans API : tests, vidéos). En production,
+ * plus de démonstration : l'adresse renvoie vers l'inscription (essai de 14 jours).
+ */
 export default function DemoEntry() {
+  if (!demoEntryAllowed()) return <Navigate to="/inscription" replace />;
+  return <DemoSession />;
+}
+
+/** Force le mode démo, ouvre la session, redirige. */
+function DemoSession() {
   usePageMeta("Démonstration", "Ouvrir la démonstration Selio avec des données fictives.", { noindex: true });
   const { client, mode, setMode } = useData();
   const navigate = useNavigate();

@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { ArrowRight } from "lucide-react";
-import { Alert } from "@selio/ui";
+import { Alert, buttonClass } from "@selio/ui";
 import { CheckList, Container, CtaBand, IndependenceNotice, JsonLd, MarketingSection, Placeholder } from "../components";
 import { BLEAM_SOURCE_DATE, COMPARISON_ROWS, ELIAS_PLACEHOLDER, MIGRATION_STEPS, SELIO_PRINCIPLES, UNSOURCED_PLACEHOLDER } from "../comparison";
 import { breadcrumbJsonLd, COMPARISON_READY, useMarketingMeta } from "../seo";
@@ -24,7 +24,7 @@ export function ComparisonFootnotes() {
       <Container className="max-w-3xl">
         <h2 id="sources-comparatif" className="text-md font-semibold text-text">Sources et méthode</h2>
         <ul className="mt-3 flex list-disc flex-col gap-1.5 pl-5 text-sm text-text-muted">
-          <li>Ce qui est dit de Selio décrit le produit tel qu'il est construit aujourd'hui, y compris ce qui est encore en démonstration ou en développement (voir chaque page produit).</li>
+          <li>Ce qui est dit de Selio décrit le produit tel qu'il est construit aujourd'hui, y compris ce qui est encore en aperçu ou en développement (voir chaque page produit).</li>
           <li>Ce qui est dit de Bleam vient de ses pages publiques (fiche App Store, site officiel), relevées le {BLEAM_SOURCE_DATE} ; à revérifier avant publication. Une case « {UNSOURCED_PLACEHOLDER} » signifie que nous n'affirmons rien.</li>
           <li>Bleam, V-Tools et Clemz sont des marques de leurs propriétaires respectifs, citées à titre de comparaison. Selio n'est affilié à aucun d'eux.</li>
         </ul>
@@ -89,7 +89,7 @@ export default function SelioOrBleam() {
         <div className="max-w-3xl">
           <CheckList items={[...MIGRATION_STEPS]} />
           <p className="mt-6">
-            <Link to="/demo?vers=/app/settings/migration" className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">Voir la migration dans la démo <ArrowRight className="size-4" aria-hidden /></Link>
+            <Link to="/inscription" className={buttonClass({ variant: "accent" })}>Commencer l'essai et importer vos annonces <ArrowRight aria-hidden /></Link>
           </p>
         </div>
       </MarketingSection>
@@ -106,7 +106,7 @@ export default function SelioOrBleam() {
       </MarketingSection>
 
       <ComparisonFootnotes />
-      <CtaBand seed={41} title="Jugez sur pièce" lead="La démonstration montre Selio avec des données fictives, sans compte ni carte bancaire." />
+      <CtaBand seed={41} title="Jugez sur pièce" lead="Essayez Selio 14 jours sur votre propre activité : carte enregistrée à l'inscription, rien n'est débité avant la fin de l'essai." />
     </>
   );
 }

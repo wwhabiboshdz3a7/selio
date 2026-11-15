@@ -22,7 +22,7 @@ test.describe("Selio et ses filiales", () => {
     page.on("pageerror", (e) => errors.push(e.message));
     await openDemo(page, null);
     await expect(page.getByRole("heading", { name: "Selio et ses filiales" })).toBeVisible();
-    for (const name of ["Selio", "Selio Studio", "Selio Agents", "Selio Track", "Selio Cloud", "Selio Comptes"]) await expect(page.getByRole("article", { name, exact: true })).toBeVisible();
+    for (const name of ["Selio Manager", "Selio Studio", "Selio Track", "Selio Bot", "Selio Cloud", "Selio Agents", "Selio Comptes"]) await expect(page.getByRole("article", { name, exact: true })).toBeVisible();
     await expect(page.getByRole("article", { name: "Selio Global" })).toHaveCount(0);
     await expect(page.getByRole("article", { name: "Selio Agents" }).getByText("Aperçu", { exact: true }).first()).toBeVisible();
     // Selio Cloud est devenu un vrai espace (/cloud) en aperçu dans la démo : plus « En développement ».
@@ -31,8 +31,8 @@ test.describe("Selio et ses filiales", () => {
     await expect(cloud.getByText("En développement", { exact: true })).toHaveCount(0);
     await expect(cloud.getByRole("link", { name: "Ouvrir Selio Cloud" })).toHaveAttribute("href", "/cloud");
     await expect(page.getByText("Comment les filiales s'enchaînent")).toBeVisible();
-    // Chiffres de Selio calculés depuis les données de la démo (plus de tiret une fois chargés).
-    await expect(page.getByRole("article", { name: "Selio", exact: true }).getByRole("definition").first()).not.toHaveText("—");
+    // Chiffres de Selio Manager calculés depuis les données de la démo (plus de tiret une fois chargés).
+    await expect(page.getByRole("article", { name: "Selio Manager", exact: true }).getByRole("definition").first()).not.toHaveText("—");
     await noHorizontalOverflow(page);
 
     await page.getByRole("link", { name: "Ouvrir Selio Studio" }).click();
@@ -58,7 +58,7 @@ test.describe("Selio et ses filiales", () => {
     await expect(page.getByText("10 comptes maximum par organisation")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Comment ça marchera" })).toHaveCount(0);
 
-    await switchSpace(page, /^Selio\b(?! Studio| Agents| Track| Cloud| Comptes)/);
+    await switchSpace(page, /^Selio Manager/);
     await expect(page).toHaveURL(/\/app$/);
     await expect(page.getByRole("heading", { name: /Bonjour/ })).toBeVisible();
     // Anciennes adresses : générateur → Studio, Agence → Agents, Global → accueil des filiales.

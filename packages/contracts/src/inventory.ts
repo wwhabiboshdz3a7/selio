@@ -131,6 +131,15 @@ export const inventoryQuery = z.object({
   sort: z.enum(["updated_desc", "created_desc", "title_asc", "price_asc", "price_desc", "margin_desc", "online_desc"]).default("updated_desc"),
   /** Articles en ligne depuis au moins N jours (tri « à republier »). */
   minDaysOnline: z.coerce.number().int().min(0).max(3650).optional(),
+  /** Compte Vinted de l'annonce. */
+  connectionId: z.string().trim().min(1).max(64).optional(),
+  /** « none » : articles sans photo. */
+  photos: z.enum(["none"]).optional(),
+  /**
+   * Marge projetée au prix affiché (finances : ignoré pour un rôle sans « finances.read ») : « negative »
+   * (sous le coût), « low » (moins de 30 % du prix affiché), « good » (30 % ou plus).
+   */
+  margin: z.enum(["negative", "low", "good"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(25),
 });
@@ -138,9 +147,45 @@ export type InventoryQuery = z.infer<typeof inventoryQuery>;
 
 export const bulkItemAction = z.object({
   ids: z.array(id).min(1).max(500),
-  action: z.enum(["archive", "restore", "set_status", "set_floor_margin", "add_tag", "delete"]),
+  /**
+   * « set_price » : prix affiché fixé (`listedPriceCents`) ; « adjust_price » : prix affiché multiplié par
+   * 1 + `priceRate` (−50 % à +50 %, arrondi à 10 centimes, jamais sous le plancher) ; « republish » : annonces
+   * en ligne republiées avec la prochaine variante conseillée.
+   */
+  action: z.enum(["archive", "restore", "set_status", "set_floor_margin", "add_tag", "delete", "set_price", "adjust_price", "republish"]),
   status: itemStatus.optional(),
   floorMarginCents: cents.optional(),
   tag: z.string().trim().min(1).max(40).optional(),
+  listedPriceCents: nonNegCents.optional(),
+  priceRate: z.number().min(-0.5).max(0.5).optional(),
 });
 export type BulkItemAction = z.infer<typeof bulkItemAction>;
+
+/**
+ * Prix après ajustement en lot : arrondi à 10 centimes, jamais sous le plancher ni sous 0. Null si l'article
+ * n'a pas de prix affiché.
+ */
+export function adjustedPrice(listedPriceCents: number | null, floorPriceCents: number | null, rate: number): number | null {
+  if (listedPriceCents === null) return null;
+  const raw = Math.round((listedPriceCents * (1 + rate)) / 10) * 10;
+  return Math.max(floorPriceCents ?? 0, raw, 0);
+}
+
+/** Compteurs en tête de « Articles et stock ». `stockValueCents` (au prix d'achat) relève des finances. */
+export interface ItemSummary {
+  /** Articles actifs (hors archivés). */
+  active: number;
+  inStock: number;
+  listed: number;
+  reserved: number;
+  /** Vendus depuis le 1er du mois (fuseau de l'organisation non appliqué : UTC). */
+  soldThisMonth: number;
+  /** Valeur d'achat du stock actif non vendu (prix d'achat + frais) : null pour un rôle sans finances. */
+  stockValueCents: number | null;
+  /** Valeur au prix affiché des annonces en ligne (visible de tous). */
+  listedValueCents: number;
+  withoutPhoto: number;
+  /** Annonces en ligne depuis au moins `republishAfterDays` jours. */
+  toRepublish: number;
+  republishAfterDays: number;
+}

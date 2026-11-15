@@ -36,8 +36,12 @@ describe("ConstellationHero", () => {
     for (const c of Array.from(container.querySelectorAll("canvas"))) expect(c.getAttribute("aria-hidden")).toBe("true");
     // Aucun bouton imbriqué dans un lien.
     expect(container.querySelectorAll("a button")).toHaveLength(0);
-    for (const a of screen.getAllByRole("link", { name: /Créer un compte/ })) expect(a.getAttribute("href")).toBe("/inscription");
-    for (const a of screen.getAllByRole("link", { name: "Explorer la démo" })) expect(a.getAttribute("href")).toBe("/demo");
+    // Essai de 14 jours et connexion ; jamais de lien vers la démonstration.
+    expect(screen.getAllByRole("link", { name: /Commencer l'essai gratuit/ })).toHaveLength(2);
+    for (const a of screen.getAllByRole("link", { name: /Commencer l'essai gratuit/ })) expect(a.getAttribute("href")).toBe("/inscription");
+    for (const a of screen.getAllByRole("link", { name: "Se connecter" })) expect(a.getAttribute("href")).toBe("/connexion");
+    expect(container.querySelector('a[href^="/demo"]')).toBeNull();
+    expect(container.textContent).not.toMatch(/démo/i);
     // Quinzième carte : la fin de la visite porte les deux actions.
     expect(screen.getByRole("heading", { level: 3, name: "Votre constellation commence ici" })).toBeTruthy();
   });

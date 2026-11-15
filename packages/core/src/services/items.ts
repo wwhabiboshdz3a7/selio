@@ -1,15 +1,33 @@
-import { bulkItemAction, inventoryItemCreate, inventoryItemUpdate, inventoryQuery, namedMeasurementField, photoRole, type InventoryEvent, type InventoryItem, type NamedMeasurementField, type Page, type PhotoRole } from "@selio/contracts";
+import { adjustedPrice, bulkItemAction, inventoryItemCreate, inventoryItemUpdate, inventoryQuery, namedMeasurementField, photoRole, type InventoryEvent, type InventoryItem, type ItemSummary, type NamedMeasurementField, type Page, type PhotoRole } from "@selio/contracts";
 import { repos } from "@selio/db";
 import { z } from "zod";
-import { ITEM_TRANSITIONS, canChangeItemStatus, checkListing, diffItem, newId, nextSku, toCsv, EXPORT_HEADERS, inventoryToCsvRow, type ListingCheck } from "@selio/domain";
+import { ITEM_TRANSITIONS, applyVariant, canChangeItemStatus, checkListing, diffItem, newId, nextSku, recordRepublication, republicationPlan, toCsv, EXPORT_HEADERS, inventoryToCsvRow, type ListingCheck } from "@selio/domain";
 import { PLAN_QUOTAS } from "@selio/demo-data";
-import { AppError, nowIso, requireAction, withOrg, type OrgContext } from "../context";
+import { AppError, nowIso, requireAction, seesFinances, withOrg, type OrgContext } from "../context";
 import type { Tx } from "@selio/db";
 
 export function listItems(ctx: OrgContext, raw: unknown): Promise<Page<InventoryItem>> {
   const q = inventoryQuery.safeParse(raw ?? {});
   if (!q.success) throw new AppError("validation", "Filtres invalides", 400, q.error.flatten());
-  return withOrg(ctx, (tx) => repos.items.list(tx, q.data));
+  // Filtre par marge : il révélerait les prix d'achat, ignoré pour un rôle sans « finances.read ».
+  const query = seesFinances(ctx.role) ? q.data : { ...q.data, margin: undefined };
+  return withOrg(ctx, (tx) => repos.items.list(tx, query));
+}
+
+/**
+ * Compteurs en tête de « Articles et stock » : en stock, en ligne, vendus ce mois, valeur du stock (au prix
+ * d'achat : null sans « finances.read »), valeur en ligne, sans photo, à republier (réglage du dressing).
+ */
+export function itemSummary(ctx: OrgContext): Promise<ItemSummary> {
+  requireAction(ctx, "items.read");
+  const now = ctx.services.now();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  return withOrg(ctx, async (tx) => {
+    const org = await repos.orgs.byId(tx, ctx.orgId);
+    const republishAfterDays = org.settings.dressing.republishAfterDays;
+    const s = await repos.items.summary(tx, { monthStart, republishAfterDays });
+    return { ...s, stockValueCents: seesFinances(ctx.role) ? s.stockValueCents : null, republishAfterDays };
+  });
 }
 
 export const listBrands = (ctx: OrgContext) => withOrg(ctx, (tx) => repos.items.brands(tx));
@@ -155,8 +173,11 @@ export function bulkItems(ctx: OrgContext, raw: unknown): Promise<{ affected: nu
   const parsed = bulkItemAction.safeParse(raw);
   if (!parsed.success) throw new AppError("validation", "Action en lot invalide", 400, parsed.error.flatten());
   const action = parsed.data;
+  if (action.action === "set_price" && action.listedPriceCents === undefined) throw new AppError("validation", "Indiquez le nouveau prix.", 400);
+  if (action.action === "adjust_price" && action.priceRate === undefined) throw new AppError("validation", "Indiquez le pourcentage d'ajustement.", 400);
   return withOrg(ctx, async (tx) => {
     let affected = 0;
+    let republishSettings: number | undefined;
     for (const id of action.ids) {
       try {
         const it = await repos.items.byId(tx, id);
@@ -167,6 +188,22 @@ export function bulkItems(ctx: OrgContext, raw: unknown): Promise<{ affected: nu
           case "set_floor_margin": if (action.floorMarginCents !== undefined) { await updateItemTx(ctx, tx, id, { floorPriceCents: it.purchasePriceCents + it.purchaseFeesCents + action.floorMarginCents }); affected++; } break;
           case "add_tag": if (action.tag && !it.tags.includes(action.tag)) { await updateItemTx(ctx, tx, id, { tags: [...it.tags, action.tag] }); affected++; } break;
           case "delete": if ((await repos.orders.forItem(tx, id)).length === 0) { await repos.items.delete(tx, id); affected++; } break;
+          case "set_price": if (action.listedPriceCents !== undefined && action.listedPriceCents !== it.listedPriceCents) { await updateItemTx(ctx, tx, id, { listedPriceCents: action.listedPriceCents }); affected++; } break;
+          case "adjust_price": {
+            const next = action.priceRate !== undefined ? adjustedPrice(it.listedPriceCents, it.floorPriceCents, action.priceRate) : null;
+            if (next !== null && next !== it.listedPriceCents) { await updateItemTx(ctx, tx, id, { listedPriceCents: next }); affected++; }
+            break;
+          }
+          case "republish": {
+            if (it.status !== "listed" && it.status !== "reserved") break;
+            republishSettings ??= (await repos.orgs.byId(tx, ctx.orgId)).settings.dressing.republishAfterDays;
+            const variant = republicationPlan(it, { now: ctx.services.now(), republishAfterDays: republishSettings }).next;
+            if (!variant) break;
+            await updateItemTx(ctx, tx, id, { ...applyVariant(it, variant), ...recordRepublication(it, variant.id, "manual", nowIso(ctx), newId()) });
+            await repos.itemEvents.add(tx, { itemId: id, actorUserId: ctx.userId, kind: "updated", changes: {}, note: `Republication — variante ${variant.index} « ${variant.name} »` });
+            affected++;
+            break;
+          }
         }
       } catch (e) {
         if (e instanceof AppError) continue;

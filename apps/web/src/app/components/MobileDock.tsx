@@ -3,6 +3,7 @@ import { NavLink } from "react-router";
 import { Boxes, Camera, FileStack, Gauge, MessageSquare, Radar, Sparkles } from "lucide-react";
 import { GlassSurface, cn } from "@selio/ui";
 import { PHOTOS_HOME } from "../../lib/roles";
+import { dockShortcuts, useShortcuts } from "./shortcuts";
 
 /**
  * Dock flottant de l'essai « verre liquide » (§6), sur mobile seulement (< md) : la navigation principale
@@ -19,7 +20,10 @@ export interface DockEntry {
   end?: boolean;
 }
 
-/** Navigation principale : 4 entrées, « Générer » au centre. */
+/**
+ * Navigation principale par défaut : 4 entrées, « Générer » au centre. L'accueil est fixe ; les trois autres
+ * suivent les raccourcis personnalisés de l'utilisateur (`dockShortcuts`), par défaut Articles, Messages, Affaires.
+ */
 export const DOCK_ENTRIES: readonly DockEntry[] = [
   { to: "/app", label: "Accueil", icon: <Gauge />, end: true },
   { to: "/app/items", label: "Articles", icon: <Boxes /> },
@@ -48,7 +52,9 @@ const itemClass = ({ isActive }: { isActive: boolean }) => cn(
 );
 
 export function MobileDock({ reduced = false }: { reduced?: boolean }) {
-  const entries = reduced ? DOCK_ENTRIES_PHOTOS : DOCK_ENTRIES;
+  const { ids, loading } = useShortcuts();
+  const custom: readonly DockEntry[] = loading ? DOCK_ENTRIES : [DOCK_ENTRIES[0]!, ...dockShortcuts(ids).map((s): DockEntry => ({ to: s.to, label: s.short, icon: s.icon }))];
+  const entries = reduced ? DOCK_ENTRIES_PHOTOS : custom;
   const half = Math.ceil(entries.length / 2);
   const left = entries.slice(0, half);
   const right = entries.slice(half);

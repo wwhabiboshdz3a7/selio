@@ -5,6 +5,8 @@ import { Card, KpiCard, PageHeader, StatusBadge, formatCents, formatDateTime, fo
 import { useClient, useData } from "../../../lib/data/provider";
 import { QUALIFICATION_TONES } from "../../../lib/admin";
 import { QueryBoundary } from "../../components/common";
+import { isServerOutdated } from "../../../lib/admin";
+import { ServerOutdatedState } from "./AdminLayout";
 
 /**
  * Selio Admin › Tableau de bord : la croissance en chiffres réels de la base (comptes inscrits, essais, payants,
@@ -19,7 +21,7 @@ export default function AdminDashboard() {
     <>
       <PageHeader eyebrow="Selio Admin" title="Tableau de bord" description="La croissance de Selio en chiffres réels : comptes, essais, abonnements payants, accès offerts et inscriptions. Le revenu mensuel est estimé à partir des abonnements payés par carte et du prix de leur plan." />
       {mode === "demo" ? <p className="mb-4 text-xs text-text-muted">Démonstration : en plus du compte de la démo, les comptes marqués « exemple » sont fictifs.</p> : null}
-      <QueryBoundary query={q}>
+      {q.isError && isServerOutdated(q.error) ? <ServerOutdatedState /> : <QueryBoundary query={q}>
         {(g) => (
           <div className="flex flex-col gap-6">
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -62,7 +64,7 @@ export default function AdminDashboard() {
             <p className="text-xs text-text-muted">Mis à jour le {formatDateTime(g.generatedAt)}.</p>
           </div>
         )}
-      </QueryBoundary>
+      </QueryBoundary>}
     </>
   );
 }

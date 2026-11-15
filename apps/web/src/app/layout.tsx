@@ -3,15 +3,17 @@ import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from "react
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Bot, Boxes, Camera, ChevronDown, Eye, Lock, CircleUser, ClipboardList, CreditCard, Gauge, Heart, ListChecks, LogOut, Menu as MenuIcon, MessageSquare, MessagesSquare, Moon, Package, Pause, Printer, Radar, RefreshCw, Settings, ShieldCheck, Shirt, ShoppingCart, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
 import { Avatar, Banner, Button, IconButton, LoadingState, Menu, Tag, cn, formatDate } from "@selio/ui";
-import type { Subscription } from "@selio/contracts";
+import type { ServerCapabilities, Subscription } from "@selio/contracts";
+import { ArrowLeftRight } from "lucide-react";
+import { useCapabilities } from "../lib/capabilities";
 import { daysLeft } from "../lib/billing";
 import { REVIEW_THRESHOLD } from "@selio/domain";
-import { useClient, useData, useRequiredSession, useSession } from "../lib/data/provider";
+import { queryClient, useClient, useData, useRequiredSession, useSession } from "../lib/data/provider";
 import { useTheme } from "../lib/theme";
 import { unsubscribeOnLogout } from "../lib/push";
 import { Logo } from "../components/Logo";
 import { ROLE_LABELS } from "@selio/contracts";
-import { HandCoins } from "lucide-react";
+import { HandCoins, History } from "lucide-react";
 import { LifeBuoy } from "lucide-react";
 import { HUB_PATH, SPACE_GROUPS, readLastSpace, spaceForPath, writeLastSpace, type SpaceArea } from "./spaces/spaces";
 import { SpacePill, SpaceSwitcher } from "./spaces/SpaceSwitcher";
@@ -72,10 +74,12 @@ const GROUPS: NavGroup[] = [
     { to: "/app/automatisation/apres-vente", label: "Après-vente et bordereaux", icon: <Printer /> },
     { to: "/app/automatisation/stock", label: "Stock automatique", icon: <RefreshCw />, hint: "Remise en ligne automatique après une vente" },
     { to: "/app/automations", label: "Journal des tâches", icon: <ListChecks />, badgeKey: "awaiting", hint: "Tâches, validations et règles" },
+    { to: "/bot", label: "Selio Bot", icon: <Bot />, hint: "Vos bots, où ils tournent (Selio Cloud ou extension) et « Tout arrêter »" },
   ] },
   { title: "Piloter", items: [
     { to: "/app/accounts", label: "Comptes Vinted", icon: <CircleUser />, hint: "Comptes vente, achat et perso" },
     { to: "/app/analytics", label: "Analyses", icon: <ClipboardList /> },
+    { to: "/app/journal", label: "Journal d'activité", icon: <History />, hint: "Ce que Selio, Studio et l'équipe ont fait" },
   ] },
   { items: [
     { to: "/app/help", label: "Aide", icon: <LifeBuoy />, hint: "FAQ et assistant" },
@@ -121,7 +125,20 @@ export function useNavCounts(enabled = true) {
   }, refetchInterval: 30_000 });
 }
 
-/** Bandeau sous le sélecteur, pour les filiales qui ne sont pas encore ouvertes. */
+/**
+ * Note sous le sélecteur. Démonstration : l'état de chaque filiale (aperçu, développement). Mode connecté : aucune
+ * étiquette « aperçu » ou « en développement » ; seulement « En cours d'activation » pour Track ou Cloud tant que le
+ * serveur ne les a pas ouverts, et la note d'accompagnement du générateur de comptes.
+ */
+export function spaceNoteFor(area: SpaceArea, mode: "demo" | "connected", caps: ServerCapabilities | undefined): { label: string; text: string } | null {
+  if (mode === "demo") return SPACE_NOTES[area] ?? null;
+  if (area === "generateur") return SPACE_NOTES.generateur ?? null;
+  if (area === "track" && !caps?.trackLive) return { label: "En cours d'activation", text: "vous pouvez déjà créer vos filtres : ils seront lus dès l'ouverture." };
+  if (area === "cloud" && !caps?.cloud) return { label: "En cours d'activation", text: "vous pourrez confier vos réponses et relances au Cloud, compte par compte, avec votre accord." };
+  return null;
+}
+
+/** Bandeau sous le sélecteur (démonstration), pour les filiales qui ne sont pas encore ouvertes. */
 const SPACE_NOTES: Partial<Record<SpaceArea, { label: string; text: string }>> = {
   agents: { label: "Aperçu", text: "l'équipe et les accès sont réels ; les boutiques clientes sont des exemples fictifs." },
   track: { label: "En développement", text: "statistiques seulement ; simulateur par défaut, lecture en direct à valider juridiquement." },
@@ -177,6 +194,12 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
   // Selio Cloud : l'arrêt global des automatisations met aussi le Cloud en pause (bandeau et menu).
   const automation = useQuery({ queryKey: ["automation-state"], queryFn: () => client.getAutomationState(), enabled: area === "cloud" && !reduced, staleTime: 15_000 });
   const cloudPaused = area === "cloud" && automation.data?.globalPaused === true;
+  // Mode connecté : ce qui est réellement branché (paiement simulé, Track, Cloud…) ; démonstration : tout.
+  const caps = useCapabilities();
+  const paymentSimulated = mode === "connected" && caps.data?.payment === "simulated";
+  const spaceNote = spaceNoteFor(area, mode, caps.data);
+  // Autres organisations dont la personne est membre (ajoutée par l'équipe Selio ou invitée) : sélecteur dans le menu.
+  const otherOrgs = s.memberships.filter((m) => m.orgId !== s.org.id);
 
   const sidebar = (
     <div className="flex h-full flex-col">
@@ -185,9 +208,9 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
         {reduced ? <Link to={PHOTOS_HOME} className="flex min-w-0 flex-1 items-center gap-2 px-2" aria-label="Selio, articles à photographier"><Logo height={20} /></Link> : <SpaceSwitcher area={area} />}
         <IconButton label="Fermer le menu" className="md:hidden" onClick={() => setOpen(false)} size="sm"><X /></IconButton>
       </div>
-      {!reduced && SPACE_NOTES[area] ? (
+      {!reduced && spaceNote ? (
         <p className="mx-3 mb-3 shrink-0 rounded-md bg-surface-muted px-3 py-2 text-xs text-text-muted">
-          <span className="font-semibold text-text">{SPACE_NOTES[area]!.label}</span> — {SPACE_NOTES[area]!.text}
+          <span className="font-semibold text-text">{spaceNote.label}</span> — {spaceNote.text}
         </p>
       ) : null}
       {area === "selio" && !reduced ? <div className="shrink-0 px-3 pb-3">
@@ -258,6 +281,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
           items={[
             { label: resolved === "dark" ? "Mode clair" : "Mode sombre", icon: resolved === "dark" ? <Sun /> : <Moon />, onSelect: () => setPreference(resolved === "dark" ? "light" : "dark") },
             { label: "Paramètres", icon: <Settings />, onSelect: () => navigate("/app/settings") },
+            ...otherOrgs.map((m) => ({ label: `Passer à « ${m.orgName} »`, icon: <ArrowLeftRight />, onSelect: async () => { await client.switchOrg(m.orgId); await queryClient.invalidateQueries(); navigate(HUB_PATH); } })),
             // Les alertes Radar de cet appareil sont retirées avant la déconnexion (best effort, jamais bloquant).
             { label: "Se déconnecter", icon: <LogOut />, onSelect: async () => { await unsubscribeOnLogout(client); await client.logout(); navigate("/connexion"); } },
           ]}
@@ -286,7 +310,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
           </Banner>
         ) : null}
         {mode === "demo" ? <RolePreviewBanner s={s} /> : null}
-        <BillingBanner s={subscription.data ?? null} pathname={location.pathname} />
+        <BillingBanner s={subscription.data ?? null} pathname={location.pathname} simulated={paymentSimulated} />
         {/* Offre commerciale en cours (gérée dans Selio Admin) : refermable, rien sans offre. */}
         {reduced ? null : <OfferBanner scope="app" />}
         {cloudPaused ? (
@@ -361,9 +385,35 @@ function RolePreviewBanner({ s }: { s: Session }) {
  * après l'essai » avec les jours restants (la carte est demandée à la première ouverture de
  * l'application, pas à l'inscription) ; après un débit échoué, la prochaine tentative.
  */
-export function BillingBanner({ s, pathname }: { s: Subscription | null; pathname: string }) {
+export function BillingBanner({ s, pathname, simulated = false }: { s: Subscription | null; pathname: string; simulated?: boolean }) {
   if (!s) return null;
   const onBilling = pathname.startsWith("/app/settings/billing");
+  // Essai terminé alors que le paiement n'était pas activé : accès de base, en attente du paiement.
+  if (s.status === "canceled" && s.awaitingPaymentSince) {
+    return (
+      <Banner tone="neutral">
+        <span data-testid="awaiting-payment-banner" className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+          <CreditCard className="size-3.5 shrink-0 text-text-muted" aria-hidden />
+          <span><span className="font-medium text-text">Essai terminé, en attente du paiement</span> — accès de base en attendant, rien n'a été débité. L'équipe Selio vous recontacte.</span>
+          {onBilling ? null : <Link to="/app/settings/billing" className="font-medium text-accent underline-offset-2 hover:underline">Mon abonnement</Link>}
+        </span>
+      </Banner>
+    );
+  }
+  // Paiement pas encore activé (Revolut non configuré) : aucune carte demandée pendant l'essai.
+  if (simulated && s.status === "trialing") {
+    const left = s.currentPeriodEnd ? daysLeft(s.currentPeriodEnd) : null;
+    if (s.pendingPlan || onBilling) return null;
+    return (
+      <Banner tone="neutral">
+        <span data-testid="trial-simulated-banner" className="inline-flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+          <CreditCard className="size-3.5 shrink-0 text-text-muted" aria-hidden />
+          <span><span className="font-medium text-text">Choisissez votre offre</span>{left !== null ? <> — <span className="num">{left}</span> jour{left > 1 ? "s" : ""} d'essai restant{left > 1 ? "s" : ""}</> : null}. Paiement pas encore activé : aucune carte demandée, rien ne sera débité.</span>
+          <Link to="/app/settings/billing" className="font-medium text-accent underline-offset-2 hover:underline">Choisir mon offre</Link>
+        </span>
+      </Banner>
+    );
+  }
   if (s.status === "trialing" && !s.cardOnFile) {
     const left = s.currentPeriodEnd ? daysLeft(s.currentPeriodEnd) : null;
     return (
