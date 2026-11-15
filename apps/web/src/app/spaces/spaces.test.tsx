@@ -30,7 +30,7 @@ describe("la gamme Selio", () => {
     expect(SPACES[0]).toMatchObject({ id: "selio", name: "Selio Manager", short: "Manager", home: "/app" });
     expect(SPACES.every((s) => s.name.startsWith("Selio ") && s.name !== "Selio")).toBe(true);
     // Selio Bot : espace /bot, état honnête, sans prix séparé ; exécuté dans Selio Cloud.
-    expect(SPACES.find((s) => s.id === "bot")).toMatchObject({ name: "Selio Bot", home: "/bot", state: "development" });
+    expect(SPACES.find((s) => s.id === "bot")).toMatchObject({ name: "Selio Bot", home: "/bot", state: "available" });
     expect(SPACES.find((s) => s.id === "bot")!.description).toMatch(/Selio Cloud/);
     expect(APP_PATH_PATTERN.test("/bot")).toBe(true);
     // Selio Cloud : visible depuis Selio Agents (et le Bot), le moteur 24 h/24.

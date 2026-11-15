@@ -33,17 +33,17 @@ describe("accueil central des espaces", () => {
     const card = (name: string) => screen.getByRole("article", { name });
     for (const name of ["Selio Manager", "Selio Studio", "Selio Track", "Selio Bot", "Selio Cloud", "Selio Agents", "Selio Comptes"]) expect(card(name)).toBeTruthy();
     // Ordre de la gamme : disponibles et aperçus d'abord, puis ce qui est en développement.
-    expect(screen.getAllByRole("article").map((a) => a.querySelector("h2, h3")?.textContent)).toEqual(["Selio Manager", "Selio Studio", "Selio Cloud", "Selio Agents", "Selio Comptes", "Selio Track", "Selio Bot"]);
+    expect(screen.getAllByRole("article").map((a) => a.querySelector("h2, h3")?.textContent)).toEqual(["Selio Manager", "Selio Studio", "Selio Bot", "Selio Cloud", "Selio Agents", "Selio Comptes", "Selio Track"]);
     expect(screen.queryByRole("article", { name: "Selio Global" })).toBeNull();
     // États honnêtes.
     expect(within(card("Selio Manager")).getByText("Disponible")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Ouvrir Selio Manager" }).textContent).toContain("Ouvrir Selio Manager");
     expect(within(card("Selio Agents")).getAllByText("Aperçu").length).toBeGreaterThan(0);
     expect(within(card("Selio Track")).getByText("En développement")).toBeTruthy();
-    // Selio Bot : nouveau, en développement, inclus selon le forfait.
-    expect(within(card("Selio Bot")).getByText("En développement")).toBeTruthy();
+    // Selio Bot : disponible (chaque bot montre son propre état), inclus selon le forfait.
+    expect(within(card("Selio Bot")).getByText("Disponible")).toBeTruthy();
     expect(within(card("Selio Bot")).getByText(/inclus selon votre forfait/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Découvrir Selio Bot" }).getAttribute("href")).toBe("/bot");
+    expect(screen.getByRole("link", { name: "Ouvrir Selio Bot" }).getAttribute("href")).toBe("/bot");
     // Selio Comptes : à la prestation, la checklist et les textes disponibles, avec l'avancement de la checklist.
     expect(within(card("Selio Comptes")).getByText("Disponible")).toBeTruthy();
     expect(within(card("Selio Comptes")).getByText("Checklist").nextElementSibling?.textContent).toMatch(/^0\/\d+$/);

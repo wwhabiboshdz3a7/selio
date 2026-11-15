@@ -78,7 +78,7 @@ export const SPACES: readonly SpaceDef[] = [
     id: "bot", name: "Selio Bot", short: "Bot", tagline: "Les automatisations qui travaillent pour vous",
     description: "Négociation, relances, republications et achat automatique, selon vos règles et vos plafonds, exécutés dans Selio Cloud. Sans prix séparé : inclus selon votre forfait.",
     forWhom: "Pour déléguer les tâches répétitives",
-    home: "/bot", icon: <Bot />, state: "development",
+    home: "/bot", icon: <Bot />, state: "available",
     does: ["Négociation et relances selon vos règles", "Republications et achat automatique, avec plafonds", "Exécuté dans Selio Cloud, pause et arrêt en un clic"],
   },
   {

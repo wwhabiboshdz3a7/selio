@@ -53,7 +53,7 @@ export default function Items() {
   // Recherche instantanée : le champ suit la frappe, l'adresse (et la requête) suit 200 ms plus tard.
   const [search, setSearch] = useState(query.q ?? "");
   const debounced = useDebouncedValue(search, 200);
-  useEffect(() => { if ((params.get("q") ?? "") !== debounced) set("q", debounced); }, [debounced]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if ((params.get("q") ?? "") !== debounced) set("q", debounced); }, [debounced]);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const q = useQuery({ queryKey: ["items", query], queryFn: () => client.listItems(query), placeholderData: (prev) => prev });

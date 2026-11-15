@@ -16,7 +16,7 @@ import { ActivityLine, dayLabel } from "../components/activity";
  */
 
 const PERIODS = [
-  { value: "", label: "Toute période" },
+  { value: "", label: "Toute la période" },
   { value: "1", label: "Aujourd'hui" },
   { value: "7", label: "7 derniers jours" },
   { value: "30", label: "30 derniers jours" },
@@ -77,9 +77,9 @@ export default function Journal() {
           <FilterChip active={mode === "auto"} onClick={() => set("mode", "auto")} icon={<Bot />}>Automatique</FilterChip>
           <FilterChip active={mode === "manual"} onClick={() => set("mode", "manual")}>Par l'équipe</FilterChip>
         </div>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <Select aria-label="Type" value={category ?? ""} onChange={(e) => set("type", e.target.value)}>
-            <option value="">Tous types</option>
+            <option value="">Tous les types</option>
             {ACTIVITY_CATEGORIES.map((c) => <option key={c} value={c}>{ACTIVITY_CATEGORY_LABELS[c]}</option>)}
           </Select>
           <Select aria-label="Qui" value={actor ?? ""} onChange={(e) => set("qui", e.target.value)}>
@@ -90,7 +90,7 @@ export default function Journal() {
             <option value="members">Toute l'équipe</option>
             {(members.data ?? []).map((m) => <option key={m.userId} value={m.userId}>{m.user.displayName}</option>)}
           </Select>
-          <Select aria-label="Période" value={period} onChange={(e) => set("periode", e.target.value)}>
+          <Select aria-label="Période" className="col-span-2 sm:col-span-1" value={period} onChange={(e) => set("periode", e.target.value)}>
             {PERIODS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
           </Select>
         </div>

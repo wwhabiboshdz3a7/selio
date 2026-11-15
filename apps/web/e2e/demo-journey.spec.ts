@@ -169,7 +169,8 @@ test.describe("parcours de référence en démonstration", () => {
       await page.getByRole("button", { name: "Ouvrir le menu" }).click();
       await page.getByRole("dialog", { name: "Menu" }).getByRole("link", { name: "Articles et stock" }).click();
     } else {
-      await page.getByRole("link", { name: "Articles et stock" }).click();
+      // Le menu latéral (les raccourcis de la vue d'ensemble ont aussi un lien « Articles et stock »).
+      await page.getByRole("navigation", { name: "Navigation de l'application" }).getByRole("link", { name: "Articles et stock" }).click();
     }
     await expect(page.getByRole("heading", { name: "Articles et stock" })).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
