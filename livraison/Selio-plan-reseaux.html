@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Selio — Plan réseaux sociaux</title>
+<style>
+:root { --v: #6442D6; --v2: #7C5CEB; --vs: #F5F2FF; --ink: #1C1A24; --mut: #6E6A7B; --bd: #E7E5EC; --gold: #C1933B; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+@page { size: A4; margin: 18mm 16mm 20mm; }
+body { font-family: Inter, system-ui, sans-serif; color: var(--ink); font-size: 10.2pt; line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.cover { height: 297mm; margin: -18mm -16mm 0; padding: 26mm 18mm 18mm; color: #fff; background: radial-gradient(ellipse 90% 60% at 100% 100%, #3B2A8F 0, rgba(59,42,143,0) 70%), radial-gradient(ellipse 70% 50% at 0% 0%, #2A2140 0, rgba(42,33,64,0) 70%), #15121C; display: flex; flex-direction: column; page-break-after: always; }
+.cover .k { font-size: 8.5pt; font-weight: 700; letter-spacing: .28em; color: #B5A3FF; text-transform: uppercase; }
+.cover h1 { margin-top: 62mm; font-size: 40pt; line-height: 1.05; letter-spacing: -.03em; font-weight: 800; }
+.cover p.lead { margin-top: 8mm; font-size: 13pt; line-height: 1.5; color: rgba(255,255,255,.88); max-width: 150mm; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4mm; margin-top: auto; margin-bottom: 18mm; }
+.stats div { padding: 5mm; border-radius: 3mm; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1); }
+.stats b { display: block; font-size: 20pt; font-weight: 800; color: #B5A3FF; letter-spacing: -.02em; }
+.stats span { display: block; margin-top: 2mm; font-size: 8pt; line-height: 1.45; color: rgba(255,255,255,.7); }
+.cover .by { font-size: 8.5pt; color: rgba(255,255,255,.6); }
+h2 { display: flex; align-items: baseline; gap: 4mm; margin: 9mm 0 4mm; font-size: 17pt; letter-spacing: -.02em; font-weight: 700; page-break-after: avoid; }
+h2 .n { color: var(--v); font-weight: 800; }
+h3 { margin: 6mm 0 2.5mm; font-size: 11.5pt; font-weight: 700; page-break-after: avoid; }
+p { margin: 2mm 0; }
+.box { margin: 3mm 0; padding: 4mm 6mm; border: 1px solid #D9D0FA; border-radius: 3mm; background: #FAF8FF; }
+.box { page-break-inside: avoid; } .box ul { margin-left: 4mm; } .box li { margin: 1.4mm 0; }
+.warn { margin: 3mm 0; padding: 3.5mm 5mm; border-left: 3px solid var(--gold); background: #FBF6EA; border-radius: 0 2mm 2mm 0; font-size: 9.4pt; }
+ul { margin: 2mm 0 2mm 5mm; } li { margin: 1mm 0; }
+table { width: 100%; border-collapse: collapse; margin: 3mm 0; font-size: 9pt; page-break-inside: auto; }
+tr { page-break-inside: avoid; }
+th { text-align: left; padding: 2.2mm 2.5mm; background: #F3F2F6; color: var(--mut); font-weight: 600; font-size: 8.4pt; }
+td { padding: 2.2mm 2.5mm; border-bottom: 1px solid var(--bd); vertical-align: top; }
+td b { font-weight: 700; }
+.pill { display: inline-block; padding: .4mm 2.4mm; border-radius: 9px; font-size: 7.6pt; font-weight: 600; white-space: nowrap; }
+.p1 { background: #E8E1FF; color: #4B2FB0; } .p2 { background: #EDEBF2; color: #4A4658; } .p3 { background: #F6F0E2; color: #7A5A12; }
+.ok { background: #DCFCE7; color: #166534; } .todo { background: #FEF3C7; color: #92400E; }
+.mono { font-family: "DejaVu Sans Mono", ui-monospace, monospace; font-size: 8.6pt; }
+.cal { font-size: 8.4pt; } .cal td { padding: 1.6mm 2mm; } .cal th { padding: 1.6mm 2mm; } .cal td:first-child { white-space: nowrap; font-weight: 600; }
+.cal td.hook { font-style: italic; color: #3A3550; }
+.wk { margin-top: 5mm; font-weight: 700; font-size: 10.5pt; color: var(--v); page-break-after: avoid; }
+.two { page-break-inside: avoid; display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+.mut { color: var(--mut); font-size: 9pt; }
+.brk { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <div class="k">Plan réseaux sociaux · novembre 2026</div>
+  <h1>Faire connaître Selio,<br>une vidéo à la fois</h1>
+  <p class="lead">Les comptes, les noms, les bios, les sujets et un calendrier jour par jour pour les quatre semaines qui entourent l'ouverture de la bêta. Elias pilote, je produis les vidéos avec notre propre chaîne de fabrication.</p>
+  <div class="stats">
+    <div><b>4</b><span>vidéos verticales prêtes à publier, sous-titrées</span></div>
+    <div><b>3</b><span>plateformes prioritaires : TikTok, Reels, Shorts</span></div>
+    <div><b>28</b><span>jours de calendrier, avec l'accroche de chaque vidéo</span></div>
+    <div><b>0 €</b><span>pour produire les vidéos : image, musique et bruitages faits en code</span></div>
+  </div>
+  <div class="by">Réalisé par Ibrahim · pour Elias · 15 novembre 2026</div>
+</section>
+
+<h2><span class="n">1</span> En bref</h2>
+<div class="box"><ul>
+  <li><b>Trois réseaux d'abord</b> : TikTok, Instagram (Reels) et YouTube Shorts, avec la même vidéo déclinée. X / Threads et LinkedIn viennent en second, Discord sert la communauté des testeurs.</li>
+  <li><b>Un seul nom partout si possible</b> : <b>@selio.app</b> en premier choix, avec des replis listés en partie 5. Je ne peux pas vérifier la disponibilité : c'est à faire à la main, le même jour sur chaque réseau.</li>
+  <li><b>Un compte Selio, pas un compte par filiale</b> au départ : Studio, Bot, Track et Radar deviennent des séries de vidéos sur le compte principal.</li>
+  <li><b>5 vidéos par semaine</b> sur les trois réseaux prioritaires, dont 4 déjà montées (partie 13). Le calendrier jour par jour couvre du 23 novembre au 20 décembre.</li>
+  <li><b>Les créateurs ont chacun leur code promo</b>, créé dans Selio Admin › Offres, et leur lien <span class="mono">/inscription?code=…</span> : on sait ce que chacun rapporte.</li>
+  <li><b>Règles non négociables</b> : mention « collaboration commerciale », aucune promesse de gain, aucun logo ni couleur de Vinted, chiffres d'exemple marqués « exemple ».</li>
+</ul></div>
+
+<h2><span class="n">2</span> Objectifs</h2>
+<table>
+  <tr><th style="width:24%">Période</th><th style="width:38%">Objectif</th><th>Ce que les réseaux doivent produire</th></tr>
+  <tr><td><b>23 – 29 nov.</b><br>avant la bêta</td><td>Exister : comptes ouverts, profils propres, premières vidéos en ligne.</td><td>Une liste d'attente pour la bêta (formulaire du site ou Discord) et les premiers abonnés.</td></tr>
+  <tr><td><b>30 nov. – 13 déc.</b><br>bêta ouverte</td><td>Recruter et garder 15 à 20 testeurs actifs (objectif de la V4).</td><td>Des inscriptions à l'essai de 14 jours, des retours de testeurs, des vidéos tutos.</td></tr>
+  <tr><td><b>14 – 20 déc.</b><br>fin des premiers essais</td><td>Les premiers clients payants.</td><td>Des conversions essai → payant, avec l'offre fondateurs et les codes des créateurs.</td></tr>
+</table>
+<p class="mut">Les dates de la bêta sont celles de nos derniers échanges (« fin novembre ») : le calendrier se décale d'un bloc si elle bouge.</p>
+
+<h2><span class="n">3</span> Les cibles</h2>
+<table>
+  <tr><th style="width:20%">Cible</th><th style="width:27%">Ce qui la bloque</th><th style="width:27%">Le message</th><th>Produits et forfait</th></tr>
+  <tr><td><b>Revendeur débutant</b><br><span class="mut">un compte, revend son dressing ou des achats en friperie</span></td><td>Écrire les annonces, fixer un prix, répondre aux offres le soir.</td><td>« Tes photos deviennent une annonce. » « Tu fixes ton prix plancher une fois. »</td><td>Studio, Manager · <b>Starter</b> · TikTok et Reels</td></tr>
+  <tr><td><b>Revendeur confirmé</b><br><span class="mut">plusieurs comptes, achat-revente régulier</span></td><td>Le temps passé en messages, les relances oubliées, acheter au mauvais prix.</td><td>« Il négocie et relance selon tes règles. » « Sache quoi acheter. »</td><td>Bot, Track, Radar · <b>Pro</b> · TikTok, Shorts, Discord</td></tr>
+  <tr><td><b>Agence, dépôt-vente</b><br><span class="mut">équipe, jusqu'à 10 comptes</span></td><td>Répartir le travail, suivre qui fait quoi, garder la main sur les prix.</td><td>« 3 vendeurs, 10 comptes, un seul tableau. »</td><td>Agents, Cloud, Comptes · <b>Agence</b> · LinkedIn, Instagram</td></tr>
+</table>
+
+<h2><span class="n">4</span> Les plateformes et leur rôle</h2>
+<table>
+  <tr><th style="width:17%">Plateforme</th><th style="width:10%">Priorité</th><th style="width:36%">Rôle</th><th>Ce qu'on y publie</th></tr>
+  <tr><td><b>TikTok</b></td><td><span class="pill p1">1</span></td><td>Découverte : c'est là que sont les revendeurs débutants et confirmés.</td><td>Vidéos de 20 à 35 s, 5 par semaine ; réponses en vidéo aux commentaires.</td></tr>
+  <tr><td><b>Instagram</b> (Reels, stories, carrousels)</td><td><span class="pill p1">1</span></td><td>Confiance : le profil qu'on regarde avant de s'inscrire.</td><td>Les mêmes vidéos en Reels, 2 carrousels de conseils par semaine, des stories de coulisses.</td></tr>
+  <tr><td><b>YouTube Shorts</b></td><td><span class="pill p1">1</span></td><td>Recherche et durée de vie : un Short se retrouve des mois plus tard.</td><td>Les mêmes vidéos ; puis, à partir de la 3<sup>e</sup> semaine, un tuto long par module.</td></tr>
+  <tr><td><b>X / Threads</b></td><td><span class="pill p2">2</span></td><td>Coulisses du développement, au fil de l'eau.</td><td>3 messages par semaine : avancement, captures, chiffres de la bêta quand ils sont réels.</td></tr>
+  <tr><td><b>LinkedIn</b></td><td><span class="pill p2">2</span></td><td>Agences et dépôts-vente ; crédibilité de l'équipe.</td><td>Page Selio + profils d'Elias et d'Ibrahim ; 2 publications par semaine.</td></tr>
+  <tr><td><b>Discord</b></td><td><span class="pill p3">3</span></td><td>Communauté des testeurs : support dès l'ouverture, serveur public vers J+14 (comme prévu dans la V4).</td><td>Annonces, retours, entraide ; un point hebdomadaire.</td></tr>
+  <tr><td><b>Facebook</b></td><td><span class="pill p2">plus tard</span></td><td>Groupes de revendeurs : y participer en répondant, jamais en publicité déguisée.</td><td>Rien avant janvier.</td></tr>
+</table>
+
+<h2><span class="n">5</span> Les noms de comptes</h2>
+<div class="warn"><b>À vérifier soi-même.</b> Je ne peux pas vérifier qu'un nom est libre ni créer de compte. Le jour où on ouvre les comptes, Elias essaie le premier choix sur les six réseaux d'affilée ; s'il est pris sur un seul, on prend le premier repli libre <b>partout</b>, pour garder un nom unique.</div>
+<table>
+  <tr><th style="width:18%">Réseau</th><th style="width:22%">Premier choix</th><th style="width:34%">Replis, dans l'ordre</th><th>À savoir</th></tr>
+  <tr><td><b>TikTok</b></td><td class="mono">@selio.app</td><td class="mono">@selio_fr · @getselio · @selio.officiel · @selioapp</td><td>Points et tirets bas acceptés.</td></tr>
+  <tr><td><b>Instagram</b></td><td class="mono">@selio.app</td><td class="mono">@selio_fr · @getselio · @selio.officiel · @selioapp</td><td>Le même que TikTok, impérativement.</td></tr>
+  <tr><td><b>YouTube</b></td><td class="mono">@selio.app</td><td class="mono">@selioapp · @getselio · @selio-fr</td><td>Nom de chaîne : « Selio ».</td></tr>
+  <tr><td><b>X / Threads</b></td><td class="mono">@selio_app</td><td class="mono">@getselio · @selio_fr · @selioapp</td><td>X n'accepte pas le point ; Threads reprend le nom Instagram.</td></tr>
+  <tr><td><b>LinkedIn</b></td><td class="mono">Selio</td><td class="mono">linkedin.com/company/selio-app · /getselio</td><td>Page entreprise, adresse personnalisée.</td></tr>
+  <tr><td><b>Discord</b></td><td class="mono">Selio · Communauté</td><td class="mono">invitation personnalisée discord.gg/selio si libre</td><td>Invitation personnalisée possible plus tard seulement.</td></tr>
+</table>
+<p><b>À éviter</b> : tout nom qui contient « vinted » (<span class="mono">@selio.vinted</span>, <span class="mono">@vintedpro</span>…), qui laisserait croire à un lien avec Vinted ; les noms de filiales seuls (<span class="mono">@selio.manager</span>, <span class="mono">@seliobot</span>) tant qu'on n'a pas décidé d'ouvrir des comptes par filiale. On peut quand même les <b>réserver</b> sans rien y publier, si Elias le juge utile.</p>
+
+<h3>Les noms des séries</h3>
+<table>
+  <tr><th style="width:26%">Série</th><th style="width:20%">Pilier</th><th>Principe</th></tr>
+  <tr><td><b>Selio en 30 s</b></td><td>Présentation</td><td>Une filiale, un message, 20 à 35 s (les vidéos Studio, Bot et Track en sont les trois premières).</td></tr>
+  <tr><td><b>Avant / Après Studio</b></td><td>Démonstration</td><td>Les mêmes photos, l'annonce faite à la main puis celle de Studio, relue par nous.</td></tr>
+  <tr><td><b>Journal de bord</b></td><td>Coulisses</td><td>Ce qu'on a construit cette semaine, ce qui a cassé, ce qu'on a décidé.</td></tr>
+  <tr><td><b>Le prix juste</b></td><td>Conseils</td><td>Prix plancher, lots, contre-offres, republication : un conseil par vidéo.</td></tr>
+  <tr><td><b>Le marché en exemple</b></td><td>Marché</td><td>Ce que Track sait montrer, avec des chiffres marqués « exemple » tant que la lecture réelle n'est pas ouverte.</td></tr>
+</table>
+
+<h2><span class="n">6</span> Profils : bio, lien, photo, bannière</h2>
+<table>
+  <tr><th style="width:18%">Réseau</th><th>Bio proposée</th></tr>
+  <tr><td><b>TikTok</b> (80 caractères)</td><td>L'appli des revendeurs : annonces, offres, stock. Essai 14 j 👇</td></tr>
+  <tr><td><b>Instagram</b> (150)</td><td>Selio, l'appli des revendeurs en ligne.<br>Studio · Bot · Track · Manager<br>Tes annonces, tes offres et ton stock au même endroit.<br>Essai gratuit 14 jours 👇</td></tr>
+  <tr><td><b>YouTube</b></td><td>Selio aide les revendeurs à créer leurs annonces depuis leurs photos, à négocier selon leurs règles et à suivre le marché. Tutos, coulisses et conseils de revente. Outil indépendant, non affilié à Vinted.</td></tr>
+  <tr><td><b>X / Threads</b></td><td>On construit Selio, l'appli des revendeurs en ligne. Coulisses, chiffres réels de la bêta, nouveautés. Par Elias et Ibrahim.</td></tr>
+  <tr><td><b>LinkedIn</b></td><td>Selio · Logiciel de gestion pour revendeurs et agences de revente en ligne : annonces, négociation selon vos règles, équipes et comptes multiples. Outil indépendant, non affilié à Vinted.</td></tr>
+</table>
+<div class="two">
+  <div>
+    <h3>Un lien unique</h3>
+    <p>Un seul lien en bio, vers la page d'inscription du site : aujourd'hui <span class="mono">seliovprod.netlify.app</span>, puis le domaine définitif (<span class="mono">selio.fr</span> est prévu dans le code mais <b>pas encore confirmé</b>). Pour savoir quel réseau amène les inscriptions, chaque bio porte son propre code : <span class="mono">/inscription?code=TIKTOK</span>, <span class="mono">?code=INSTA</span>, <span class="mono">?code=YOUTUBE</span> (offres à 0 € de remise, créées dans Selio Admin, qui servent seulement à compter).</p>
+  </div>
+  <div>
+    <h3>Photo de profil et bannière</h3>
+    <p><b>Photo</b> : <span class="mono">brand/selio-app-icon-noir.png</span> (le S blanc sur fond noir, lisible en petit rond). La version orange date de l'ancienne charte : on ne l'utilise plus.</p>
+    <p><b>Bannières</b> : <span class="mono">brand/selio-logo-blanc.png</span> sur le fond violet nuit des vidéos. Formats : YouTube 2560 × 1440 (zone sûre 1546 × 423), X 1500 × 500, LinkedIn 1128 × 191, Discord 960 × 540. Je les sors avec la chaîne vidéo en une heure.</p>
+  </div>
+</div>
+
+<h2><span class="n">7</span> Les piliers de contenu</h2>
+<table>
+  <tr><th style="width:22%">Pilier</th><th style="width:10%">Part</th><th style="width:38%">Exemples</th><th>Garde-fou</th></tr>
+  <tr><td><b>Tutos</b></td><td>30 %</td><td>Connecter son compte, créer une annonce avec Studio, régler ses règles de négociation, lire Track.</td><td>Vraies captures de l'application, sans couper ce qui ne marche pas.</td></tr>
+  <tr><td><b>Avant / après Studio</b></td><td>20 %</td><td>Les mêmes photos : l'annonce écrite à la main, puis celle de Studio.</td><td>Nos propres articles ou ceux d'un testeur d'accord par écrit ; Studio relu, jamais retouché en cachette.</td></tr>
+  <tr><td><b>Coulisses</b></td><td>15 %</td><td>Le PC qui fait tourner l'IA, une décision produit, un bug corrigé.</td><td>Aucun chiffre de clients tant qu'il n'est pas réel.</td></tr>
+  <tr><td><b>Conseils de revente</b></td><td>25 %</td><td>Photo d'étiquette, prix plancher, lots, republication, saisonnalité.</td><td>Conseils généraux, aucune promesse de gain.</td></tr>
+  <tr><td><b>Le marché</b></td><td>10 %</td><td>Prix médian, annonces disparues, note d'une niche (Track).</td><td>Badge « Exemple · chiffres fictifs » tant que la lecture réelle de Track n'est pas ouverte (avis de l'avocat attendu).</td></tr>
+</table>
+
+<h2><span class="n">8</span> Formats et fréquence</h2>
+<table>
+  <tr><th style="width:22%">Réseau</th><th style="width:30%">Format</th><th style="width:18%">Fréquence</th><th>Heure de départ (à tester)</th></tr>
+  <tr><td><b>TikTok</b></td><td>Vertical 1080 × 1920, 20 à 35 s, sous-titres incrustés</td><td>5 par semaine</td><td>18 h – 20 h en semaine, 11 h le week-end</td></tr>
+  <tr><td><b>Reels</b></td><td>Même fichier ; couverture JPG fournie</td><td>5 par semaine</td><td>Même jour, 1 h après TikTok</td></tr>
+  <tr><td><b>Stories Instagram</b></td><td>Coulisses, sondages, rappel du lien</td><td>3 à 5 par semaine</td><td>Midi</td></tr>
+  <tr><td><b>Carrousels Instagram</b></td><td>6 à 8 images de conseils</td><td>2 par semaine</td><td>Samedi et un jour de semaine</td></tr>
+  <tr><td><b>YouTube Shorts</b></td><td>Même fichier, titre avec mots-clés</td><td>5 par semaine</td><td>Même jour</td></tr>
+  <tr><td><b>YouTube long</b></td><td>Tuto 4 à 8 min, écran + voix</td><td>1 toutes les 2 semaines, dès la 3<sup>e</sup></td><td>Dimanche</td></tr>
+  <tr><td><b>X / Threads</b></td><td>Texte + capture ou extrait</td><td>3 par semaine</td><td>Mardi, jeudi, samedi</td></tr>
+  <tr><td><b>LinkedIn</b></td><td>Texte + image ou vidéo</td><td>2 par semaine</td><td>Mardi et vendredi, 8 h 30</td></tr>
+</table>
+<p><b>Une vidéo, trois réseaux</b> : on publie le même MP4 (H.264, son normalisé) sur TikTok, Reels et Shorts, avec le SRT fourni pour les sous-titres de la plateforme. Seuls le texte d'accompagnement et les mots-clés changent. Les accroches B et C se testent en republiant la même vidéo avec un autre début deux semaines plus tard.</p>
+
+<h2 class="brk"><span class="n">9</span> Calendrier des quatre premières semaines</h2>
+<p class="mut">« Partout » = TikTok, Reels et Shorts. L'accroche est le texte des 2 premières secondes, à l'écran et à la voix. Les vidéos marquées <span class="pill ok">prête</span> sont montées ; les autres se tournent la semaine d'avant.</p>
+
+<div class="wk">Semaine 1 · 23 – 29 novembre · « On arrive »</div>
+<table class="cal">
+  <tr><th style="width:11%">Jour</th><th style="width:15%">Où</th><th style="width:34%">Contenu</th><th>Accroche (0 – 2 s)</th></tr>
+  <tr><td>Lun 23</td><td>Partout</td><td>« Et si une appli centralisait tout ? » (35 s) <span class="pill ok">prête</span></td><td class="hook">Combien d'applis tu ouvres… pour vendre un seul pull ?</td></tr>
+  <tr><td>Mar 24</td><td>Partout · X · LinkedIn</td><td>Journal de bord n° 1 : Elias et Ibrahim face caméra, qui on est, ce qu'on construit.</td><td class="hook">Deux potes, un PC, une appli pour revendeurs : jour 1.</td></tr>
+  <tr><td>Mer 25</td><td>Partout</td><td>Selio en 30 s : Studio (27 s) <span class="pill ok">prête</span></td><td class="hook">Tes photos sont prêtes… et l'annonce ?</td></tr>
+  <tr><td>Jeu 26</td><td>Partout · X</td><td>Le prix juste n° 1 : les 3 photos qui rassurent un acheteur (étiquette, à plat avec mètre, défauts).</td><td class="hook">La photo que presque personne ne fait : l'étiquette.</td></tr>
+  <tr><td>Ven 27</td><td>Partout · LinkedIn</td><td>Selio en 30 s : Bot (29 s) <span class="pill ok">prête</span></td><td class="hook">2 h 47. Une offre arrive… et toi, tu dors.</td></tr>
+  <tr><td>Sam 28</td><td>Instagram (carrousel) · X</td><td>Carrousel : calculer son prix plancher (achat + frais d'envoi + marge voulue).</td><td class="hook">Ton prix plancher, c'est pas au feeling.</td></tr>
+  <tr><td>Dim 29</td><td>Stories · Discord</td><td>Ouverture de la bêta demain : nombre de places, comment s'inscrire.</td><td class="hook">Demain, on ouvre la bêta. Vingt places.</td></tr>
+</table>
+
+<div class="wk">Semaine 2 · 30 novembre – 6 décembre · ouverture de la bêta</div>
+<table class="cal">
+  <tr><th style="width:11%">Jour</th><th style="width:15%">Où</th><th style="width:34%">Contenu</th><th>Accroche (0 – 2 s)</th></tr>
+  <tr><td>Lun 30</td><td>Partout · X · LinkedIn</td><td>Version de 15 s de la vidéo de 35 s + « la bêta est ouverte ».</td><td class="hook">La bêta de Selio est ouverte. 14 jours pour tester.</td></tr>
+  <tr><td>Mar 1<sup>er</sup></td><td>Partout</td><td>Tuto n° 1 : ajouter un premier article, en écran réel, sans couper.</td><td class="hook">On ajoute un premier article. En vrai, sans couper.</td></tr>
+  <tr><td>Mer 2</td><td>Partout</td><td>Avant / Après Studio n° 1 : un pull de notre stock.</td><td class="hook">Avant : quatre photos et une ligne. Après : regarde.</td></tr>
+  <tr><td>Jeu 3</td><td>Partout · X</td><td>Journal de bord n° 2 : l'IA de Selio tourne sur notre propre PC.</td><td class="hook">Toute l'IA de Selio tourne sur ce PC.</td></tr>
+  <tr><td>Ven 4</td><td>Partout · LinkedIn</td><td>Tuto n° 2 : régler ses règles de négociation (prix plancher, contre-offre).</td><td class="hook">Tu fixes ton prix plancher une fois. Après, c'est réglé.</td></tr>
+  <tr><td>Sam 5</td><td>Partout · carrousel · X</td><td>Le prix juste n° 2 : les 3 raisons pour lesquelles un article dort.</td><td class="hook">Ton article dort depuis 30 jours ? Regarde ça.</td></tr>
+  <tr><td>Dim 6</td><td>Stories · Discord</td><td>Ce que les testeurs nous ont dit cette semaine (vrais retours, avec leur accord).</td><td class="hook">Vous nous avez dit… et on a changé ça.</td></tr>
+</table>
+
+<div class="wk brk">Semaine 3 · 7 – 13 décembre · tutos et preuves</div>
+<table class="cal">
+  <tr><th style="width:11%">Jour</th><th style="width:15%">Où</th><th style="width:34%">Contenu</th><th>Accroche (0 – 2 s)</th></tr>
+  <tr><td>Lun 7</td><td>Partout</td><td>Selio en 30 s : Track (24 s, chiffres d'exemple) <span class="pill ok">prête</span></td><td class="hook">Tu achètes au feeling ?</td></tr>
+  <tr><td>Mar 8</td><td>Partout · X · LinkedIn</td><td>Tuto n° 3 : Studio en direct, cinq vraies photos → annonce relue.</td><td class="hook">Je pose cinq photos. On regarde ce qu'il écrit.</td></tr>
+  <tr><td>Mer 9</td><td>Partout</td><td>Journal de bord n° 3 : ce que notre IA n'a pas le droit de faire (inventer une mesure, choisir un prix).</td><td class="hook">Notre IA n'a pas le droit d'inventer une mesure.</td></tr>
+  <tr><td>Jeu 10</td><td>Partout · X</td><td>Le prix juste n° 3 : répondre à « vous faites un lot ? » sans perdre sa marge.</td><td class="hook">« Vous faites un lot ? » Voilà quoi répondre.</td></tr>
+  <tr><td>Ven 11</td><td>Partout · LinkedIn</td><td>Avant / Après Studio n° 2 : un jean ou une paire de chaussures.</td><td class="hook">Même article, deux annonces. Tu cliques laquelle ?</td></tr>
+  <tr><td>Sam 12</td><td>LinkedIn · Instagram · X</td><td>Agence : 3 vendeurs, 10 comptes, les rôles d'équipe (écran réel).</td><td class="hook">Trois vendeurs, dix comptes, un seul tableau.</td></tr>
+  <tr><td>Dim 13</td><td>Partout · YouTube long</td><td>FAQ : Selio est indépendant de Vinted, ce qu'il fait et ne fait pas. <span class="pill todo">à relire par l'avocat</span></td><td class="hook">La question qu'on nous pose le plus.</td></tr>
+</table>
+
+<div class="wk">Semaine 4 · 14 – 20 décembre · fin des premiers essais</div>
+<table class="cal">
+  <tr><th style="width:11%">Jour</th><th style="width:15%">Où</th><th style="width:34%">Contenu</th><th>Accroche (0 – 2 s)</th></tr>
+  <tr><td>Lun 14</td><td>Partout · X</td><td>Ce que les testeurs utilisent vraiment après 14 jours. <span class="pill todo">seulement avec des chiffres réels</span></td><td class="hook">Quatorze jours plus tard, voilà ce qu'ils gardent.</td></tr>
+  <tr><td>Mar 15</td><td>Partout · LinkedIn</td><td>Offre fondateurs : −30 % pendant 6 mois sur Pro et Agence pour les 50 premiers, 1 mois offert sur Starter (prix indicatifs à confirmer).</td><td class="hook">Les 50 premiers clients ont −30 % pendant 6 mois.</td></tr>
+  <tr><td>Mer 16</td><td>Partout</td><td>Tuto n° 4 : la relance après 24 h des personnes qui ont mis l'article en favori.</td><td class="hook">Trois personnes ont aimé ton article. Tu leur as écrit ?</td></tr>
+  <tr><td>Jeu 17</td><td>Compte du créateur + repartage</td><td>Collaboration n° 1 : vidéo d'un créateur, avec son code et la mention « collaboration commerciale ».</td><td class="hook">Écrite par le créateur, validée par Elias.</td></tr>
+  <tr><td>Ven 18</td><td>Partout · X</td><td>Le prix juste n° 4 : vendre la dernière semaine avant Noël.</td><td class="hook">Dernier week-end pour vendre avant Noël.</td></tr>
+  <tr><td>Sam 19</td><td>Partout · LinkedIn</td><td>Journal de bord n° 4 : un mois de Selio en 30 secondes.</td><td class="hook">Il y a un mois, Selio n'avait aucun utilisateur.</td></tr>
+  <tr><td>Dim 20</td><td>Partout</td><td>Bot en 15 s, version fêtes + rappel de l'essai gratuit.</td><td class="hook">Pendant les fêtes, Selio répond pour toi. Selon tes règles.</td></tr>
+</table>
+
+<h2 class="brk"><span class="n">10</span> Codes promo, lien ?code= et parrainage</h2>
+<h3>Créer le code d'un créateur (Selio Admin › Offres)</h3>
+<ul>
+  <li><b>Nom</b> : « Créateur · Prénom », pour s'y retrouver.</li>
+  <li><b>Code</b> : 3 à 24 caractères, lettres, chiffres et tirets, par exemple <span class="mono">SARAH20</span>. Les majuscules ne comptent pas.</li>
+  <li><b>Remise</b> : en pourcentage ou en montant par échéance, sur les forfaits choisis (proposition : −20 % pendant 3 mois sur Starter et Pro), avec une période et un nombre maximal d'utilisations.</li>
+  <li><b>Bandeau</b> : désactivé pour un code de créateur (le code reste utilisable sans être annoncé sur le site).</li>
+  <li><b>Lien à donner au créateur</b> : <span class="mono">https://&lt;site&gt;/inscription?code=SARAH20</span> : le code se remplit tout seul à l'inscription.</li>
+  <li><b>Suivi</b> : Selio Admin affiche combien d'organisations ont utilisé chaque offre ; on rapproche ce nombre des conversions payantes.</li>
+  <li><b>Fin de collaboration</b> : désactiver l'offre refuse le code ; ceux qui l'ont déjà appliqué gardent leur remise jusqu'à son terme.</li>
+</ul>
+<div class="warn"><b>À décider ensemble</b> : un code créateur se cumule-t-il avec l'offre fondateurs ? Ma proposition : non, le client garde la meilleure des deux.</div>
+<h3>Parrainage</h3>
+<p>Le lien de parrainage existe déjà (<span class="mono">/inscription?parrain=CODE</span>, champ facultatif qui ne bloque jamais l'inscription), et la page Parrainage montre comment il fonctionnera. Le programme n'est <b>pas encore ouvert</b> : aucun mois n'est offert tant qu'on n'a pas décidé de l'activer. Proposition : l'ouvrir aux testeurs de la bêta le 14 décembre, avec un mois offert au parrain quand le filleul paie (jamais cumulé avec une autre remise sur la même échéance, comme le prévoit déjà la facturation).</p>
+
+<h2><span class="n">11</span> Collaborer avec des créateurs</h2>
+<h3>Qui</h3>
+<p>Des créateurs de la revente en ligne (friperie, achat-revente, seconde main), de 5 000 à 100 000 abonnés, qui montrent déjà leur façon de travailler. La liste des créateurs repérés est dans le dossier V4 Master. Premier contact par Elias en message privé, jamais en commentaire.</p>
+<h3>Barème indicatif</h3>
+<table>
+  <tr><th style="width:26%">Taille du compte</th><th style="width:34%">Rémunération indicative par vidéo</th><th>Alternative</th></tr>
+  <tr><td>5 000 – 20 000 abonnés</td><td>50 à 200 €</td><td>Forfait Agence offert 3 mois + commission sur les clients payants</td></tr>
+  <tr><td>20 000 – 60 000</td><td>200 à 600 €</td><td>Fixe réduit + commission</td></tr>
+  <tr><td>60 000 – 150 000</td><td>600 à 1 500 €</td><td>À négocier, une seule collaboration test d'abord</td></tr>
+</table>
+<p class="mut">Ce sont des ordres de grandeur pour préparer la négociation, pas des tarifs constatés : le budget n'est pas fixé. Règle de la V4 : on n'augmente que si un client rapporte plus qu'il ne coûte (repère : moins de 100 € d'acquisition par client payant).</p>
+<h3>Brief type (une page, envoyé avant tout tournage)</h3>
+<table>
+  <tr><th style="width:24%">Rubrique</th><th>Contenu</th></tr>
+  <tr><td><b>Objectif</b></td><td>Faire essayer Selio 14 jours à des revendeurs ; une seule filiale par vidéo (Studio, Bot ou Track).</td></tr>
+  <tr><td><b>Message clé</b></td><td>Une phrase, par exemple : « Mes photos deviennent une annonce, je relis et je publie. »</td></tr>
+  <tr><td><b>À montrer</b></td><td>L'application réelle, sur le compte du créateur ou un compte de démonstration ; le moment où il relit et valide.</td></tr>
+  <tr><td><b>À ne pas dire</b></td><td>Aucun montant gagné promis, ni « partenaire de Vinted », ni « 100 % sûr », ni « sans risque » ; aucun dénigrement d'un autre outil ; pas de logo Vinted.</td></tr>
+  <tr><td><b>Mentions obligatoires</b></td><td>« Collaboration commerciale avec Selio » à l'écran et dans le texte, plus l'option « contenu sponsorisé » de la plateforme.</td></tr>
+  <tr><td><b>Appel à l'action</b></td><td>Le code personnel et le lien <span class="mono">?code=</span> en bio ou en commentaire épinglé.</td></tr>
+  <tr><td><b>Format et calendrier</b></td><td>Vertical, 30 à 60 s ; brouillon envoyé à Elias 48 h avant ; publication à la date convenue.</td></tr>
+  <tr><td><b>Droits</b></td><td>Repartage sur nos comptes pendant 30 jours ; toute publicité payante avec la vidéo sur accord écrit séparé.</td></tr>
+  <tr><td><b>Paiement</b></td><td>Après publication, sur facture.</td></tr>
+</table>
+
+<h2><span class="n">12</span> Indicateurs et objectifs</h2>
+<table>
+  <tr><th style="width:28%">Indicateur</th><th style="width:28%">Où on le lit</th><th style="width:20%">Plancher à 4 semaines</th><th>Visé à 4 semaines</th></tr>
+  <tr><td>Vues moyennes par vidéo (TikTok)</td><td>Statistiques TikTok</td><td>300</td><td>1 000</td></tr>
+  <tr><td>Durée moyenne de visionnage</td><td>Statistiques de chaque réseau</td><td>40 % de la vidéo</td><td>60 %</td></tr>
+  <tr><td>Abonnés cumulés (3 réseaux)</td><td>Chaque réseau</td><td>200</td><td>800</td></tr>
+  <tr><td>Clics sur le lien en bio</td><td>Statistiques Instagram et TikTok</td><td>100</td><td>400</td></tr>
+  <tr><td>Inscriptions à l'essai</td><td>Selio Admin (codes TIKTOK, INSTA, YOUTUBE, créateurs)</td><td>30</td><td>80</td></tr>
+  <tr><td>Testeurs actifs</td><td>Selio Admin (compte connecté + premier article ou première annonce Studio)</td><td>15</td><td>20</td></tr>
+  <tr><td>Clients payants au 31 décembre</td><td>Paiement</td><td>3</td><td>10</td></tr>
+  <tr><td>Coût d'acquisition par client payant</td><td>Tableau des dépenses</td><td colspan="2">moins de 100 € (seuil de gestion de la V4)</td></tr>
+</table>
+<p class="mut">Ces objectifs sont des hypothèses de départ, sans historique : on les revoit à la fin de la semaine 2 avec les vrais chiffres. Repère externe cité dans la V4 : 25 à 35 % des essais deviennent payants quand la carte est demandée à l'inscription.</p>
+<p><b>Le rituel</b> : chaque lundi, 30 minutes. Elias remplit le tableau (une ligne par vidéo : vues, durée de visionnage, partages, clics, inscriptions par code) ; on garde les deux meilleures accroches et on arrête ce qui ne marche pas.</p>
+
+<h2><span class="n">13</span> Les règles</h2>
+<div class="box"><ul>
+  <li><b>Collaborations</b> : « Collaboration commerciale » ou « Publicité » écrit clairement sur toute vidéo payée ou contre un avantage (loi française sur l'influence commerciale de 2023).</li>
+  <li><b>Aucune promesse de gain</b> : pas de « gagne 2 000 € par mois », pas de capture de revenus présentée comme un résultat type.</li>
+  <li><b>Indépendance</b> : Selio est un outil indépendant, non affilié à Vinted. Ni logo, ni couleurs, ni captures de l'interface de Vinted ; jamais « partenaire officiel ».</li>
+  <li><b>Chiffres</b> : un chiffre de démonstration porte le mot « exemple » à l'écran. Aucun faux témoignage, aucun faux avis, aucun chiffre de clients inventé.</li>
+  <li><b>Vie privée</b> : pseudos d'acheteurs et messages réels floutés ; un testeur montré à l'écran donne son accord par écrit.</li>
+  <li><b>Concurrents</b> : on parle de ce que fait Selio, sans dénigrer personne.</li>
+  <li><b>Automatisations</b> : on montre que l'utilisateur fixe les règles et garde la main ; on ne montre jamais un achat réel déclenché par Selio.</li>
+  <li><b>Musique</b> : seulement les bandes son générées par nous ou les sons libres de droits proposés par chaque plateforme.</li>
+  <li><b>Croissance honnête</b> : pas d'achat d'abonnés, de vues ou de commentaires.</li>
+</ul></div>
+
+<h2><span class="n">14</span> Qui fait quoi</h2>
+<table>
+  <tr><th style="width:36%">Tâche</th><th style="width:16%">Elias</th><th style="width:16%">Ibrahim</th><th>Quand</th></tr>
+  <tr><td>Ouvrir les comptes, vérifier les noms, bios</td><td><span class="pill p1">pilote</span></td><td>photo, bannières</td><td>Avant le 23 novembre</td></tr>
+  <tr><td>Calendrier, accroches, textes des publications</td><td><span class="pill p1">pilote</span></td><td>relit les faits techniques</td><td>Le lundi, pour la semaine suivante</td></tr>
+  <tr><td>Voix off et passages face caméra</td><td><span class="pill p1">pilote</span></td><td>Ibrahim pour le Journal de bord</td><td>Mardi</td></tr>
+  <tr><td>Montage des vidéos, sous-titres, couvertures</td><td>valide</td><td><span class="pill p1">pilote</span></td><td>Mardi – mercredi, 5 vidéos d'avance</td></tr>
+  <tr><td>Captures d'écran et tutos</td><td>écrit le déroulé</td><td><span class="pill p1">pilote</span></td><td>La semaine d'avant</td></tr>
+  <tr><td>Publication et réponses aux commentaires</td><td><span class="pill p1">pilote</span></td><td>questions techniques</td><td>Tous les jours, 2 passages</td></tr>
+  <tr><td>Créateurs : contact, brief, contrat, paiement</td><td><span class="pill p1">pilote</span></td><td>accès de démonstration</td><td>Dès le 23 novembre</td></tr>
+  <tr><td>Codes promo dans Selio Admin</td><td><span class="pill p1">pilote</span></td><td>dépannage</td><td>À chaque nouvelle collaboration</td></tr>
+  <tr><td>Discord (modération, support)</td><td>animation</td><td><span class="pill p1">support technique</span></td><td>Dès l'ouverture de la bêta</td></tr>
+  <tr><td>Tableau des indicateurs</td><td><span class="pill p1">pilote</span></td><td>chiffres d'Admin</td><td>Lundi, 30 minutes</td></tr>
+</table>
+
+<h2><span class="n">15</span> Les vidéos déjà prêtes</h2>
+<table>
+  <tr><th style="width:34%">Fichier (dossier livraison/video)</th><th style="width:12%">Durée</th><th>Sujet</th></tr>
+  <tr><td class="mono">Selio-video-35s.mp4</td><td>35 s</td><td>« Et si une appli centralisait tout ? » : le chaos des applis, puis Selio.</td></tr>
+  <tr><td class="mono">Selio-Studio-27s.mp4</td><td>27 s</td><td>Selio Studio : tes photos deviennent une annonce (étiquette, mètre ruban, question au vendeur).</td></tr>
+  <tr><td class="mono">Selio-Bot-29s.mp4</td><td>29 s</td><td>Selio Bot : il négocie et relance pendant que tu dors, selon tes règles ; tu gardes la main.</td></tr>
+  <tr><td class="mono">Selio-Track-24s.mp4</td><td>24 s</td><td>Selio Track : sache quoi acheter (prix médian, annonces disparues, note de niche), chiffres d'exemple.</td></tr>
+</table>
+<p>Chaque vidéo a son fichier de sous-titres SRT et sa couverture JPG. Toutes sont en 1080 × 1920, H.264 et AAC, volume calé à −14 LUFS, et se refont depuis leur dossier <span class="mono">source</span> : image, musique et bruitages sont générés en code, sans droits à payer. Le détail est dans <span class="mono">livraison/video/INVENTAIRE.md</span>.</p>
+
+</body>
+</html>

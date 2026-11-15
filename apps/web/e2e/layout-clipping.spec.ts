@@ -19,6 +19,8 @@ const PAGES = [
   "/agents", "/agents/clients", "/agents/marque-blanche", "/agents/facturation", "/track", "/cloud", "/generateur", "/admin",
   // Rôles, parrainage, Selio Comptes, supervision, apparence.
   "/comptes", "/app/items/photos", "/app/settings/apparence", "/app/settings/parrainage", "/admin/supervision",
+  // Selio Manager : journal d'activité.
+  "/app/journal",
 ];
 
 test("aucun contenu coupé hors zone défilante (mobile et tablette)", async ({ page }, info) => {

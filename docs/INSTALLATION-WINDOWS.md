@@ -115,11 +115,30 @@ REFERRAL_ENABLED=false
 REVOLUT_SECRET_KEY=
 REVOLUT_WEBHOOK_SECRET=
 EMAIL_PROVIDER=noop
+# Paiement simulé tant que Revolut n'est pas configuré (aucune carte, aucun débit)
+PAYMENT_MODE=auto
 ```
 
 `OPERATOR_EMAILS` donne le rôle **technique** de Selio Admin (`/admin` : tout, santé, supervision, IA, modèle de prix) ; `OPERATOR_BUSINESS_EMAILS` le rôle **business** (tableau de croissance, comptes, offres commerciales, usage de Track). Plusieurs adresses : séparées par des virgules. Ces listes sont relues à chaque requête : un compte **déjà créé** (comme celui d'Ibrahim, ou celui d'Elias) devient opérateur sans se réinscrire, il suffit de relancer `docker compose -f docker-compose.prod.yml up -d` après la modification de `.env`.
 
-Sans Revolut, l'application affiche « Le paiement n'est pas configuré » et l'essai de 14 jours fonctionne. Sans email, rien ne part (invitations et mot de passe oublié inactifs) : c'est signalé au démarrage, ce n'est pas une erreur.
+Sans Revolut, le **paiement est simulé** (`PAYMENT_MODE=auto`, par défaut) : le client choisit son offre sans carte, l'essai de 14 jours court, rien n'est débité ; à la fin de l'essai, le compte passe « en attente du paiement » et vous pouvez prolonger l'essai ou offrir l'accès depuis `/admin`. Sans email, rien ne part : c'est signalé au démarrage, ce n'est pas une erreur. Pour inviter quelqu'un en attendant, Paramètres › Accès affiche un **lien d'invitation à copier** et à lui envoyer vous-même ; une personne qui a déjà un compte (comme Elias) s'ajoute aussi depuis Selio Admin › Comptes › sa fiche › « Ajouter à mon organisation ».
+
+### Emails avec Gmail
+
+Pour que les invitations, les mots de passe oubliés et les alertes partent vraiment, avec une adresse Gmail :
+
+1. Sur le compte Google qui enverra les emails, activer la **validation en deux étapes** (Compte Google › Sécurité), puis créer un **mot de passe d'application** (Sécurité › Mots de passe des applications). Google affiche 16 lettres en quatre groupes : les recopier **sans espaces**.
+2. Dans `deploy/.env` (l'arobase de l'adresse s'écrit `%40` dans l'URL) :
+
+   ```
+   EMAIL_PROVIDER=smtp
+   SMTP_URL=smtps://adresse%40gmail.com:MOTDEPASSEAPPLICATION@smtp.gmail.com:465
+   EMAIL_FROM=Selio <adresse@gmail.com>
+   ```
+
+3. Relancer : `docker compose -f docker-compose.prod.yml up -d` (API et worker relisent `.env`). L'avertissement « EMAIL_PROVIDER=noop » disparaît du journal.
+
+Gmail limite à **environ 500 envois par jour** : suffisant pour démarrer ; au-delà, passer à un service d'email transactionnel. Le mot de passe d'application ne sert qu'à l'envoi : ne le mettez jamais dans Git ni dans Netlify.
 
 ## 5. Démarrer le serveur
 
@@ -130,7 +149,7 @@ docker compose -f docker-compose.prod.yml logs --tail=50 migrate api worker
 curl -s http://127.0.0.1:8787/api/health
 ```
 
-Les migrations (0001 à 0021) s'appliquent toutes seules. Puis vérifier l'IA depuis le projet :
+Les migrations (0001 à 0023) s'appliquent toutes seules. Puis vérifier l'IA depuis le projet :
 
 ```bash
 cd ~/selio
@@ -193,6 +212,8 @@ AI_PROVIDER=ollama BENCH_MODE=embed pnpm ai:bench
 Plus `nvidia-smi` avec les trois modèles chargés. Reporter les chiffres dans `docs/OLLAMA-SETUP.md`.
 
 ## 10. À savoir
+
+- **Après chaque mise à jour du site (Netlify), mettre aussi le PC à jour** (`git pull`, puis `docker compose -f docker-compose.prod.yml up -d --build`) : un site plus récent que l'API affiche dans `/admin` « Le serveur n'est pas à jour : relancez la mise à jour » (routes inconnues de l'ancienne API), au lieu de listes vides.
 
 - Le PC doit rester allumé, Docker Desktop, Ollama et le tunnel lancés. Désactiver la mise en veille.
 - Selio Cloud reste fermé (Chromium absent de l'image du worker, avis de l'avocat attendu).

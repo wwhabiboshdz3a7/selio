@@ -75,16 +75,23 @@ Le navigateur n'appelle jamais l'IA : seuls l'API et le worker parlent au serveu
 
 ## 5. Paiement des abonnements (Revolut Merchant API)
 
-Uniquement si vous facturez des abonnements. Le paiement passe par **Revolut Business** (compte marchand) : formulaire Revolut Checkout dans l'application (carte, Apple Pay, Google Pay, Revolut Pay), carte enregistrée « pour le marchand », débits de renouvellement par l'API depuis le worker, webhooks signés. **Aucun numéro de carte ne transite par Selio.** Sans `REVOLUT_SECRET_KEY`, le paiement est désactivé : l'application le dit, les essais ne sont pas débités et finissent en accès de base. Commencez toujours par le **bac à sable** (`REVOLUT_MODE=sandbox`, hôte `https://sandbox-merchant.revolut.com`).
+Uniquement si vous facturez des abonnements. Le paiement passe par **Revolut Business** (compte marchand) : formulaire Revolut Checkout dans l'application (carte, Apple Pay, Google Pay, Revolut Pay), carte enregistrée « pour le marchand », débits de renouvellement par l'API depuis le worker, webhooks signés. **Aucun numéro de carte ne transite par Selio.** Sans `REVOLUT_SECRET_KEY`, le paiement est **simulé** (voir plus bas) : l'offre se choisit sans carte, rien n'est débité, les essais finissent « en attente du paiement ». Commencez toujours par le **bac à sable** (`REVOLUT_MODE=sandbox`, hôte `https://sandbox-merchant.revolut.com`).
 
 | Variable | Statut | Exemple / format | À quoi elle sert |
 |---|---|---|---|
-| `REVOLUT_SECRET_KEY` | Facultatif (vide = paiement désactivé) | `sk_…` | Clé **secrète** de l'API marchand (Revolut Business › Merchant › API). Jamais la clé publique, jamais dans Netlify. Mêmes valeurs côté API et worker. |
+| `PAYMENT_MODE` | Facultatif | `auto` (défaut), `simulated` ou `revolut` | `auto` : Revolut quand `REVOLUT_SECRET_KEY` est renseignée, sinon **paiement simulé**. `simulated` : simulé même avec Revolut (essais sans paiement). `revolut` : Revolut seulement (sans clé, « Le paiement n'est pas configuré »). Même valeur côté API et worker. |
+| `REVOLUT_SECRET_KEY` | Facultatif (vide = paiement simulé avec `PAYMENT_MODE=auto`) | `sk_…` | Clé **secrète** de l'API marchand (Revolut Business › Merchant › API). Jamais la clé publique, jamais dans Netlify. Mêmes valeurs côté API et worker. |
 | `REVOLUT_WEBHOOK_SECRET` | Obligatoire avec la clé | `wsk_…` | Secret de signature renvoyé par Revolut à la création du webhook (voir la procédure ci-dessous). Sans lui, les webhooks sont refusés et aucun paiement n'est confirmé. API seulement. |
 | `REVOLUT_MODE` | Facultatif | `sandbox` (défaut) ou `live` | Bac à sable ou production (`https://merchant.revolut.com`). |
 | `REVOLUT_LIVE_ALLOWED` | Facultatif | `false` | Garde-fou : `REVOLUT_MODE=live` est **refusé au démarrage** tant que cette variable n'est pas explicitement `true`. À passer à `true` seulement après validation complète du parcours en bac à sable. |
 | `REVOLUT_API_VERSION` | Facultatif | `2026-08-17` | Valeur de l'en-tête `Revolut-Api-Version` envoyé à chaque appel. |
 | `FRANCHISE_TVA` | Facultatif | `false` | `true` si Selio est en franchise en base de TVA (art. 293 B du CGI) : factures à 0 % avec la mention légale ; `false` = TVA 20 %. Même valeur côté API et worker. |
+
+### Paiement simulé en attendant Revolut
+
+Tant que Revolut n'est pas configuré (ou avec `PAYMENT_MODE=simulated`), Paramètres › Abonnement propose « Choisir cette offre » : le client choisit son forfait et sa périodicité (et son code promo, déjà enregistré par `POST /api/billing/offer`), voit un récapitulatif clair (forfait, prix, remise, première échéance, fin de l'essai, `GET /api/billing/checkout/preview`) marqué **« Paiement pas encore activé : aucune carte demandée, rien ne sera débité »**, puis confirme. Ce n'est **pas** un faux formulaire de carte : aucun numéro, aucune date, aucun code n'est demandé. L'offre retenue est enregistrée (`pendingPlan`, `simulated_checkout_at`, migration 0023), l'essai de 14 jours court (ou démarre s'il n'a jamais eu lieu), aucune commande n'est créée.
+
+À la fin de l'essai, le worker ne débite rien : le compte passe en accès de base **« essai terminé, en attente du paiement »** (`awaiting_payment_since`), l'offre retenue est gardée, les titulaires reçoivent un email, et Selio Admin › Comptes affiche « En attente du paiement » : l'opérateur peut **prolonger l'essai** ou **offrir l'accès**. Une nouvelle confirmation par le client ne relance pas d'essai (refus clair). Quand Revolut sera configuré (`PAYMENT_MODE=auto` + clé), le parcours réel reprend sans migration manuelle : une organisation encore en essai voit « Enregistrez votre carte » avant la fin de son essai. `GET /api/capabilities` (public, sans secret) dit à l'application si le paiement est réel ou simulé.
 
 ### Ouvrir le compte et brancher les webhooks, pas à pas
 

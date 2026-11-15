@@ -79,6 +79,11 @@ export function useData(): DataContextValue {
   return ctx;
 }
 
+/** Mode courant, ou « demo » hors de <DataProvider> (composants rendus seuls dans les tests). */
+export function useDataMode(): "demo" | "connected" {
+  return useContext(DataContext)?.mode ?? "demo";
+}
+
 export function useClient(): DataClient {
   return useData().client;
 }

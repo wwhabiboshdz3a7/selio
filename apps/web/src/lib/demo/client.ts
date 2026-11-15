@@ -74,7 +74,7 @@ import { recordMeasuredLimits, vintedLimitsStatus } from "@selio/domain";
 import { vintedLimitsMeasurementInput, type MigrationApplyInput, type MigrationConvertInput, type MigrationFileInput, type VintedLimits, type VintedLimitsMeasurementInput } from "@selio/contracts";
 import type { BundleSuggestionView, DeclarationThresholdsView, EndToEndMarginsView, MigrationApplyView, MigrationConversion, VintedLimitsRecordView, VintedLimitsView } from "../data/types";
 import { DEFAULT_ALERT_RULES, completeCriteria, demoAdminTrack, demoFilterAlerts, demoFingerprint, demoNicheScan, demoSalesFeed, demoTrends, seedDemoTrack, withReadTimes, type DemoTrackState } from "./track";
-import { adjustedPrice, userPreferences as userPreferencesSchema, userPreferencesUpdate as userPreferencesUpdateSchema, type ActivityPage, type ActivityQuery, type ItemSummary, type UserPreferences, type UserPreferencesUpdate } from "@selio/contracts";
+import { activityRecordInput as activityRecordInputSchema, adjustedPrice, type ActivityRecordInput, userPreferences as userPreferencesSchema, userPreferencesUpdate as userPreferencesUpdateSchema, type ActivityPage, type ActivityQuery, type ItemSummary, type UserPreferences, type UserPreferencesUpdate } from "@selio/contracts";
 import { demoActivityPage, demoActivityRows } from "./activity";
 import { trackAlertRules as trackAlertRulesSchema, trackManualPauseInput as trackManualPauseInputSchema, type TrackAdminStatus, type TrackAlertRulesInput, type TrackFilterAlerts, type TrackManualPauseInput } from "@selio/contracts";
 
@@ -730,6 +730,18 @@ export class DemoClient implements DataClient {
     const st = this.s;
     const names = new Map(st.users.map((u) => [u.id, u.displayName]));
     return demoActivityPage(demoActivityRows(st, (st as DemoStudioHolder).studio?.preps ?? []), query, { role: this.session().role, memberName: (id) => names.get(id) ?? null });
+  }
+  /**
+   * Équivalent démo de `recordActivity` (@selio/core) : une action sans trace propre (Selio Bot…) rangée dans le
+   * journal d'audit sous « activity.<verbe> », lue ensuite par le journal d'activité.
+   */
+  recordDemoActivity(input: ActivityRecordInput): void {
+    const parsed = activityRecordInputSchema.safeParse(input);
+    if (!parsed.success) throw new DataError("validation", "Action du journal invalide", 400);
+    const a = parsed.data;
+    this.s.audit.unshift({ id: newId(), orgId: this.s.org.id, actorUserId: a.actorUserId, action: `activity.${a.verb}`, targetType: a.targetType, targetId: a.targetId, meta: { actor: a.actor, status: a.status, ...(a.summary ? { summary: sanitizeUntrustedText(a.summary, 200) } : {}), targetType: a.targetType, targetId: a.targetId, itemId: a.itemId, itemTitle: a.itemTitle, counterpart: a.counterpart, priceCents: a.priceCents, purchaseCents: a.purchaseCents }, ip: null, createdAt: this.now() });
+    if (this.s.audit.length > 500) this.s.audit.length = 500;
+    this.persist();
   }
   async getPreferences(): Promise<UserPreferences> {
     const saved = (this.s as DemoPreferencesHolder).preferences?.[this.s.user.id];
