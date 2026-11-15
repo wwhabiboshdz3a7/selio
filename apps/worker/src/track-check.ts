@@ -126,8 +126,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     env = { ...env, ...parseEnvFile(readFileSync(path, "utf8")) };
   }
   const report = checkTrackConfig(env, { forceLive: argv.includes("--live") });
-  console.log(formatTrackCheck(report));
-  if (argv.includes("--db")) console.log(`\n${await dbState(env)}`);
+  console.info(formatTrackCheck(report));
+  if (argv.includes("--db")) console.info(`\n${await dbState(env)}`);
   return report.ready ? 0 : 1;
 }
 

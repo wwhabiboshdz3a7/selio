@@ -149,7 +149,7 @@ function FilterAlerts({ filter }: { filter: TrackFilter }) {
 function AlertsBody({ filterId, data, canWrite }: { filterId: string; data: TrackFilterAlerts; canWrite: boolean }) {
   const client = useClient();
   const [rules, setRules] = useState<TrackAlertRules>(data.rules);
-  useEffect(() => setRules(data.rules), [data.rules]);
+  useEffect(() => { setRules(data.rules); }, [data.rules]);
   const dirty = JSON.stringify(rules) !== JSON.stringify(data.rules);
   const save = useAppMutation((r: TrackAlertRules) => client.updateTrackFilterAlerts(filterId, r), { invalidate: ["track-alerts", "track-filters"], success: (d) => (d.rules.enabled ? "Alertes enregistrées" : "Alertes coupées") });
   const set = <K extends "medianPrice" | "newListings" | "daysToSell">(k: K, patch: Partial<TrackAlertRules[K]>) => setRules((r) => ({ ...r, [k]: { ...r[k], ...patch } }));
@@ -206,7 +206,7 @@ function RuleRow({ label, hint, checked, onToggle, disabled, input }: { label: s
 
 function NumberField({ label, value, min, max, suffix, disabled, onChange }: { label: string; value: number; min: number; max: number; suffix: string; disabled: boolean; onChange: (v: number) => void }) {
   const [text, setText] = useState(String(value));
-  useEffect(() => setText(String(value)), [value]);
+  useEffect(() => { setText(String(value)); }, [value]);
   return (
     <label className="flex items-center gap-2 text-sm text-text-muted">
       <span className="sr-only">{label}</span>
