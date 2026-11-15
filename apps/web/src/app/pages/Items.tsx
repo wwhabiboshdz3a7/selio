@@ -189,23 +189,23 @@ export default function Items() {
           <FilterChip key={value || "all"} role="tab" active={(query.status ?? "") === value} onClick={() => set("status", value)} count={counts.data ? counts.data[value || "all"] ?? 0 : null}>{label}</FilterChip>
         ))}
       </div>
-      <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center">
-        <div role="group" aria-label="Filtres rapides" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 scrollbar-thin lg:flex-1 lg:flex-wrap lg:overflow-visible lg:pb-0">
+      <div className="mb-3 flex flex-col gap-2 xl:flex-row xl:items-center">
+        <div role="group" aria-label="Filtres rapides" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 scrollbar-thin xl:flex-1 xl:pb-0">
           <FilterChip role="radio" active={params.get("online") === String(republishDays)} onClick={() => toggle("online", String(republishDays))} icon={<RefreshCw />} count={summary.data?.toRepublish ?? null}>À republier</FilterChip>
           <FilterChip role="radio" active={params.get("photos") === "none"} onClick={() => toggle("photos", "none")} icon={<ImageOff />} count={summary.data?.withoutPhoto ?? null}>Sans photo</FilterChip>
           {finances ? (["negative", "low", "good"] as const).map((m) => <FilterChip key={m} role="radio" active={params.get("margin") === m} onClick={() => toggle("margin", m)} icon={<Percent />}>{MARGIN_FILTER_LABELS[m]}</FilterChip>) : null}
         </div>
-        <div className={cn("grid gap-2 lg:flex", (accounts.data ?? []).length > 0 ? "grid-cols-3" : "grid-cols-2")}>
-          <Select value={query.category ?? ""} onChange={(e) => set("category", e.target.value)} aria-label="Catégorie" className="min-w-0 lg:w-36">
+        <div className={cn("grid shrink-0 gap-2 xl:flex", (accounts.data ?? []).length > 0 ? "grid-cols-3" : "grid-cols-2")}>
+          <Select value={query.category ?? ""} onChange={(e) => set("category", e.target.value)} aria-label="Catégorie" className="min-w-0 xl:w-32">
             <option value="">Catégorie</option>
             {ITEM_CATEGORIES.map((c) => <option key={c} value={c}>{ITEM_CATEGORY_LABELS[c]}</option>)}
           </Select>
-          <Select value={query.brand ?? ""} onChange={(e) => set("brand", e.target.value)} aria-label="Marque" className="min-w-0 lg:w-36">
+          <Select value={query.brand ?? ""} onChange={(e) => set("brand", e.target.value)} aria-label="Marque" className="min-w-0 xl:w-32">
             <option value="">Marque</option>
             {(brands.data ?? []).map((b) => <option key={b} value={b}>{b}</option>)}
           </Select>
           {(accounts.data ?? []).length > 0 ? (
-            <Select value={query.connectionId ?? ""} onChange={(e) => set("account", e.target.value)} aria-label="Compte Vinted" className="min-w-0 lg:w-40">
+            <Select value={query.connectionId ?? ""} onChange={(e) => set("account", e.target.value)} aria-label="Compte Vinted" className="min-w-0 xl:w-32">
               <option value="">Compte</option>
               {(accounts.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
             </Select>
