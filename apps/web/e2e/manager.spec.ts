@@ -36,9 +36,9 @@ test.describe("Selio Manager", () => {
     await dialog.getByRole("button", { name: "Monter Journal d'activité" }).click();
     await dialog.getByRole("button", { name: "Retirer Selio Track" }).click();
     await dialog.getByRole("button", { name: "Enregistrer" }).click();
-    await expect(nav.getByRole("link").nth(6)).toHaveAttribute("href", "/app/journal");
+    await expect(nav.getByRole("link").nth(7)).toHaveAttribute("href", "/app/journal");
     await page.reload();
-    await expect(page.getByRole("navigation", { name: "Raccourcis" }).getByRole("link").nth(6)).toHaveAttribute("href", "/app/journal");
+    await expect(page.getByRole("navigation", { name: "Raccourcis" }).getByRole("link").nth(7)).toHaveAttribute("href", "/app/journal");
     await page.getByRole("button", { name: "Modifier les raccourcis" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Raccourcis par défaut" }).click();
     await expect(page.getByRole("navigation", { name: "Raccourcis" }).getByRole("link").last()).toHaveAttribute("href", "/track");
