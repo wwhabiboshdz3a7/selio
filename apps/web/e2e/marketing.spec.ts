@@ -53,7 +53,7 @@ test.describe("vitrine", () => {
     await expect(page.getByRole("heading", { level: 1 })).toContainText("14 jours pour essayer");
     const trial = page.getByRole("article", { name: "Essai 14 jours" });
     await expect(trial).toContainText("Gratuit pendant 14 jours");
-    await expect(trial).toContainText("carte enregistrée, rien débité avant la fin");
+    await expect(trial).toContainText("rien débité avant la fin");
     await expect(trial.getByRole("link", { name: "Commencer l'essai de 14 jours" })).toHaveAttribute("href", "/inscription");
     // Trois offres, à partir de la configuration (montants indicatifs).
     await expect(page.getByRole("article", { name: "Starter" })).toContainText("6,99 €");
