@@ -219,6 +219,38 @@ Plus `nvidia-smi` avec les trois modèles chargés. Reporter les chiffres dans `
 - Selio Cloud reste fermé (Chromium absent de l'image du worker, avis de l'avocat attendu).
 - Sauvegarde : `scripts/sauvegarde/` dès que de vraies données arrivent (voir `docs/SAUVEGARDE.md`).
 
+## 11. Dépannage : erreur 502 sur le site
+
+Une **502** veut dire que Netlify n'arrive pas à joindre l'API du PC. Le site ne l'affiche plus telle quelle (il relance les lectures et montre « Selio revient dans un instant », puis se reconnecte seul), mais la cause est toujours sur le PC. Dans Ubuntu, dans l'ordre :
+
+```bash
+cd ~/selio/deploy
+docker compose -f docker-compose.prod.yml ps                     # api, worker, postgres, redis : « running » / « healthy » ? migrate : « exited (0) » ?
+docker compose -f docker-compose.prod.yml logs --tail=80 migrate api
+curl -s http://127.0.0.1:8787/api/health                          # l'API répond-elle sur le PC ?
+```
+
+| Ce qu'on voit | Cause | Remède |
+|---|---|---|
+| `migrate` en erreur, `api` jamais démarrée | une migration a échoué | lire le message, corriger, `docker compose -f docker-compose.prod.yml up -d --build` |
+| `curl` local ne répond pas, `api` redémarre en boucle | erreur de configuration (`deploy/.env`) | `logs api` : la première ligne d'erreur dit quelle variable manque ou est fausse |
+| `curl` local répond `{"ok":true…}` | **le tunnel est coupé ou a changé d'adresse** | relancer `cloudflared tunnel --url http://127.0.0.1:8787`, noter la nouvelle adresse, la mettre dans `netlify.toml` (règle `/api/*`), pousser, puis redéployer le site |
+| tout répond mais seulement par moments | le PC s'est mis en veille | désactiver la veille (Paramètres Windows › Alimentation) |
+
+**Pour ne plus avoir de 502 au redémarrage du PC : une adresse fixe.** Le tunnel rapide de Cloudflare change d'adresse à chaque relance ; c'est la cause la plus fréquente. Deux solutions gratuites :
+
+1. **Tailscale Funnel** (sans domaine) : créer un compte gratuit sur tailscale.com, puis dans Ubuntu :
+   ```bash
+   curl -fsSL https://tailscale.com/install.sh | sh
+   sudo tailscale up                       # ouvrir le lien affiché et se connecter
+   sudo tailscale funnel --bg 8787         # adresse fixe du type https://<machine>.<réseau>.ts.net
+   tailscale funnel status
+   ```
+   Mettre cette adresse **une seule fois** dans la règle `/api/*` de `netlify.toml`. Elle ne change plus, et `--bg` la garde après un redémarrage.
+2. **Tunnel nommé Cloudflare** (avec un domaine géré chez Cloudflare, par exemple un domaine étudiant gratuit) : `cloudflared tunnel login`, `cloudflared tunnel create selio`, une route DNS `api.<domaine>`, puis `sudo cloudflared service install` pour qu'il démarre avec le PC.
+
+Dans les deux cas, lancer aussi l'API au démarrage : Docker Desktop › Settings › General › « Start Docker Desktop when you sign in », et les services du `docker-compose.prod.yml` ont déjà `restart: unless-stopped` (vérifier avec `grep restart docker-compose.prod.yml`).
+
 ---
 
 Réalisé par Ibrahim

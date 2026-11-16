@@ -27,10 +27,30 @@ export function RequireSession({ children }: { children: ReactNode }) {
   const session = useSession();
   const location = useLocation();
   if (session.isPending) return <LoadingState label="Ouverture de la session…" className="min-h-dvh" />;
+  // Serveur momentanément injoignable (redémarrage, tunnel) : on attend et on se reconnecte seul, sans déconnecter.
+  if (session.isError && session.error instanceof DataError && session.error.code === "unavailable") return <ServerUnavailable onRetry={() => void session.refetch()} />;
   // Compte bloqué par l'équipe Selio : le message du serveur est affiché tel quel sur la page de connexion.
   if (session.isError) return <Navigate to="/connexion" replace state={{ from: location.pathname, error: session.error instanceof DataError && session.error.code === "account_blocked" ? session.error.message : "La session n'a pas pu être vérifiée." }} />;
   if (!session.data) return <Navigate to="/connexion" replace state={{ from: location.pathname }} />;
   return <>{children}</>;
+}
+
+/** Écran d'attente quand l'API ne répond pas : nouvelle tentative automatique toutes les 5 secondes. */
+export function ServerUnavailable({ onRetry }: { onRetry: () => void }) {
+  useEffect(() => {
+    const id = window.setInterval(onRetry, 5000);
+    return () => window.clearInterval(id);
+  }, [onRetry]);
+  return (
+    <main className="grid min-h-dvh place-items-center bg-bg px-4">
+      <div className="flex max-w-md flex-col items-center gap-4 text-center" role="status">
+        <Logo height={28} />
+        <h1 className="text-xl font-semibold text-text">Selio revient dans un instant</h1>
+        <p className="text-sm text-text-muted">Le serveur est momentanément injoignable (redémarrage ou maintenance). La page se reconnecte toute seule dès qu'il répond ; vos données ne sont pas touchées.</p>
+        <Button variant="secondary" onClick={onRetry}><RefreshCw aria-hidden /> Réessayer maintenant</Button>
+      </div>
+    </main>
+  );
 }
 
 export function RequireOperator({ children }: { children: ReactNode }) {
