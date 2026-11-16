@@ -77,6 +77,12 @@ function qs(q: Query | undefined): string {
   return s ? `?${s}` : "";
 }
 
+/** Réponses d'une passerelle quand l'API ne répond pas (redémarrage, tunnel coupé). */
+const GATEWAY_STATUSES = new Set([502, 503, 504]);
+/** Attentes avant de relancer une lecture quand le serveur est momentanément injoignable. */
+export const RETRY_DELAYS_MS = [800, 2500];
+export const SERVER_UNAVAILABLE_MESSAGE = "Le serveur Selio est momentanément injoignable (redémarrage ou maintenance). Réessayez dans quelques instants.";
+
 /**
  * Client du mode connecté : appels HTTP vers l'API Selio (apps/api), cookie
  * de session HttpOnly, aucune donnée fictive en repli. Les erreurs sont
@@ -87,6 +93,20 @@ export class ApiClient implements DataClient {
   constructor(private readonly baseUrl: string) {}
 
   private async request<T>(method: string, path: string, body?: unknown, opts: { raw?: boolean } = {}): Promise<T> {
+    // Une lecture (GET) est relancée quand le serveur est momentanément injoignable : passerelle 502/503/504
+    // (redémarrage de l'API, tunnel coupé) ou réseau. Une écriture n'est jamais rejouée (pas de double envoi).
+    const delays = method === "GET" ? RETRY_DELAYS_MS : [];
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.requestOnce<T>(method, path, body, opts);
+      } catch (e) {
+        if (!(e instanceof DataError) || e.code !== "unavailable" || attempt >= delays.length) throw e;
+        await new Promise((r) => setTimeout(r, delays[attempt]));
+      }
+    }
+  }
+
+  private async requestOnce<T>(method: string, path: string, body?: unknown, opts: { raw?: boolean } = {}): Promise<T> {
     let res: Response;
     try {
       res = await fetch(`${this.baseUrl}${path}`, {
@@ -96,8 +116,10 @@ export class ApiClient implements DataClient {
         body: body !== undefined ? JSON.stringify(body) : undefined,
       });
     } catch (e) {
-      throw new DataError("network", "Impossible de joindre le serveur Selio. Vérifiez votre connexion ou l'état des services.", 0, e);
+      throw new DataError("unavailable", SERVER_UNAVAILABLE_MESSAGE, 0, e);
     }
+    // Passerelle (Netlify, tunnel) sans réponse de l'API : jamais d'« Erreur 502 » brute à l'écran.
+    if (GATEWAY_STATUSES.has(res.status)) throw new DataError("unavailable", SERVER_UNAVAILABLE_MESSAGE, res.status);
     if (opts.raw) {
       if (!res.ok) throw new DataError("http", `Erreur ${res.status}`, res.status);
       return (await res.text()) as unknown as T;
