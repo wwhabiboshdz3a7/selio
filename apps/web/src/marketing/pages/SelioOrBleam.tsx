@@ -106,7 +106,7 @@ export default function SelioOrBleam() {
       </MarketingSection>
 
       <ComparisonFootnotes />
-      <CtaBand seed={41} title="Jugez sur pièce" lead="Essayez Selio 14 jours sur votre propre activité : carte enregistrée à l'inscription, rien n'est débité avant la fin de l'essai." />
+      <CtaBand seed={41} title="Jugez sur pièce" lead="Essayez Selio 14 jours sur votre propre activité : rien n'est débité avant la fin de l'essai." />
     </>
   );
 }

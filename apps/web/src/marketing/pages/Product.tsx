@@ -103,7 +103,7 @@ function ProductView({ product }: { product: ProductDef }) {
         </Container>
       </section>
 
-      <CtaBand seed={product.slug.length + 3} title={`Essayez Selio pendant ${TRIAL_DAYS} jours`} lead="Toutes les fonctions du plan Pro sur votre propre activité. Carte enregistrée à l'inscription, rien n'est débité avant la fin de l'essai ; tout ce qui est encore simulé est signalé à l'écran." />
+      <CtaBand seed={product.slug.length + 3} title={`Essayez Selio pendant ${TRIAL_DAYS} jours`} lead="Toutes les fonctions du plan Pro sur votre propre activité. Rien n'est débité avant la fin de l'essai ; tout ce qui est encore simulé est signalé à l'écran." />
     </>
   );
 }

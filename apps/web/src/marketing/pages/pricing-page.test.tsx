@@ -25,7 +25,7 @@ describe("vitrine › Tarifs", () => {
     render(<DataProvider forceMode="demo"><MemoryRouter><Pricing /></MemoryRouter></DataProvider>);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("14 jours pour essayer");
     const trial = screen.getByRole("article", { name: "Essai 14 jours" });
-    expect(trial.textContent).toContain("carte enregistrée, rien débité avant la fin");
+    expect(trial.textContent).toContain("rien débité avant la fin");
     expect(within(trial).getByRole("link", { name: "Commencer l'essai de 14 jours" }).getAttribute("href")).toBe("/inscription");
     for (const offer of PLAN_OFFERS) {
       const card = screen.getByRole("article", { name: offer.name });

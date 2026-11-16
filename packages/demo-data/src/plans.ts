@@ -101,9 +101,9 @@ export const TRIAL_OFFER = {
   defaultDays: DEFAULT_TRIAL_DAYS,
   /** Carte enregistrée dès le début, rien n'est débité avant la fin de l'essai. */
   cardRequired: true,
-  tagline: "14 jours gratuits, carte enregistrée, rien débité avant la fin",
+  tagline: "14 jours gratuits, rien débité avant la fin",
   profile: "Pour essayer Selio sur votre propre activité avant de choisir.",
-  highlights: ["Toutes les fonctions du plan Pro pendant 14 jours", "Carte enregistrée à l'inscription, aucun débit avant la fin", "Ensuite, Starter, Pro ou Agence au choix ; résiliable à tout moment"],
+  highlights: ["Toutes les fonctions du plan Pro pendant 14 jours", "Aucun débit avant la fin de l'essai", "Ensuite, Starter, Pro ou Agence au choix ; résiliable à tout moment"],
 };
 
 export interface PlanOffer {
