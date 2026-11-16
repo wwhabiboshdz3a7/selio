@@ -15,7 +15,7 @@
 # À mettre à jour quand l'adresse du tunnel change.
 [[redirects]]
   from = "/api/*"
-  to = "https://nodes-scanner-figures-arising.trycloudflare.com/api/:splat"
+  to = "https://desktop-optltih.tailf78008.ts.net/api/:splat"
   status = 200
   force = true
 
