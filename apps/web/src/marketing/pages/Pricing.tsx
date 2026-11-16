@@ -43,7 +43,7 @@ export default function Pricing() {
         reveal
         eyebrow="Tarifs"
         title={`${TRIAL_DAYS} jours pour essayer, puis l'offre qui vous ressemble`}
-        lead={`L'essai donne toutes les fonctions du plan Pro pendant ${TRIAL_DAYS} jours : la carte est enregistrée à l'inscription, rien n'est débité avant la fin. Ensuite, Starter, Pro ou Agence selon vos comptes Vinted et votre équipe.`}
+        lead={`L'essai donne toutes les fonctions du plan Pro pendant ${TRIAL_DAYS} jours, et rien n'est débité avant la fin. Ensuite, Starter, Pro ou Agence selon vos comptes Vinted et votre équipe.`}
       >
         <article className="card mk-card mk-featured flex flex-col gap-5 p-6 md:flex-row md:items-center" data-reveal="" aria-labelledby="offre-trial">
           <div className="min-w-0 flex-1">

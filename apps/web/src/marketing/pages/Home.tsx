@@ -119,7 +119,7 @@ export default function Home() {
         </div>
       </MarketingSection>
 
-      <CtaBand seed={3} title={`Essayez Selio sur votre propre activité pendant ${TRIAL_DAYS} jours`} lead="Toutes les fonctions du plan Pro, carte enregistrée à l'inscription, rien n'est débité avant la fin de l'essai. Résiliable à tout moment." />
+      <CtaBand seed={3} title={`Essayez Selio sur votre propre activité pendant ${TRIAL_DAYS} jours`} lead="Toutes les fonctions du plan Pro, rien n'est débité avant la fin de l'essai. Résiliable à tout moment." />
     </>
   );
 }

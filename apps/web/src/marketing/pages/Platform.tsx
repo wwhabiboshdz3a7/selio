@@ -53,7 +53,7 @@ export default function Platform() {
         </Container>
       </section>
 
-      <CtaBand seed={5} title="Toute la gamme, un seul compte" lead={`L'essai de ${TRIAL_DAYS} jours ouvre Selio Manager et les filiales comprises dans le plan Pro. Carte enregistrée à l'inscription, rien n'est débité avant la fin.`} />
+      <CtaBand seed={5} title="Toute la gamme, un seul compte" lead={`L'essai de ${TRIAL_DAYS} jours ouvre Selio Manager et les filiales comprises dans le plan Pro. Rien n'est débité avant la fin de l'essai.`} />
     </>
   );
 }
