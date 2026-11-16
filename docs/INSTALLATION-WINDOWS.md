@@ -158,6 +158,26 @@ AI_PROVIDER=ollama OLLAMA_BASE_URL=http://127.0.0.1:11434 OLLAMA_MODEL=ministral
 
 ## 6. Ouvrir l'API à Netlify (tunnel)
 
+### 6.a Tailscale Funnel : adresse fixe, gratuite (solution retenue)
+
+L'adresse ne change jamais, même après un redémarrage du PC : plus de 502 à chaque relance.
+
+1. **Ibrahim** : créer un compte gratuit sur https://login.tailscale.com (avec son compte Google, par exemple).
+2. **Sur Windows** (pas dans Ubuntu : le service Windows démarre tout seul avec le PC) : installer Tailscale depuis https://tailscale.com/download/windows, puis se connecter avec ce compte.
+3. Dans la console d'administration Tailscale (https://login.tailscale.com/admin/dns) : activer **MagicDNS** et **HTTPS Certificates**.
+4. Dans PowerShell (utilisateur normal) :
+   ```powershell
+   tailscale funnel --bg 8787
+   tailscale funnel status
+   ```
+   Si la commande affiche un lien pour autoriser Funnel sur ce réseau, l'ouvrir et accepter, puis relancer la commande. `status` affiche l'adresse fixe, du type `https://desktop-optltih.<nom-du-réseau>.ts.net`.
+5. Vérifier depuis Ubuntu : `curl -s https://<adresse>.ts.net/api/health` doit répondre `{"ok":true,…}`.
+6. Mettre cette adresse **une seule fois** dans la règle `/api/*` de `netlify.toml` (étape 7), à la place de l'adresse `trycloudflare.com`, puis redéployer le site. Arrêter l'ancien tunnel `cloudflared` : il ne sert plus.
+
+`--bg` garde la configuration après un redémarrage. Funnel n'ouvre que le port 8787 (l'API) ; Ollama, PostgreSQL et Redis restent fermés à Internet.
+
+### 6.b Ancienne méthode : tunnel rapide Cloudflare (adresse qui change)
+
 ```bash
 curl -L -o cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
 sudo dpkg -i cloudflared.deb
