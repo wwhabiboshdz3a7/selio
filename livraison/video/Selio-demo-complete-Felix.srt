@@ -1,0 +1,336 @@
+1
+00:00:01,504 --> 00:00:07,925
+Bonjour Felix. Voici une visite complète de Selio, de la vitrine publique jusqu’à l’administration.
+
+2
+00:00:08,005 --> 00:00:13,919
+La vidéo est sans son : tout est expliqué ici, en sous-titres. Les données affichées sont des exemples.
+
+3
+00:00:15,392 --> 00:00:21,377
+Voici la vitrine publique de Selio, en ligne sur seliovprod.netlify.app.
+
+4
+00:00:21,457 --> 00:00:30,169
+Selio, c’est la boîte à outils du revendeur Vinted : gérer, publier, négocier, acheter et analyser, au même endroit.
+
+5
+00:00:30,249 --> 00:00:38,279
+La gamme : Selio Manager, Studio, Track, Radar, Bot, Cloud, Agents et Comptes. Chaque produit a son rôle.
+
+6
+00:00:38,359 --> 00:00:44,591
+Le parcours complet, de l’achat jusqu’à l’étiquette d’envoi, en huit étapes.
+
+7
+00:00:44,671 --> 00:00:53,446
+Sourcing sur le marché avec Track, et bientôt auprès de fournisseurs partenaires (aucun accord signé pour l’instant).
+
+8
+00:00:53,526 --> 00:00:59,945
+Achat avec Radar, photos et annonce avec Studio, vente et négociation avec Bot.
+
+9
+00:01:00,025 --> 00:01:07,083
+Puis la commande, l’étiquette d’envoi et l’après-vente : tout le cycle de l’article.
+
+10
+00:01:07,289 --> 00:01:14,347
+Tout en bas : appel à l’essai gratuit de 14 jours, et les liens vers chaque produit.
+
+11
+00:01:15,469 --> 00:01:22,465
+Les tarifs : trois forfaits, Starter, Pro et Agence, avec 14 jours d’essai gratuit.
+
+12
+00:01:23,237 --> 00:01:30,423
+Au mois ou à l’année (deux mois offerts). Le tableau compare tout, fonction par fonction.
+
+13
+00:01:30,503 --> 00:01:36,445
+Selio Comptes se vend à part, comme une prestation payée une fois.
+
+14
+00:01:38,147 --> 00:01:45,949
+Chaque produit a sa propre page. Ici, Selio Bot : les automatisations qui travaillent pour vous.
+
+15
+00:01:47,032 --> 00:01:55,002
+L’inscription prend une minute. Pour l’instant, l’essai démarre sans carte bancaire : rien n’est débité.
+
+16
+00:01:57,446 --> 00:02:05,357
+Pour la démo, on entre avec un compte d’exemple : Marie, revendeuse, boutique « Atelier Seconde Main ».
+
+17
+00:02:05,437 --> 00:02:12,042
+Voici l’accueil des espaces : toute la gamme Selio, avec l’état de chaque produit.
+
+18
+00:02:12,122 --> 00:02:18,064
+On passe d’un espace à l’autre avec le sélecteur en haut à gauche.
+
+19
+00:02:19,232 --> 00:02:26,519
+Selio Manager, l’outil de gestion au quotidien. La vue d’ensemble montre l’essentiel du mois.
+
+20
+00:02:26,599 --> 00:02:33,948
+En haut, vos raccourcis : chacun choisit les siens, retrouvés sur téléphone et sur ordinateur.
+
+21
+00:02:34,028 --> 00:02:40,280
+On peut en ajouter, en retirer ou les remettre dans l’ordre qu’on veut.
+
+22
+00:02:42,498 --> 00:02:51,218
+Chiffre d’affaires, bénéfice, ventes, stock actif et choses à traiter, calculés depuis les vraies données du compte.
+
+23
+00:02:51,298 --> 00:02:59,021
+Les alertes : une tâche automatique en échec, des actions à valider. Rien ne part sans règle claire.
+
+24
+00:02:59,101 --> 00:03:07,194
+Plus bas : ventes et marge, objectif du mois, catégories, meilleurs jours de vente, rendement du dressing.
+
+25
+00:03:07,275 --> 00:03:13,093
+Et les dernières actions de Selio, tirées du journal d’activité.
+
+26
+00:03:14,917 --> 00:03:21,956
+Le journal d’activité raconte tout ce que Selio et l’équipe ont fait, en phrases simples.
+
+27
+00:03:22,036 --> 00:03:30,687
+Négociation, réponses, achats, ventes, bordereaux : chaque ligne dit qui, quoi et quand, avec un lien vers l’objet.
+
+28
+00:03:30,767 --> 00:03:39,809
+Filtre « Automatique » : seulement ce que Selio a fait tout seul. On peut aussi filtrer par membre, type et période.
+
+29
+00:03:41,094 --> 00:03:48,260
+Articles et stock : tout le stock, sur tous les comptes Vinted, avec les compteurs en tête.
+
+30
+00:03:48,340 --> 00:03:55,940
+Des filtres rapides : statut, à republier, sans photo, niveau de marge, catégorie, marque, compte.
+
+31
+00:03:56,020 --> 00:04:00,784
+Exemple : les articles à republier, en un clic.
+
+32
+00:04:04,257 --> 00:04:08,029
+Vue en grille, avec les photos…
+
+33
+00:04:10,498 --> 00:04:13,919
+… ou en liste, plus dense.
+
+34
+00:04:13,999 --> 00:04:22,607
+Le prix se modifie directement dans la liste, sans ouvrir l’article. Entrée pour valider, Échap pour annuler.
+
+35
+00:04:24,432 --> 00:04:32,589
+On peut sélectionner plusieurs articles pour des actions groupées : statut, prix, republication, archivage.
+
+36
+00:04:32,669 --> 00:04:40,223
+La fiche d’un article : photos, prix, prix plancher, marge, historique et état de l’annonce.
+
+37
+00:04:44,558 --> 00:04:49,491
+Selio Studio transforme des photos en annonce complète.
+
+38
+00:04:49,571 --> 00:04:57,043
+On ajoute les photos d’un ou plusieurs articles. Ici, des photos d’exemple : un jean et un pull.
+
+39
+00:04:57,123 --> 00:05:04,429
+Studio trie seul les photos par article et par rôle : face, dos, étiquette, mètre ruban.
+
+40
+00:05:06,032 --> 00:05:14,125
+Il lit l’étiquette : marque, taille, matière. Rien n’est inventé : chaque information dit d’où elle vient.
+
+41
+00:05:14,205 --> 00:05:21,263
+Puis les mesures, lues sur le mètre ruban ou demandées au vendeur si elles manquent.
+
+42
+00:05:22,669 --> 00:05:28,840
+Et voici l’annonce : titre, description, attributs, et trois prix proposés.
+
+43
+00:05:28,920 --> 00:05:36,598
+Vente rapide, standard ou marge maximale : vous choisissez. Rien n’est publié sans votre clic.
+
+44
+00:05:37,788 --> 00:05:43,401
+La messagerie réunit les conversations de tous vos comptes Vinted.
+
+45
+00:05:43,481 --> 00:05:51,015
+Dans une conversation, Selio propose une réponse et suit la négociation selon vos prix planchers.
+
+46
+00:05:51,095 --> 00:05:58,773
+Une offre trop basse ? Contre-offre automatique, jamais sous le plancher. Vous gardez la main.
+
+47
+00:05:59,993 --> 00:06:06,431
+Les commandes : à expédier, expédiées, livrées, avec le bordereau d’envoi.
+
+48
+00:06:07,719 --> 00:06:15,769
+Le dressing intelligent note chaque annonce sur 100, dit quand la republier et avec quelle variante.
+
+49
+00:06:16,918 --> 00:06:24,453
+Les analyses : chiffre d’affaires, marge de l’achat à la revente, par catégorie, canal et marque.
+
+50
+00:06:24,533 --> 00:06:30,909
+Et une alerte avant les seuils de déclaration à l’administration fiscale.
+
+51
+00:06:32,166 --> 00:06:40,278
+Tout le parcours peut être automatisé, en quatre blocs : favoris, réponses, négociation, après-vente.
+
+52
+00:06:41,393 --> 00:06:49,055
+Selio Bot regroupe les automatisations qui travaillent pour vous, selon vos règles et vos plafonds.
+
+53
+00:06:49,135 --> 00:06:56,795
+Sept bots : négociation, relance 24 h, republication, réponses, favoris, achat auto et après-vente.
+
+54
+00:06:56,875 --> 00:07:04,057
+Chacun montre son état, où il tourne, les limites du forfait et ses dernières actions.
+
+55
+00:07:05,155 --> 00:07:12,337
+Le bouton « Tout arrêter » coupe tous les bots d’un coup, immédiatement, côté serveur.
+
+56
+00:07:14,134 --> 00:07:20,262
+Exemple : le bot de négociation, ses règles et ses dernières actions.
+
+57
+00:07:21,447 --> 00:07:27,929
+L’achat auto : l’achat assisté vous propose chaque affaire à valider en un clic.
+
+58
+00:07:28,009 --> 00:07:36,121
+L’achat automatique attend la validation juridique : deux verrous côté serveur l’empêchent de partir.
+
+59
+00:07:37,352 --> 00:07:44,658
+Selio Radar repère les bonnes affaires et note chacune sur 100, avec la revente estimée.
+
+60
+00:07:45,864 --> 00:07:51,558
+Les affaires à valider : vous gardez la main sur chaque achat.
+
+61
+00:07:52,670 --> 00:07:59,711
+Selio Track analyse le marché : filtres suivis, tendances, niches et recherche par photo.
+
+62
+00:07:59,791 --> 00:08:08,136
+Dans cette démo, les chiffres du marché sont simulés : la lecture réelle s’ouvrira après validation juridique.
+
+63
+00:08:08,216 --> 00:08:16,311
+Chaque filtre suivi est relu toutes les deux heures : prix médian, nouvelles annonces, annonces disparues.
+
+64
+00:08:16,391 --> 00:08:25,061
+Les alertes de tendance préviennent sur le téléphone : prix qui bouge, afflux d’annonces, ventes plus rapides.
+
+65
+00:08:26,214 --> 00:08:33,644
+Le scan de niche donne une note sur 100 : demande, vitesse de vente, concurrence et marge.
+
+66
+00:08:34,792 --> 00:08:42,594
+Et la recherche par photo : une photo suffit pour estimer un prix. La photo n’est jamais gardée.
+
+67
+00:08:43,678 --> 00:08:50,035
+Selio Cloud fait tourner le Manager et le Bot 24 h/24, sans ordinateur allumé.
+
+68
+00:08:50,115 --> 00:08:56,181
+Tout est prêt techniquement ; l’ouverture attend l’avis de l’avocat.
+
+69
+00:08:57,306 --> 00:09:05,232
+Selio Agents : les équipes, les rôles et les accès. Chaque personne a son identifiant et son rôle.
+
+70
+00:09:06,357 --> 00:09:13,892
+Selio Comptes aide à ouvrir et préparer une boutique Vinted : checklist et textes prêts à copier.
+
+71
+00:09:13,972 --> 00:09:21,774
+Une prestation est aussi proposée : audit, mise en place complète ou accompagnement de 30 jours.
+
+72
+00:09:22,920 --> 00:09:29,898
+Dans les paramètres : abonnement, factures, utilisation, équipe, parrainage et sécurité.
+
+73
+00:09:29,978 --> 00:09:38,648
+Un code promo s’ajoute ici. En attendant le paiement Revolut, l’essai démarre sans carte et rien n’est débité.
+
+74
+00:09:39,777 --> 00:09:45,949
+Enfin, Selio Admin : l’espace de l’équipe Selio, séparé de l’espace client.
+
+75
+00:09:46,029 --> 00:09:54,017
+Le tableau de bord de croissance : inscrits, essais, payants, accès offerts, revenu mensuel estimé.
+
+76
+00:09:55,122 --> 00:10:02,412
+La liste des comptes clients, avec recherche et filtres par qualification, forfait et statut.
+
+77
+00:10:02,492 --> 00:10:11,415
+Sur chaque fiche : qualifier le compte (client, bêta-testeur, partenaire, équipe…), offrir un forfait, prolonger l’essai.
+
+78
+00:10:11,495 --> 00:10:19,731
+Et une note interne que le client ne voit jamais. Chaque action est gardée dans l’historique du compte.
+
+79
+00:10:20,887 --> 00:10:27,697
+Les offres commerciales : nom, réduction, code promo, forfaits concernés, durée.
+
+80
+00:10:36,735 --> 00:10:42,473
+Par exemple « Lancement bêta » : 30 % de remise avec le code BETA30.
+
+81
+00:10:42,553 --> 00:10:49,115
+On peut l’afficher dans le bandeau en haut du site, avec un aperçu du texte.
+
+82
+00:10:50,725 --> 00:10:59,705
+L’offre est créée : le code marche à l’inscription et sur la page Abonnement, et la remise apparaît sur la facture.
+
+83
+00:11:00,801 --> 00:11:07,425
+Et le pilotage de Track : état du lecteur, usage par client, bouton de pause.
+
+84
+00:11:09,028 --> 00:11:15,404
+Merci d’avoir regardé. Questions et retours bienvenus : Elias et Ibrahim.
+
