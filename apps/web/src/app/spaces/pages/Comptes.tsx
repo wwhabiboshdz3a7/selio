@@ -44,7 +44,7 @@ export default function Comptes() {
         eyebrow="Selio Compte"
         title="Services liés aux comptes et accompagnement"
         description="La cinquième filiale de Selio : des services sur devis autour de vos comptes Vinted, et, en autonomie, une checklist et des textes prêts à copier."
-        actions={<Link to="/contact?sujet=comptes" className={buttonClass({ variant: "primary" })}>Demander un devis</Link>}
+        actions={<Link to="/contact?sujet=compte" className={buttonClass({ variant: "primary" })}>Demander un devis</Link>}
       />
       <section aria-labelledby="comptes-services" className="mb-8">
         <h2 id="comptes-services" className="mb-3 text-sm font-bold tracking-wider text-text uppercase">Les services, sur devis</h2>
@@ -58,7 +58,7 @@ export default function Comptes() {
           ))}
           <li className="card flex flex-col justify-between gap-3 border-dashed p-4">
             <p className="text-sm text-text-muted">Indiquez le service voulu et l'adresse de votre boutique : l'équipe Selio vous répond avec un devis.</p>
-            <Link to="/contact?sujet=comptes" className={cn(buttonClass({ variant: "secondary", size: "sm" }), "self-start")}>Demander un devis <ArrowRight aria-hidden /></Link>
+            <Link to="/contact?sujet=compte" className={cn(buttonClass({ variant: "secondary", size: "sm" }), "self-start")}>Demander un devis <ArrowRight aria-hidden /></Link>
           </li>
         </ul>
       </section>

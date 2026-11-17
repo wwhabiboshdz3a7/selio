@@ -59,7 +59,7 @@ describe("accueil central des espaces", () => {
     expect(within(compte).getByText("Disponible")).toBeTruthy();
     expect(within(compte).getByText("Services liés aux comptes et accompagnement")).toBeTruthy();
     expect(within(compte).getByText("Checklist").nextElementSibling?.textContent).toMatch(/^0\/\d+$/);
-    expect(within(compte).getByRole("link", { name: "Demander un devis" }).getAttribute("href")).toBe("/contact?sujet=comptes");
+    expect(within(compte).getByRole("link", { name: "Demander un devis" }).getAttribute("href")).toBe("/contact?sujet=compte");
     // Selio Cloud : en aperçu, avec ses chiffres (comptes de la démonstration) et l'état de l'accord.
     const cloud = card("Selio Cloud");
     expect(within(cloud).getAllByText("Aperçu").length).toBeGreaterThan(0);

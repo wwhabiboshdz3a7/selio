@@ -91,7 +91,7 @@ export default function BotHome() {
                       <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-text">{s.name}{!s.enabled ? <Tag>En pause</Tag> : null}</p>
                       <p className="text-xs text-text-muted">Prix max {formatCents(s.criteria.maxPriceCents)} · budget {formatCents(s.budgetCents)} · {s.lastReadAt ?? s.lastRunAt ? `lue ${formatRelative((s.lastReadAt ?? s.lastRunAt)!)}` : "jamais lue"}</p>
                     </div>
-                    <SourceTag search={s} />
+                    <span className="shrink-0 whitespace-nowrap"><SourceTag search={s} /></span>
                   </li>
                 ))}
               </ul>

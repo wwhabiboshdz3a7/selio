@@ -7,6 +7,7 @@ import AlternativeBleam from "./AlternativeBleam";
 import ExtensionPrivacy from "./ExtensionPrivacy";
 import Extension from "./Extension";
 import Legal from "./Legal";
+import Contact from "./Contact";
 import { MANAGER_BOT_DISTINCTION, MANAGER_FEATURES, MANAGER_KEY_MESSAGE, PRODUCTS, PRODUCT_PAGES } from "../products";
 import { PRODUCT_SHOTS } from "../productShots";
 import Home from "./Home";
@@ -298,6 +299,25 @@ describe("vitrine › accueil et plateforme", () => {
     expect(container.querySelector('a[href^="/demo"]')).toBeNull();
     expect(container.textContent).not.toMatch(/démo/i);
     expect(screen.getByTestId("independence-notice").textContent).toBe(INDEPENDENCE_NOTICE);
+  });
+});
+
+describe("vitrine › contact", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("le sujet « Selio Compte » se choisit par l'adresse (?sujet=compte, ou l'ancien ?sujet=comptes)", () => {
+    mockMotion();
+    for (const sujet of ["compte", "comptes"]) {
+      renderAt(`/contact?sujet=${sujet}`, "/contact", <Contact />);
+      expect((screen.getByLabelText("Sujet") as HTMLSelectElement).value).toBe("compte");
+      expect(screen.getByRole("option", { name: "Selio Compte : prestation ou devis" })).toBeTruthy();
+      cleanup();
+    }
+    renderAt("/contact?sujet=inconnu", "/contact", <Contact />);
+    expect((screen.getByLabelText("Sujet") as HTMLSelectElement).value).toBe("question");
   });
 });
 
