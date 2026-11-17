@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Bot, Boxes, Camera, ChevronDown, Eye, Lock, CircleUser, ClipboardList, CreditCard, Gauge, Heart, ListChecks, LogOut, Menu as MenuIcon, MessageSquare, MessagesSquare, Moon, Package, Pause, Printer, Radar, RefreshCw, Settings, ShieldCheck, Shirt, ShoppingCart, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
+import { ArrowRight, BellRing, Bot, Boxes, Camera, ChevronDown, Eye, Lock, CircleUser, ClipboardList, CreditCard, Gauge, Heart, ListChecks, LogOut, Menu as MenuIcon, MessageSquare, MessagesSquare, Moon, Package, Pause, Printer, RefreshCw, Settings, ShieldCheck, Shirt, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
 import { Avatar, Banner, Button, IconButton, LoadingState, Menu, Tag, cn, formatDate } from "@selio/ui";
 import type { ServerCapabilities, Subscription } from "@selio/contracts";
 import { ArrowLeftRight } from "lucide-react";
@@ -15,7 +15,7 @@ import { Logo } from "../components/Logo";
 import { ROLE_LABELS } from "@selio/contracts";
 import { HandCoins, History } from "lucide-react";
 import { LifeBuoy } from "lucide-react";
-import { HUB_PATH, SPACE_GROUPS, readLastSpace, spaceForPath, writeLastSpace, type SpaceArea } from "./spaces/spaces";
+import { HUB_PATH, SPACE_GROUPS, featureById, featureForPath, readLastSpace, spaceForPath, writeLastSpace, type FeatureId, type SpaceArea } from "./spaces/spaces";
 import { SpacePill, SpaceSwitcher } from "./spaces/SpaceSwitcher";
 import { PHOTOS_HOME, hasReducedView, reducedViewTarget, seesFinances } from "../lib/roles";
 import { useGlassExperiment } from "../lib/glass";
@@ -59,24 +59,21 @@ export function RequireOperator({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-export interface NavItem { to: string; label: string; icon: ReactNode; end?: boolean; badgeKey?: "unread" | "awaiting" | "toReview" | "dressingDue"; hint?: string }
+export interface NavItem { to: string; label: string; icon: ReactNode; end?: boolean; badgeKey?: "unread" | "awaiting" | "toReview" | "dressingDue"; hint?: string; /** Sous-menu affiché quand on est dans ces pages (Selio Cloud, Selio Agent). */ children?: NavItem[] }
 export interface NavGroup { title?: string; items: NavItem[] }
 
+const cloudFeature = featureById("cloud");
+const agentFeature = featureById("agents");
+
 /**
- * Menu de Selio, dans l'ordre du parcours du revendeur : sourcing, achat,
- * vente, puis l'automatisation (bordereaux, après-vente, remise en ligne).
+ * Menu de Selio Manager (gestion et automatisation de l'activité Vinted), dans l'ordre du parcours du
+ * revendeur : vente, automatisations du compte, puis le pilotage. Selio Cloud et Selio Agent y sont intégrés
+ * (« Équipe et Cloud »), avec leurs pages en sous-menu. La recherche et l'achat d'articles vivent dans
+ * Selio Bot, l'analyse du marché dans Selio Track : le Manager garde un lien vers chacun.
  */
 const GROUPS: NavGroup[] = [
   { items: [
     { to: "/app", label: "Vue d'ensemble", icon: <Gauge />, end: true },
-  ] },
-  { title: "Sourcing", items: [
-    { to: "/track", label: "Selio Track", icon: <TrendingUp />, hint: "Statistiques du marché Vinted et prix (Pro et Agence)" },
-    { to: "/app/radar", label: "Bonnes affaires", icon: <Radar />, hint: "Radar : chaque affaire notée /100" },
-  ] },
-  { title: "Achat", items: [
-    { to: "/app/purchase", label: "À valider", icon: <ShoppingCart />, badgeKey: "toReview", hint: "Achat assisté : vous validez chaque achat" },
-    { to: "/app/auto-buy", label: "Achat auto", icon: <Bot /> },
   ] },
   { title: "Vente", items: [
     { to: "/studio", label: "Générateur d'annonces", icon: <Sparkles />, hint: "Ouvre Selio Studio : photos → annonce rédigée par l'IA" },
@@ -87,19 +84,27 @@ const GROUPS: NavGroup[] = [
     { to: "/app/customers", label: "Clients", icon: <Users /> },
   ] },
   { title: "Automatisation", items: [
-    { to: "/app/automatisation", label: "Tout le parcours", icon: <Workflow />, end: true, hint: "Les automatisations, du message à la remise en ligne" },
+    { to: "/app/automatisation", label: "Tout le parcours", icon: <Workflow />, end: true, hint: "État des automatisations, « Arrêter toutes les automatisations »" },
+    { to: "/app/automatisation/negociation", label: "Négociation par IA", icon: <HandCoins />, hint: "Accepter, refuser ou contre-offrir selon vos marges" },
     { to: "/app/automatisation/favoris", label: "Messages aux favoris", icon: <Heart /> },
     { to: "/app/automatisation/reponse", label: "Réponse automatique", icon: <MessagesSquare /> },
-    { to: "/app/automatisation/negociation", label: "Négociation automatique", icon: <HandCoins />, hint: "Marges par tranche de prix, paliers, messages" },
-    { to: "/app/automatisation/apres-vente", label: "Après-vente et bordereaux", icon: <Printer /> },
-    { to: "/app/automatisation/stock", label: "Stock automatique", icon: <RefreshCw />, hint: "Remise en ligne automatique après une vente" },
-    { to: "/app/automations", label: "Journal des tâches", icon: <ListChecks />, badgeKey: "awaiting", hint: "Tâches, validations et règles" },
-    { to: "/bot", label: "Selio Bot", icon: <Bot />, hint: "Vos bots, où ils tournent (Selio Cloud ou extension) et « Tout arrêter »" },
+    { to: "/app/automatisation/relances", label: "Relances", icon: <BellRing />, hint: "Une relance par acheteur sans réponse après 24 h" },
+    { to: "/app/automatisation/apres-vente", label: "Après-vente", icon: <Printer />, hint: "Bordereaux et messages après la vente" },
+    { to: "/app/automatisation/stock", label: "Stock", icon: <RefreshCw />, hint: "Remise en ligne automatique après une vente" },
   ] },
   { title: "Piloter", items: [
     { to: "/app/accounts", label: "Comptes Vinted", icon: <CircleUser />, hint: "Comptes vente, achat et perso" },
     { to: "/app/analytics", label: "Analyses", icon: <ClipboardList /> },
-    { to: "/app/journal", label: "Journal d'activité", icon: <History />, hint: "Ce que Selio, Studio et l'équipe ont fait" },
+    { to: "/app/automations", label: "Journal des tâches", icon: <ListChecks />, badgeKey: "awaiting", hint: "Tâches, validations et règles" },
+    { to: "/app/journal", label: "Journal d'activité", icon: <History />, hint: "Ce que Selio, Studio, Selio Bot et l'équipe ont fait" },
+  ] },
+  { title: "Équipe et Cloud", items: [
+    { to: cloudFeature.home, label: cloudFeature.name, icon: cloudFeature.icon, hint: cloudFeature.tagline, children: cloudFeature.nav },
+    { to: agentFeature.home, label: agentFeature.name, icon: agentFeature.icon, hint: agentFeature.tagline, children: agentFeature.nav },
+  ] },
+  { title: "Les autres filiales", items: [
+    { to: "/bot", label: "Ouvrir Selio Bot", icon: <Bot />, hint: "Recherche et achat d'articles : bonnes affaires, achats à valider" },
+    { to: "/track", label: "Ouvrir Selio Track", icon: <TrendingUp />, hint: "Analyse du marché et des opportunités (Pro et Agence)" },
   ] },
   { items: [
     { to: "/app/help", label: "Aide", icon: <LifeBuoy />, hint: "FAQ et assistant" },
@@ -150,7 +155,7 @@ export function useNavCounts(enabled = true) {
  * étiquette « aperçu » ou « en développement » ; seulement « En cours d'activation » pour Track ou Cloud tant que le
  * serveur ne les a pas ouverts, et la note d'accompagnement du générateur de comptes.
  */
-export function spaceNoteFor(area: SpaceArea, mode: "demo" | "connected", caps: ServerCapabilities | undefined): { label: string; text: string } | null {
+export function spaceNoteFor(area: SpaceArea | FeatureId, mode: "demo" | "connected", caps: ServerCapabilities | undefined): { label: string; text: string } | null {
   if (mode === "demo") return SPACE_NOTES[area] ?? null;
   if (area === "generateur") return SPACE_NOTES.generateur ?? null;
   if (area === "track" && !caps?.trackLive) return { label: "En cours d'activation", text: "vous pouvez déjà créer vos filtres : ils seront lus dès l'ouverture." };
@@ -158,12 +163,12 @@ export function spaceNoteFor(area: SpaceArea, mode: "demo" | "connected", caps: 
   return null;
 }
 
-/** Bandeau sous le sélecteur (démonstration), pour les filiales qui ne sont pas encore ouvertes. */
-const SPACE_NOTES: Partial<Record<SpaceArea, { label: string; text: string }>> = {
-  agents: { label: "Aperçu", text: "l'équipe et les accès sont réels ; les boutiques clientes sont des exemples fictifs." },
+/** Bandeau sous le sélecteur (démonstration), pour les filiales et fonctionnalités qui ne sont pas encore ouvertes. */
+const SPACE_NOTES: Partial<Record<SpaceArea | FeatureId, { label: string; text: string }>> = {
+  agents: { label: "Aperçu", text: "Selio Agent, intégré à Selio Manager : l'équipe et les accès sont réels ; les boutiques clientes sont des exemples fictifs." },
   track: { label: "En développement", text: "statistiques seulement ; simulateur par défaut, lecture en direct à valider juridiquement." },
-  cloud: { label: "Aperçu", text: "actions légères seulement (répondre, relancer), avec votre accord ; en démonstration, rien ne touche Vinted." },
-  generateur: { label: "Accompagnement", text: "checklist et textes à copier ; Selio ne crée aucun compte à votre place." },
+  cloud: { label: "Aperçu", text: "Selio Cloud, intégré à Selio Manager : actions légères seulement (répondre, relancer), avec votre accord ; en démonstration, rien ne touche Vinted." },
+  generateur: { label: "Services sur devis", text: "et, en autonomie, la checklist et les textes à copier." },
 };
 
 export function AppLayout({ admin = false }: { admin?: boolean }) {
@@ -207,17 +212,19 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
   // Espace affiché : celui de l'adresse ; les pages communes (paramètres, administration) gardent le dernier.
   const ownedArea = spaceForPath(location.pathname);
   const area: SpaceArea = ownedArea ?? readLastSpace();
+  // Selio Cloud et Selio Agent : intégrés à Selio Manager (menu du Manager, sous-menu de la fonctionnalité).
+  const feature = featureForPath(location.pathname);
   useEffect(() => {
     if (ownedArea) writeLastSpace(ownedArea);
   }, [ownedArea]);
   const groups = reduced ? PHOTOS_GROUPS : area === "selio" ? GROUPS : SPACE_GROUPS[area];
   // Selio Cloud : l'arrêt global des automatisations met aussi le Cloud en pause (bandeau et menu).
-  const automation = useQuery({ queryKey: ["automation-state"], queryFn: () => client.getAutomationState(), enabled: area === "cloud" && !reduced, staleTime: 15_000 });
-  const cloudPaused = area === "cloud" && automation.data?.globalPaused === true;
+  const automation = useQuery({ queryKey: ["automation-state"], queryFn: () => client.getAutomationState(), enabled: feature === "cloud" && !reduced, staleTime: 15_000 });
+  const cloudPaused = feature === "cloud" && automation.data?.globalPaused === true;
   // Mode connecté : ce qui est réellement branché (paiement simulé, Track, Cloud…) ; démonstration : tout.
   const caps = useCapabilities();
   const paymentSimulated = mode === "connected" && caps.data?.payment === "simulated";
-  const spaceNote = spaceNoteFor(area, mode, caps.data);
+  const spaceNote = spaceNoteFor(feature ?? area, mode, caps.data);
   // Autres organisations dont la personne est membre (ajoutée par l'équipe Selio ou invitée) : sélecteur dans le menu.
   const otherOrgs = s.memberships.filter((m) => m.orgId !== s.org.id);
 
@@ -255,17 +262,26 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
             <ul className="flex flex-col gap-0.5">
               {g.items.map((it) => {
                 const badge = it.badgeKey ? counts.data?.[it.badgeKey] : 0;
-                const autoBuy = it.to === "/app/auto-buy";
+                const autoBuy = it.to === "/bot/achat-auto";
                 const cloudHome = it.to === "/cloud" && cloudPaused;
+                // Sous-menu (Selio Cloud, Selio Agent) : déplié seulement dans les pages de la fonctionnalité.
+                const inside = it.children && (location.pathname === it.to || location.pathname.startsWith(`${it.to}/`));
                 return (
                   <li key={it.to}>
-                    <NavLink to={it.to} end={it.end} className={linkClass} title={it.hint}>
+                    <NavLink to={it.to} end={it.end ?? Boolean(it.children)} className={linkClass} title={it.hint}>
                       {it.icon}
                       <span className="flex-1 truncate">{it.label}</span>
                       {badge ? <span className="num min-w-5 rounded-full bg-surface-muted px-1.5 text-center text-[11px] leading-[18px] font-medium text-text-muted group-aria-[current=page]:bg-surface group-aria-[current=page]:text-accent">{badge}</span> : null}
-                      {autoBuy ? <span className="inline-flex items-center gap-1.5 text-[11px] font-normal text-text-muted"><span className={cn("size-1.5 rounded-full", autoBuyOn ? "bg-success" : "bg-border-strong")} aria-hidden />{autoBuyOn ? "Activé" : "Arrêté"}</span> : null}
+                      {autoBuy ? <span className="inline-flex items-center gap-1.5 text-[11px] font-normal text-text-muted"><span className={cn("size-1.5 rounded-full", autoBuyOn ? "bg-success" : "bg-border-strong")} aria-hidden />{autoBuyOn ? "Activé" : "Fermé"}</span> : null}
                       {cloudHome ? <span className="inline-flex items-center gap-1.5 text-[11px] font-normal text-text-muted"><span className="size-1.5 rounded-full bg-warning" aria-hidden />En pause</span> : null}
                     </NavLink>
+                    {inside ? (
+                      <ul className="mt-0.5 mb-1 ml-[18px] flex flex-col gap-0.5 border-l border-border pl-2" aria-label={`Pages de ${it.label}`}>
+                        {it.children!.filter((c) => c.to !== it.to).map((c) => (
+                          <li key={c.to}><NavLink to={c.to} end={c.end} className={linkClass} title={c.hint}>{c.icon}<span className="flex-1 truncate">{c.label}</span></NavLink></li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </li>
                 );
               })}

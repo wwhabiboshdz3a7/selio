@@ -21,13 +21,13 @@ interface BotDef {
 
 export const BOT_DEFS: Record<BotId, BotDef> = {
   negotiation: {
-    name: "Négociation",
+    name: "Négociation par IA",
     description: "Répond aux offres des acheteurs selon vos planchers et vos paliers : accepte, contre-propose ou refuse, jamais sous le plancher.",
     ruleKinds: ["auto_negotiate"],
     settings: [{ to: "/app/automatisation/negociation", label: "Planchers, paliers et messages" }, RULES_LINK],
   },
   follow_up: {
-    name: "Relance 24 h",
+    name: "Relances",
     description: "Relance une seule fois l'acheteur resté sans réponse, sans chiffre ni « dernier prix ».",
     ruleKinds: ["follow_up_24h", "follow_up_no_reply"],
     settings: [{ to: "/app/automatisation/negociation", label: "Texte de la relance" }, RULES_LINK],
@@ -45,14 +45,14 @@ export const BOT_DEFS: Record<BotId, BotDef> = {
     settings: [{ to: "/app/automatisation/reponse", label: "Réponses et situations" }, RULES_LINK],
   },
   favorites: {
-    name: "Favoris",
+    name: "Messages aux favoris",
     description: "Écrira aux personnes qui mettent un article en favori, avec une petite remise.",
     ruleKinds: [],
     settings: [{ to: "/app/automatisation/favoris", label: "Message et remise" }],
   },
   auto_buy: {
-    name: "Achat auto",
-    description: "Achète seul au-dessus d'une note, dans un budget par jour (Radar Auto) ; sinon l'achat assisté vous propose chaque affaire à valider en 1 clic.",
+    name: "Achat automatique (Selio Bot)",
+    description: "Achète seul au-dessus d'une note, dans un budget par jour ; sinon l'achat rapide vous propose chaque affaire à valider en 1 clic.",
     ruleKinds: [],
     settings: [{ to: "/bot/achat-auto", label: "Verrous, budget et note minimale" }, { to: "/app/purchase", label: "Affaires à valider" }, { to: "/app/radar", label: "Bonnes affaires" }],
   },
@@ -116,7 +116,7 @@ export function describeBots(input: BotInputs): BotView[] {
     const view = (state: BotState, stateDetail: string, place: BotPlace, placeDetail: string, planLimit: string = perDay): BotView => ({ ...base, state, stateDetail, place, placeDetail, planLimit });
     /** Règle allumée : coupée par « Tout arrêter », sinon allumée. */
     const running = (detail: string, place: BotPlace, placeDetail: string, planLimit?: string): BotView =>
-      input.stopped ? view("stopped", "Coupé par « Tout arrêter » : rien ne part jusqu'à la reprise.", place, placeDetail, planLimit) : view("on", detail, place, placeDetail, planLimit);
+      input.stopped ? view("stopped", "Coupé par « Arrêter toutes les automatisations » : rien ne part jusqu'à la reprise.", place, placeDetail, planLimit) : view("on", detail, place, placeDetail, planLimit);
     const off = (place: BotPlace, placeDetail: string, planLimit?: string) => view("off", own.length === 0 ? "Aucune règle créée : réglez-le, puis allumez-le." : "Règles arrêtées : allumez-en une pour qu'il agisse.", place, placeDetail, planLimit);
 
     switch (id) {
@@ -139,7 +139,7 @@ export function describeBots(input: BotInputs): BotView[] {
         if (enabled.length === 0) return off(mode === "auto" && input.cloud.ready ? "cloud" : "server", mode === "auto" && input.cloud.ready ? cloudPlace(input.cloud) : DRAFTS_PLACE, limit);
         if (on24 && mode === "auto") {
           if (input.cloud.ready) return running("Il relance une fois chaque acheteur resté sans réponse.", "cloud", cloudPlace(input.cloud), limit);
-          if (input.stopped) return view("stopped", "Coupé par « Tout arrêter » : rien ne part jusqu'à la reprise.", "server", DRAFTS_PLACE, limit);
+          if (input.stopped) return view("stopped", "Coupé par « Arrêter toutes les automatisations » : rien ne part jusqu'à la reprise.", "server", DRAFTS_PLACE, limit);
           return view("waiting_cloud", `${cloudWaitReason(input.cloud)} En attendant, chaque relance est préparée en brouillon à valider dans Messages.`, "server", "brouillons à valider dans Messages, en attendant Selio Cloud.", limit);
         }
         if (on24) return running("Il prépare une relance par acheteur sans réponse, à valider dans Messages.", "server", DRAFTS_PLACE, limit);
@@ -157,11 +157,11 @@ export function describeBots(input: BotInputs): BotView[] {
       case "auto_buy": {
         const a = input.autoBuy;
         const limit = `Budget de ${euros(a.dailyCapCents)} par jour, ${euros(a.maxItemCents)} au plus par article, note minimale ${a.threshold}/100.`;
-        const assisted = "achat assisté : vous validez chaque affaire en 1 clic.";
-        if (input.stopped) return view("stopped", "Achat automatique coupé par « Tout arrêter ». L'achat assisté reste disponible : vous validez chaque achat.", "none", assisted, limit);
-        if (a.active) return view("on", a.realPurchase ? "Radar Auto achète seul les affaires au-dessus de la note minimale, dans le budget du jour." : "Radar Auto choisit seul, mais s'arrête avant le paiement (achat réel fermé) : chaque achat est enregistré « simulé ».", "cloud", `${cloudPlace(input.cloud)} Paiement par le porte-monnaie Vinted ; 3-D Secure validé par vous.`, limit);
+        const assisted = "achat rapide : vous validez chaque affaire en 1 clic.";
+        if (input.stopped) return view("stopped", "Achat automatique coupé par « Arrêter toutes les automatisations ». L'achat rapide reste disponible : vous validez chaque achat en 1 clic.", "none", assisted, limit);
+        if (a.active) return view("on", a.realPurchase ? "Selio Bot achète seul les affaires au-dessus de la note minimale, dans le budget du jour." : "Selio Bot choisit seul, mais s'arrête avant le paiement (achat réel fermé) : chaque achat est enregistré « simulé ».", "cloud", `${cloudPlace(input.cloud)} Paiement par le porte-monnaie Vinted ; 3-D Secure validé par vous.`, limit);
         if (!a.serverEnabled) return view("locked", BOT_AUTO_BUY_LOCKED_TEXT, "none", assisted, limit);
-        if (!a.orgEnabled) return view("off", "Radar Auto est arrêté dans ses réglages : l'achat assisté vous propose chaque affaire à valider.", "none", assisted, limit);
+        if (!a.orgEnabled) return view("off", "L'achat automatique est arrêté dans ses réglages : l'achat rapide vous propose chaque affaire à valider en 1 clic.", "none", assisted, limit);
         return view("waiting_cloud", a.reasons[0] ?? cloudWaitReason(input.cloud), "none", assisted, limit);
       }
     }

@@ -51,7 +51,7 @@ describe("vitrine › Tarifs", () => {
     expect(screen.getByText("Montants non définitifs")).toBeTruthy();
   });
 
-  it("les autres filiales : Studio seul au curseur (plancher et minimum), Radar, Radar Auto, Cloud en option, Selio Comptes", () => {
+  it("les autres filiales : Studio seul au curseur (plancher et minimum), Selio Bot et son option d'achat automatique, Selio Cloud en option, Selio Compte", () => {
     mockMotion();
     render(<DataProvider forceMode="demo"><MemoryRouter><Pricing /></MemoryRouter></DataProvider>);
     const studio = screen.getByRole("article", { name: "Selio Studio seul" });
@@ -66,24 +66,30 @@ describe("vitrine › Tarifs", () => {
     fireEvent.click(within(studio).getByRole("button", { name: new RegExp(`${formatNumber(1200)} photos`) }));
     expect(slider.value).toBe("1200");
     expect(studio.textContent).toContain(`${eur(2999)} pour ${formatNumber(1200)} photos`);
-    const rows = screen.getByText("Selio Radar", { exact: true }).closest("ul")!;
-    expect(rows.textContent).toContain(eur(PRICING.subsidiaries.radar));
-    expect(rows.textContent).toContain(eur(PRICING.subsidiaries.radarAuto));
+    const rows = screen.getByRole("list", { name: "Selio Bot et Selio Cloud au mois" });
+    expect(within(rows).getAllByRole("listitem").map((li) => li.querySelector("p")?.textContent)).toEqual(["Selio Bot", "Option achat automatique de Selio Bot", "Selio Cloud en option"]);
+    expect(rows.textContent).toContain(eur(PRICING.subsidiaries.bot));
+    expect(rows.textContent).toContain(eur(PRICING.subsidiaries.botAutoBuy));
     expect(rows.textContent).toContain(eur(PRICING.subsidiaries.cloudOption));
+    // L'ancien Radar et son option : mêmes montants, désormais ceux de Selio Bot.
+    expect([PRICING.subsidiaries.bot, PRICING.subsidiaries.botAutoBuy, PRICING.subsidiaries.cloudOption]).toEqual([1499, 2999, 999]);
     expect(within(rows).getAllByText("par mois").length).toBe(3);
-    // Selio Bot : pas de prix séparé, inclus selon le forfait.
-    const bot = screen.getByRole("article", { name: "Selio Bot" });
-    expect(bot.textContent).toContain("Inclus");
-    expect(bot.textContent).toMatch(/Agence : relance automatique et Selio Cloud inclus/);
-    // Selio Comptes à la prestation : trois niveaux payés une fois, lus dans PRICING.
-    const tiers = screen.getByRole("list", { name: "Niveaux de la prestation Selio Comptes" });
+    expect(screen.queryByText(/Selio Radar/)).toBeNull();
+    // Automatisations de Selio Manager : pas de prix séparé, incluses selon le forfait.
+    const automations = screen.getByRole("article", { name: "Automatisations de Selio Manager" });
+    expect(automations.textContent).toContain("Incluses");
+    expect(automations.textContent).toMatch(/Agence : relance automatique et Selio Cloud inclus/);
+    // Selio Compte : prestations payées une fois (lues dans PRICING), et le reste sur devis vers Contact.
+    const tiers = screen.getByRole("list", { name: "Prestations Selio Compte" });
     const items = within(tiers).getAllByRole("listitem");
-    expect(items.map((li) => li.querySelector("p")?.textContent)).toEqual(["Audit de boutique", "Mise en place complète", "Accompagnement 30 jours"]);
-    expect(items[0]!.textContent).toContain(eur(PRICING.subsidiaries.comptesAudit));
-    expect(items[1]!.textContent).toContain(eur(PRICING.subsidiaries.comptesMiseEnPlace));
-    expect(items[2]!.textContent).toContain(eur(PRICING.subsidiaries.comptesAccompagnement));
-    expect([PRICING.subsidiaries.comptesAudit, PRICING.subsidiaries.comptesMiseEnPlace, PRICING.subsidiaries.comptesAccompagnement]).toEqual([1900, 4900, 8900]);
+    expect(items.map((li) => li.querySelector("p")?.textContent)).toEqual(["Configuration personnalisée de Selio Manager", "Configuration + optimisation des messages et de la négociation", "Accompagnement 30 jours"]);
+    PRICING.subsidiaries.compte.prestations.forEach((t, i) => expect(items[i]!.textContent).toContain(eur(t.cents)));
+    expect(PRICING.subsidiaries.compte.prestations.map((t) => t.cents)).toEqual([1900, 4900, 8900]);
     expect(within(tiers).getAllByText("une fois").length).toBe(3);
+    const quote = screen.getByRole("article", { name: "Sur devis" });
+    for (const line of PRICING.subsidiaries.compte.onQuote) expect(quote.textContent).toContain(line);
+    expect(quote.textContent).toContain("sans promesse de déblocage garanti");
+    expect(within(quote).getByRole("link", { name: "Demander un devis" }).getAttribute("href")).toBe("/contact");
     expect(screen.queryByText(/explorer la démo/i)).toBeNull();
   });
 
@@ -96,5 +102,8 @@ describe("vitrine › Tarifs", () => {
     expect(within(studioRow).getAllByText("Non inclus").length).toBe(1);
     expect(studioRow.textContent?.replace(/\s/g, " ")).toContain("20 par mois");
     expect(studioRow.textContent?.replace(/\s/g, " ")).toContain("60 par mois");
+    // Les groupes suivent les cinq filiales, Selio Cloud et Selio Agent rangés sous Selio Manager.
+    const groups = within(table).getAllByRole("columnheader").filter((th) => th.getAttribute("scope") === "colgroup").map((th) => th.textContent);
+    expect(groups).toEqual(["Formule", "Selio Manager", "Selio Cloud (fonctionnalité de Selio Manager)", "Selio Agent (fonctionnalité de Selio Manager)", "Selio Studio", "Selio Track", "Selio Bot", "Selio Compte", "Assistance"]);
   });
 });

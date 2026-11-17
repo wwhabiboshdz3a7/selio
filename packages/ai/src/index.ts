@@ -7,5 +7,5 @@ export * from "./prompts";
 export * from "./policy/validate";
 export * from "./service";
 export * from "./factory";
-export { MockAIProvider, estimateTokens, mockEmbedding, MOCK_EMBED_DIMENSIONS } from "./providers/mock";
+export { MockAIProvider, estimateTokens, mockEmbedding, MOCK_EMBED_DIMENSIONS, MOCK_STUDIO_FACTS_HEADER } from "./providers/mock";
 export { OllamaProvider, hasModel } from "./providers/ollama";

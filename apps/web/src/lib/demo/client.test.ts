@@ -420,7 +420,7 @@ describe("utilisation du mois et vue administrateur (démonstration)", () => {
 });
 
 describe("espaces Selio (démonstration)", () => {
-  it("enregistre la marque blanche de Selio Agents, la valide et la remet à zéro avec la démo", async () => {
+  it("enregistre la marque blanche de Selio Agent, la valide et la remet à zéro avec la démo", async () => {
     expect(await client.getWhiteLabel()).toBeNull();
     await expect(client.saveWhiteLabel({ name: "Dépôt Lumière", initials: "D?", accent: "jade" })).rejects.toThrow(/Lettres ou chiffres/);
     const saved = await client.saveWhiteLabel({ name: "  Dépôt Lumière ", initials: "dl", accent: "jade", tagline: "Votre dépôt-vente en ligne" });

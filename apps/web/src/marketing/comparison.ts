@@ -72,7 +72,7 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   },
   {
     criterion: "Marge de bout en bout",
-    selio: "Prix d'achat (Radar ou saisi) reporté jusqu'à la commande de revente.",
+    selio: "Prix d'achat (Selio Bot ou saisi) reporté jusqu'à la commande de revente.",
     bleam: null,
   },
   {
@@ -92,7 +92,7 @@ export const SELIO_PRINCIPLES: readonly { title: string; text: string }[] = [
   { title: "Pas de contournement", text: "Aucun CAPTCHA contourné, aucune protection anti-robot désactivée, aucune adresse IP masquée. Au premier signal, Selio s'arrête et vous prévient." },
   { title: "Pas de mot de passe", text: "Selio ne demande ni ne stocke votre mot de passe Vinted. La seule session gardée est celle de Selio Cloud, avec votre accord, chiffrée et supprimée dès que vous partez." },
   { title: "Vous validez", text: "Les actions importantes (prix, achat) attendent votre validation, sauf réglage explicite de votre part. Un bouton arrête tout." },
-  { title: "Données en France", text: "Base de données, photos et mon IA perso tournent sur notre machine, en France. Track ne garde aucune donnée personnelle de vendeurs ; Radar n'en garde que le temps d'une affaire, 30 jours au plus." },
+  { title: "Données en France", text: "Base de données, photos et mon IA perso tournent sur notre machine, en France. Selio Track ne garde aucune donnée personnelle de vendeurs ; Selio Bot n'en garde que le temps d'une affaire, 30 jours au plus." },
 ];
 
 /** Migration depuis Bleam, Clemz ou V-Tools : ce que fait vraiment Selio (D53). */

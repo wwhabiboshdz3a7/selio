@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { ArrowRight, Bot, Boxes, ClipboardList, Cpu, MessageSquare, Package, Puzzle, Radar, Repeat, Settings, ShieldCheck, Shirt, ShoppingCart, Sparkles, TrendingUp, Users, Workflow } from "lucide-react";
 import { useMarketingMeta } from "../seo";
 import { AvailabilityBadge, CheckList, CtaBand, MarketingSection, type Availability } from "../components";
-import { MODULES } from "../catalog";
+import { MODULES, MODULE_PRODUCT_LABEL } from "../catalog";
 
 interface Detail {
   icon: ReactNode;
@@ -20,8 +20,8 @@ const DETAILS: Record<string, Detail> = {
   generateur: { icon: <Sparkles />, lead: "Vous ajoutez les photos, l'IA rédige l'annonce. Notre grande différence.", items: ["Photos glissées-déposées ou prises au téléphone, compressées dans le navigateur", "Titre, description, marque, catégorie, taille, état, couleurs, matière", "Prix conseillé calculé sur les ventes comparables (jamais inventé par l'IA)", "Choix du compte Vinted, puis brouillon ou publication directe", "Mon modèle perso (texte + vision) prêt à brancher"] },
   dressing: { icon: <Shirt />, lead: "Chaque annonce en ligne notée sur 100, avec ce qu'il faut améliorer.", items: ["Note : visibilité, attractivité, qualité de l'annonce, prix face au marché", "Les points à améliorer, annonce par annonce", "Tri « en ligne depuis 7 jours ou plus » pour savoir quoi republier"] },
   republications: { icon: <Repeat />, lead: "Des variantes prêtes à l'emploi pour relancer une annonce qui stagne.", items: ["10 republications pré-faites par annonce (minimum 8) : titre, description, prix, couverture, créneau", "Suivi des variantes déjà utilisées", "Rendement de chaque variante mesuré à 48 h", "Proposées depuis le dressing, pour les annonces en ligne depuis 7 jours ou plus"] },
-  revendeurs: { icon: <TrendingUp />, lead: "Qui vend le plus, quoi, à quel prix : repérez les niches qui marchent.", items: ["Classement des grands revendeurs par chiffre d'affaires estimé", "Niche principale de chaque vendeur, marques, catégories, rotation, tendance", "Niches à forte demande et faible concurrence", "Calculé sur les annonces observées par le radar et l'extension"] },
-  "bonnes-affaires": { icon: <Radar />, lead: "Avec vos filtres, le radar repère les articles et note chacun sur 100.", items: ["Grille de lecture : 0–59 faible, 60–74 correcte, 75–84 bonne, 85–94 très bonne, 95–100 exceptionnelle", "Critères expliqués : marge, taux, état et photos, marque et demande, vendeur, port", "Total d'achat calculé : prix + port + protection acheteurs", "Revente estimée, bénéfice et pourcentage de marge"] },
+  revendeurs: { icon: <TrendingUp />, lead: "Qui vend le plus, quoi, à quel prix : repérez les niches qui marchent avant d'acheter ou de vendre.", items: ["Classement des grands revendeurs par chiffre d'affaires estimé", "Niche principale de chaque vendeur, marques, catégories, rotation, tendance", "Niches à forte demande et faible concurrence", "Calculé sur les annonces observées par Selio Bot et l'extension ; Selio Track analyse, il n'achète pas"] },
+  "bonnes-affaires": { icon: <Radar />, lead: "Avec vos critères, Selio Bot repère les articles et note chacun sur 100.", items: ["Grille de lecture : 0–59 faible, 60–74 correcte, 75–84 bonne, 85–94 très bonne, 95–100 exceptionnelle", "Critères expliqués : marge, taux, état et photos, marque et demande, vendeur, port", "Total d'achat calculé : prix + port + protection acheteurs", "Revente estimée, bénéfice et pourcentage de marge"] },
   "a-valider": { icon: <ShoppingCart />, lead: "Les bonnes affaires repérées, à valider en un clic.", items: ["Liste des affaires notées 75/100 ou plus", "Validation en un clic avec contrôles (budget, plafond, doublon, marge)", "Historique des achats avec photo, mode manuel ou automatique", "Achat réel désactivé : simulation clairement marquée"] },
   "achat-auto": { icon: <Bot />, lead: "Au-dessus de votre seuil, l'application achète seule, avec garde-fous.", items: ["Seuil réglable (85/100 conseillé)", "Plafond de dépense par jour et prix maximal par article", "Délai pour vérifier et annuler l'achat", "Désactivé par défaut, simulé tant qu'aucun connecteur d'achat n'est autorisé"] },
   messagerie: { icon: <MessageSquare />, lead: "Chaque conversation connaît l'article, son plancher et sa marge.", items: ["Recherche, filtres, non-lus", "Brouillons et suggestions de réponse", "Explication de la décision : accepter, contre-proposer, refuser, escalader", "Validation avant envoi par défaut", "Statut réel : brouillon, en attente, envoyé, échec", "Blocage clair si le connecteur ne permet pas l'envoi"] },
@@ -44,7 +44,7 @@ export default function Features() {
   useMarketingMeta("/fonctionnalites");
   return (
     <>
-      <MarketingSection level={1} reveal eyebrow="Fonctionnalités" title="Quatorze modules, un par problème concret de revendeur" lead="Les quatorze étoiles de la constellation, chacune avec son état honnête : disponible, aperçu, expérimental ou en préparation. Le socle commun (clients, paramètres, sécurité) est détaillé plus bas.">
+      <MarketingSection level={1} reveal eyebrow="Fonctionnalités" title="Quatorze modules, un par problème concret de revendeur" lead="Les quatorze étoiles de la constellation, rangées par filiale (Selio Manager, Selio Studio, Selio Track, Selio Bot), chacune avec son état honnête : disponible, aperçu, expérimental ou en préparation. Le socle commun (clients, paramètres, sécurité) est détaillé plus bas.">
         <nav aria-label="Aller à un module" className="mk-index">
           {MODULES.map((m) => (
             <a key={m.id} href={`#${m.id}`} data-tone={m.tone === "gold" ? "gold" : undefined}>{m.title}</a>
@@ -63,7 +63,8 @@ export default function Features() {
                   </div>
                   <AvailabilityBadge value={m.status} />
                 </div>
-                <p className="mt-3 text-sm text-text-muted">{d.lead}</p>
+                <p className="mt-2 text-xs font-medium tracking-[0.04em] text-text-muted uppercase">{MODULE_PRODUCT_LABEL[m.product]}</p>
+                <p className="mt-2 text-sm text-text-muted">{d.lead}</p>
                 <div className="mt-4 flex-1"><CheckList items={d.items} /></div>
                 {d.more ? (
                   <Link to={d.more.to} className="mt-4 inline-flex items-center gap-1 self-start text-sm font-medium text-accent hover:underline">

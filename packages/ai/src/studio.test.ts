@@ -7,7 +7,7 @@ import { validateLabelRead, validateMeasurements, validatePhotoSort, appearsInTe
 import {
   OCR_TEXT_PROMPT, STUDIO_EXAMPLE_BRAND, STUDIO_IMAGE_NOTE, buildLabelOcrRequest, buildLabelReadRequest, buildListingGenerationRequest, buildMeasurementsRequest, buildPhotoSortRequest, stripStudioSimulatorHints,
 } from "./prompts";
-import { MockAIProvider } from "./providers/mock";
+import { MOCK_STUDIO_FACTS_HEADER, MockAIProvider } from "./providers/mock";
 import { OllamaProvider } from "./providers/ollama";
 import { AIService } from "./service";
 import { AIError, type OcrRequest, type OcrResult } from "./types";
@@ -362,6 +362,55 @@ describe("générateur d'annonces : 6 photos au plus par appel", () => {
     expect(res.warnings.join(" ")).toMatch(/Seules 6 photos sur 9 ont été envoyées au modèle/);
     const few = await service().generateListing("org", { images: photos(4), fileNames: [], hints: {} });
     expect(few.warnings.join(" ")).not.toMatch(/Seules/);
+  });
+});
+
+describe("rédaction Studio simulée : annonce complète à partir de la fiche validée, rien d'autre", () => {
+  const jeanFacts = [
+    MOCK_STUDIO_FACTS_HEADER,
+    "Marque (lue sur l'étiquette) : Levi's.",
+    "Référence (lue sur l'étiquette) : 501.",
+    "Taille (lue sur l'étiquette) : W32 L32.",
+    "Matière (lue sur l'étiquette) : 100 % coton.",
+    "Pièce visible sur les photos : jean.",
+    "Couleur visible sur les photos : Bleu.",
+    "Mesures à plat : tour de taille 41 cm, entrejambe 81 cm, montant 29 cm.",
+  ].join("\n");
+
+  it("jean Levi's 501 : titre de recherche, description structurée, mesures de la fiche seulement, mots-clés", async () => {
+    const res = await service().generateListing("org", { images: photos(2), fileNames: [], hints: { brand: "Levi's", size: "W32 L32", notes: jeanFacts } });
+    const d = res.data;
+    expect(d.title).toBe("Jean Levi's 501 Original droit bleu W32 L32 — 100 % coton");
+    expect(d.title.length).toBeLessThanOrEqual(70);
+    expect(d.description.split("\n\n").map((p) => p.split(" : ")[0])).toEqual([
+      "Jean Levi's 501 Original en coupe droite, coloris bleu, taille W32 L32", "Modèle et coupe", "Matière et entretien", "État", "Mesures à plat", "Conseils de taille", "Envoi soigné sous 48 h, article plié et protégé. Une question ou une photo supplémentaire ? N'hésitez pas à m'écrire.",
+    ]);
+    expect(d.description).toContain("100 % coton (étiquette de composition), sans élasthanne");
+    expect(d.description).toContain("Mesures à plat : tour de taille 41 cm, entrejambe 81 cm, montant 29 cm.");
+    expect(d.description).toContain("W32 correspond au tour de taille et L32 à la longueur de jambe, en pouces.");
+    // Aucune autre valeur en cm que celles de la fiche.
+    expect([...d.description.matchAll(/(\d+(?:,\d+)?)\s?cm\b/g)].map((m) => m[1])).toEqual(["41", "81", "29"]);
+    expect(d).toMatchObject({ brand: "Levi's", size: "W32 L32", material: "100 % coton", colors: ["Bleu"], condition: "good", category: "men" });
+    expect(d.hashtags).toEqual(["#levis", "#levis501", "#jean", "#jeandroit", "#jeanbleu", "#w32l32", "#coton", "#denim"]);
+  });
+
+  it("pull Sézane sans mesure : aucune valeur en cm, mesures proposées sur demande ; matière de la fiche", async () => {
+    const facts = [MOCK_STUDIO_FACTS_HEADER, "Marque (indiquée par le vendeur) : Sézane.", "Taille (indiquée par le vendeur) : M.", "Matière (lue sur l'étiquette) : 70 % laine, 30 % alpaga.", "Pièce visible sur les photos : pull en maille.", "Couleur visible sur les photos : Vert.", "Aucune mesure connue : n'en cite aucune."].join("\n");
+    const d = (await service().generateListing("org", { images: photos(1), fileNames: [], hints: { brand: "Sézane", size: "M", notes: facts } })).data;
+    expect(d.title).toBe("Pull Sézane vert taille M — 70 % laine 30 % alpaga");
+    expect(d.description).toContain("Matière et entretien : 70 % laine, 30 % alpaga (étiquette de composition), des fibres naturelles chaudes et douces au toucher.");
+    expect(d.description).toContain("Mesures à plat : pas encore relevées.");
+    expect(d.description).not.toMatch(/\d\s?cm\b/);
+    expect(d).toMatchObject({ brand: "Sézane", size: "M", material: "70 % laine, 30 % alpaga", colors: ["Vert"], category: "women" });
+    expect(d.hashtags).toEqual(["#sezane", "#pullsezane", "#pull", "#pullvert", "#taillem", "#laine", "#alpaga"]);
+  });
+
+  it("photo du vendeur : ni pièce, ni couleur, ni matière devinées", async () => {
+    const facts = [MOCK_STUDIO_FACTS_HEADER, "Marque (indiquée par le vendeur) : Ralph Lauren.", "Taille inconnue : n'en cite aucune.", "Matière inconnue : n'en cite aucune.", "Aucune mesure connue : n'en cite aucune."].join("\n");
+    const d = (await service().generateListing("org", { images: photos(1), fileNames: [], hints: { brand: "Ralph Lauren", notes: facts } })).data;
+    expect(d.title).toBe("Ralph Lauren");
+    expect(d).toMatchObject({ colors: [], material: null, size: null, category: "other" });
+    expect(d.description).not.toMatch(/coloris|coton|laine|\bcm\b/i);
   });
 });
 

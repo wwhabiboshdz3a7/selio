@@ -7,7 +7,7 @@ import AlternativeBleam from "./AlternativeBleam";
 import ExtensionPrivacy from "./ExtensionPrivacy";
 import Extension from "./Extension";
 import Legal from "./Legal";
-import { PRODUCTS } from "../products";
+import { MANAGER_BOT_DISTINCTION, MANAGER_FEATURES, MANAGER_KEY_MESSAGE, PRODUCTS, PRODUCT_PAGES } from "../products";
 import { PRODUCT_SHOTS } from "../productShots";
 import Home from "./Home";
 import Platform from "./Platform";
@@ -41,7 +41,16 @@ describe("vitrine › pages de la gamme", () => {
     vi.unstubAllGlobals();
   });
 
-  for (const product of PRODUCTS) {
+  it("cinq filiales dans l'ordre officiel ; Selio Cloud et Selio Agent sont des fonctionnalités de Selio Manager", () => {
+    expect(PRODUCTS.map((p) => p.name)).toEqual(["Selio Manager", "Selio Studio", "Selio Track", "Selio Bot", "Selio Compte"]);
+    expect(PRODUCTS.every((p) => p.kind === "subsidiary")).toBe(true);
+    expect(MANAGER_FEATURES.map((p) => [p.name, p.kind])).toEqual([["Selio Cloud", "feature"], ["Selio Agent", "feature"]]);
+    // Plus de « Selio Radar », « Selio Agents » ni « Selio Comptes » (au pluriel) dans les textes des pages.
+    const all = JSON.stringify(PRODUCT_PAGES.map(({ shot: _shot, ...rest }) => rest));
+    expect(all).not.toMatch(/Selio Radar|Selio Agents|Selio Comptes/);
+  });
+
+  for (const product of PRODUCT_PAGES) {
     it(`${product.name} : promesse, ce qu'il fait, ce qu'il ne fait pas, prix « voir tarifs », indépendance, SEO`, () => {
       mockMotion();
       const { container } = renderAt(product.path, "/produits/:slug", <Product />);
@@ -52,8 +61,8 @@ describe("vitrine › pages de la gamme", () => {
       for (const n of product.doesNot) expect(screen.getByText(n)).toBeTruthy();
       expect(screen.getByText("Prix : voir les tarifs")).toBeTruthy();
       expect(screen.getAllByRole("link", { name: /Voir les tarifs/ }).map((a) => a.getAttribute("href"))).toEqual(expect.arrayContaining(["/tarifs", product.pricingHref]));
-      // Appel à l'essai de 14 jours (ou à la prestation pour Selio Comptes), jamais à la démonstration.
-      if (product.slug === "comptes") expect(screen.getByRole("link", { name: "Demander une prestation" }).getAttribute("href")).toBe("/contact");
+      // Appel à l'essai de 14 jours (ou au devis pour Selio Compte), jamais à la démonstration.
+      if (product.slug === "compte") expect(screen.getByRole("link", { name: "Demander un devis" }).getAttribute("href")).toBe("/contact");
       else expect(screen.getByRole("link", { name: "Commencer l'essai gratuit de 14 jours" }).getAttribute("href")).toBe("/inscription");
       expect(container.querySelector('a[href^="/demo"]')).toBeNull();
       expect(container.textContent).not.toMatch(/démo/i);
@@ -62,38 +71,87 @@ describe("vitrine › pages de la gamme", () => {
       if (PRODUCT_SHOTS[product.slug]) expect(screen.getAllByAltText(product.shot.alt)).toHaveLength(2);
       else expect(screen.getByRole("img", { name: `${product.name} : illustration, capture d'écran à venir` })).toBeTruthy();
       expect(screen.getByTestId("independence-notice").textContent).toBe(INDEPENDENCE_NOTICE);
-      // Le reste de la gamme est relié ; la page courante ne l'est pas.
-      const others = within(screen.getByRole("heading", { name: "Le reste de la gamme Selio" }).parentElement!);
-      expect(others.getAllByRole("link")).toHaveLength(PRODUCTS.length - 1);
+      // Les autres filiales sont reliées ; la page courante ne l'est pas. Une fonctionnalité relie les cinq.
+      const feature = product.kind === "feature";
+      const others = within(screen.getByRole("heading", { name: feature ? "Les cinq filiales Selio" : "Les autres filiales Selio" }).parentElement!);
+      expect(others.getAllByRole("link").map((a) => a.textContent)).toEqual(PRODUCTS.filter((p) => p.slug !== product.slug).map((p) => p.name));
       // Référencement : titre, description, indexation, données structurées sans prix ni note.
       expect(document.title).toContain(product.name);
       expect(description()).toBe(seoPage(product.path).description);
       expect(robots()).toBe("index, follow");
       const app = jsonLd().find((d) => d["@type"] === "SoftwareApplication");
-      expect(app.name).toBe(product.name);
-      expect(app.url).toMatch(new RegExp(`${product.path}$`));
-      expect(app.offers).toBeUndefined();
-      expect(app.aggregateRating).toBeUndefined();
-      expect(jsonLd().some((d) => d["@type"] === "BreadcrumbList")).toBe(true);
+      const crumbs = jsonLd().find((d) => d["@type"] === "BreadcrumbList").itemListElement.map((it: { name: string }) => it.name);
+      if (feature) {
+        // Une fonctionnalité de Selio Manager n'est pas présentée comme un produit indépendant.
+        expect(app).toBeUndefined();
+        expect(crumbs).toEqual(["Accueil", "Plateforme", "Selio Manager", product.name]);
+        expect(within(screen.getByRole("navigation", { name: "Fil d'Ariane" })).getByRole("link", { name: "Selio Manager" }).getAttribute("href")).toBe("/produits/manager");
+        expect(screen.getByText(`${product.name} · fonctionnalité de Selio Manager`)).toBeTruthy();
+      } else {
+        expect(app.name).toBe(product.name);
+        expect(app.url).toMatch(new RegExp(`${product.path}$`));
+        expect(app.offers).toBeUndefined();
+        expect(app.aggregateRating).toBeUndefined();
+        expect(crumbs).toEqual(["Accueil", "Plateforme", product.name]);
+      }
       expect(findForbiddenClaims(container.textContent ?? "")).toEqual([]);
     });
   }
 
-  it("Selio Bot : sans prix séparé, inclus selon le forfait (Agence : Cloud inclus ; Starter et Pro : Cloud en option)", () => {
+  it("Selio Manager : message clé, Selio Cloud et Selio Agent en fonctionnalités intégrées, distinction avec Selio Bot", () => {
     mockMotion();
-    renderAt("/produits/bot", "/produits/:slug", <Product />);
-    expect(screen.getByText(/N'a pas de prix séparé/)).toBeTruthy();
-    const note = screen.getByText(/Sans prix séparé\. Starter/);
-    expect(note.textContent).toMatch(/Agence : relance automatique et Selio Cloud inclus/);
-    expect(note.textContent).toMatch(/Pro : relance après 24 h proposée, Selio Cloud en option/);
+    const { container } = renderAt("/produits/manager", "/produits/:slug", <Product />);
+    expect(container.textContent).toContain(MANAGER_KEY_MESSAGE);
+    expect(screen.getByTestId("manager-bot-distinction").textContent).toBe(MANAGER_BOT_DISTINCTION);
+    const section = container.querySelector("#fonctionnalites-integrees")!;
+    expect(within(section as HTMLElement).getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(["Selio Cloud", "Selio Agent"]);
+    expect(within(section as HTMLElement).getByRole("link", { name: "Découvrir Selio Cloud" }).getAttribute("href")).toBe("/produits/cloud");
+    expect(within(section as HTMLElement).getByRole("link", { name: "Découvrir Selio Agent" }).getAttribute("href")).toBe("/produits/agent");
+    for (const title of ["Gestion du stock centralisée", "Dressing intelligent", "Remise en ligne", "Messagerie automatisée", "Négociation par IA", "Relances automatiques", "Suivi des commandes et des ventes", "Gestion des marges", "Automatisations", "Multi-comptes"]) {
+      expect(screen.getByRole("heading", { level: 3, name: title })).toBeTruthy();
+    }
   });
 
-  it("Selio Cloud : le moteur de Selio Manager, de Selio Bot et des équipes Selio Agents", () => {
+  it("Selio Bot : recherche et achat, avec la distinction Manager / Bot", () => {
+    mockMotion();
+    renderAt("/produits/bot", "/produits/:slug", <Product />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/Rechercher, repérer et acheter/);
+    expect(screen.getByTestId("manager-bot-distinction").textContent).toBe(MANAGER_BOT_DISTINCTION);
+    for (const title of ["Recherche selon vos critères", "Surveillance des annonces", "Alertes", "Bonnes affaires notées sur 100", "Prix de revente et potentiel de marge", "Limites de dépenses", "Historique des achats", "Achat rapide ou automatisé"]) {
+      expect(screen.getByRole("heading", { level: 3, name: title })).toBeTruthy();
+    }
+  });
+
+  it("Selio Track analyse et identifie ; il n'achète pas", () => {
+    mockMotion();
+    renderAt("/produits/track", "/produits/:slug", <Product />);
+    expect(screen.getByText(/Track analyse et identifie ; il n'achète pas\./)).toBeTruthy();
+  });
+
+  it("Selio Compte : les sept services, devis vers Contact, sans promesse de déblocage", () => {
+    mockMotion();
+    const { container } = renderAt("/produits/compte", "/produits/:slug", <Product />);
+    const titles = ["Création de comptes Vinted", "Comptes préparés ou non préparés", "Commandes en volume", "Configuration personnalisée de Selio Manager", "Messages et négociation optimisés", "Accompagnement pendant 30 jours", "Accompagnement en cas de restriction"];
+    for (const title of titles) expect(screen.getByRole("heading", { level: 3, name: title })).toBeTruthy();
+    expect(container.textContent).toContain("sans promesse de déblocage garanti");
+    expect(screen.getByRole("link", { name: "Demander un devis" }).getAttribute("href")).toBe("/contact");
+  });
+
+  it("Selio Cloud : fonctionnalité de Selio Manager, ordinateur éteint, jamais un produit séparé", () => {
     mockMotion();
     renderAt("/produits/cloud", "/produits/:slug", <Product />);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/24\sh\/24, ordinateur éteint/);
-    expect(screen.getByText(/fait tourner Selio Manager, Selio Bot et les équipes de Selio Agents/)).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/ordinateur éteint/);
+    expect(screen.getByText(/Selio Cloud est une fonctionnalité de Selio Manager/)).toBeTruthy();
+    expect(screen.getByText("N'est pas un produit séparé : Selio Cloud fait partie de Selio Manager.")).toBeTruthy();
   });
+
+  for (const [from, to] of [["radar", "bot"], ["comptes", "compte"], ["agents", "agent"]] as const) {
+    it(`ancienne adresse /produits/${from} : redirigée vers /produits/${to}`, () => {
+      mockMotion();
+      renderAt(`/produits/${from}`, "/produits/:slug", <Product />);
+      expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(PRODUCT_PAGES.find((p) => p.slug === to)!.promise);
+    });
+  }
 
   it("filiale inconnue : retour à la plateforme", () => {
     mockMotion();
@@ -199,14 +257,18 @@ describe("vitrine › accueil et plateforme", () => {
     const { container } = renderPage("/", <Home />);
     expect(screen.getByRole("heading", { level: 2, name: "De l'achat à l'étiquette, sans rien ressaisir" })).toBeTruthy();
     const steps = within(container.querySelector("#parcours ol")!).getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
-    expect(steps).toEqual(["Sourcing sur le marché", "Sourcing auprès de fournisseurs partenaires", "Achat", "Photos et annonce", "Vente et négociation", "Commande", "Étiquette et envoi", "Après-vente"]);
+    expect(steps).toEqual(["Sourcing et analyse", "Sourcing auprès de fournisseurs partenaires", "Recherche et achat", "Photos et annonce", "Vente, négociation et relances", "Commande, étiquette et envoi", "Après-vente"]);
+    const owners = Array.from(container.querySelectorAll("#parcours ol > li")).map((li) => li.querySelector("h3 + p")?.textContent);
+    expect(owners).toEqual(["Selio Track", "Bientôt", "Selio Bot", "Selio Studio", "Selio Manager", "Selio Manager", "Selio Manager"]);
     expect(container.querySelector("#parcours")!.textContent).toMatch(/Aucun partenariat n'est encore signé/);
     // L'article suivi : une vraie photo d'annonce, à l'endroit.
     expect(within(container.querySelector("#parcours")!).getByRole("img").getAttribute("src")).toBe("/demo/photos/g-x4iv-1.webp");
-    // La gamme, dans l'ordre, chaque carte vers sa page.
+    // Les cinq filiales, dans l'ordre, chaque carte vers sa page ; Selio Cloud et Selio Agent sous Selio Manager.
     const range = within(container.querySelector("#espaces")!).getAllByRole("article").map((a) => a.querySelector("h3")?.textContent);
-    expect(range).toEqual(PRODUCTS.map((p) => p.name));
-    expect(range[0]).toBe("Selio Manager");
+    expect(range).toEqual(["Selio Manager", "Selio Studio", "Selio Track", "Selio Bot", "Selio Compte"]);
+    const managerFeatures = within(within(container.querySelector("#espaces")!).getAllByRole("article")[0]!).getByTestId("manager-features");
+    expect(within(managerFeatures).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual(["/produits/cloud", "/produits/agent"]);
+    expect(container.textContent).not.toMatch(/Selio Radar|Selio Agents|Selio Comptes/);
     // Plus rien qui renvoie à la démonstration ; l'essai et la connexion à la place.
     expect(container.querySelector('a[href^="/demo"]')).toBeNull();
     expect(container.textContent).not.toMatch(/démo/i);
@@ -221,12 +283,18 @@ describe("vitrine › accueil et plateforme", () => {
     for (const id of ["contenu-demo", "reinitialiser-demo", "demo-ou-connecte"]) expect(container.querySelector(`details#${id}`)).toBeNull();
     expect(container.querySelector('a[href^="/demo"]')).toBeNull();
     expect(screen.getByText(/Qu'est-ce que Selio Bot/)).toBeTruthy();
+    for (const q of ["Quelles sont les filiales de Selio ?", "Selio Cloud et Selio Agent, c'est quoi ?", "Quelle différence entre Selio Manager et Selio Bot ?", "Quelle différence entre Selio Track et Selio Bot ?"]) expect(screen.getByText(q)).toBeTruthy();
+    expect(container.textContent).not.toMatch(/Selio Agents|Selio Comptes/);
   });
 
-  it("plateforme : toute la gamme, dans l'ordre, sans démonstration", () => {
+  it("plateforme : les cinq filiales, dans l'ordre, chacune en une phrase, sans démonstration", () => {
     mockMotion();
     const { container } = renderPage("/plateforme", <Platform />);
     for (const p of PRODUCTS) expect(screen.getByRole("link", { name: `Découvrir ${p.name}` }).getAttribute("href")).toBe(p.path);
+    const summary = screen.getByRole("list", { name: "Les cinq filiales, en une phrase" });
+    expect(within(summary).getAllByRole("listitem").map((li) => li.textContent)).toEqual(PRODUCTS.map((p, i) => `${i + 1}.${p.name} — ${p.tagline}`));
+    expect(container.textContent).toContain(MANAGER_KEY_MESSAGE);
+    expect(screen.getByRole("img", { name: /Selio Manager au centre, avec ses fonctionnalités intégrées Selio Cloud et Selio Agent, relié à Selio Studio, Selio Track, Selio Bot, Selio Compte/ })).toBeTruthy();
     expect(container.querySelector('a[href^="/demo"]')).toBeNull();
     expect(container.textContent).not.toMatch(/démo/i);
     expect(screen.getByTestId("independence-notice").textContent).toBe(INDEPENDENCE_NOTICE);

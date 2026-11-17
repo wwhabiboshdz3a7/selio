@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { MemoryDemoStorage } from "@selio/demo-data";
 import { STUDIO_MODEL_MAX_SIDE_PX, namedMeasurementField, studioTextField } from "@selio/contracts";
 import { DemoClient } from "./client";
-import { adjustToPrep, prepFacts } from "./studio";
+import { extractCmValues } from "@selio/domain";
+import { adjustToPrep, measurementsProvenance, prepFacts } from "./studio";
 import { DEMO_SAMPLE_SET } from "../studio/samples";
 import { fakeJpegDataUrl } from "../studio/test-images";
 import type { DemoPhotoContent, StudioPrepareRequest } from "../data/types";
@@ -100,7 +101,8 @@ describe("Studio façon Kavis dans la démonstration", () => {
     expect(draft.prepId).toBe(pull.prepId);
     expect(draft.brand).toBe("Sézane");
     expect(draft.material).toBeNull();
-    expect(draft.description).toContain("Mesures à plat : poitrine 50,5 cm, longueur 62 cm.");
+    // Mesures saisies : citées telles quelles, avec leur provenance juste après.
+    expect(draft.description).toContain("Mesures à plat : poitrine 50,5 cm, longueur 62 cm. Poitrine et longueur : mesures prises à plat par mes soins.");
     expect(draft.fields?.brand.source).toBe("seller");
     expect(await studioCount("studio.listing")).toBe(listings + 1);
   });
@@ -123,9 +125,80 @@ describe("Studio façon Kavis dans la démonstration", () => {
     expect(out.data).toMatchObject({ title: "Pull bleu", brand: null, size: null, material: null });
     expect(out.data.description).not.toMatch(/68 cm|44 cm|coton|Zara/i);
     expect(out.data.description).toContain("Pull en maille. Très bon état.");
-    expect(out.data.description).toContain("Mesures à plat : poitrine 48 cm.");
+    expect(out.data.description).toContain("Mesures à plat : poitrine 48 cm. Poitrine : mesure prise à plat par mes soins.");
     expect(out.warnings.join(" ")).toMatch(/Mesures inventées par le modèle retirées \(68 cm, 44 cm\)/);
     expect(out.warnings.join(" ")).toMatch(/Matière « Coton » retirée/);
+  });
+
+  it("jeu d'exemple : annonces complètes et cohérentes (titre de recherche, description structurée, provenance des mesures)", async () => {
+    const { input, contents } = sampleRequest();
+    const prep = await client.prepareStudio(input, { simulator: { photos: contents } });
+    const [jean, pull] = prep.articles;
+    // Jean : comme l'écran, sans rien changer (étiquette lue à 92 %, mesures du ruban et de la base).
+    await client.validateStudioPrep(jean!.prepId, {});
+    const facts = prepFacts((await client.getStudioPrep(jean!.prepId)), undefined, { piece: "jean", colors: ["Bleu"] });
+    expect(facts.length).toBeLessThanOrEqual(500);
+    expect(facts.split("\n")).toEqual([
+      "Fiche Studio validée :",
+      "Marque (lue sur l'étiquette) : Levi's.",
+      "Référence (lue sur l'étiquette) : 501.",
+      "Taille (lue sur l'étiquette) : W32 L32.",
+      "Matière (lue sur l'étiquette) : 100 % coton.",
+      "Pièce visible sur les photos : jean.",
+      "Couleur visible sur les photos : Bleu.",
+      "Mesures à plat : tour de taille 41 cm, entrejambe 81 cm, montant 29 cm.",
+    ]);
+    const d = await client.generateListing({ prepId: jean!.prepId, photos: [{ id: "photo-1", url: fakeJpegDataUrl(768, 1024), alt: "jean-face.jpg" }, { id: "photo-2", url: fakeJpegDataUrl(768, 1024), alt: "jean-dos.jpg" }] });
+    expect(d.title).toBe("Jean Levi's 501 Original droit bleu W32 L32 — 100 % coton");
+    expect(d.description).toBe([
+      "Jean Levi's 501 Original en coupe droite, coloris bleu, taille W32 L32 : le grand classique du denim, facile à porter au quotidien.",
+      "Modèle et coupe : Levi's 501 Original (référence lue sur l'étiquette), le jean emblématique de la marque, droit de la hanche à la cheville.",
+      "Matière et entretien : 100 % coton (étiquette de composition), sans élasthanne : une toile ferme qui se patine joliment avec le temps. Lavage à l'envers et séchage à l'air libre pour préserver la couleur, en suivant l'étiquette d'entretien.",
+      "État : bon état, porté, avec de légères traces d'usage et sans défaut majeur repéré. Regardez bien toutes les photos.",
+      "Mesures à plat : tour de taille 41 cm, entrejambe 81 cm, montant 29 cm. Tour de taille : mesure relevée au mètre ruban (voir photo) ; entrejambe et montant : mesures de référence du modèle Levi's 501 en W32 L32.",
+      "Conseils de taille : W32 correspond au tour de taille et L32 à la longueur de jambe, en pouces. Le plus sûr : comparez ces mesures avec celles d'un jean qui vous va bien, posé à plat.",
+      "Envoi soigné sous 48 h, article plié et protégé. Une question ou une photo supplémentaire ? N'hésitez pas à m'écrire.",
+    ].join("\n\n"));
+    expect(d).toMatchObject({ brand: "Levi's", size: "W32 L32", material: "100 % coton", colors: ["Bleu"], condition: "good", category: "men", source: "ai", simulated: true });
+    expect(d.hashtags).toEqual(["#levis", "#levis501", "#jean", "#jeandroit", "#jeanbleu", "#w32l32", "#coton", "#denim"]);
+    expect(extractCmValues(`${d.title}\n${d.description}`)).toEqual([41, 81, 29]);
+    expect(d.priceLowCents).toBeLessThan(d.suggestedPriceCents);
+    expect(d.suggestedPriceCents).toBeLessThan(d.priceHighCents);
+    expect(d.warnings.filter((w) => !w.startsWith("Le modèle de prix"))).toEqual([]);
+
+    // Pull : étiquette peu sûre, confirmée par le vendeur (comme « Confirmer » à l'écran) ; aucune mesure connue.
+    await client.validateStudioPrep(pull!.prepId, { fields: { brand: "Sézane", size: "M", material: "70 % laine, 30 % alpaga" } });
+    const p = await client.generateListing({ prepId: pull!.prepId, photos: [{ id: "photo-5", url: fakeJpegDataUrl(768, 1024), alt: "pull-face.jpg" }] });
+    expect(p.title).toBe("Pull Sézane vert taille M — 70 % laine 30 % alpaga");
+    expect(p.description).toContain("Pull en maille Sézane, coloris vert, taille M : une pièce douce et chaude, parfaite pour l'automne et l'hiver.");
+    expect(p.description).toContain("Matière et entretien : 70 % laine, 30 % alpaga, des fibres naturelles chaudes et douces au toucher.");
+    expect(p.description).toContain("Mesures à plat : pas encore relevées. Demandez-les-moi, je les prends au mètre ruban et vous les envoie.");
+    expect(extractCmValues(p.description)).toEqual([]);
+    expect(p).toMatchObject({ brand: "Sézane", size: "M", material: "70 % laine, 30 % alpaga", colors: ["Vert"], category: "women", condition: "good" });
+    expect(p.hashtags).toEqual(["#sezane", "#pullsezane", "#pull", "#pullvert", "#taillem", "#laine", "#alpaga"]);
+    expect(p.priceLowCents).toBeLessThan(p.suggestedPriceCents);
+    expect(p.suggestedPriceCents).toBeLessThan(p.priceHighCents);
+    for (const x of [d, p]) {
+      expect(x.title.length).toBeLessThanOrEqual(70);
+      expect(x.description.length).toBeLessThanOrEqual(2000);
+    }
+  });
+
+  it("provenance des mesures en mots d'acheteur : ruban, vendeur, base des références ; rien sans valeur", () => {
+    expect(measurementsProvenance({ measurements: [{ name: "waist", valueCm: 41, source: "tape_photo", confidence: 0.88 }, { name: "inseam", valueCm: 81, source: "reference_db" }, { name: "hips", valueCm: 50, source: "seller" }, { name: "rise", valueCm: null, source: null }], sizeReference: { brand: "Levi's", reference: "501", size: "W32 L32" } }))
+      .toBe("Tour de taille : mesure relevée au mètre ruban (voir photo) ; hanches : mesure prise à plat par mes soins ; entrejambe : mesure de référence du modèle Levi's 501 en W32 L32.");
+    expect(measurementsProvenance({ measurements: [{ name: "chest", valueCm: null, source: null }], sizeReference: null })).toBe("");
+  });
+
+  it("photos du vendeur : la fiche ne dit ni pièce ni couleur, l'annonce n'en invente aucune", async () => {
+    const prep = await client.prepareStudio({ photos: [{ id: "a", url: fakeJpegDataUrl() }], hints: { brand: "Ralph Lauren" } }, { simulator: { photos: { a: { name: "ralph-lauren-pull-bleu-marine-M.png" } } } });
+    const id = prep.articles[0]!.prepId;
+    await client.validateStudioPrep(id, {});
+    const draft = await client.generateListing({ prepId: id, photos: [{ id: "a", url: fakeJpegDataUrl(), alt: "ralph-lauren-pull-bleu-marine-M.png" }] });
+    expect(draft.title).toContain("Ralph Lauren");
+    expect(draft).toMatchObject({ colors: [], material: null, size: null });
+    expect(draft.description).not.toMatch(/bleu|marine|\bpull\b|\bcm\b/i);
+    expect(draft.description).not.toMatch(/\bM\b/);
   });
 
   it("partage anonyme : marque, référence, taille et mesures validées rejoignent la base ; un exemple fourni n'est jamais modifié", async () => {

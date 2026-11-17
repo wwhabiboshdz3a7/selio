@@ -163,7 +163,7 @@ describe("Paramètres › Parrainage", () => {
   });
 });
 
-describe("Selio Comptes", () => {
+describe("Selio Compte", () => {
   it("bandeau sans action à la place du client, checklist cochable et mémorisée, textes à copier", async () => {
     renderRoutes([{ path: "comptes", element: <Comptes /> }], "/comptes");
     expect((await screen.findByTestId("comptes-notice")).textContent).toBe(COMPTES_NOTICE);

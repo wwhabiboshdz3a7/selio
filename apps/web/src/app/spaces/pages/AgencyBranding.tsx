@@ -136,7 +136,7 @@ function Editor({ saved }: { saved: WhiteLabel | null }) {
         </Field>
         <Toggle checked={form.poweredBy} onChange={(v) => set("poweredBy", v)} label="Mention « Propulsé par Selio »" description="En pied de l'écran de connexion." />
         {mode === "connected" ? (
-          <Alert tone="info">L'aperçu fonctionne en direct, mais rien n'est enregistré sur votre compte tant que Selio Agents n'est pas ouvert. Essayez l'enregistrement dans la démonstration.</Alert>
+          <Alert tone="info">L'aperçu fonctionne en direct, mais rien n'est enregistré sur votre compte tant que Selio Agent n'est pas ouvert. Essayez l'enregistrement dans la démonstration.</Alert>
         ) : !allowed ? (
           <Alert tone="info">Seuls un administrateur ou le propriétaire peuvent enregistrer la marque blanche.</Alert>
         ) : null}
@@ -157,7 +157,7 @@ export default function AgencyBranding() {
   return (
     <>
       <PageHeader
-        eyebrow="Selio Agents · Aperçu"
+        eyebrow="Selio Agent · Aperçu"
         title="Marque blanche"
         description="L'outil Selio aux couleurs de votre agence : votre nom, votre logo texte et votre couleur, pour vos clients. L'aperçu se met à jour pendant que vous tapez."
       />

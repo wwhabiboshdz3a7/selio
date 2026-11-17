@@ -35,10 +35,10 @@ export default function Purchase() {
   return (
     <>
       <PageHeader
-        eyebrow="Achat assisté"
+        eyebrow="Selio Bot · achat rapide"
         title="À valider"
-        description={`La liste des bonnes affaires repérées par le radar (note de ${REVIEW_THRESHOLD}/100 ou plus). Vérifiez le calcul achat → revente → bénéfice, puis validez l'achat en un clic, suivez ou écartez. L'historique des achats est en bas de page.`}
-        actions={<><Link to="/app/radar"><Button variant="secondary">Bonnes affaires</Button></Link><Link to="/app/auto-buy"><Button variant="secondary" icon={<Bot />}>Achat auto</Button></Link></>}
+        description={`La liste des bonnes affaires repérées par Selio Bot (note de ${REVIEW_THRESHOLD}/100 ou plus). Vérifiez le calcul achat → revente → bénéfice, puis validez l'achat en un clic, suivez ou écartez. L'historique des achats est en bas de page.`}
+        actions={<><Link to="/app/radar"><Button variant="secondary">Bonnes affaires</Button></Link><Link to="/app/auto-buy"><Button variant="secondary" icon={<Bot />}>Achat automatique</Button></Link></>}
       />
       <Alert tone="warning" className="mb-5" title="Achat réel désactivé">Valider déclenche un achat SIMULÉ, avec tous les contrôles (prix maximal, budget, plafond du jour, doublon, marge positive). Aucun paiement ni commande chez un vendeur tant qu'un connecteur d'achat autorisé n'existe pas.</Alert>
 

@@ -1510,7 +1510,7 @@ export class DemoClient implements DataClient {
   }
   /** Mêmes contrôles que le serveur : 3 recherches prioritaires au plus, compte lu = compte Achat actif. */
   private validateSearch(input: { priority: boolean; connectionId: string | null }, id: string | null): void {
-    if (input.priority && !canAddPriority(this.s.searches, id)) throw new DataError("validation", `${RADAR_MAX_PRIORITY_SEARCHES} recherches prioritaires au plus par organisation (Radar Auto).`, 400);
+    if (input.priority && !canAddPriority(this.s.searches, id)) throw new DataError("validation", `${RADAR_MAX_PRIORITY_SEARCHES} recherches prioritaires au plus par organisation (achat automatique).`, 400);
     if (input.connectionId) {
       const c = this.s.connections.find((x) => x.id === input.connectionId);
       if (!c || c.usage !== "purchase" || !isActiveAccount(c)) throw new DataError("validation", "Le compte lu par Radar doit être un compte Vinted « Achat » actif (jamais un compte Perso ni un compte de vente).", 400);
@@ -1674,7 +1674,7 @@ export class DemoClient implements DataClient {
     this.requireCan("radar.write", "Votre rôle ne permet pas de modifier les réglages du Radar.");
     const parsed = radarSettingsUpdateSchema.safeParse(input);
     if (!parsed.success) throw new DataError("validation", "Réglages Radar invalides", 400, parsed.error.flatten());
-    if (parsed.data.autoBuy) this.requireCan("purchase.execute", "Seul le propriétaire peut modifier Radar Auto.");
+    if (parsed.data.autoBuy) this.requireCan("purchase.execute", "Seul le propriétaire peut modifier l'achat automatique.");
     const radar = { ...this.radarSettingsNow(), ...(parsed.data.radar ?? {}) };
     const autoBuy = { ...st.org.settings.autoBuy, ...(parsed.data.autoBuy ?? {}) };
     if (autoBuy.enabled && !st.org.settings.autoBuy.enabled) {
@@ -1685,7 +1685,7 @@ export class DemoClient implements DataClient {
     }
     if (parsed.data.autoBuy?.connectionId) {
       const c = st.connections.find((x) => x.id === parsed.data.autoBuy!.connectionId);
-      if (!c || c.usage !== "purchase" || !isActiveAccount(c)) throw new DataError("validation", "Radar Auto n'utilise qu'un compte Vinted « Achat » actif (jamais un compte Perso).", 400);
+      if (!c || c.usage !== "purchase" || !isActiveAccount(c)) throw new DataError("validation", "L'achat automatique n'utilise qu'un compte Vinted « Achat » actif (jamais un compte Perso).", 400);
     }
     st.org = { ...st.org, settings: { ...st.org.settings, radar, autoBuy }, updatedAt: this.now() };
     this.audit("radar.settings_updated", "organization", st.org.id, { radar: parsed.data.radar ?? null, autoBuy: parsed.data.autoBuy ?? null });
@@ -1719,7 +1719,7 @@ export class DemoClient implements DataClient {
     const parsed = inventoryItemCreateSchema.parse({ title: opp.title.slice(0, 200), brand: opp.observed.brand, size: opp.observed.size, category: opp.observed.category ?? "other", condition: opp.observed.condition ?? "good", purchasePriceCents: totalCents, status: "in_stock", tags: ["radar"], purchasedAt: at });
     const item: InventoryItem = { ...parsed, id: newId(), orgId: st.org.id, sku: parsed.sku || nextSku(parsed.category, st.items.map((i) => i.sku)), listedAt: null, soldAt: null, archivedAt: null, createdAt: at, updatedAt: at };
     st.items.unshift(item);
-    this.logEvent(item.id, "created", { source: { from: null, to: "radar" }, opportunityId: { from: null, to: opp.id }, purchaseRequestId: { from: null, to: p.id } }, "Acheté avec Selio Radar : prix d'achat reporté.");
+    this.logEvent(item.id, "created", { source: { from: null, to: "radar" }, opportunityId: { from: null, to: opp.id }, purchaseRequestId: { from: null, to: p.id } }, "Acheté avec Selio Bot : prix d'achat reporté.");
     this.audit("item.created", "inventory_item", item.id, { source: "radar" });
     return item.id;
   }
@@ -1787,7 +1787,7 @@ export class DemoClient implements DataClient {
   /** Premier verrou de Radar Auto : le serveur de démonstration le garde FERMÉ (RADAR_AUTO_ENABLED=false). */
   private radarAutoServerGate(): { allowed: boolean; reason: string | null } {
     if (this.options.radarAutoServerEnabled === true) return { allowed: true, reason: null };
-    return { allowed: false, reason: `Radar Auto est désactivé sur le serveur (RADAR_AUTO_ENABLED) : ${RADAR_AUTO_SHARED_ADDRESS_NOTICE}` };
+    return { allowed: false, reason: `L'achat automatique est désactivé sur le serveur (RADAR_AUTO_ENABLED) : ${RADAR_AUTO_SHARED_ADDRESS_NOTICE}` };
   }
   private radarAutoActive(): boolean {
     return this.radarAutoServerGate().allowed && this.s.org.settings.autoBuy.enabled;
@@ -1803,9 +1803,9 @@ export class DemoClient implements DataClient {
     const label = (key: string) => RADAR_AUTO_LOCK_LABELS[key] ?? key;
     const enabledAt = st.org.settings.autoBuy.enabledAt;
     const locks: RadarAutoLock[] = [
-      { key: "server", ok: server.allowed, label: label("server"), detail: server.allowed ? "Ouvert sur ce serveur, pour les tests de l'équipe." : "Fermé : Radar Auto est désactivé sur ce serveur (RADAR_AUTO_ENABLED=false)." },
+      { key: "server", ok: server.allowed, label: label("server"), detail: server.allowed ? "Ouvert sur ce serveur, pour les tests de l'équipe." : "Fermé : l'achat automatique est désactivé sur ce serveur (RADAR_AUTO_ENABLED=false)." },
       { key: "shared_address", ok: server.allowed, label: label("shared_address"), detail: RADAR_AUTO_SHARED_ADDRESS_NOTICE },
-      { key: "organization", ok: st.org.settings.autoBuy.enabled, label: label("organization"), detail: st.org.settings.autoBuy.enabled ? `Activé${enabledAt ? ` le ${enabledAt}` : ""}.` : "Désactivé dans les réglages de Radar Auto." },
+      { key: "organization", ok: st.org.settings.autoBuy.enabled, label: label("organization"), detail: st.org.settings.autoBuy.enabled ? `Activé${enabledAt ? ` le ${enabledAt}` : ""}.` : "Désactivé dans les réglages de l'achat automatique." },
       {
         key: "cloud", ok: cloudOk, label: label("cloud"),
         detail: cloudOk ? "Compte Achat actif dans Selio Cloud, session enregistrée."
@@ -1929,7 +1929,7 @@ export class DemoClient implements DataClient {
   }
   /** Rien n'est envoyé : la page affiche `payload` sur cet appareil (notification locale si permise, sinon bandeau). */
   async testPush(): Promise<PushTestResult> {
-    return { sent: 0, simulated: true, payload: { title: "Selio Radar : notification de test", body: "Démonstration : voici à quoi ressemble une alerte d'affaire sur votre téléphone.", url: "/app/radar" }, message: "Démonstration : rien n'est envoyé, la notification s'affiche sur cet appareil." };
+    return { sent: 0, simulated: true, payload: { title: "Selio Bot : notification de test", body: "Démonstration : voici à quoi ressemble une alerte d'affaire sur votre téléphone.", url: "/app/radar" }, message: "Démonstration : rien n'est envoyé, la notification s'affiche sur cet appareil." };
   }
 
   // ---------- générateur d'annonces ----------
@@ -1999,7 +1999,7 @@ export class DemoClient implements DataClient {
     const warnings: string[] = [];
     if (images.length === 0 && prep.photos.some((p) => p.role !== "label" && p.role !== "tape")) warnings.push("Photos de l'article non renvoyées : la description est rédigée à partir des champs validés seulement.");
     const f = prep.fields;
-    const facts = prepFacts(prep, input.hints?.notes);
+    const facts = prepFacts(prep, input.hints?.notes, studio.seen?.[prep.prepId]);
     const fallback = (): ListingGenerationOutput => ({ title: [f.brand.value, "Article", f.size.value].filter(Boolean).join(" ") || "Article", description: "Article d'occasion. Envoi soigné sous 48 h.", brand: f.brand.value, category: prep.category ?? "other", size: f.size.value, condition: "good", colors: [], material: f.material.value, hashtags: [], confidence: 0.2 });
     const res = await this.ai.generateListing(this.s.org.id, { images: images.map((u) => u.slice(u.indexOf(",") + 1)), fileNames: [], hints: { brand: f.brand.value ?? undefined, size: f.size.value ?? undefined, notes: facts || undefined } }, { fallback });
     const adjusted = adjustToPrep(res.data, prep);
@@ -2050,7 +2050,7 @@ export class DemoClient implements DataClient {
     const req = this.studioGate();
     try {
       const out = await demoPrepare({ ai: this.ai, orgId: st.org.id, input, contents: opts.simulator?.photos, uploads: this.studioUploads, references: studio.references, now: this.now(), newId });
-      storePreps(studio, out.views);
+      storePreps(studio, out.views, out.seen);
       req.status = "succeeded";
       req.validated = true;
       req.promptTokens = out.usage.promptTokens;
@@ -3138,7 +3138,7 @@ export class DemoClient implements DataClient {
   }
 
 
-  // ---------- Selio Agents (aperçu) ----------
+  // ---------- Selio Agent (aperçu) ----------
   async getWhiteLabel(): Promise<WhiteLabel | null> {
     return this.s.whiteLabel ?? null;
   }

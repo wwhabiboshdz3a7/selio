@@ -91,7 +91,7 @@ export const RADAR_ALERT_MIN_SCORE_DEFAULT = 75;
 export const RADAR_LIVE_REQUIRES_CLOUD = "Radar en direct demande Selio Cloud activé sur le compte Achat";
 /** Mention visible : Radar Auto n'est pas ouvert aux clients (décision d'Ibrahim en attente). */
 export const RADAR_AUTO_SHARED_ADDRESS_NOTICE =
-  "Radar Auto n'est pas activable pour les clients sur l'adresse partagée tant qu'Ibrahim n'a pas tranché : il reste réservé aux comptes de l'équipe Selio, pour les tests.";
+  "L'achat automatique de Selio Bot n'est pas activable pour les clients sur l'adresse partagée tant qu'Ibrahim n'a pas tranché : il reste réservé aux comptes de l'équipe Selio, pour les tests.";
 
 // ---------------------------------------------------------------- recherches
 

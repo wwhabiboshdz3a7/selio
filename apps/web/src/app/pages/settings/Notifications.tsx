@@ -71,11 +71,11 @@ export function RadarPushSettings({ env: envProp }: { env?: PushEnv } = {}) {
   const enable = useAppMutation(() => enablePush(client, config.data?.publicKey ?? null, env), {
     onSuccess: async (r) => {
       await refresh();
-      if (r.ok) toast({ tone: "success", title: "Alertes Radar activées sur ce téléphone" });
+      if (r.ok) toast({ tone: "success", title: "Alertes Selio Bot activées sur ce téléphone" });
       else toast({ tone: "danger", title: "Alertes non activées", description: r.message });
     },
   });
-  const disable = useAppMutation(() => disablePush(client, env), { onSuccess: async () => { await refresh(); toast({ tone: "success", title: "Alertes Radar désactivées sur ce téléphone" }); } });
+  const disable = useAppMutation(() => disablePush(client, env), { onSuccess: async () => { await refresh(); toast({ tone: "success", title: "Alertes Selio Bot désactivées sur ce téléphone" }); } });
   // Retirer un appareil de la liste (téléphone perdu, ancien navigateur) : il ne reçoit plus rien.
   const removeDevice = useAppMutation((id: string) => client.removePushSubscription(id), { onSuccess: async () => { await refresh(); toast({ tone: "success", title: "Appareil retiré : il ne recevra plus les alertes" }); } });
   const test = useAppMutation(() => client.testPush(), {
@@ -104,7 +104,7 @@ export function RadarPushSettings({ env: envProp }: { env?: PushEnv } = {}) {
   return (
     <Card aria-labelledby="radar-push-title">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="radar-push-title" className="flex items-center gap-2 text-md font-semibold"><Smartphone className="size-4 text-text-muted" aria-hidden />Alertes Radar sur ce téléphone</h2>
+        <h2 id="radar-push-title" className="flex items-center gap-2 text-md font-semibold"><Smartphone className="size-4 text-text-muted" aria-hidden />Alertes Selio Bot sur ce téléphone</h2>
         {demo ? <StatusBadge tone="muted">Démonstration</StatusBadge> : subscribed ? <StatusBadge tone="success">Activées sur cet appareil</StatusBadge> : <StatusBadge tone="muted">Désactivées sur cet appareil</StatusBadge>}
       </div>
       <p className="mt-1 text-sm text-text-muted">Une notification à chaque bonne affaire repérée en direct, à chaque paiement à valider (3-D Secure) et si Vinted met la lecture en pause. Toucher la notification ouvre l'affaire, prête pour le « 1 clic ». Aucun pseudo, note ni photo de vendeur dans la notification.</p>

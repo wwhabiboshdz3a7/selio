@@ -2,7 +2,7 @@ import { z } from "zod";
 import { isoDate } from "./common";
 
 /**
- * Selio Comptes (ex « Générateur », §5.15) : accompagnement à la mise en place d'une boutique Vinted, par
+ * Selio Compte (ex « Générateur », §5.15) : accompagnement à la mise en place d'une boutique Vinted, par
  * des CHECKLISTS et des TEXTES à recopier. Selio n'agit jamais à la place du client : aucun compte créé,
  * aucune connexion à Vinted, aucun appel vers Vinted, aucune donnée inventée sur la personne. Le client suit
  * les étapes lui-même dans l'application Vinted et coche ce qu'il a fait (progression par organisation).
@@ -11,9 +11,9 @@ import { isoDate } from "./common";
 /** Mention d'indépendance, affichée sur la checklist et sous les textes rédigés. */
 export const COMPTES_INDEPENDENCE_NOTICE = "Selio est indépendant de Vinted et n'est ni affilié, ni approuvé, ni sponsorisé par Vinted.";
 
-/** Ce que Selio Comptes fait et ne fait pas (affiché en tête de la checklist). */
+/** Ce que Selio Compte fait et ne fait pas (affiché en tête de la checklist). */
 export const COMPTES_SCOPE_NOTICE =
-  "Selio Comptes vous guide avec une checklist et des textes à recopier. Selio ne crée aucun compte, ne se connecte pas à Vinted et ne fait aucune action à votre place : vous suivez chaque étape vous-même dans l'application Vinted.";
+  "Selio Compte vous guide avec une checklist et des textes à recopier. Selio ne crée aucun compte, ne se connecte pas à Vinted et ne fait aucune action à votre place : vous suivez chaque étape vous-même dans l'application Vinted.";
 
 // ---------------------------------------------------------------- checklist
 
@@ -51,7 +51,7 @@ export interface AccountChecklistStep {
   actions: string[];
   /** Point de vigilance (facultatif). */
   caution: string | null;
-  /** Texte que Selio Comptes peut rédiger pour cette étape (POST /api/comptes/texts). */
+  /** Texte que Selio Compte peut rédiger pour cette étape (POST /api/comptes/texts). */
   generatedText: "presentation" | "shippingRules" | "cannedReplies" | null;
 }
 
@@ -106,7 +106,7 @@ export const ACCOUNT_CHECKLIST: readonly AccountChecklistStep[] = [
     title: "Présentation de la boutique",
     summary: "Quelques phrases claires disent ce que vous vendez et comment vous travaillez.",
     actions: [
-      "Faites rédiger une présentation par Selio Comptes à partir du style de votre boutique, puis relisez-la.",
+      "Faites rédiger une présentation par Selio Compte à partir du style de votre boutique, puis relisez-la.",
       "Corrigez-la pour qu'elle vous ressemble, puis recopiez-la vous-même dans votre profil Vinted.",
     ],
     caution: "Aucune coordonnée, aucun lien et aucune invitation à payer en dehors de Vinted dans la présentation.",
@@ -118,7 +118,7 @@ export const ACCOUNT_CHECKLIST: readonly AccountChecklistStep[] = [
     title: "Règles d'envoi",
     summary: "Des règles d'envoi annoncées à l'avance évitent les malentendus avec les acheteurs.",
     actions: [
-      "Faites rédiger vos règles d'envoi par Selio Comptes, puis indiquez vous-même vos vrais délais.",
+      "Faites rédiger vos règles d'envoi par Selio Compte, puis indiquez vous-même vos vrais délais.",
       "Utilisez les modes d'envoi proposés par Vinted et gardez une preuve de dépôt.",
       "Emballez soigneusement et vérifiez l'article avant l'envoi.",
     ],
@@ -134,7 +134,7 @@ export const ACCOUNT_CHECKLIST: readonly AccountChecklistStep[] = [
       "Photographiez chaque article en lumière naturelle, de face, de dos, l'étiquette et les éventuels défauts.",
       "Indiquez la marque, la taille, l'état et les mesures ; signalez honnêtement chaque défaut.",
       "Utilisez Selio Studio pour préparer le texte des annonces, relisez-le, puis publiez-les vous-même.",
-      "Préparez vos réponses types avec Selio Comptes pour répondre vite et poliment.",
+      "Préparez vos réponses types avec Selio Compte pour répondre vite et poliment.",
     ],
     caution: "Publiez à un rythme raisonnable : Selio ne publie rien à votre place.",
     generatedText: "cannedReplies",

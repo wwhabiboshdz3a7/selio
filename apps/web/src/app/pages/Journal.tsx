@@ -69,7 +69,7 @@ export default function Journal() {
     <>
       <PageHeader
         title="Journal d'activité"
-        description="Tout ce que Selio, Studio, Selio Bot et votre équipe ont fait dans Selio Manager, en phrases simples : articles ajoutés, annonces rédigées, photos, prix, réponses, offres négociées, commandes et achats."
+        description="Tout ce que Selio Manager et ses automatisations, Studio, Selio Bot et votre équipe ont fait, en phrases simples : articles ajoutés, annonces rédigées, photos, prix, réponses, offres négociées, commandes et achats."
       />
       <div className="mb-4 flex flex-col gap-3">
         <div role="radiogroup" aria-label="Automatique ou manuel" className="flex gap-1 overflow-x-auto pb-1 scrollbar-thin">

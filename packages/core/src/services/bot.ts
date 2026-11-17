@@ -107,8 +107,8 @@ export async function stopAll(ctx: OrgContext, opts: BotSummaryOptions = {}): Pr
     const before = await repos.automationState.get(tx);
     await repos.automationState.set(tx, true);
     await repos.audit.add(tx, { actorUserId: ctx.userId, action: "bot.stopped", targetType: "organization", targetId: ctx.orgId, meta: { alreadyStopped: before.globalPaused }, ip: ctx.ip });
-    // Journal d'activité de Selio Manager : « Marie a tout arrêté dans Selio Bot ».
-    await recordActivityTx(tx, { verb: "bot.action", actor: "member", actorUserId: ctx.userId, summary: "a tout arrêté dans Selio Bot (coupe-circuit de l'organisation)" });
+    // Journal d'activité de Selio Manager : « Marie a arrêté toutes les automatisations ».
+    await recordActivityTx(tx, { verb: "bot.action", actor: "member", actorUserId: ctx.userId, summary: "a arrêté toutes les automatisations (coupe-circuit de l'organisation)" });
   });
   return summary(ctx, opts);
 }
@@ -120,7 +120,7 @@ export async function resumeAll(ctx: OrgContext, opts: BotSummaryOptions = {}): 
     const before = await repos.automationState.get(tx);
     await repos.automationState.set(tx, false);
     await repos.audit.add(tx, { actorUserId: ctx.userId, action: "bot.resumed", targetType: "organization", targetId: ctx.orgId, meta: { wasStopped: before.globalPaused }, ip: ctx.ip });
-    await recordActivityTx(tx, { verb: "bot.action", actor: "member", actorUserId: ctx.userId, summary: "a repris les bots de Selio Bot" });
+    await recordActivityTx(tx, { verb: "bot.action", actor: "member", actorUserId: ctx.userId, summary: "a repris toutes les automatisations" });
   });
   return summary(ctx, opts);
 }

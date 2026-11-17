@@ -142,24 +142,28 @@ function PlanCard({ offer, period, offers }: { offer: PlanOffer; period: Period;
   );
 }
 
-/** Les autres filiales : Studio seul au curseur, Radar, Radar Auto, Cloud en option ; Selio Bot inclus ; Selio Comptes à la prestation. */
+/**
+ * Les autres filiales et options : Studio seul au curseur, Selio Bot et son option d'achat
+ * automatique, Selio Cloud en option (fonctionnalité de Selio Manager), les automatisations de
+ * Selio Manager selon le forfait, puis Selio Compte (prestations payées une fois et devis).
+ */
 function Subsidiaries() {
   const s = PRICING.subsidiaries;
   const rows: { name: string; text: string; price: string; unit: string }[] = [
-    { name: "Selio Radar", text: "Alertes sur le téléphone et achat en un clic, vous achetez vous-même.", price: price(s.radar), unit: "par mois" },
-    { name: "Selio Radar Auto", text: "Achat automatique avec seuil de note, prix maximum et plafond par jour ; derrière un réglage désactivé par défaut.", price: price(s.radarAuto), unit: "par mois" },
-    { name: "Selio Cloud en option", text: "Le moteur qui fait tourner Selio Manager et Selio Bot ordinateur éteint. En option pour Starter et Pro, inclus dans Agence.", price: price(s.cloudOption), unit: "par mois" },
+    { name: "Selio Bot", text: "Recherche selon vos critères, alertes, bonnes affaires notées sur 100 et achat en un clic : vous validez chaque achat.", price: price(s.bot), unit: "par mois" },
+    { name: "Option achat automatique de Selio Bot", text: "Achat automatique au-dessus de votre note minimale, avec prix maximal et plafond par jour ; désactivée par défaut et pas encore proposée aux clients.", price: price(s.botAutoBuy), unit: "par mois" },
+    { name: "Selio Cloud en option", text: "Fonctionnalité de Selio Manager : certaines automatisations à distance, ordinateur éteint. En option pour Starter et Pro, inclus dans Agence.", price: price(s.cloudOption), unit: "par mois" },
   ];
   return (
     <section className="py-12 md:py-16" aria-labelledby="filiales">
       <Container>
-        <Eyebrow>Le reste de la gamme</Eyebrow>
-        <h2 id="filiales" className="mt-3 text-xl font-semibold tracking-[-0.015em] text-balance text-text md:text-[28px] md:leading-[34px]">Studio seul, Radar, Cloud, Selio Bot et Selio Comptes</h2>
-        <p className="mt-3 max-w-2xl text-base text-text-muted">Studio est inclus dans Pro et Agence ; seul, il se paie à la photo. Radar et Cloud ont leur prix au mois, Selio Bot est inclus selon votre forfait, Selio Comptes se paie une fois. Montants indicatifs, à confirmer.</p>
+        <Eyebrow>Les autres filiales</Eyebrow>
+        <h2 id="filiales" className="mt-3 text-xl font-semibold tracking-[-0.015em] text-balance text-text md:text-[28px] md:leading-[34px]">Selio Studio seul, Selio Bot, Selio Cloud et Selio Compte</h2>
+        <p className="mt-3 max-w-2xl text-base text-text-muted">Selio Studio est inclus dans Pro et Agence ; seul, il se paie à la photo. Selio Bot a son prix au mois, Selio Cloud est une option de Selio Manager, les automatisations de Selio Manager sont incluses selon votre forfait, et Selio Compte se paie une fois ou sur devis. Montants indicatifs, à confirmer.</p>
         <div className="mt-8 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start">
           <StudioCard />
           <div className="flex flex-col gap-4">
-            <ul className="card divide-y divide-border">
+            <ul className="card divide-y divide-border" aria-label="Selio Bot et Selio Cloud au mois">
               {rows.map((r) => (
                 <li key={r.name} className="flex items-start justify-between gap-4 p-5">
                   <div className="min-w-0">
@@ -170,47 +174,42 @@ function Subsidiaries() {
                 </li>
               ))}
             </ul>
-            <BotCard />
+            <ManagerAutomationCard />
           </div>
         </div>
-        <ComptesOffer />
+        <CompteOffer />
       </Container>
     </section>
   );
 }
 
-/** Selio Bot : pas de prix séparé, ce que chaque forfait en donne (quotas de PLAN_QUOTAS). */
-function BotCard() {
+/** Automatisations de Selio Manager : pas de prix séparé, ce que chaque forfait en donne (quotas de PLAN_QUOTAS). */
+function ManagerAutomationCard() {
   return (
-    <article className="card p-5" aria-labelledby="selio-bot">
+    <article className="card p-5" aria-labelledby="automatisations-manager">
       <div className="flex items-start justify-between gap-4">
-        <h3 id="selio-bot" className="text-sm font-semibold text-text">Selio Bot</h3>
-        <p className="shrink-0 text-right text-sm font-semibold text-text">Inclus<span className="block text-xs font-normal text-text-muted">selon le forfait</span></p>
+        <h3 id="automatisations-manager" className="text-sm font-semibold text-text">Automatisations de Selio Manager</h3>
+        <p className="shrink-0 text-right text-sm font-semibold text-text">Incluses<span className="block text-xs font-normal text-text-muted">selon le forfait</span></p>
       </div>
       <ul className="mt-2 flex flex-col gap-1.5 text-xs text-text-muted">
-        <li><span className="font-medium text-text">Starter</span> : négociation, réponses et après-vente automatiques tant que votre navigateur est ouvert ; Selio Cloud en option.</li>
+        <li><span className="font-medium text-text">Starter</span> : messages, négociation et après-vente automatiques tant que votre navigateur est ouvert ; Selio Cloud en option.</li>
         <li><span className="font-medium text-text">Pro</span> : en plus, la relance après 24 h proposée ; Selio Cloud en option.</li>
-        <li><span className="font-medium text-text">Agence</span> : relance automatique et Selio Cloud inclus, 24 h/24.</li>
+        <li><span className="font-medium text-text">Agence</span> : relance automatique et Selio Cloud inclus.</li>
       </ul>
-      <Link to="/produits/bot" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">Découvrir Selio Bot <ArrowRight className="size-3.5" aria-hidden /></Link>
+      <Link to="/produits/manager" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">Découvrir Selio Manager <ArrowRight className="size-3.5" aria-hidden /></Link>
     </article>
   );
 }
 
-/** Selio Comptes à la prestation : trois niveaux, payés une fois (PRICING.subsidiaries). */
-function ComptesOffer() {
-  const s = PRICING.subsidiaries;
-  const tiers = [
-    { key: "audit", name: "Audit de boutique", cents: s.comptesAudit, text: "Votre boutique relue de l'extérieur : présentation, photos, titres, prix, règles d'envoi. Un rapport et les corrections prioritaires." },
-    { key: "mise-en-place", name: "Mise en place complète", cents: s.comptesMiseEnPlace, text: "Présentation, règles d'envoi, réponses types et premières annonces préparées avec vous, prêtes à copier dans Vinted." },
-    { key: "accompagnement", name: "Accompagnement 30 jours", cents: s.comptesAccompagnement, text: "La mise en place, puis deux points d'étape sur vos premières ventes : prix, republications, réglages de Selio Manager." },
-  ];
+/** Selio Compte : prestations payées une fois (PRICING.subsidiaries.compte), et ce qui se fait sur devis. */
+function CompteOffer() {
+  const { prestations, onQuote } = PRICING.subsidiaries.compte;
   return (
-    <div className="mt-10" id="comptes">
-      <h3 className="text-lg font-semibold tracking-[-0.01em] text-text">Selio Comptes à la prestation</h3>
-      <p className="mt-1 max-w-2xl text-sm text-text-muted">Un service ponctuel, payé une fois, sans abonnement. Vous gardez la main : Selio ne crée aucun compte et ne se connecte jamais à Vinted à votre place.</p>
-      <ul className="mt-4 grid gap-4 md:grid-cols-3" aria-label="Niveaux de la prestation Selio Comptes">
-        {tiers.map((t) => (
+    <div className="mt-10 scroll-mt-20" id="compte">
+      <h3 className="text-lg font-semibold tracking-[-0.01em] text-text">Selio Compte : prestations et devis</h3>
+      <p className="mt-1 max-w-2xl text-sm text-text-muted">Des services autour de vos comptes Vinted et de votre configuration, payés une fois, sans abonnement, ou chiffrés sur devis.</p>
+      <ul className="mt-4 grid gap-4 md:grid-cols-3" aria-label="Prestations Selio Compte">
+        {prestations.map((t) => (
           <li key={t.key} className="card mk-card flex flex-col p-5">
             <p className="text-sm font-semibold text-text">{t.name}</p>
             <p className="num mt-2 text-2xl font-semibold text-text">{price(t.cents)}<span className="text-sm font-normal text-text-muted"> une fois</span></p>
@@ -218,7 +217,16 @@ function ComptesOffer() {
           </li>
         ))}
       </ul>
-      <p className="mt-3 text-xs text-text-muted">Prestation commandée depuis la page <Link to="/contact" className="font-medium text-accent hover:underline">Contact</Link> : le paiement en ligne n'est pas encore ouvert.</p>
+      <article className="card mt-4 flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between" aria-labelledby="compte-devis">
+        <div className="min-w-0">
+          <h4 id="compte-devis" className="text-sm font-semibold text-text">Sur devis</h4>
+          <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-sm text-text-muted">
+            {onQuote.map((q) => <li key={q}>{q}</li>)}
+          </ul>
+        </div>
+        <Link to="/contact" className={buttonClass({ variant: "secondary", className: "shrink-0" })}>Demander un devis</Link>
+      </article>
+      <p className="mt-3 text-xs text-text-muted">Prestations et devis demandés depuis la page <Link to="/contact" className="font-medium text-accent hover:underline">Contact</Link> : le paiement en ligne n'est pas encore ouvert.</p>
     </div>
   );
 }
@@ -283,7 +291,7 @@ function Comparison() {
       <Container>
         <Eyebrow>Comparer</Eyebrow>
         <h2 id="comparer" className="mt-3 text-xl font-semibold tracking-[-0.015em] text-balance text-text md:text-[28px] md:leading-[34px]">Ce que chaque offre permet</h2>
-        <p className="mt-3 max-w-2xl text-base text-text-muted">Les limites (comptes, IA, Studio, Track, Cloud) s'affichent en pourcentage dans l'application, page « Mon utilisation », avec une alerte à 80 %. À 100 %, l'action concernée est refusée proprement : jamais de dépassement facturé.</p>
+        <p className="mt-3 max-w-2xl text-base text-text-muted">Les lignes suivent les cinq filiales. Les limites (comptes, IA, Studio, Track, Cloud) s'affichent en pourcentage dans l'application, page « Mon utilisation », avec une alerte à 80 %. À 100 %, l'action concernée est refusée proprement : jamais de dépassement facturé.</p>
         <div className="mt-6 flex flex-col gap-1.5 sm:hidden">
           <span className="text-sm font-medium text-text" aria-hidden>Offre affichée</span>
           <Segmented ariaLabel="Offre affichée" value={focus} onChange={setFocus} items={OFFER_KEYS.map((k) => ({ value: k, label: OFFER_NAMES[k] }))} />

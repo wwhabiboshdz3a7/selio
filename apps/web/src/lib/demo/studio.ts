@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AIError, type AIService, type StudioSimulatorHints } from "@selio/ai";
+import { AIError, MOCK_STUDIO_FACTS_HEADER, type AIService, type StudioSimulatorHints } from "@selio/ai";
 import {
   LABEL_FIELDS, LABEL_FIELD_LABELS, MEASUREMENT_LABELS, MEASUREMENT_NAMES, STUDIO_LABEL_MAX_PHOTOS, STUDIO_MAX_PHOTOS, STUDIO_TAPE_MAX_PHOTOS, STUDIO_TRUSTED_CONFIDENCE,
   garmentKind, itemCategory, labelReadOutput, measurementName, measurementValues, measurementsOutput, namedMeasurementField, photoRole, studioSellerHints,
@@ -37,6 +37,17 @@ export interface DemoStudioState {
   preps: StudioPrepView[];
   references: DemoSizeReference[];
   worn: DemoWornJob[];
+  /** Ce que montrent les photos d'exemple de chaque préparation (type de pièce, couleurs), par `prepId`. */
+  seen?: Record<string, DemoSeen>;
+}
+
+/**
+ * Ce que le simulateur « voit » sur les photos d'exemple d'un article (`DemoPhotoContent.visible`) : type de pièce
+ * et couleurs. Vide pour une photo du vendeur : le simulateur ne voit rien, il ne devine ni la pièce ni la couleur.
+ */
+export interface DemoSeen {
+  piece: string | null;
+  colors: string[];
 }
 
 /** Base des références de la démonstration : exemples FICTIFS, signalés comme tels à l'écran (« Base des références »). */
@@ -149,6 +160,8 @@ export interface DemoPrepareArgs {
 export interface DemoPrepareOutcome {
   result: StudioPrepResultView;
   views: StudioPrepView[];
+  /** Ce que montrent les photos d'exemple de chaque article, par `prepId` (rien pour une photo du vendeur). */
+  seen: Record<string, DemoSeen>;
   usage: { calls: number; promptTokens: number; outputTokens: number; latencyMs: number };
 }
 
@@ -265,15 +278,26 @@ export async function demoPrepare(args: DemoPrepareArgs): Promise<DemoPrepareOut
       listingGeneratedAt: null,
       createdAt: args.now,
     }));
-    return { result: { ...prep, batchId, articles: prep.articles.map((a, i) => ({ ...a, prepId: views[i]!.prepId, status: "draft" as const })) }, views, usage };
+    const seen: Record<string, DemoSeen> = {};
+    for (const [i, article] of prep.articles.entries()) {
+      // Photos de l'article qui montrent la pièce (pas l'étiquette) : la première pièce décrite, les couleurs sans doublon.
+      const visible = article.photoIndexes.filter((idx) => sortedByIndex.get(idx)?.role !== "label").flatMap((idx) => (photos[idx]?.content?.visible ? [photos[idx]!.content!.visible!] : []));
+      const piece = visible.find((v) => v.piece?.trim())?.piece?.trim().slice(0, 40) ?? null;
+      const colors = [...new Set(visible.flatMap((v) => v.colors ?? []).map((c) => c.trim().slice(0, 30)).filter(Boolean))].slice(0, 3);
+      if (piece || colors.length > 0) seen[views[i]!.prepId] = { piece, colors };
+    }
+    return { result: { ...prep, batchId, articles: prep.articles.map((a, i) => ({ ...a, prepId: views[i]!.prepId, status: "draft" as const })) }, views, seen, usage };
   } catch (err) {
     throw aiFailure(err, "Préparation");
   }
 }
 
-/** Ajoute des préparations à l'état (les plus récentes d'abord, 60 au plus). */
-export function storePreps(state: DemoStudioState, views: StudioPrepView[]): void {
+/** Ajoute des préparations à l'état (les plus récentes d'abord, 60 au plus), avec ce que montrent leurs photos d'exemple. */
+export function storePreps(state: DemoStudioState, views: StudioPrepView[], seen: Record<string, DemoSeen> = {}): void {
   state.preps = [...views, ...state.preps].slice(0, MAX_DEMO_PREPS);
+  const kept = new Set(state.preps.map((p) => p.prepId));
+  const all = { ...(state.seen ?? {}), ...seen };
+  state.seen = Object.fromEntries(Object.entries(all).filter(([id]) => kept.has(id)));
 }
 
 export function prepById(state: DemoStudioState, prepId: string): StudioPrepView {
@@ -406,19 +430,57 @@ export function descriptionPhotoIds(prep: StudioPrepView): string[] {
     .map((p) => p.id);
 }
 
-/** Faits transmis au rédacteur (miroir du serveur) : matière avec provenance, mesures, marque, taille, matière et mesures inconnues. */
-export function prepFacts(prep: StudioPrepView, notes?: string): string {
+const GARMENT_KIND_WORDS: Partial<Record<GarmentKind, string>> = { top: "haut", outerwear: "veste", dress: "robe", bottom: "pantalon", shoes: "chaussures", bag: "sac", accessory: "accessoire" };
+const joinFr = (xs: readonly string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} et ${xs[xs.length - 1]}`);
+
+/**
+ * D'où viennent les mesures, en mots d'acheteur (« Tour de taille : mesure relevée au mètre ruban (voir photo) ;
+ * entrejambe et montant : mesures de référence du modèle Levi's 501 en W32 L32. »), ou "". Seules les mesures avec
+ * provenance comptent.
+ */
+export function measurementsProvenance(prep: Pick<StudioPrepView, "measurements" | "sizeReference">): string {
+  const known = prep.measurements.filter((m) => m.valueCm !== null && m.source !== null);
+  const names = (source: string) => known.filter((m) => m.source === source).map((m) => MEASUREMENT_LABELS[m.name].toLowerCase());
+  const ref = prep.sizeReference;
+  const parts: string[] = [];
+  const s = (xs: readonly string[]) => (xs.length > 1 ? "s" : "");
+  const tape = names("tape_photo");
+  if (tape.length) parts.push(`${joinFr(tape)} : mesure${s(tape)} relevée${s(tape)} au mètre ruban (voir photo)`);
+  const seller = names("seller");
+  if (seller.length) parts.push(`${joinFr(seller)} : mesure${s(seller)} prise${s(seller)} à plat par mes soins`);
+  const base = names("reference_db");
+  if (base.length) parts.push(`${joinFr(base)} : mesure${s(base)} de référence du modèle${ref ? ` ${[ref.brand, ref.reference].join(" ")}${ref.size ? ` en ${ref.size}` : ""}` : ""}`);
+  if (parts.length === 0) return "";
+  const text = parts.join(" ; ");
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+}
+
+/**
+ * Faits transmis au rédacteur, une ligne chacun, sous l'en-tête que reconnaît le simulateur : marque, référence, taille
+ * et matière avec leur provenance, ce que montrent les photos d'exemple, mesures à plat, champs inconnus (« n'en cite
+ * aucune »), puis les notes du vendeur (500 caractères au plus). Le rédacteur ne peut citer que ces valeurs ; la
+ * provenance des mesures est ajoutée ensuite, telle quelle, par `adjustToPrep`.
+ */
+export function prepFacts(prep: StudioPrepView, notes?: string, seen?: DemoSeen): string {
   const f = prep.fields;
   const measuresText = measurementsSentence(prep.measurements);
+  const from = (source: string | null, feminine: boolean) => (source === "label" ? `lu${feminine ? "e" : ""} sur l'étiquette` : `indiqué${feminine ? "e" : ""} par le vendeur`);
+  const kindWord = GARMENT_KIND_WORDS[prep.garmentKind];
   return [
-    f.material.value ? `Matière (${f.material.source === "label" ? "lue sur l'étiquette" : "indiquée par le vendeur"}) : ${f.material.value}.` : "",
+    MOCK_STUDIO_FACTS_HEADER,
+    f.brand.value ? `Marque (${from(f.brand.source, true)}) : ${f.brand.value}.` : "",
+    f.reference.value ? `Référence (${from(f.reference.source, true)}) : ${f.reference.value}.` : "",
+    f.size.value ? `Taille (${from(f.size.source, true)}) : ${f.size.value}.` : "",
+    f.material.value ? `Matière (${from(f.material.source, true)}) : ${f.material.value}.` : "",
+    seen?.piece ? `Pièce visible sur les photos : ${seen.piece}.` : kindWord ? `Type de pièce (préparation) : ${kindWord}.` : "",
+    seen?.colors.length ? `Couleur visible sur les photos : ${seen.colors.join(", ")}.` : "",
     measuresText,
     !f.brand.value ? "Marque inconnue : n'en cite aucune." : "",
     !f.size.value ? "Taille inconnue : n'en cite aucune." : "",
     !f.material.value ? "Matière inconnue : n'en cite aucune." : "",
     measuresText ? "" : "Aucune mesure connue : n'en cite aucune.",
-    notes ?? "",
-  ].filter(Boolean).join(" ").slice(0, 500);
+    notes ? `Notes du vendeur : ${notes.replace(/\s+/g, " ").trim()}` : "",
+  ].filter(Boolean).join("\n").slice(0, 500);
 }
 
 export interface AdjustableListing {
@@ -432,7 +494,8 @@ export interface AdjustableListing {
 /**
  * Sortie du rédacteur ajustée à la préparation (miroir du serveur) : marque, taille et matière de la
  * préparation (jamais celles « vues » par le modèle), toute mesure en cm absente de la préparation retirée
- * (mention dans le titre, phrase entière dans la description), phrase des mesures ajoutée telle quelle.
+ * (mention dans le titre, phrase entière dans la description), phrase des mesures ajoutée telle quelle et suivie de
+ * leur provenance (mètre ruban, vendeur, base des références), jamais laissée au rédacteur.
  */
 export function adjustToPrep<T extends AdjustableListing>(data: T, prep: StudioPrepView): { data: T; warnings: string[] } {
   const f = prep.fields;
@@ -469,6 +532,8 @@ export function adjustToPrep<T extends AdjustableListing>(data: T, prep: StudioP
   if (title.length < 3) title = [f.brand.value, "Article", f.size.value].filter(Boolean).join(" ") || "Article";
   if (description.length < 20) description = `Article d'occasion. ${measuresText} Envoi soigné sous 48 h.`.replace(/\s+/g, " ").trim();
   if (measuresText && !description.includes(measuresText)) description = `${description}\n\n${measuresText}`.slice(0, 2000);
+  const provenance = measurementsProvenance(prep);
+  if (provenance && description.includes(measuresText) && !description.includes(provenance)) description = description.replace(measuresText, `${measuresText} ${provenance}`).slice(0, 2000);
   for (const key of ["brand", "size"] as LabelFieldName[]) if (!f[key].value) w.push(key === "brand" ? "Marque inconnue : à compléter avant de publier." : "Taille inconnue : à compléter avant de publier.");
   return { data: { ...data, title: title.slice(0, 100), description, brand: f.brand.value, size: f.size.value, material: f.material.value }, warnings: w };
 }

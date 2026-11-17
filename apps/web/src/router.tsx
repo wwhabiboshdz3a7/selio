@@ -97,6 +97,9 @@ export const router = createBrowserRouter([
       { path: "automatisation/negociation", lazy: lazy(() => import("./app/pages/automation/Negotiation")) },
       { path: "automatisation/apres-vente", lazy: lazy(() => import("./app/pages/automation/AfterSale")) },
       { path: "automatisation/stock", lazy: lazy(() => import("./app/pages/automation/AutoStock")) },
+      // État et règles des automatisations sans page de réglages à elles (anciennement /bot/relance, /bot/republication).
+      { path: "automatisation/relances", lazy: lazy(() => import("./app/pages/automation/AutomationDetail").then((m) => ({ default: m.FollowUpPage }))) },
+      { path: "automatisation/republication", lazy: lazy(() => import("./app/pages/automation/AutomationDetail").then((m) => ({ default: m.RepublishPage }))) },
       { path: "messages", lazy: lazy(() => import("./app/pages/Messages")) },
       { path: "messages/:id", lazy: lazy(() => import("./app/pages/Messages")) },
       { path: "customers", lazy: lazy(() => import("./app/pages/Customers")) },
@@ -107,6 +110,8 @@ export const router = createBrowserRouter([
       // Journal d'activité de Selio Manager : ce que Selio, Studio, Selio Bot et l'équipe ont fait.
       { path: "journal", lazy: lazy(() => import("./app/pages/Journal")) },
       { path: "automations", lazy: lazy(() => import("./app/pages/Automations")) },
+      // Selio Bot (recherche et achat) : ces adresses historiques restent valides (alertes sur le téléphone, journal) et
+      // appartiennent à l'espace Bot (spaces/paths.ts) : menu et teinte de Selio Bot.
       { path: "radar", lazy: lazy(() => import("./app/pages/Radar")) },
       // Page d'une affaire (« 1 clic »), ouverte depuis une alerte sur le téléphone ; achat à valider (3-D Secure).
       { path: "radar/affaires/:id", lazy: lazy(() => import("./app/pages/RadarDeal")) },
@@ -148,7 +153,8 @@ export const router = createBrowserRouter([
       { path: "*", element: <Navigate to="/app" replace /> },
     ]),
   },
-  // Filiales : Selio Studio, Selio Agents (aperçu), Selio Track, Selio Cloud (aperçu) et Selio Comptes.
+  // Filiales : Selio Studio, Selio Track, Selio Bot et Selio Compte ; Selio Cloud et Selio Agent (aperçu) sont
+  // intégrés à Selio Manager (menu du Manager), avec leurs propres adresses.
   {
     path: "/studio",
     element: (
@@ -203,7 +209,8 @@ export const router = createBrowserRouter([
     ]),
   },
   {
-    // Selio Bot : les automatisations qui agissent pour le revendeur, leur état, où elles tournent, « Tout arrêter ».
+    // Selio Bot : recherche et achat d'articles. Les automatisations du compte (négociation, relances…) sont dans
+    // Selio Manager › Automatisation : leurs anciennes adresses /bot/negociation… y redirigent.
     path: "/bot",
     element: (
       <RequireSession>
@@ -213,9 +220,9 @@ export const router = createBrowserRouter([
     errorElement: <RouteError />,
     children: guarded([
       { index: true, lazy: lazy(() => import("./app/pages/bot/BotHome")) },
-      // Achat auto : Radar Auto (deux verrous du serveur) et achat assisté, côte à côte.
+      // Achat automatique (deux verrous du serveur) et achat rapide validé en 1 clic, côte à côte.
       { path: "achat-auto", lazy: lazy(() => import("./app/pages/bot/BotAutoBuy")) },
-      { path: ":botId", lazy: lazy(() => import("./app/pages/bot/BotDetail")) },
+      { path: ":slug", lazy: lazy(() => import("./app/pages/automation/AutomationDetail").then((m) => ({ default: m.LegacyBotRedirect }))) },
       { path: "*", element: <Navigate to="/bot" replace /> },
     ]),
   },
@@ -238,7 +245,7 @@ export const router = createBrowserRouter([
     ]),
   },
   {
-    // Selio Comptes : checklist et textes à copier, sans aucune action à la place du client.
+    // Selio Compte : checklist et textes à copier, sans aucune action à la place du client.
     path: "/comptes",
     element: (
       <RequireSession>
@@ -251,10 +258,10 @@ export const router = createBrowserRouter([
       { path: "*", element: <Navigate to="/comptes" replace /> },
     ]),
   },
-  // L'ancien « générateur de compte » est devenu Selio Comptes.
+  // L'ancien « générateur de compte » est devenu Selio Compte.
   { path: "/generateur", element: <Navigate to="/comptes" replace /> },
   { path: "/generateur/*", element: <Navigate to="/comptes" replace /> },
-  // Anciennes adresses : Selio Agence est devenu Selio Agents ; Selio Global (nom de l'entreprise) n'est plus un espace.
+  // Anciennes adresses : Selio Agence est devenu Selio Agent ; Selio Global (nom de l'entreprise) n'est plus un espace.
   { path: "/agence", element: <Navigate to="/agents/clients" replace /> },
   { path: "/agence/equipe", element: <Navigate to="/agents" replace /> },
   { path: "/agence/marque-blanche", element: <Navigate to="/agents/marque-blanche" replace /> },

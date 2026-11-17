@@ -7,13 +7,13 @@ import { Logo } from "../components/Logo";
 import { useSession } from "../lib/data/provider";
 import { getOverNight, getOverNightServer, subscribeOverNight } from "./nightHeader";
 import { HUB_PATH } from "../app/spaces/paths";
-import { PRODUCTS } from "./products";
+import { MANAGER_FEATURES, PRODUCTS } from "./products";
 import { COMPARISON_READY, INDEPENDENCE_NOTICE, LEGAL_DRAFT_NOTICE } from "./seo";
 import { OfferBanner } from "../app/components/offers";
 
 const NAV = [
   { to: "/fonctionnalites", label: "Fonctionnalités" },
-  { to: "/plateforme", label: "Plateforme" },
+  { to: "/plateforme", label: "Les filiales" },
   { to: "/extension", label: "Extension" },
   { to: "/assistant-ia", label: "Assistant IA" },
   { to: "/tarifs", label: "Tarifs" },
@@ -100,10 +100,10 @@ export function MarketingLayout() {
         <div className="mx-auto grid max-w-content gap-8 px-4 py-12 sm:grid-cols-2 md:px-8 lg:grid-cols-5">
           <div className="sm:col-span-2 lg:col-span-1">
             <Logo height={22} />
-            <p className="mt-3 max-w-xs text-sm text-text-muted">Les outils des revendeurs Vinted : Selio Manager pour la gestion au quotidien, et toute la gamme autour, du sourcing à l'étiquette.</p>
+            <p className="mt-3 max-w-xs text-sm text-text-muted">Les outils des revendeurs Vinted, en cinq filiales : Selio Manager pour la gestion et l'automatisation, Selio Studio, Selio Track, Selio Bot et Selio Compte.</p>
           </div>
-          <FooterCol title="Produit" links={[["/fonctionnalites", "Fonctionnalités"], ["/plateforme", "La gamme Selio"], ["/extension", "Extension navigateur"], ["/assistant-ia", "Assistant IA"], ["/tarifs", "Tarifs"]]} />
-          <FooterCol title="La gamme" links={[...PRODUCTS.map((p): [string, string] => [p.path, p.name]), ...(COMPARISON_READY ? ([["/selio-ou-bleam", "Selio ou Bleam ?"], ["/alternative-bleam", "Alternative à Bleam"]] as [string, string][]) : [])]} />
+          <FooterCol title="Produit" links={[["/fonctionnalites", "Fonctionnalités"], ["/plateforme", "Les cinq filiales"], ["/extension", "Extension navigateur"], ["/assistant-ia", "Assistant IA"], ["/tarifs", "Tarifs"]]} />
+          <FooterCol title="Les filiales" links={[...FILIALE_LINKS, ...(COMPARISON_READY ? ([["/selio-ou-bleam", "Selio ou Bleam ?"], ["/alternative-bleam", "Alternative à Bleam"]] as FooterLink[]) : [])]} />
           <FooterCol title="Aide" links={[["/faq", "FAQ"], ["/contact", "Contact"], ["/inscription", "Essai gratuit 14 jours"], ["/connexion", "Connexion"]]} />
           <FooterCol title="Légal" links={[["/mentions-legales", "Mentions légales"], ["/confidentialite", "Confidentialité"], ["/conditions", "Conditions d'utilisation"], ["/extension/confidentialite", "Confidentialité de l'extension"]]} />
         </div>
@@ -118,13 +118,19 @@ export function MarketingLayout() {
   );
 }
 
-function FooterCol({ title, links }: { title: string; links: [string, string][] }) {
+/** Lien du pied de page ; « sub » : fonctionnalité de Selio Manager, en retrait sous lui. */
+type FooterLink = [to: string, label: string, sub?: "sub"];
+
+/** Les cinq filiales dans l'ordre officiel ; Selio Cloud et Selio Agent en retrait sous Selio Manager. */
+const FILIALE_LINKS: FooterLink[] = PRODUCTS.flatMap((p): FooterLink[] => [[p.path, p.name], ...(p.slug === "manager" ? MANAGER_FEATURES.map((f): FooterLink => [f.path, f.name, "sub"]) : [])]);
+
+function FooterCol({ title, links }: { title: string; links: FooterLink[] }) {
   return (
     <div>
       <h2 className="text-xs font-medium tracking-[0.08em] text-text-muted uppercase">{title}</h2>
       <ul className="mt-3 flex flex-col gap-2">
-        {links.map(([to, label]) => (
-          <li key={to}><Link to={to} className="text-sm text-text hover:text-accent">{label}</Link></li>
+        {links.map(([to, label, sub]) => (
+          <li key={to} className={sub ? "pl-3" : undefined}><Link to={to} className={sub ? "text-sm text-text-muted hover:text-accent" : "text-sm text-text hover:text-accent"}>{sub ? <span aria-hidden>↳ </span> : null}{label}{sub ? <span className="sr-only"> (fonctionnalité de Selio Manager)</span> : null}</Link></li>
         ))}
       </ul>
     </div>

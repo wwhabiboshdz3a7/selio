@@ -22,10 +22,14 @@ test.describe("Selio et ses filiales", () => {
     page.on("pageerror", (e) => errors.push(e.message));
     await openDemo(page, null);
     await expect(page.getByRole("heading", { name: "Selio et ses filiales" })).toBeVisible();
-    for (const name of ["Selio Manager", "Selio Studio", "Selio Track", "Selio Bot", "Selio Cloud", "Selio Agents", "Selio Comptes"]) await expect(page.getByRole("article", { name, exact: true })).toBeVisible();
+    for (const name of ["Selio Manager", "Selio Studio", "Selio Track", "Selio Bot", "Selio Cloud", "Selio Agent", "Selio Compte"]) await expect(page.getByRole("article", { name, exact: true })).toBeVisible();
+    // Les cinq filiales dans l'ordre officiel ; Selio Cloud et Selio Agent sont intégrés à Selio Manager.
+    await expect(page.getByText(/^Filiale \d$/)).toHaveText(["Filiale 1", "Filiale 2", "Filiale 3", "Filiale 4", "Filiale 5"]);
+    await expect(page.getByRole("heading", { name: "Intégrés à Selio Manager", level: 2 })).toBeVisible();
+    await expect(page.getByRole("article", { name: "Selio Manager", exact: true }).getByRole("group", { name: "Intégrés à Selio Manager" })).toBeVisible();
     await expect(page.getByRole("article", { name: "Selio Global" })).toHaveCount(0);
-    await expect(page.getByRole("article", { name: "Selio Agents" }).getByText("Aperçu", { exact: true }).first()).toBeVisible();
-    // Selio Cloud est devenu un vrai espace (/cloud) en aperçu dans la démo : plus « En développement ».
+    await expect(page.getByRole("article", { name: "Selio Agent" }).getByText("Aperçu", { exact: true }).first()).toBeVisible();
+    // Selio Cloud a ses pages (/cloud), en aperçu dans la démo : plus « En développement ».
     const cloud = page.getByRole("article", { name: "Selio Cloud" });
     await expect(cloud.getByText("Aperçu", { exact: true }).first()).toBeVisible();
     await expect(cloud.getByText("En développement", { exact: true })).toHaveCount(0);
@@ -39,7 +43,7 @@ test.describe("Selio et ses filiales", () => {
     await expect(page).toHaveURL(/\/studio$/);
     await expect(page.getByRole("heading", { name: "Générateur d'annonces" })).toBeVisible();
 
-    await switchSpace(page, /^Selio Agents/);
+    await switchSpace(page, /^Selio Agent/);
     await expect(page).toHaveURL(/\/agents$/);
     await expect(page.getByRole("heading", { name: "Équipe et accès" })).toBeVisible();
 
@@ -53,7 +57,7 @@ test.describe("Selio et ses filiales", () => {
 
     await switchSpace(page, /^Selio Cloud/);
     await expect(page).toHaveURL(/\/cloud$/);
-    // Selio Cloud est un vrai espace : son tableau de bord (plafond de 10 comptes), plus la page « Comment ça marchera ».
+    // Selio Cloud, intégré au Manager : son tableau de bord (plafond de 10 comptes), plus la page « Comment ça marchera ».
     await expect(page.getByRole("heading", { level: 1, name: "Tableau de bord" })).toBeVisible();
     await expect(page.getByText("10 comptes maximum par organisation")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Comment ça marchera" })).toHaveCount(0);
@@ -72,13 +76,32 @@ test.describe("Selio et ses filiales", () => {
     expect(errors).toEqual([]);
   });
 
+  test("Selio Bot : recherche et achat ; les anciennes pages du radar vivent dans son menu, les automatisations de compte sont dans le Manager", async ({ page }) => {
+    await openDemo(page, "/bot");
+    await expect(page.getByRole("heading", { name: "Selio Bot : recherche et achat d'articles", level: 1 })).toBeVisible();
+    for (const name of ["Bonnes affaires notées sur 100", "Recherches actives", "Alertes", "Limites de dépenses", "Historique des achats"]) await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
+    await expect(page.getByTestId("mode-assisted")).toBeVisible();
+    await expect(page.locator('[data-server-lock="closed"]')).toHaveCount(2);
+    await noHorizontalOverflow(page);
+    // Les bonnes affaires (/app/radar) prennent le menu de Selio Bot.
+    await gotoApp(page, "/app/radar");
+    if (isMobile(page)) await page.getByRole("button", { name: "Ouvrir le menu" }).click();
+    await expect(page.getByRole("button", { name: /Espace actuel : Selio Bot/ }).last()).toBeVisible();
+    // Anciennes adresses des automatisations de compte : redirigées vers Selio Manager › Automatisation.
+    await gotoApp(page, "/bot/negociation");
+    await expect(page).toHaveURL(/\/app\/automatisation\/negociation$/);
+    await gotoApp(page, "/bot/relance");
+    await expect(page).toHaveURL(/\/app\/automatisation\/relances$/);
+    await expect(page.getByRole("heading", { name: "Relances", level: 1 })).toBeVisible();
+  });
+
   test("connexion : l'accueil central est la page d'arrivée", async ({ page }) => {
     await page.goto("/connexion");
     await page.getByRole("button", { name: "Entrer dans la démonstration" }).click();
     await page.waitForURL((url) => url.pathname === "/app/espaces");
     await expect(page.getByRole("heading", { name: "Selio et ses filiales" })).toBeVisible();
     // Depuis n'importe quel espace, le sélecteur ramène à cet accueil.
-    // L'ancienne adresse du générateur de compte mène à Selio Comptes.
+    // L'ancienne adresse du générateur de compte mène à Selio Compte.
     await page.goto("/generateur");
     await page.waitForURL((url) => url.pathname === "/comptes");
     if (isMobile(page)) await page.getByRole("button", { name: "Ouvrir le menu" }).click();
@@ -191,9 +214,9 @@ test.describe("Selio et ses filiales", () => {
     await noHorizontalOverflow(page);
   });
 
-  test("Selio Agents : marque blanche en aperçu direct, enregistrée dans la démo ; comptes et accès dans l'administration", async ({ page }) => {
+  test("Selio Agent : marque blanche en aperçu direct, enregistrée dans la démo ; comptes et accès dans l'administration", async ({ page }) => {
     await openDemo(page, "/agents/marque-blanche");
-    await expect(page.getByText("Selio Agents est en aperçu")).toBeVisible();
+    await expect(page.getByText("Selio Agent est en aperçu")).toBeVisible();
     await page.getByLabel("Nom de l'agence").fill("Dépôt Lumière");
     await page.getByLabel("Logo texte").fill("dl");
     await page.getByRole("radio", { name: "Jade" }).click();
@@ -205,7 +228,7 @@ test.describe("Selio et ses filiales", () => {
     await page.reload();
     await expect(page.getByLabel("Nom de l'agence")).toHaveValue("Dépôt Lumière");
     await gotoApp(page, "/app/espaces");
-    await expect(page.getByRole("article", { name: "Selio Agents" }).getByText("DL", { exact: true })).toBeVisible();
+    await expect(page.getByRole("article", { name: "Selio Agent" }).getByText("DL", { exact: true })).toBeVisible();
     await gotoApp(page, "/agents/facturation");
     await expect(page.getByText("Non facturé · aperçu").filter({ visible: true })).toHaveCount(5);
     await gotoApp(page, "/agents");
@@ -218,10 +241,13 @@ test.describe("Selio et ses filiales", () => {
     await expect(page.getByRole("heading", { name: "Qui peut faire quoi" })).toBeVisible();
   });
 
-  test("Automatisation : les quatre blocs, l'après-vente sans action manuelle et le stock automatique", async ({ page }) => {
+  test("Automatisation : état des automatisations, les blocs, l'après-vente sans action manuelle et le stock automatique", async ({ page }) => {
     await openDemo(page, "/app/automatisation");
     await expect(page.getByRole("heading", { name: "Tout le parcours, automatisé" })).toBeVisible();
-    for (const name of ["Messages aux favoris", "Réponse automatique", "Négociation automatique", "Message après-vente"]) await expect(page.getByRole("link", { name: new RegExp(name) }).filter({ visible: true }).first()).toBeVisible();
+    // Le tableau d'état et l'arrêt d'urgence sont dans Selio Manager (plus dans Selio Bot).
+    await expect(page.getByRole("heading", { name: "État des automatisations" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Arrêter toutes les automatisations" })).toBeVisible();
+    for (const name of ["Messages aux favoris", "Réponse automatique", "Négociation par IA", "Message après-vente", "Relances"]) await expect(page.getByRole("link", { name: new RegExp(name) }).filter({ visible: true }).first()).toBeVisible();
     await gotoApp(page, "/app/automatisation/apres-vente");
     await page.getByLabel("Impression automatique des bordereaux").check();
     await page.getByLabel("Imprimante").fill("Imprimante du bureau");

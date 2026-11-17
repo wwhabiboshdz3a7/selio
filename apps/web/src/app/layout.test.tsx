@@ -154,7 +154,9 @@ describe("espaces Selio dans la mise en page", () => {
     expect(within(menu()).getByRole("link", { name: /Articles et stock/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Changer d'espace/ }));
     const picker = screen.getByRole("navigation", { name: "Changer d'espace" });
-    expect(within(picker).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual(["/app", "/studio", "/bot", "/cloud", "/agents", "/comptes", "/track", "/app/espaces"]);
+    // Les cinq filiales dans l'ordre officiel, Selio Cloud et Selio Agent sous Selio Manager (intégrés), puis l'accueil.
+    expect(within(picker).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual(["/app", "/cloud", "/agents", "/studio", "/track", "/bot", "/comptes", "/app/espaces"]);
+    expect(within(within(picker).getByRole("list", { name: "Intégrés à Selio Manager" })).getAllByRole("link").map((a) => a.textContent)).toEqual(["Selio Cloudintégré", "Selio Agentintégré"]);
     // Échap referme la liste et rend le focus au sélecteur.
     within(picker).getAllByRole("link")[1]!.focus();
     fireEvent.keyDown(document, { key: "Escape" });

@@ -62,7 +62,7 @@ function Deal({ o }: { o: OpportunityDetail }) {
   return (
     <>
       <PageHeader
-        eyebrow="Radar · affaire"
+        eyebrow="Selio Bot · affaire"
         title={o.title}
         description={[o.observed.brand, o.observed.size ? `taille ${o.observed.size}` : null, o.observed.condition ? ITEM_CONDITION_LABELS[o.observed.condition] : null, o.observed.category ? ITEM_CATEGORY_LABELS[o.observed.category] : null].filter(Boolean).join(" · ")}
       />
