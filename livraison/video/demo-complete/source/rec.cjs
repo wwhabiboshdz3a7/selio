@@ -82,10 +82,10 @@ function card(title, sub, small) {
 
 const SCENES = {
   async intro() {
-    await page.setContent(card('Démonstration complète', 'Pour Felix Beauregard · 16 novembre 2026', 'Vidéo sans son : tout est expliqué en sous-titres.<br>Toutes les données affichées à l’écran sont des exemples.'));
+    await page.setContent(card('Démonstration complète', 'Pour Felix Beauregard · 17 novembre 2026', 'Selio : un écosystème de cinq filiales pour les vendeurs Vinted.<br>Vidéo sans son : tout est expliqué en sous-titres. Les données affichées sont des exemples.'));
     await moveTo(1590, 890);
-    await say('Bonjour Felix. Voici une visite complète de Selio, de la vitrine publique jusqu’à l’administration.', 6500);
-    await say('La vidéo est sans son : tout est expliqué ici, en sous-titres. Les données affichées sont des exemples.', 6000);
+    await say('Bonjour Felix. Voici une visite complète de Selio, l’écosystème des vendeurs et des pros de l’achat-revente sur Vinted.', 7000);
+    await say('Selio, ce sont cinq filiales : Manager, Studio, Track, Bot et Compte. La vidéo est sans son, et les données sont des exemples.', 7500);
     await flush();
   },
 
@@ -93,36 +93,25 @@ const SCENES = {
     await go('/');
     await say('Voici la vitrine publique de Selio, en ligne sur seliovprod.netlify.app.');
     await hold(1500);
-    await say('Selio, c’est la boîte à outils du revendeur Vinted : gérer, publier, négocier, acheter et analyser, au même endroit.');
-    await scroll(700, 4500);
-    await say('La gamme : Selio Manager, Studio, Track, Radar, Bot, Cloud, Agents et Comptes. Chaque produit a son rôle.');
+    await scroll(650, 4500);
+    await say('Cinq filiales, chacune avec sa mission : gérer, créer les annonces, analyser le marché, trouver et acheter, accompagner.');
     await scroll(800, 6000);
-    await say('Le parcours complet, de l’achat jusqu’à l’étiquette d’envoi, en huit étapes.');
-    await scroll(700, 5000);
-    await say('Sourcing sur le marché avec Track, et bientôt auprès de fournisseurs partenaires (aucun accord signé pour l’instant).');
-    await scroll(700, 5000);
-    await say('Achat avec Radar, photos et annonce avec Studio, vente et négociation avec Bot.');
-    await scroll(800, 5000);
-    await say('Puis la commande, l’étiquette d’envoi et l’après-vente : tout le cycle de l’article.');
-    await scroll(1200, 7000);
-    await say('Tout en bas : appel à l’essai gratuit de 14 jours, et les liens vers chaque produit.');
-    await scroll(3000, 6000);
-    await flush();
-    await go('/tarifs');
-    await say('Les tarifs : trois forfaits, Starter, Pro et Agence, avec 14 jours d’essai gratuit.');
-    await hold(2500);
-    await scroll(650, 5000);
-    await say('Au mois ou à l’année (deux mois offerts). Le tableau compare tout, fonction par fonction.');
-    await scroll(1100, 7000);
-    await say('Selio Comptes se vend à part, comme une prestation payée une fois.');
+    await say('Le parcours complet : Track analyse le marché, Bot trouve et achète, Studio crée l’annonce, Manager vend, négocie et expédie.');
+    await scroll(1500, 9000);
+    await say('Le sourcing auprès de fournisseurs partenaires arrivera ensuite : aucun accord n’est encore signé.');
     await scroll(1200, 6000);
     await flush();
-    await go('/produits/bot');
-    await say('Chaque produit a sa propre page. Ici, Selio Bot : les automatisations qui travaillent pour vous.');
-    await scroll(900, 6000);
+    await go('/produits/manager');
+    await say('Chaque filiale a sa page. Selio Manager : la gestion complète et l’automatisation de l’activité Vinted.');
+    await scroll(700, 5500);
+    await say('Selio Cloud et Selio Agent ne sont pas des filiales : ce sont deux fonctionnalités intégrées à Selio Manager.');
+    await scroll(900, 6500);
     await flush();
-    await go('/inscription');
-    await say('L’inscription prend une minute. Pour l’instant, l’essai démarre sans carte bancaire : rien n’est débité.');
+    await go('/tarifs');
+    await say('Les tarifs : 14 jours d’essai gratuit, puis Starter, Pro ou Agence, au mois ou à l’année.');
+    await scroll(650, 5000);
+    await say('Le tableau compare tout, filiale par filiale. Selio Compte se règle à la prestation ou sur devis.');
+    await scroll(1500, 8000);
     await flush();
   },
 
@@ -131,294 +120,262 @@ const SCENES = {
     await page.waitForURL((u) => u.pathname === '/app/espaces', { timeout: 20000 }).catch(() => {});
     await sleep(800);
     await say('Pour la démo, on entre avec un compte d’exemple : Marie, revendeuse, boutique « Atelier Seconde Main ».');
-    await hold(2000);
-    await say('Voici l’accueil des espaces : toute la gamme Selio, avec l’état de chaque produit.');
-    await scroll(700, 6000);
-    await say('On passe d’un espace à l’autre avec le sélecteur en haut à gauche.');
-    await scroll(900, 5000);
+    await hold(1500);
+    await say('L’accueil réunit les cinq filiales : Selio Manager, Studio, Track, Bot et Compte.');
+    await scroll(900, 7000);
+    await say('Et, intégrés à Selio Manager, ses deux fonctionnalités : Selio Cloud et Selio Agent.');
+    await scroll(1200, 6000);
     await flush();
   },
 
   async manager() {
     await go('/app');
-    await say('Selio Manager, l’outil de gestion au quotidien. La vue d’ensemble montre l’essentiel du mois.');
+    await say('Filiale 1 — Selio Manager : la gestion complète de l’activité Vinted, au même endroit, pour tous vos comptes.');
     await step('raccourcis', async () => { await point(page.getByText('Vos raccourcis').first()); });
-    await say('En haut, vos raccourcis : chacun choisit les siens, retrouvés sur téléphone et sur ordinateur.');
-    await step('modifier raccourcis', async () => {
-      await click(page.getByRole('button', { name: 'Modifier les raccourcis' }));
-      await say('On peut en ajouter, en retirer ou les remettre dans l’ordre qu’on veut.');
-      await hold(3500);
-      const close = page.getByRole('button', { name: /^(Terminer|Fermer|Annuler|OK)$/ }).first();
-      if (await close.count()) await click(close); else await page.keyboard.press('Escape');
-    });
+    await say('La vue d’ensemble : vos raccourcis, puis le chiffre d’affaires, le bénéfice, les ventes, le stock et ce qu’il reste à traiter.');
     await step('kpi', async () => { await point(page.getByText('Chiffre d\'affaires').first()); });
-    await say('Chiffre d’affaires, bénéfice, ventes, stock actif et choses à traiter, calculés depuis les vraies données du compte.');
-    await step('alertes', async () => { await point(page.getByText(/tâche\(s\) d'automatisation en échec/).first()); });
-    await say('Les alertes : une tâche automatique en échec, des actions à valider. Rien ne part sans règle claire.');
+    await hold(2000);
     await scroll(800, 5000);
     await say('Plus bas : ventes et marge, objectif du mois, catégories, meilleurs jours de vente, rendement du dressing.');
-    await scroll(1100, 7000);
-    await say('Et les dernières actions de Selio, tirées du journal d’activité.');
-    await scroll(1500, 6000);
+    await scroll(1200, 6500);
     await flush();
-  },
-
-  async journal() {
     await go('/app/journal');
-    await say('Le journal d’activité raconte tout ce que Selio et l’équipe ont fait, en phrases simples.');
-    await hold(1500);
-    await say('Négociation, réponses, achats, ventes, bordereaux : chaque ligne dit qui, quoi et quand, avec un lien vers l’objet.');
+    await say('Le journal d’activité raconte tout ce que Selio et l’équipe ont fait : réponses, négociations, ventes, bordereaux.');
     await scroll(500, 5000);
-    await step('filtre auto', async () => {
-      await scrollTop(); await sleep(400);
-      await click(any(/^Automatique$/));
-      await say('Filtre « Automatique » : seulement ce que Selio a fait tout seul. On peut aussi filtrer par membre, type et période.');
-      await scroll(500, 4000);
-      await scrollTop(); await sleep(400);
-      await click(any(/^Tout$/));
-    });
     await flush();
   },
 
   async items() {
     await go('/app/items');
-    await say('Articles et stock : tout le stock, sur tous les comptes Vinted, avec les compteurs en tête.');
-    await hold(1500);
-    await say('Des filtres rapides : statut, à republier, sans photo, niveau de marge, catégorie, marque, compte.');
+    await say('Gestion du stock, centralisée : tous les articles de tous les comptes, avec filtres rapides et compteurs.');
     await step('republier', async () => {
       await click(any(/^À republier/));
-      await say('Exemple : les articles à republier, en un clic.');
+      await say('Exemple : les articles à remettre en ligne, en un clic.');
       await hold(2500);
       await click(any(/^Tous actifs/));
     });
-    await step('grille', async () => {
-      await click(any(/^Grille$/));
-      await say('Vue en grille, avec les photos…');
-      await scroll(500, 3500); await scrollTop(); await sleep(300);
-      await click(any(/^Liste$/));
-      await say('… ou en liste, plus dense.');
-    });
     await step('prix', async () => {
       await click(page.getByRole('button', { name: /^Modifier le prix de/ }).first());
-      await say('Le prix se modifie directement dans la liste, sans ouvrir l’article. Entrée pour valider, Échap pour annuler.');
-      await hold(3000);
+      await say('Le prix se modifie directement dans la liste. On peut aussi agir sur plusieurs articles à la fois.');
+      await hold(2500);
       await page.keyboard.press('Escape');
-    });
-    await step('selection', async () => {
       const boxes = page.getByRole('checkbox', { name: /^Sélectionner / });
-      await click(boxes.nth(0)); await click(boxes.nth(1)); await click(boxes.nth(2));
-      await say('On peut sélectionner plusieurs articles pour des actions groupées : statut, prix, republication, archivage.');
-      await hold(4000);
+      await click(boxes.nth(0)); await click(boxes.nth(1));
+      await hold(2500);
       await page.keyboard.press('Escape');
     });
     await step('fiche', async () => {
       await click(any('Pull col roulé Tommy Hilfiger rouge'));
-      await say('La fiche d’un article : photos, prix, prix plancher, marge, historique et état de l’annonce.');
-      await scroll(700, 5000);
-      await scroll(900, 5000);
+      await say('La fiche d’un article : photos, prix, marge, rendement de l’annonce et prix conseillé.');
+      await scroll(800, 5500);
     });
     await flush();
-  },
-
-  async studio() {
-    await go('/studio');
-    await say('Selio Studio transforme des photos en annonce complète.');
-    await step('photos', async () => {
-      await click(page.getByRole('button', { name: 'Essayer avec des photos d\'exemple' }));
-      await say('On ajoute les photos d’un ou plusieurs articles. Ici, des photos d’exemple : un jean et un pull.');
-      await hold(2500);
-      await click(page.getByRole('button', { name: 'Préparer l\'annonce' }));
-      await sleep(2500);
-      await say('Studio trie seul les photos par article et par rôle : face, dos, étiquette, mètre ruban.');
-      await hold(3500);
-      await click(page.getByRole('button', { name: 'Continuer vers l\'étiquette' }));
-      await sleep(2000);
-      await say('Il lit l’étiquette : marque, taille, matière. Rien n’est inventé : chaque information dit d’où elle vient.');
-      await scroll(400, 3000);
-      await click(page.getByRole('button', { name: 'Continuer vers les mesures' }));
-      await sleep(2000);
-      await say('Puis les mesures, lues sur le mètre ruban ou demandées au vendeur si elles manquent.');
-      await scroll(400, 3000);
-      await click(page.getByRole('button', { name: 'Générer l\'annonce' }));
-      await sleep(3000);
-      await say('Et voici l’annonce : titre, description, attributs, et trois prix proposés.');
-      await scroll(500, 4500);
-      await say('Vente rapide, standard ou marge maximale : vous choisissez. Rien n’est publié sans votre clic.');
-      await scroll(600, 5000);
-    });
+    await go('/app/dressing');
+    await say('Le dressing intelligent note chaque annonce sur 100 et prépare la remise en ligne automatique au bon moment.');
+    await scroll(600, 5500);
     await flush();
   },
 
   async messages() {
     await go('/app/messages');
-    await say('La messagerie réunit les conversations de tous vos comptes Vinted.');
+    await say('La messagerie automatisée réunit les conversations de tous vos comptes.');
     await step('conv', async () => {
       await click(any(/Léa M\./));
-      await say('Dans une conversation, Selio propose une réponse et suit la négociation selon vos prix planchers.');
+      await say('Négociation par intelligence artificielle : Selio accepte, refuse ou fait une contre-offre, jamais sous votre prix plancher.');
       await hold(3000);
-      await scroll(500, 4000);
-      await say('Une offre trop basse ? Contre-offre automatique, jamais sous le plancher. Vous gardez la main.');
+      await scroll(500, 4500);
     });
     await flush();
     await go('/app/orders');
-    await say('Les commandes : à expédier, expédiées, livrées, avec le bordereau d’envoi.');
+    await say('Le suivi des commandes et des ventes, avec le bordereau d’envoi.');
     await scroll(400, 4000);
     await flush();
-  },
-
-  async dressing() {
-    await go('/app/dressing');
-    await say('Le dressing intelligent note chaque annonce sur 100, dit quand la republier et avec quelle variante.');
-    await scroll(700, 6000);
-    await flush();
     await go('/app/analytics');
-    await say('Les analyses : chiffre d’affaires, marge de l’achat à la revente, par catégorie, canal et marque.');
-    await scroll(800, 6000);
-    await say('Et une alerte avant les seuils de déclaration à l’administration fiscale.');
-    await scroll(1000, 6000);
-    await flush();
-    await go('/app/automatisation');
-    await say('Tout le parcours peut être automatisé, en quatre blocs : favoris, réponses, négociation, après-vente.');
-    await scroll(800, 6000);
+    await say('La gestion des marges : de l’achat à la revente, par catégorie, canal et marque, avec alerte avant les seuils fiscaux.');
+    await scroll(900, 7000);
     await flush();
   },
 
-  async bot() {
-    await go('/bot');
-    await say('Selio Bot regroupe les automatisations qui travaillent pour vous, selon vos règles et vos plafonds.');
-    await hold(1500);
-    await say('Sept bots : négociation, relance 24 h, republication, réponses, favoris, achat auto et après-vente.');
-    await scroll(600, 5000);
-    await say('Chacun montre son état, où il tourne, les limites du forfait et ses dernières actions.');
-    await scroll(600, 4000);
-    await step('tout arreter', async () => {
-      await scrollTop(); await sleep(500);
-      await click(any('Tout arrêter'));
-      await say('Le bouton « Tout arrêter » coupe tous les bots d’un coup, immédiatement, côté serveur.');
-      await hold(3500);
+  async automatisation() {
+    await go('/app/automatisation');
+    await say('Les automatisations du Manager : négociation par IA, relances, republication, réponses, messages aux favoris, après-vente.');
+    await scroll(600, 5500);
+    await say('Chacune montre son état et se règle selon vos limites. Un bouton arrête toutes les automatisations d’un coup.');
+    await step('stop', async () => {
+      await scrollTop(); await sleep(400);
+      await click(any('Arrêter toutes les automatisations'));
+      await hold(3000);
       await click(page.getByRole('button', { name: 'Annuler' }).first());
     });
-    await step('nego', async () => {
-      await click(any('Régler et surveiller'));
-      await say('Exemple : le bot de négociation, ses règles et ses dernières actions.');
-      await scroll(700, 5000);
-    });
-    await flush();
-    await go('/bot/achat-auto');
-    await say('L’achat auto : l’achat assisté vous propose chaque affaire à valider en un clic.');
-    await scroll(600, 5000);
-    await say('L’achat automatique attend la validation juridique : deux verrous côté serveur l’empêchent de partir.');
-    await scroll(700, 5000);
+    await scroll(1200, 6000);
     await flush();
   },
 
-  async radar() {
-    await go('/app/radar');
-    await say('Selio Radar repère les bonnes affaires et note chacune sur 100, avec la revente estimée.');
-    await scroll(700, 6000);
-    await flush();
-    await go('/app/purchase');
-    await say('Les affaires à valider : vous gardez la main sur chaque achat.');
+  async cloudAgent() {
+    await go('/cloud');
+    await say('Fonctionnalité du Manager — Selio Cloud : fait tourner certaines automatisations à distance, sans laisser votre ordinateur allumé.');
+    await scroll(500, 5000);
+    await say('Tout est prêt techniquement ; son ouverture attend la validation juridique.');
     await scroll(500, 4000);
+    await flush();
+    await go('/agents');
+    await say('Fonctionnalité du Manager — Selio Agent : déléguer des tâches et des accès à des collaborateurs ou prestataires.');
+    await scroll(500, 5000);
+    await say('Chaque personne a son identifiant et un rôle qui décide de ce qu’elle voit et fait. Le travail en équipe devient simple.');
+    await scroll(500, 4000);
+    await flush();
+  },
+
+  async studio() {
+    await go('/studio');
+    await say('Filiale 2 — Selio Studio : la création et l’optimisation des annonces grâce à l’intelligence artificielle.');
+    await step('studio', async () => {
+      await click(page.getByRole('button', { name: 'Essayer avec des photos d\'exemple' }));
+      await say('Étape 1 : les photos de l’article. Ici, un jean Levi’s : face, dos, étiquette et mètre ruban.');
+      await hold(3000);
+      await click(page.getByRole('button', { name: 'Préparer l\'annonce' }));
+      await sleep(2500);
+      await say('Studio trie seul les photos par article et par rôle.');
+      await hold(2500);
+      await click(page.getByRole('button', { name: 'Continuer vers l\'étiquette' }));
+      await sleep(2000);
+      await say('Il lit l’étiquette : marque, modèle, taille, matière. Chaque information indique d’où elle vient.');
+      await scroll(400, 3500);
+      await click(page.getByRole('button', { name: 'Continuer vers les mesures' }));
+      await sleep(2000);
+      await say('Puis les mesures, relevées sur le mètre ruban : rien n’est inventé.');
+      await scroll(400, 3000);
+      await click(page.getByRole('button', { name: 'Générer l\'annonce' }));
+      await sleep(3500);
+      const title = page.getByLabel(/^Titre/).first();
+      await point(title);
+      await say('Étape 2 : le titre, optimisé pour la recherche Vinted : modèle, coupe, coloris, taille et matière.', 6500);
+      await hold(2500);
+      const desc = page.getByLabel(/^Description/).first();
+      await point(desc);
+      await say('Étape 3 : la description complète : modèle et coupe, matière et entretien, état, mesures, conseils de taille, envoi.', 7500);
+      await scroll(350, 7000);
+      await say('Chaque mesure cite sa source. Les mots-clés et les attributs sont remplis automatiquement.', 6000);
+      await scroll(450, 5000);
+      await say('Étape 4 : le résultat final, avec trois prix proposés : vente rapide, standard ou marge maximale.', 6000);
+      await scroll(500, 5000);
+      await say('Rien n’est publié sans votre clic. Des minutes gagnées sur chaque article.', 5000);
+    });
     await flush();
   },
 
   async track() {
     await go('/track');
-    await say('Selio Track analyse le marché : filtres suivis, tendances, niches et recherche par photo.');
+    await say('Filiale 3 — Selio Track : l’analyse du marché et la recherche d’opportunités.');
     await hold(1500);
     await say('Dans cette démo, les chiffres du marché sont simulés : la lecture réelle s’ouvrira après validation juridique.');
     await scroll(400, 4000);
     await step('filtre', async () => {
       await go('/track/filtres');
       await click(any(/^Levi's 501 · Homme/));
-      await say('Chaque filtre suivi est relu toutes les deux heures : prix médian, nouvelles annonces, annonces disparues.');
-      await scroll(600, 5000);
-      await say('Les alertes de tendance préviennent sur le téléphone : prix qui bouge, afflux d’annonces, ventes plus rapides.');
-      await scroll(900, 6000);
+      await say('Suivi du marché : chaque recherche est relue toutes les deux heures — prix médian, nouvelles annonces, annonces disparues.');
+      await scroll(600, 5500);
+      await say('Des alertes préviennent quand le prix bouge ou quand les ventes accélèrent.');
+      await scroll(900, 5500);
     });
     await flush();
     await go('/track/niches');
-    await say('Le scan de niche donne une note sur 100 : demande, vitesse de vente, concurrence et marge.');
+    await say('L’analyse des niches : une note sur 100 selon la demande, la vitesse de vente, la concurrence et la marge.');
     await scroll(500, 5000);
     await flush();
     await go('/track/photo');
-    await say('Et la recherche par photo : une photo suffit pour estimer un prix. La photo n’est jamais gardée.');
+    await say('Produits similaires et estimation du prix de revente à partir d’une photo : une aide à la décision avant d’acheter ou de vendre.');
+    await hold(2500);
+    await say('Track analyse et identifie les opportunités. Il n’achète pas : c’est le rôle de Selio Bot.', 5500);
     await flush();
   },
 
-  async cloud() {
-    await go('/cloud');
-    await say('Selio Cloud fait tourner le Manager et le Bot 24 h/24, sans ordinateur allumé.');
+  async bot() {
+    await go('/bot');
+    await say('Filiale 4 — Selio Bot : le bot de recherche et d’achat d’articles, distinct de Selio Manager.');
+    await hold(1500);
+    await say('Manager gère et automatise votre compte. Bot, lui, recherche, détecte et achète les articles.');
     await scroll(500, 5000);
-    await say('Tout est prêt techniquement ; l’ouverture attend l’avis de l’avocat.');
-    await scroll(500, 4000);
-    await flush();
-    await go('/agents');
-    await say('Selio Agents : les équipes, les rôles et les accès. Chaque personne a son identifiant et son rôle.');
-    await scroll(500, 5000);
-    await flush();
-    await go('/comptes');
-    await say('Selio Comptes aide à ouvrir et préparer une boutique Vinted : checklist et textes prêts à copier.');
-    await scroll(900, 6000);
-    await say('Une prestation est aussi proposée : audit, mise en place complète ou accompagnement de 30 jours.');
-    await scroll(900, 5000);
-    await flush();
-  },
-
-  async settings() {
-    await go('/app/settings/billing');
-    await say('Dans les paramètres : abonnement, factures, utilisation, équipe, parrainage et sécurité.');
+    await say('Recherches automatisées selon vos critères, surveillance des annonces et alertes.');
     await scroll(500, 4500);
-    await say('Un code promo s’ajoute ici. En attendant le paiement Revolut, l’essai démarre sans carte et rien n’est débité.');
-    await scroll(700, 5000);
+    await say('Des limites de dépenses par jour et par achat, et l’historique de tous les achats.');
+    await scroll(700, 5500);
+    await flush();
+    await go('/app/radar');
+    await say('Les bonnes affaires, chacune avec un score d’intérêt sur 100.');
+    await step('affaire', async () => {
+      await click(page.getByRole('link', { name: 'Ouvrir l\'affaire' }).first().or(page.getByRole('button', { name: 'Ouvrir l\'affaire' }).first()));
+      await say('Pour chaque affaire : le prix de revente estimé et le potentiel de marge, frais compris.');
+      await scroll(600, 5500);
+    });
+    await flush();
+    await go('/app/purchase');
+    await say('Achat rapide : vous validez chaque achat en un clic.');
+    await step('valider', async () => {
+      await click(page.getByRole('button', { name: /Valider l.achat/ }).first());
+      await say('Un clic, et l’achat est validé, avec tous les contrôles : prix maximal, budget, plafond du jour, marge positive. (Simulé dans la démo.)', 7500);
+      await hold(3000);
+      await scroll(700, 5000);
+      await say('L’historique des achats garde chaque achat, et son prix est reporté dans Selio Manager pour calculer la marge.');
+    });
+    await flush();
+    await go('/bot/achat-auto');
+    await say('L’achat automatique, avec plafonds et garde-fous. Il reste fermé tant que la validation juridique n’est pas obtenue.');
+    await scroll(700, 6000);
+    await flush();
+  },
+
+  async compte() {
+    await go('/comptes');
+    await say('Filiale 5 — Selio Compte : les services liés aux comptes Vinted et l’accompagnement personnalisé.');
+    await hold(1500);
+    await scroll(300, 3000);
+    await say('Création de comptes Vinted selon les offres, comptes préparés ou non, et commandes en volume sur devis.');
+    await hold(2500);
+    await say('Configuration personnalisée de Selio Manager, et optimisation des messages aux favoris et de la négociation par IA.');
+    await hold(2500);
+    await say('Un accompagnement de 30 jours, et un accompagnement en cas de restriction : diagnostic sur devis, sans promesse de déblocage.');
+    await scroll(500, 5000);
+    await say('Et pour démarrer : une checklist pour ouvrir sa boutique, et des textes prêts à copier.');
+    await scroll(900, 6000);
     await flush();
   },
 
   async admin() {
+    await go('/app/settings/billing');
+    await say('Côté client : l’abonnement, les factures et le code promo. En attendant le paiement en ligne, l’essai démarre sans débit.');
+    await scroll(600, 5000);
+    await flush();
     await go('/admin');
-    await say('Enfin, Selio Admin : l’espace de l’équipe Selio, séparé de l’espace client.');
-    await hold(1500);
-    await say('Le tableau de bord de croissance : inscrits, essais, payants, accès offerts, revenu mensuel estimé.');
+    await say('Enfin, Selio Admin : l’espace de l’équipe Selio, séparé de l’espace client, avec le tableau de bord de croissance.');
     await scroll(500, 4000);
     await flush();
     await go('/admin/comptes');
-    await say('La liste des comptes clients, avec recherche et filtres par qualification, forfait et statut.');
+    await say('Les comptes clients : on peut les qualifier, offrir un forfait, prolonger un essai et noter un suivi interne.');
     await step('fiche', async () => {
       await click(any(/Vintage Sœurs/));
-      await say('Sur chaque fiche : qualifier le compte (client, bêta-testeur, partenaire, équipe…), offrir un forfait, prolonger l’essai.');
-      await scroll(500, 5000);
-      await say('Et une note interne que le client ne voit jamais. Chaque action est gardée dans l’historique du compte.');
-      await scroll(700, 5000);
+      await scroll(600, 5000);
     });
     await flush();
     await go('/admin/offres');
-    await say('Les offres commerciales : nom, réduction, code promo, forfaits concernés, durée.');
+    await say('Les offres commerciales : une réduction, un code promo, et l’affichage dans le bandeau du site.');
     await step('offre', async () => {
       await click(page.getByRole('button', { name: 'Nouvelle offre' }));
       await typeIn(page.getByLabel(/Nom affiché/), 'Lancement bêta');
       await typeIn(page.getByLabel(/Code promo/), 'BETA30');
       await typeIn(page.getByLabel(/Remise/), '30');
       await say('Par exemple « Lancement bêta » : 30 % de remise avec le code BETA30.');
-      const banner = page.getByLabel(/Afficher dans le bandeau/);
-      if (await banner.count()) { await click(banner); }
-      await say('On peut l’afficher dans le bandeau en haut du site, avec un aperçu du texte.');
       await scroll(500, 4000);
       await click(page.getByRole('button', { name: 'Créer l\'offre' }));
-      await say('L’offre est créée : le code marche à l’inscription et sur la page Abonnement, et la remise apparaît sur la facture.');
-      await hold(3000);
+      await hold(2500);
     });
-    await flush();
-    await go('/admin/track');
-    await say('Et le pilotage de Track : état du lecteur, usage par client, bouton de pause.');
-    await scroll(700, 5000);
     await flush();
   },
 
   async outro() {
-    await page.setContent(card('Merci, Felix', 'Selio · Elias et Ibrahim', 'Bêta prévue fin novembre · essai gratuit de 14 jours · seliovprod.netlify.app<br>Réalisé par Ibrahim'));
+    await page.setContent(card('Merci, Felix', 'Selio Manager · Studio · Track · Bot · Compte', 'Selio Cloud et Selio Agent : intégrés à Selio Manager.<br>Bêta prévue fin novembre · essai gratuit de 14 jours · seliovprod.netlify.app<br>Réalisé par Ibrahim'));
     await moveTo(1590, 890);
-    await say('Merci d’avoir regardé. Questions et retours bienvenus : Elias et Ibrahim.', 7000);
+    await say('Merci d’avoir regardé. Cinq filiales, un seul écosystème. Questions et retours bienvenus : Elias et Ibrahim.', 7500);
     await flush();
     await sleep(1500);
   },
