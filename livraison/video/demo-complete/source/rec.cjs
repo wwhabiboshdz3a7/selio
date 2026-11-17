@@ -1,4 +1,4 @@
-// Démo complète de Selio pour Felix Beauregard : enregistrement d'écran (CDP screencast) + sous-titres horodatés.
+// Démo complète de Selio : enregistrement d'écran (CDP screencast) + sous-titres horodatés.
 const { chromium } = require('/opt/node-tools/node_modules/playwright');
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -82,9 +82,9 @@ function card(title, sub, small) {
 
 const SCENES = {
   async intro() {
-    await page.setContent(card('Démonstration complète', 'Pour Felix Beauregard · 17 novembre 2026', 'Selio : un écosystème de cinq filiales pour les vendeurs Vinted.<br>Vidéo sans son : tout est expliqué en sous-titres. Les données affichées sont des exemples.'));
+    await page.setContent(card('Démonstration complète', 'L’écosystème Selio · novembre 2026', 'Selio : un écosystème de cinq filiales pour les vendeurs Vinted.<br>Vidéo sans son : tout est expliqué en sous-titres. Les données affichées sont des exemples.'));
     await moveTo(1590, 890);
-    await say('Bonjour Felix. Voici une visite complète de Selio, l’écosystème des vendeurs et des pros de l’achat-revente sur Vinted.', 7000);
+    await say('Voici une visite complète de Selio, l’écosystème des vendeurs et des pros de l’achat-revente sur Vinted.', 7000);
     await say('Selio, ce sont cinq filiales : Manager, Studio, Track, Bot et Compte. La vidéo est sans son, et les données sont des exemples.', 7500);
     await flush();
   },
@@ -373,7 +373,7 @@ const SCENES = {
   },
 
   async outro() {
-    await page.setContent(card('Merci, Felix', 'Selio Manager · Studio · Track · Bot · Compte', 'Selio Cloud et Selio Agent : intégrés à Selio Manager.<br>Bêta prévue fin novembre · essai gratuit de 14 jours · seliovprod.netlify.app<br>Réalisé par Ibrahim'));
+    await page.setContent(card('Merci de votre attention', 'Selio Manager · Studio · Track · Bot · Compte', 'Selio Cloud et Selio Agent : intégrés à Selio Manager.<br>Bêta prévue fin novembre · essai gratuit de 14 jours · seliovprod.netlify.app<br>Réalisé par Ibrahim'));
     await moveTo(1590, 890);
     await say('Merci d’avoir regardé. Cinq filiales, un seul écosystème. Questions et retours bienvenus : Elias et Ibrahim.', 7500);
     await flush();
