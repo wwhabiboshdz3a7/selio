@@ -71,7 +71,8 @@ test.describe("nouveaux modules", () => {
   test("menu latéral : suit le défilement, bloc compte toujours visible", async ({ page }) => {
     await openDemo(page);
     test.skip(isMobile(page), "Menu en tiroir sur mobile");
-    await gotoApp(page, "/app/radar");
+    // Page longue de Selio Manager (les bonnes affaires appartiennent désormais à Selio Bot, sans bouton « Générer »).
+    await gotoApp(page, "/app/automatisation");
     const account = page.getByRole("button", { name: /Marie Lefèvre/ });
     await expect(account).toBeInViewport();
     await page.mouse.wheel(0, 4000);

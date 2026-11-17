@@ -53,7 +53,7 @@ export function radarConfigFromEnv(env: Record<string, string | undefined> = pro
 /** Premier verrou de Radar Auto, côté serveur : RADAR_AUTO_ENABLED (et la liste des comptes de l'équipe si elle est renseignée). */
 export function radarAutoServerGate(services: Pick<Services, "config">, orgId: string): { allowed: boolean; reason: string | null } {
   const c = services.config ?? {};
-  if (c.radarAutoEnabled !== true) return { allowed: false, reason: `Radar Auto est désactivé sur le serveur (RADAR_AUTO_ENABLED) : ${RADAR_AUTO_SHARED_ADDRESS_NOTICE}` };
+  if (c.radarAutoEnabled !== true) return { allowed: false, reason: `L'achat automatique est désactivé sur le serveur (RADAR_AUTO_ENABLED) : ${RADAR_AUTO_SHARED_ADDRESS_NOTICE}` };
   if (c.radarAutoOrgIds && c.radarAutoOrgIds.length > 0 && !c.radarAutoOrgIds.includes(orgId)) return { allowed: false, reason: `Organisation hors des comptes de l'équipe autorisés (RADAR_AUTO_ORG_IDS) : ${RADAR_AUTO_SHARED_ADDRESS_NOTICE}` };
   return { allowed: true, reason: null };
 }
@@ -215,7 +215,7 @@ export async function planOrgReads(services: Services, orgId: string, now: Date)
 
 async function validateSearchTx(tx: Tx, input: { source: RadarSourceKind; priority: boolean; connectionId: string | null }, id: string | null): Promise<void> {
   if (input.priority && (await repos.searches.countPriority(tx, id)) >= RADAR_MAX_PRIORITY_SEARCHES) {
-    throw new AppError("validation", `${RADAR_MAX_PRIORITY_SEARCHES} recherches prioritaires au plus par organisation (Radar Auto).`, 400);
+    throw new AppError("validation", `${RADAR_MAX_PRIORITY_SEARCHES} recherches prioritaires au plus par organisation (achat automatique).`, 400);
   }
   if (input.connectionId) {
     const c = await repos.connections.byId(tx, input.connectionId).catch(() => null);
@@ -834,8 +834,8 @@ async function autoGateTx(tx: Tx, services: Services, org: Organization): Promis
   if (!server.allowed) reasons.push(server.reason!);
   if (!org.settings.autoBuy.enabled) {
     reasons.push(org.settings.autoBuy.suspendedReason
-      ? `Radar Auto a été arrêté par Selio : ${org.settings.autoBuy.suspendedReason}`
-      : "Radar Auto n'est pas activé dans les réglages de l'organisation.");
+      ? `L'achat automatique a été arrêté par Selio : ${org.settings.autoBuy.suspendedReason}`
+      : "L'achat automatique n'est pas activé dans les réglages de l'organisation.");
   }
   const check = await checkLiveAccountTx(tx, org, org.settings.autoBuy.connectionId, { strict: false });
   if (!check.ok) reasons.push(check.message);
@@ -1146,7 +1146,7 @@ async function settlePurchaseTx(tx: Tx, ctx: OrgContext, s: SettleInput): Promis
       else if (code === "not_logged_in") patch = { status: "blocked", resultNote: "Vinted a refusé la session du compte Achat : connexion à refaire dans Selio Cloud." };
       else patch = { status: "blocked", resultNote: (uncertain ? `Erreur pendant l'achat. ${UNCERTAIN}` : "Erreur pendant l'achat : rien n'a été payé.").slice(0, 500) };
       if (uncertain) {
-        patch = { ...patch, paymentAttempted: true, resultNote: `${patch.resultNote ?? ""} Radar Auto est arrêté jusqu'à votre vérification.`.slice(0, 500) };
+        patch = { ...patch, paymentAttempted: true, resultNote: `${patch.resultNote ?? ""} L'achat automatique est arrêté jusqu'à votre vérification.`.slice(0, 500) };
         suspendReason = s.resume && code === "timeout" ? AUTO_SUSPENDED_3DS : AUTO_SUSPENDED_UNCERTAIN;
       }
       // Résultat incertain ou arrêt : l'affaire n'est plus proposée à l'achat automatique.
@@ -1265,12 +1265,12 @@ export async function expireAwaiting3ds(services: Services, orgId: string, now: 
   return services.db.withOrg(orgId, async (tx) => {
     const expired = await repos.purchases.awaiting3dsExpired(tx, now.toISOString());
     for (const p of expired) {
-      await repos.purchases.update(tx, p.id, { status: "cancelled", paymentAttempted: true, resultNote: "Validation bancaire non reçue dans le délai : achat abandonné. Vérifiez dans Vinted qu'aucune commande n'a été passée. Radar Auto est arrêté jusqu'à votre vérification." });
+      await repos.purchases.update(tx, p.id, { status: "cancelled", paymentAttempted: true, resultNote: "Validation bancaire non reçue dans le délai : achat abandonné. Vérifiez dans Vinted qu'aucune commande n'a été passée. L'achat automatique est arrêté jusqu'à votre vérification." });
       if (p.cloudAccountId) await repos.cloudAccounts.release(tx, p.cloudAccountId).catch(() => undefined);
       await repos.opportunities.update(tx, p.opportunityId, { status: "watching" }).catch(() => null);
       await repos.radarAlerts.enqueue(tx, {
         kind: "payment_3ds", purchaseId: p.id, dedupeKey: `payment_3ds_expired:${p.id}`, scheduledFor: now.toISOString(),
-        payload: radarAlertPayload.parse({ title: "Paiement non validé : achat abandonné", body: "Radar Auto : la validation bancaire n'a pas été reçue à temps. Vérifiez dans Vinted qu'aucune commande n'a été passée ; Radar Auto est arrêté et rien ne sera racheté automatiquement.", url: `/app/radar/achats/${p.id}` }),
+        payload: radarAlertPayload.parse({ title: "Paiement non validé : achat abandonné", body: "Achat automatique : la validation bancaire n'a pas été reçue à temps. Vérifiez dans Vinted qu'aucune commande n'a été passée ; Radar Auto est arrêté et rien ne sera racheté automatiquement.", url: `/app/radar/achats/${p.id}` }),
       });
       await repos.audit.add(tx, { actorUserId: null, action: "purchase.3ds_expired", targetType: "purchase_request", targetId: p.id });
       const org = await repos.orgs.byId(tx, orgId);
@@ -1312,7 +1312,7 @@ export async function updateRadarSettings(ctx: OrgContext, raw: unknown): Promis
     }
     if (parsed.data.autoBuy?.connectionId) {
       const c = await repos.connections.byId(tx, parsed.data.autoBuy.connectionId).catch(() => null);
-      if (!c || c.usage !== "purchase" || !isActiveAccount(c)) throw new AppError("validation", "Radar Auto n'utilise qu'un compte Vinted « Achat » actif (jamais un compte Perso).", 400);
+      if (!c || c.usage !== "purchase" || !isActiveAccount(c)) throw new AppError("validation", "L'achat automatique n'utilise qu'un compte Vinted « Achat » actif (jamais un compte Perso).", 400);
     }
     const updated = await repos.orgs.update(tx, ctx.orgId, { settings: { ...org.settings, radar, autoBuy } });
     await repos.audit.add(tx, { actorUserId: ctx.userId, action: "radar.settings_updated", targetType: "organization", targetId: ctx.orgId, meta: { radar: parsed.data.radar ?? null, autoBuy: parsed.data.autoBuy ? { ...parsed.data.autoBuy } : null, enabling }, ip: ctx.ip });
