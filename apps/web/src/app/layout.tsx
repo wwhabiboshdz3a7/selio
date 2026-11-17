@@ -112,6 +112,13 @@ const GROUPS: NavGroup[] = [
   ] },
 ];
 
+/** Dans les pages de Selio Cloud ou de Selio Agent : le groupe « Équipe et Cloud » remonte sous la vue d'ensemble, sous-menu visible. */
+function featureFirst(groups: NavGroup[]): NavGroup[] {
+  const i = groups.findIndex((g) => g.items.some((it) => it.children));
+  if (i <= 1) return groups;
+  return [groups[0]!, groups[i]!, ...groups.slice(1, i), ...groups.slice(i + 1)];
+}
+
 /**
  * Menu de la vue réduite (contributeur photos : voir les articles, leur ajouter des photos, lancer le
  * générateur). Les autres pages affichent « réservé à d'autres rôles ».
@@ -168,7 +175,7 @@ const SPACE_NOTES: Partial<Record<SpaceArea | FeatureId, { label: string; text: 
   agents: { label: "Aperçu", text: "Selio Agent, intégré à Selio Manager : l'équipe et les accès sont réels ; les boutiques clientes sont des exemples fictifs." },
   track: { label: "En développement", text: "statistiques seulement ; simulateur par défaut, lecture en direct à valider juridiquement." },
   cloud: { label: "Aperçu", text: "Selio Cloud, intégré à Selio Manager : actions légères seulement (répondre, relancer), avec votre accord ; en démonstration, rien ne touche Vinted." },
-  generateur: { label: "Services sur devis", text: "et, en autonomie, la checklist et les textes à copier." },
+  generateur: { label: "Accompagnement", text: "services sur devis ; en autonomie, la checklist et les textes à copier." },
 };
 
 export function AppLayout({ admin = false }: { admin?: boolean }) {
@@ -217,7 +224,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
   useEffect(() => {
     if (ownedArea) writeLastSpace(ownedArea);
   }, [ownedArea]);
-  const groups = reduced ? PHOTOS_GROUPS : area === "selio" ? GROUPS : SPACE_GROUPS[area];
+  const groups = reduced ? PHOTOS_GROUPS : area === "selio" ? (feature ? featureFirst(GROUPS) : GROUPS) : SPACE_GROUPS[area];
   // Selio Cloud : l'arrêt global des automatisations met aussi le Cloud en pause (bandeau et menu).
   const automation = useQuery({ queryKey: ["automation-state"], queryFn: () => client.getAutomationState(), enabled: feature === "cloud" && !reduced, staleTime: 15_000 });
   const cloudPaused = feature === "cloud" && automation.data?.globalPaused === true;

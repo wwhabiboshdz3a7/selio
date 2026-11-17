@@ -79,7 +79,7 @@ test.describe("vitrine", () => {
     const monthlyRows = page.getByRole("list", { name: "Selio Bot et Selio Cloud au mois" });
     await expect(monthlyRows).toContainText("14,99 €");
     await expect(page.getByText("Option achat automatique de Selio Bot", { exact: true })).toBeVisible();
-    await expect(page.getByText("Selio Cloud en option", { exact: true })).toBeVisible();
+    await expect(monthlyRows.getByText("Selio Cloud en option", { exact: true })).toBeVisible();
     await expect(page.getByText(/Selio Radar/)).toHaveCount(0);
     // Automatisations de Selio Manager incluses selon le forfait ; Selio Compte : prestations payées une fois, et devis.
     await expect(page.getByRole("article", { name: "Automatisations de Selio Manager" })).toContainText("Incluses");
@@ -104,9 +104,9 @@ test.describe("vitrine", () => {
     await expect(table.getByRole("rowheader", { name: /Comptes Vinted connectés/ })).toBeVisible();
     await expect(table.getByRole("rowheader", { name: /Annonces rédigées/ })).toBeVisible();
     for (const group of ["Selio Manager", "Selio Cloud (fonctionnalité de Selio Manager)", "Selio Agent (fonctionnalité de Selio Manager)", "Selio Studio", "Selio Track", "Selio Bot", "Selio Compte"]) await expect(table.getByRole("columnheader", { name: group, exact: true })).toBeVisible();
-    // L'inscription n'offre plus de choix de durée : 14 jours, carte enregistrée, rien débité.
+    // L'inscription n'offre plus de choix de durée : 14 jours, rien débité, carte demandée à la première ouverture.
     await page.goto("/inscription");
-    await expect(page.getByTestId("trial-terms")).toContainText("14 jours d'essai, carte enregistrée, rien n'est débité avant la fin");
+    await expect(page.getByTestId("trial-terms")).toContainText("14 jours d'essai, rien n'est débité avant la fin");
     await expect(page.getByTestId("trial-terms")).toContainText("elle vous sera demandée à la première ouverture de l'application");
     await expect(page.getByRole("radiogroup", { name: /Durée de l'essai/ })).toHaveCount(0);
   });

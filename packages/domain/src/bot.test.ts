@@ -30,7 +30,7 @@ describe("Selio Bot : vues des bots (fonction pure)", () => {
     expect(b.auto_buy!.planLimit).toMatch(/150,00 € par jour.*60,00 €.*85\/100/);
   });
 
-  it("règles actives : allumés, et « Tout arrêter » les coupe tous (achat assisté conservé)", () => {
+  it("règles actives : allumés, et « Arrêter toutes les automatisations » les coupe tous (achat rapide conservé)", () => {
     const rules = [{ kind: "auto_negotiate" as const, enabled: true }, { kind: "reply_on_new_message" as const, enabled: true }, { kind: "post_sale_message" as const, enabled: true }];
     const on = byId(describeBots(inputs({ rules })));
     expect(on.negotiation!.state).toBe("on");
@@ -40,7 +40,7 @@ describe("Selio Bot : vues des bots (fonction pure)", () => {
     const stopped = byId(describeBots(inputs({ rules, stopped: true })));
     for (const id of ["negotiation", "replies", "after_sale"]) expect(stopped[id]!.state).toBe("stopped");
     expect(stopped.auto_buy!.state).toBe("stopped");
-    expect(stopped.auto_buy!.stateDetail).toMatch(/achat assisté reste disponible/);
+    expect(stopped.auto_buy!.stateDetail).toMatch(/achat rapide reste disponible/);
   });
 
   it("relance 24 h : indisponible en Starter, brouillons en Pro, Selio Cloud en Agence ou en attente du Cloud", () => {

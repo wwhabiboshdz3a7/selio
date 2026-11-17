@@ -1,12 +1,22 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { Alert, Button, Field, Input, Textarea } from "@selio/ui";
 import { useMarketingMeta } from "../seo";
 import { MarketingSection } from "../components";
 
+const SUBJECTS = ["question", "compte", "presentation", "bug", "autre"] as const;
+
+/** Sujet pré-choisi par l'adresse (?sujet=compte ; « comptes », l'ancien nom, est accepté). */
+function subjectFromSearch(value: string | null): (typeof SUBJECTS)[number] {
+  const v = value === "comptes" ? "compte" : value;
+  return (SUBJECTS as readonly string[]).includes(v ?? "") ? (v as (typeof SUBJECTS)[number]) : "question";
+}
+
 export default function Contact() {
   useMarketingMeta("/contact");
+  const [params] = useSearchParams();
   const [sent, setSent] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", subject: "question", message: "" });
+  const [form, setForm] = useState({ name: "", email: "", subject: subjectFromSearch(params.get("sujet")) as string, message: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const submit = (e: React.FormEvent) => {
     e.preventDefault();

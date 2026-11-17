@@ -93,7 +93,7 @@ export default function Home() {
         <p className="mt-8 text-xs text-text-muted">Fournisseurs partenaires : une piste annoncée, pas une offre. Aucun accord n'est signé à ce jour ; vous serez prévenu quand ce sera le cas.</p>
       </MarketingSection>
 
-      <MarketingSection reveal id="espaces" className="scroll-mt-14 border-t border-border" eyebrow="Les filiales Selio" title="Cinq filiales, un seul compte" lead="Selio Manager centralise la gestion et l'automatisation de votre activité Vinted ; Selio Cloud et Selio Agent, ses fonctionnalités intégrées, complètent ses possibilités. Autour : Selio Studio crée vos annonces, Selio Track analyse le marché, Selio Bot recherche et achète, Selio Compte s'occupe de vos comptes et vous accompagne.">
+      <MarketingSection reveal id="espaces" className="scroll-mt-14 border-t border-border" eyebrow="Les filiales Selio" title="Cinq filiales, un seul compte" lead="Selio Manager centralise la gestion et l'automatisation de votre activité Vinted. Selio Cloud et Selio Agent, ses fonctionnalités intégrées, complètent ses possibilités. Autour : Selio Studio crée vos annonces, Selio Track analyse le marché, Selio Bot recherche et achète, Selio Compte s'occupe de vos comptes et vous accompagne.">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {RANGE.map((p) => <RangeCard key={p.slug} product={p} compact />)}
         </div>

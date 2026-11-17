@@ -39,7 +39,7 @@ function SpaceCard({ space, figures, figuresNote, signal, secondary, integrated,
         <p className="text-sm text-text-muted">{space.description}</p>
         {signal ? <div className="min-h-10">{signal}</div> : null}
         {figures.length > 0 ? <div>
-          <dl className="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-border bg-border">
+          <dl className={cn("grid gap-px overflow-hidden rounded-lg border border-border bg-border", figures.length === 1 ? "grid-cols-1 sm:max-w-[33%]" : figures.length === 2 ? "grid-cols-2" : "grid-cols-3")}>
             {figures.map((f) => (
               <div key={f.label} className="flex min-w-0 flex-col bg-surface px-3 py-2.5">
                 {/* Sur mobile, libellés sur deux lignes (jamais tronqués), alignés d'une colonne à l'autre. */}
@@ -184,7 +184,7 @@ export default function Hub() {
     selio: { to: "/app/automatisation", label: "Automatisation" },
     studio: { to: "/studio/performances", label: "Ce qui performe" },
     bot: { to: "/app/purchase", label: "Affaires à valider" },
-    generateur: { to: "/contact?sujet=comptes", label: "Demander un devis" },
+    generateur: { to: "/contact?sujet=compte", label: "Demander un devis" },
     cloud: { to: "/cloud/journal", label: "Journal des actions" },
     agents: { to: "/app/settings/access", label: "Comptes et accès" },
   };
