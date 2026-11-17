@@ -5,8 +5,8 @@ import { base64ByteLength, checkModelImage, newId } from "@selio/domain";
 
 /**
  * Photos d'exemple de la démonstration (Studio façon Kavis) : dessinées dans le navigateur, avec ce qui
- * est « visible » dessus décrit au simulateur (rôle, article, texte de l'étiquette, mesures lisibles sur
- * le mètre ruban). Le simulateur ne voit pas les images : sans ces descriptions, il ne lit rien.
+ * est « visible » dessus décrit au simulateur (rôle, article, type de pièce et couleur, texte de l'étiquette,
+ * mesures lisibles sur le mètre ruban). Le simulateur ne voit pas les images : sans ces descriptions, il ne lit rien.
  * Toutes les marques, références et mesures sont des exemples fictifs.
  *
  * Couleurs : contenu des photos dessinées (tissu, étiquette, ruban), pas des couleurs d'interface.
@@ -137,8 +137,8 @@ function tape(ctx: CanvasRenderingContext2D, x: number, y: number, length: numbe
 
 /** Jeu d'exemple : un jean (face, dos, étiquette, mètre ruban posé à la taille) et un pull (face, étiquette peu lisible). */
 export const DEMO_SAMPLE_SET: readonly SampleSpec[] = [
-  { name: "jean-face.jpg", content: { name: "jean-face.jpg", role: "front", group: 1 }, draw: (ctx, w, h) => { backdrop(ctx, w, h); jeans(ctx, w, h); } },
-  { name: "jean-dos.jpg", content: { name: "jean-dos.jpg", role: "back", group: 1 }, draw: (ctx, w, h) => { backdrop(ctx, w, h); jeans(ctx, w, h, true); } },
+  { name: "jean-face.jpg", content: { name: "jean-face.jpg", role: "front", group: 1, visible: { piece: "jean", colors: ["Bleu"] } }, draw: (ctx, w, h) => { backdrop(ctx, w, h); jeans(ctx, w, h); } },
+  { name: "jean-dos.jpg", content: { name: "jean-dos.jpg", role: "back", group: 1, visible: { piece: "jean", colors: ["Bleu"] } }, draw: (ctx, w, h) => { backdrop(ctx, w, h); jeans(ctx, w, h, true); } },
   {
     name: "jean-etiquette.jpg",
     content: { name: "jean-etiquette.jpg", role: "label", group: 1, label: { brand: "Levi's", size: "W32 L32", material: "100 % coton", reference: "501", confidence: 0.92 } },
@@ -163,7 +163,7 @@ export const DEMO_SAMPLE_SET: readonly SampleSpec[] = [
       tape(ctx, w / 2 - 190, 150, 380 * (45 / 41), 0);
     },
   },
-  { name: "pull-face.jpg", content: { name: "pull-face.jpg", role: "front", group: 2 }, draw: (ctx, w, h) => { backdrop(ctx, w, h); sweater(ctx, w); } },
+  { name: "pull-face.jpg", content: { name: "pull-face.jpg", role: "front", group: 2, visible: { piece: "pull en maille", colors: ["Vert"] } }, draw: (ctx, w, h) => { backdrop(ctx, w, h); sweater(ctx, w); } },
   {
     name: "pull-etiquette.jpg",
     content: { name: "pull-etiquette.jpg", role: "label", group: 2, label: { brand: "Sézane", size: "M", material: "70 % laine, 30 % alpaga", confidence: 0.62 } },

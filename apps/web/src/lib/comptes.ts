@@ -1,11 +1,11 @@
 /**
- * Selio Comptes (§5.15) : accompagnement pour ouvrir et préparer un compte vendeur Vinted, sans aucune
+ * Selio Compte (§5.15) : accompagnement pour ouvrir et préparer un compte vendeur Vinted, sans aucune
  * action à la place du client. Selio ne crée aucun compte, ne se connecte à rien et n'envoie rien : la
  * checklist se suit dans Vinted, et les textes ci-dessous sont des modèles à copier, rédigés ici à partir
  * de quelques réponses (aucun appel à l'IA, aucune donnée envoyée).
  */
 
-/** Bandeau obligatoire de Selio Comptes : aucune action à la place du client. */
+/** Bandeau obligatoire de Selio Compte : aucune action à la place du client. */
 export const COMPTES_NOTICE = "Selio ne crée aucun compte à votre place : vous suivez la checklist dans Vinted.";
 
 export interface ChecklistStep {

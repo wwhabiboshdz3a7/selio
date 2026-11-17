@@ -105,7 +105,7 @@ describe("Radar Auto : verrous", () => {
   it("affiche chaque verrou, la mention de l'adresse partagée, et tout en lecture seule tant que le serveur est fermé", async () => {
     await demo();
     mount("/app/auto-buy", "/app/auto-buy", <AutoBuy />);
-    const locks = await screen.findByRole("list", { name: "Verrous de Radar Auto" });
+    const locks = await screen.findByRole("list", { name: "Verrous de l'achat automatique" });
     const rows = within(locks).getAllByRole("listitem");
     expect(rows.map((r) => r.getAttribute("data-lock"))).toEqual(["server", "shared_address", "organization", "cloud", "consent"]);
     expect(rows[0]!.getAttribute("data-ok")).toBe("false");
@@ -114,7 +114,7 @@ describe("Radar Auto : verrous", () => {
     expect(within(rows[4]!).getByRole("link", { name: "Accord Cloud" }).getAttribute("href")).toBe("/cloud/accord");
     expect(screen.getByText("Non activé pour les clients")).toBeTruthy();
     expect(screen.getAllByText(RADAR_AUTO_SHARED_ADDRESS_NOTICE).length).toBeGreaterThan(0);
-    expect(screen.getByText("Radar Auto verrouillé")).toBeTruthy();
+    expect(screen.getByText("Achat automatique verrouillé")).toBeTruthy();
     expect(screen.getByTestId("auto-readonly").textContent).toMatch(/le verrou du serveur est fermé/);
     expect((screen.getByRole("switch") as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByLabelText("Seuil de note") as HTMLInputElement).disabled).toBe(true);
@@ -144,7 +144,7 @@ describe("Radar Auto : verrous", () => {
     const client = await demo();
     vi.spyOn(client, "autoBuyStatus").mockResolvedValue(await unlockedStatus(client));
     mount("/app/auto-buy", "/app/auto-buy", <AutoBuy />);
-    await screen.findByRole("list", { name: "Verrous de Radar Auto" });
+    await screen.findByRole("list", { name: "Verrous de l'achat automatique" });
     expect(screen.queryByTestId("auto-readonly")).toBeNull();
     expect((screen.getByRole("switch") as HTMLButtonElement).disabled).toBe(false);
   });
@@ -219,7 +219,7 @@ describe("Paramètres › Notifications : alertes Radar sur ce téléphone", () 
     const subscribe = vi.spyOn(client, "subscribePush");
     const test = vi.spyOn(client, "testPush").mockResolvedValue({ devices: 1, sent: 1, failed: 0, disabled: 0 });
     mount("/app/settings/notifications", "/app/settings/notifications", <RadarPushSettings env={device.env} />);
-    expect(await screen.findByText("Alertes Radar sur ce téléphone")).toBeTruthy();
+    expect(await screen.findByText("Alertes Selio Bot sur ce téléphone")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Envoyer une notification de test" }) as HTMLButtonElement).disabled).toBe(true);
     const enable = await screen.findByRole("button", { name: "Activer les alertes sur ce téléphone" });
     await waitFor(() => expect((enable as HTMLButtonElement).disabled).toBe(false));
@@ -255,7 +255,7 @@ describe("Paramètres › Notifications : alertes Radar sur ce téléphone", () 
     expect(await screen.findByText("Démonstration : rien n'est envoyé")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Envoyer une notification de test" }));
     const preview = await screen.findByRole("status", { name: "Aperçu de la notification" });
-    expect(within(preview).getByText("Selio Radar : notification de test")).toBeTruthy();
+    expect(within(preview).getByText("Selio Bot : notification de test")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Note minimale d'une alerte"), { target: { value: "88" } });
     fireEvent.click(screen.getByRole("switch", { name: /Heures calmes/ }));
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));

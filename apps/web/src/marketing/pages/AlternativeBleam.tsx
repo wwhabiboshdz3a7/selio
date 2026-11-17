@@ -18,7 +18,7 @@ export default function AlternativeBleam() {
         <div className="mk-placeholder-block max-w-3xl" data-placeholder="">{ELIAS_PLACEHOLDER} Les raisons qui reviennent chez les revendeurs, avec leurs mots.</div>
       </MarketingSection>
 
-      <MarketingSection className="border-t border-border bg-surface" eyebrow="Le logiciel Vinted de Selio" title="Ce que propose Selio" lead="Un outil revendeur Vinted pour la gestion au quotidien, et des filiales pour le reste. Chaque page dit ce qui est prêt et ce qui ne l'est pas.">
+      <MarketingSection className="border-t border-border bg-surface" eyebrow="Le logiciel Vinted de Selio" title="Ce que propose Selio" lead="Un outil revendeur Vinted en cinq filiales : Selio Manager pour la gestion et l'automatisation (avec Selio Cloud et Selio Agent), Selio Studio, Selio Track, Selio Bot et Selio Compte. Chaque page dit ce qui est prêt et ce qui ne l'est pas.">
         <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {PRODUCTS.map((p) => (
             <li key={p.slug} className="flex flex-col rounded-xl border border-border bg-bg p-5">

@@ -10,6 +10,7 @@ import "./constellation.css";
 
 /**
  * Héro de la vitrine : une sphère céleste dont les 14 étoiles-fonctionnalités
+ * (rangées par filiale : Manager, Studio, Track, Bot, puis l'IA commune)
  * deviennent des cartes au défilement, puis une quinzième carte, « Votre
  * constellation commence ici », qui porte les deux actions. Le texte, les liens
  * et les cartes sont du vrai HTML (accessible, indexable) ; les canevas sont
@@ -149,7 +150,7 @@ export function ConstellationHero() {
                   ))}
                 </h1>
                 <p className="cst-lead" data-cst-intro="lead">
-                  Selio Manager relie votre stock, vos conversations, vos commandes, vos étiquettes et vos marges. Autour, toute la gamme Selio : Studio, Track, Radar, Bot et Cloud, avec des automatisations qui restent sous votre contrôle.
+                  Selio Manager centralise la gestion et l'automatisation de votre activité Vinted : stock, conversations, commandes, étiquettes et marges. Autour, quatre autres filiales : Selio Studio, Selio Track, Selio Bot et Selio Compte, avec des automatisations qui restent sous votre contrôle.
                 </p>
                 <div className="cst-ctas">
                   <Link to="/inscription" className={buttonClass({ variant: "accent", size: "lg", className: "cst-cta-link" })} data-cst-intro="cta" style={{ "--i": 0 } as CSSProperties}>
@@ -204,11 +205,12 @@ export function ConstellationHero() {
           <ol className="cst-cards" aria-labelledby="cst-features-title">
             {CONSTELLATION.map((f, i) => (
               <li key={f.id} className="cst-card-item" data-cst-card="" data-tone={f.tone}>
-                <Link to={f.href} className="cst-card" aria-labelledby={`cst-t-${f.id}`} aria-describedby={`cst-s-${f.id} cst-d-${f.id}`}>
+                <Link to={f.href} className="cst-card" aria-labelledby={`cst-t-${f.id}`} aria-describedby={`cst-p-${f.id} cst-s-${f.id} cst-d-${f.id}`}>
                   <span className="cst-card-head">
                     <span className="cst-card-num num" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
                     <span className="cst-card-status" id={`cst-s-${f.id}`} data-status={f.status}>{STATUS_LABEL[f.status]}</span>
                   </span>
+                  <span className="cst-card-product" id={`cst-p-${f.id}`}>{f.product}</span>
                   <h3 className="cst-card-title" id={`cst-t-${f.id}`}>{f.title}</h3>
                   <span className="cst-card-text" id={`cst-d-${f.id}`}>{f.text}</span>
                   <span className="cst-card-more" aria-hidden="true">Découvrir <ArrowRight /></span>

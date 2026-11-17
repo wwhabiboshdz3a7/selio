@@ -1,41 +1,54 @@
 import { Link, Navigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Plus } from "lucide-react";
-import { RULE_KIND_LABELS, type BotSummary, type BotView } from "@selio/contracts";
+import { RULE_KIND_LABELS, type BotId, type BotSummary, type BotView } from "@selio/contracts";
 import { RULE_RUN_LOCATION, can } from "@selio/domain";
-import { Alert, Card, PageHeader, Toggle, buttonClass, formatDateTime, formatRelative } from "@selio/ui";
+import { Card, PageHeader, Toggle, buttonClass, formatRelative } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../../lib/data/provider";
 import { QueryBoundary } from "../../components/common";
 import { useAppMutation } from "../../components/hooks";
-import { BOT_KEYS, BotPlaceLine, BotRecent, BotStateBadge, CloudLine, StopAllButton, botIdFromSlug, useBotSummary } from "./shared";
+import { AUTOMATION_PATHS, BotPlaceLine, BotRecent, BotStateBadge, CloudLine, LEGACY_BOT_SLUGS, STOP_KEYS, StopAllButton, StoppedAlert, useAutomationSummary } from "./status";
 
 /**
- * Selio Bot — page d'un bot : état, où il tourne, limite du forfait, ses règles (allumer ou arrêter, la
- * règle elle-même se règle dans le journal des tâches), liens vers les réglages existants et dernières actions.
+ * Selio Manager › Automatisation : page d'état d'une automatisation de compte qui n'a pas de page de
+ * réglages à elle (relances, republication). État, où elle tourne, limite du forfait, ses règles (allumer
+ * ou arrêter ; horaires et limites dans le journal des tâches), liens vers les réglages et dernières actions.
  */
-export default function BotDetail() {
-  const { botId } = useParams();
-  const id = botIdFromSlug(botId);
-  const q = useBotSummary();
-  if (!id) return <Navigate to="/bot" replace />;
+function AutomationDetail({ id }: { id: BotId }) {
+  const q = useAutomationSummary();
   const bot = q.data?.bots.find((b) => b.id === id);
   return (
     <>
       <PageHeader
-        eyebrow={<Link to="/bot" className="inline-flex items-center gap-1 hover:text-text"><ArrowLeft className="size-3.5" aria-hidden />Selio Bot</Link>}
-        title={bot?.name ?? "Bot"}
+        eyebrow={<Link to="/app/automatisation" className="inline-flex items-center gap-1 hover:text-text"><ArrowLeft className="size-3.5" aria-hidden />Automatisation</Link>}
+        title={bot?.name ?? "Automatisation"}
         description={bot?.description}
         actions={q.data ? <StopAllButton summary={q.data} /> : null}
       />
-      <QueryBoundary query={q} skeleton="spinner">{(s) => (bot ? <BotBody summary={s} bot={bot} /> : null)}</QueryBoundary>
+      <QueryBoundary query={q} skeleton="spinner">{(s) => (bot ? <DetailBody summary={s} bot={bot} /> : null)}</QueryBoundary>
     </>
   );
 }
 
-function BotBody({ summary, bot }: { summary: BotSummary; bot: BotView }) {
+export function FollowUpPage() {
+  return <AutomationDetail id="follow_up" />;
+}
+
+export function RepublishPage() {
+  return <AutomationDetail id="republish" />;
+}
+
+/** Anciennes adresses /bot/negociation, /bot/relance… : redirigées vers la page de l'automatisation dans Selio Manager. */
+export function LegacyBotRedirect() {
+  const { slug } = useParams();
+  const id = slug ? LEGACY_BOT_SLUGS[slug] : undefined;
+  return <Navigate to={id ? AUTOMATION_PATHS[id] : "/bot"} replace />;
+}
+
+function DetailBody({ summary, bot }: { summary: BotSummary; bot: BotView }) {
   return (
     <>
-      {summary.stopped ? <Alert tone="danger" className="mb-4" title="Tout est arrêté">Coupe-circuit actif{summary.stoppedAt ? <> depuis le <span className="num">{formatDateTime(summary.stoppedAt)}</span></> : null} : ce bot n'agit pas jusqu'à la reprise, quels que soient ses réglages.</Alert> : null}
+      <StoppedAlert summary={summary}>cette automatisation n'agit pas jusqu'à la reprise, quels que soient ses réglages.</StoppedAlert>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="flex min-w-0 flex-col gap-4">
           <Card>
@@ -47,10 +60,10 @@ function BotBody({ summary, bot }: { summary: BotSummary; bot: BotView }) {
             <BotPlaceLine className="mt-3" place={bot.place} detail={bot.placeDetail} />
             <p className="mt-3 text-sm text-text-muted"><span className="font-medium text-text">Limite du forfait :</span> {bot.planLimit}</p>
           </Card>
-          {bot.ruleKinds.length > 0 ? <BotRules bot={bot} /> : null}
+          {bot.ruleKinds.length > 0 ? <AutomationRules bot={bot} /> : null}
           <Card>
             <h2 className="text-md font-semibold">Réglages</h2>
-            <p className="mt-1 text-sm text-text-muted">{bot.state === "soon" ? "Vous pouvez déjà préparer le message et la remise : ils serviront dès que le bot sera construit." : "Les réglages restent ceux des automatisations : rien n'est à ressaisir ici."}</p>
+            <p className="mt-1 text-sm text-text-muted">{bot.state === "soon" ? "Vous pouvez déjà préparer le message et la remise : ils serviront dès que l'automatisation sera construite." : "Les réglages restent ceux des pages d'automatisation : rien n'est à ressaisir ici."}</p>
             <ul className="mt-3 flex flex-wrap gap-2">
               {bot.settings.map((l, i) => <li key={l.to}><Link to={l.to} className={buttonClass({ variant: i === 0 ? "secondary" : "ghost", size: "sm" })}>{l.label}</Link></li>)}
             </ul>
@@ -63,7 +76,7 @@ function BotBody({ summary, bot }: { summary: BotSummary; bot: BotView }) {
                 <h2 className="text-md font-semibold">Dernières actions</h2>
                 <Link to="/app/automations?tab=jobs" className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">Tout l'historique <ArrowRight className="size-4" aria-hidden /></Link>
               </div>
-              <BotRecent actions={bot.recent} empty={bot.state === "on" ? "Rien pour l'instant : le bot agit dès qu'une conversation ou un article remplit ses conditions." : "Aucune action : le bot n'est pas allumé."} />
+              <BotRecent actions={bot.recent} empty={bot.state === "on" ? "Rien pour l'instant : l'automatisation agit dès qu'une conversation ou un article remplit ses conditions." : "Aucune action : l'automatisation n'est pas allumée."} />
             </Card>
           ) : null}
           <Card><CloudLine cloud={summary.cloud} stacked /></Card>
@@ -73,17 +86,17 @@ function BotBody({ summary, bot }: { summary: BotSummary; bot: BotView }) {
   );
 }
 
-/** Règles regroupées par le bot : on les allume ou on les arrête ici ; horaires et limites se règlent dans le journal des tâches. */
-function BotRules({ bot }: { bot: BotView }) {
+/** Règles regroupées par l'automatisation : on les allume ou on les arrête ici ; horaires et limites se règlent dans le journal des tâches. */
+function AutomationRules({ bot }: { bot: BotView }) {
   const client = useClient();
   const session = useRequiredSession();
   const canWrite = can(session.role, "automations.write");
   const rules = useQuery({ queryKey: ["rules"], queryFn: () => client.listRules() });
-  const toggle = useAppMutation(({ id, enabled }: { id: string; enabled: boolean }) => client.updateRule(id, { enabled }), { invalidate: BOT_KEYS, success: (r) => (r.enabled ? `« ${r.name} » allumée` : `« ${r.name} » arrêtée`) });
+  const toggle = useAppMutation(({ id, enabled }: { id: string; enabled: boolean }) => client.updateRule(id, { enabled }), { invalidate: STOP_KEYS, success: (r) => (r.enabled ? `« ${r.name} » allumée` : `« ${r.name} » arrêtée`) });
   return (
     <Card>
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-md font-semibold">Règles du bot</h2>
+        <h2 className="text-md font-semibold">Règles</h2>
         <Link to="/app/automations" className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">{canWrite ? <><Plus className="size-4" aria-hidden />Créer ou régler</> : "Voir les règles"}</Link>
       </div>
       <p className="mb-3 text-sm text-text-muted">Types : {bot.ruleKinds.map((k) => RULE_KIND_LABELS[k]).join(", ")}. Horaires, limites par jour et validation avant envoi se règlent sur chaque règle.</p>

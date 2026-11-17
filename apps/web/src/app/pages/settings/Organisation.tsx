@@ -42,7 +42,7 @@ export default function Organisation() {
         <p className="mt-1 text-sm text-text-muted">Elles ont leur propre page, là où vous vendez et achetez.</p>
         <ul className="mt-3 flex flex-col">
           <RuleLink to="/app/automatisation/negociation" title="Négociation automatique" section="Automatisation">Marges par tranche de prix, paliers de réduction, lots, messages et délais : la réponse donnée à chaque offre d'acheteur, étape par étape.</RuleLink>
-          <RuleLink to="/app/auto-buy" title="Achat auto" section="Acheter">Seuil de note, plafond par jour, prix maximal par article et frais acheteur (protection acheteurs).</RuleLink>
+          <RuleLink to="/app/auto-buy" title="Achat automatique" section="Selio Bot">Seuil de note, plafond par jour, prix maximal par article et frais acheteur (protection acheteurs).</RuleLink>
         </ul>
       </Card>
     </div>

@@ -33,7 +33,7 @@ export default function CloudDashboard() {
       <PageHeader
         eyebrow="Selio Cloud"
         title="Tableau de bord"
-        description="Vos réponses et relances continuent quand votre ordinateur est éteint : un navigateur isolé par compte, ouvert seulement pour agir, au rythme humain."
+        description="Intégré à Selio Manager. Vos réponses et relances continuent quand votre ordinateur est éteint : un navigateur isolé par compte, ouvert seulement pour agir, au rythme humain."
         actions={automation.data ? (paused
           ? <Button variant="secondary" icon={<Play />} onClick={() => pause.mutate(false)} loading={pause.isPending} disabled={!canManage}>Reprendre le Cloud</Button>
           : <Button variant="danger" icon={<Pause />} onClick={() => setConfirmPause(true)} disabled={!canManage}>Tout mettre en pause</Button>) : null}

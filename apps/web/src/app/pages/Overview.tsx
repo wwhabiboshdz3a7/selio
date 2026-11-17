@@ -119,7 +119,7 @@ export default function Overview() {
   const recent = useQuery({ queryKey: ["activity", "overview"], queryFn: () => client.listActivity({ limit: 6 }), enabled: can(session.role, "org.read") });
   const shortcutHints: Partial<Record<ShortcutId, string>> = {
     ...(q.data ? { dressing: `Note moyenne ${q.data.dressing.averageScore}/100 · ${counts.data?.dressingDue ?? q.data.dressing.toRepublish} annonce(s) à republier`, orders_to_ship: `${q.data.counts.pendingOrders} commande(s) à traiter` } : {}),
-    ...(counts.data ? { messages: `${counts.data.unread} conversation(s) non lue(s)`, radar: `${counts.data.toReview} affaire(s) notée(s) ${REVIEW_THRESHOLD}/100 ou plus à valider`, purchase: `${counts.data.toReview} achat(s) à valider`, automations: `${counts.data.awaiting} action(s) à valider` } : {}),
+    ...(counts.data ? { messages: `${counts.data.unread} conversation(s) non lue(s)`, radar: `Selio Bot : ${counts.data.toReview} affaire(s) notée(s) ${REVIEW_THRESHOLD}/100 ou plus à valider`, purchase: `Selio Bot : ${counts.data.toReview} achat(s) à valider en 1 clic`, automations: `${counts.data.awaiting} action(s) à valider` } : {}),
     ...(market.data?.opportunities[0] ? { track: `Niche à saisir : ${market.data.opportunities[0].label} (demande ${market.data.opportunities[0].demand}/100)` } : {}),
   };
 

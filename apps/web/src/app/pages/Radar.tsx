@@ -79,9 +79,9 @@ export default function Radar() {
   return (
     <>
       <PageHeader
-        eyebrow="Radar"
+        eyebrow="Selio Bot"
         title="Bonnes affaires"
-        description="Le radar relit vos recherches, note chaque annonce sur 100 et vous alerte sur le téléphone. En direct, il lit les pages de recherche Vinted depuis votre compte Achat, avec Selio Cloud, toutes les 60 s au plus. Vous achetez vous-même en un clic."
+        description="Selio Bot relit vos recherches, note chaque annonce sur 100 et vous alerte sur le téléphone. En direct, il lit les pages de recherche Vinted depuis votre compte Achat, avec Selio Cloud, toutes les 60 s au plus. Vous achetez vous-même en un clic."
         actions={canWrite ? <Button icon={<Plus />} onClick={() => { setPrefill(null); setEditing("new"); }}>Nouvelle recherche</Button> : undefined}
       />
 
@@ -91,7 +91,7 @@ export default function Radar() {
         <div className="mb-6">
           <ActivationState
             testId="radar-activation"
-            title="Radar en direct"
+            title="Recherches en direct"
             does={["Lecture de vos recherches sur Vinted depuis votre compte Achat, avec Selio Cloud, toutes les 60 s au plus.", "Chaque annonce notée sur 100 (prix, marge de revente estimée, vendeur, état), alerte sur votre téléphone pour les meilleures.", "Achat en un clic, par vous : rien n'est acheté sans votre validation."]}
             prepare="créez vos recherches (marques, tailles, prix maximal, marge cible) : elles seront lues dès l'ouverture. Les annonces que vous capturez avec l'extension Selio apparaissent déjà ici."
           />
@@ -156,7 +156,7 @@ export default function Radar() {
 
       <Card className="mt-8">
         <h2 className="mb-1 text-md font-semibold">Comment lire la note</h2>
-        <p className="mb-4 text-sm text-text-muted">À partir de 75, l'affaire est à valider ; à partir du seuil de Radar Auto ({session.org.settings.autoBuy.threshold}), l'application pourrait acheter seule{auto.data?.active ? "" : " (Radar Auto verrouillé)"}.</p>
+        <p className="mb-4 text-sm text-text-muted">À partir de 75, l'affaire est à valider ; à partir du seuil de l'achat automatique ({session.org.settings.autoBuy.threshold}), l'application pourrait acheter seule{auto.data?.active ? "" : " (achat automatique verrouillé)"}.</p>
         <ScoreLegend threshold={auto.data?.active ? session.org.settings.autoBuy.threshold : undefined} />
         <h2 className="mt-6 mb-3 border-t border-border pt-5 text-md font-semibold">Les critères de la note</h2>
         <ul className="grid gap-x-8 gap-y-2.5 md:grid-cols-2 2xl:grid-cols-3">
@@ -209,7 +209,7 @@ function SearchDialog({ search, all, prefill, auto, readiness, onClose }: {
   const ready = readiness ? readiness({ connectionId: form.connectionId ?? null }) : null;
   const accountName = (c: MarketplaceConnection) => (typeof c.config.displayHandle === "string" && c.config.displayHandle ? `@${c.config.displayHandle} — ${c.label}` : c.label);
   return (
-    <Dialog open onClose={onClose} title={search ? "Modifier la recherche" : "Nouvelle recherche"} description="Le radar ne retient que les annonces qui correspondent à ces filtres, puis les note sur 100." size="md" footer={<><Button variant="ghost" onClick={onClose}>Annuler</Button><Button onClick={() => save.mutate(undefined)} loading={save.isPending} disabled={!form.name.trim()}>{search ? "Enregistrer" : "Créer"}</Button></>}>
+    <Dialog open onClose={onClose} title={search ? "Modifier la recherche" : "Nouvelle recherche"} description="Selio Bot ne retient que les annonces qui correspondent à ces filtres, puis les note sur 100." size="md" footer={<><Button variant="ghost" onClick={onClose}>Annuler</Button><Button onClick={() => save.mutate(undefined)} loading={save.isPending} disabled={!form.name.trim()}>{search ? "Enregistrer" : "Créer"}</Button></>}>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Nom" required className="sm:col-span-2">{(p) => <Input id={p.id} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />}</Field>
         <div className="sm:col-span-2">
@@ -235,10 +235,10 @@ function SearchDialog({ search, all, prefill, auto, readiness, onClose }: {
         {source === "cloud" && priorityVisible ? (
           <div className="sm:col-span-2">
             <Toggle
-              label="Recherche prioritaire (Radar Auto)"
+              label="Recherche prioritaire (achat automatique)"
               description={!form.priority && !priorityFree
                 ? `${RADAR_MAX_PRIORITY_SEARCHES} recherches prioritaires au plus : retirez la priorité d'une autre recherche d'abord.`
-                : `Relue toutes les 30 s quand Radar Auto est actif. ${priorityCount(all, search?.id ?? null)} / ${RADAR_MAX_PRIORITY_SEARCHES} déjà prioritaire(s).`}
+                : `Relue toutes les 30 s quand l'achat automatique est ouvert. ${priorityCount(all, search?.id ?? null)} / ${RADAR_MAX_PRIORITY_SEARCHES} déjà prioritaire(s).`}
               checked={form.priority === true}
               onChange={(v) => setForm({ ...form, priority: v })}
               disabled={!form.priority && !priorityFree}

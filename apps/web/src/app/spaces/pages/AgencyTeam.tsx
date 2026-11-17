@@ -25,9 +25,9 @@ export default function AgencyTeam() {
   return (
     <>
       <PageHeader
-        eyebrow="Selio Agents · Aperçu"
+        eyebrow="Selio Agent · Aperçu"
         title="Équipe et accès"
-        description="L'administrateur, les équipes et leurs accès : qui peut faire quoi sur vos comptes Vinted. Les rôles et les membres sont ceux de votre organisation : ils s'appliquent à tous les espaces et se gèrent aussi dans Paramètres › Comptes et accès."
+        description="Selio Agent, intégré à Selio Manager : déléguez des tâches et des accès à vos collaborateurs et prestataires. L'administrateur, les équipes et leurs accès : qui peut faire quoi sur vos comptes Vinted. Les rôles et les membres sont ceux de votre organisation : ils s'appliquent à tous les espaces et se gèrent aussi dans Paramètres › Comptes et accès."
         actions={<Link to="/app/settings/access" className={buttonClass({ variant: "primary" })}>Gérer dans Paramètres <ArrowRight aria-hidden /></Link>}
       />
       <PreviewNotice space="agents">Les rôles s'appliquent déjà à toute l'organisation. Les accès limités à un seul compte ou à une boutique cliente sont en développement.</PreviewNotice>

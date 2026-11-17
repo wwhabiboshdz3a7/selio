@@ -138,7 +138,11 @@ export class MockAIProvider implements AIProvider {
 
   private renderStructured(req: StructuredRequest<unknown>): unknown {
     const hints = readHints(req.prompt);
-    if (req.schemaName === "listing_generation") return mockGeneratedListing(hints);
+    if (req.schemaName === "listing_generation") {
+      // Rédaction à partir d'une préparation Studio validée : la fiche (bloc des notes) remplace la « vue » des photos.
+      const facts = req.prompt.match(/<<<DONNÉES_NON_FIABLES:notes_vendeur>>>\n([\s\S]*?)\n<<<FIN_DONNÉES_NON_FIABLES>>>/)?.[1];
+      return facts?.startsWith(MOCK_STUDIO_FACTS_HEADER) ? mockStudioListing(facts, hints) : mockGeneratedListing(hints);
+    }
     if (req.schemaName === "photo_description") return mockPhotoDescription(hints);
     if (req.schemaName === "price_explanation") return { explanation: mockPriceExplanation(hints) };
     if (req.schemaName === "help_answer") return mockHelpAnswer(req.prompt);
@@ -376,6 +380,193 @@ function mockGeneratedListing(h: Hints): Record<string, unknown> {
     material: spec.material,
     hashtags: [brand ? tag(brand) : null, tag(spec.piece), tag(color)].filter(Boolean),
     confidence: brand || byKeyword ? 0.6 : 0.35,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Rédaction Studio simulée (annonce à partir d'une préparation validée) : le
+// simulateur se comporte comme un bon rédacteur Vinted, mais ne cite QUE la
+// fiche transmise (marque, référence, taille, matière avec leur provenance,
+// pièce et couleur visibles sur les photos d'exemple, mesures à plat). Il ajoute seulement ce que sait un rédacteur : la coupe d'un
+// modèle connu (Levi's 501 : coupe droite), le sens de « W32 L32 », des
+// conseils d'entretien selon la matière lue. Jamais une mesure, une matière ou
+// une couleur absente de la fiche.
+// ---------------------------------------------------------------------------
+
+/** Première ligne de la fiche d'une préparation Studio validée (bloc des notes) : le simulateur rédige alors à partir d'elle seule. */
+export const MOCK_STUDIO_FACTS_HEADER = "Fiche Studio validée :";
+
+interface StudioFact { value: string; fromLabel: boolean }
+interface StudioFacts {
+  brand: StudioFact | null;
+  reference: StudioFact | null;
+  size: StudioFact | null;
+  material: StudioFact | null;
+  /** Pièce visible sur les photos d'exemple, ou type de pièce de la préparation. */
+  piece: string | null;
+  colors: string[];
+  measures: string | null;
+  notes: string;
+}
+
+function parseStudioFacts(text: string): StudioFacts {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const after = (prefix: string) => {
+    const line = lines.find((l) => l.startsWith(prefix));
+    return line ? line.slice(prefix.length).trim().replace(/\.$/, "").trim() || null : null;
+  };
+  const field = (label: string): StudioFact | null => {
+    const m = lines.map((l) => l.match(new RegExp(`^${label} \\(([^)]*)\\) : (.+?)\\.?$`))).find(Boolean);
+    return m ? { value: m[2]!.trim(), fromLabel: /étiquette/.test(m[1]!) } : null;
+  };
+  const measures = lines.find((l) => l.startsWith("Mesures à plat :")) ?? null;
+  return {
+    brand: field("Marque"),
+    reference: field("Référence"),
+    size: field("Taille"),
+    material: field("Matière"),
+    piece: after("Pièce visible sur les photos :") ?? after("Type de pièce (préparation) :"),
+    colors: (after("Couleur visible sur les photos :") ?? "").split(",").map((c) => c.trim()).filter(Boolean),
+    measures: measures && /\d\s?cm\b/.test(measures) ? measures : null,
+    notes: after("Notes du vendeur :") ?? "",
+  };
+}
+
+interface StudioPieceSpec { kw: string[]; noun: string; category: string; hook: string; compare: string }
+
+/** Types de pièce reconnus dans la fiche (pièce visible, type de la préparation ou notes du vendeur). */
+const STUDIO_PIECES: StudioPieceSpec[] = [
+  { kw: ["jean", "denim"], noun: "Jean", category: "men", hook: "le grand classique du denim, facile à porter au quotidien", compare: "un jean qui vous va bien, posé à plat" },
+  { kw: ["pull", "maille", "cardigan", "gilet"], noun: "Pull", category: "men", hook: "une pièce douce et confortable à glisser dans le dressing", compare: "un pull qui vous va bien, posé à plat" },
+  { kw: ["sweat", "hoodie"], noun: "Sweat", category: "men", hook: "un basique confortable pour tous les jours", compare: "un sweat qui vous va bien, posé à plat" },
+  { kw: ["t shirt", "tshirt", "tee"], noun: "T-shirt", category: "men", hook: "un basique facile à associer", compare: "un t-shirt qui vous va bien, posé à plat" },
+  { kw: ["chemisier", "blouse"], noun: "Blouse", category: "women", hook: "une pièce facile à associer", compare: "une blouse qui vous va bien, posée à plat" },
+  { kw: ["chemise"], noun: "Chemise", category: "men", hook: "une pièce facile à associer", compare: "une chemise qui vous va bien, posée à plat" },
+  { kw: ["robe"], noun: "Robe", category: "women", hook: "une pièce facile à porter", compare: "une robe qui vous va bien, posée à plat" },
+  { kw: ["jupe"], noun: "Jupe", category: "women", hook: "une pièce facile à porter", compare: "une jupe qui vous va bien, posée à plat" },
+  { kw: ["doudoune", "parka"], noun: "Doudoune", category: "men", hook: "une pièce chaude pour l'hiver", compare: "une veste qui vous va bien, posée à plat" },
+  { kw: ["manteau", "trench"], noun: "Manteau", category: "women", hook: "une pièce de saison facile à porter", compare: "un manteau qui vous va bien, posé à plat" },
+  { kw: ["veste", "blouson"], noun: "Veste", category: "men", hook: "une pièce facile à porter", compare: "une veste qui vous va bien, posée à plat" },
+  { kw: ["pantalon"], noun: "Pantalon", category: "men", hook: "une pièce facile à porter", compare: "un pantalon qui vous va bien, posé à plat" },
+  { kw: ["basket", "sneaker", "chaussure", "bottine", "boots"], noun: "Chaussures", category: "shoes", hook: "une paire facile à porter", compare: "une paire qui vous va bien" },
+  { kw: ["sac"], noun: "Sac", category: "bags", hook: "un sac pratique au quotidien", compare: "un sac de taille proche" },
+  { kw: ["haut"], noun: "Haut", category: "other", hook: "une pièce facile à porter", compare: "un haut qui vous va bien, posé à plat" },
+  { kw: ["accessoire"], noun: "Accessoire", category: "accessories", hook: "un accessoire facile à porter", compare: "un accessoire similaire" },
+];
+
+/** Ce que sait un rédacteur d'un modèle connu (marque|référence simplifiées) : le nom du modèle et sa coupe. */
+const STUDIO_MODELS: Record<string, { name: string; fit: string; about: string }> = {
+  "levis|501": { name: "501 Original", fit: "droit", about: "le jean emblématique de la marque, droit de la hanche à la cheville" },
+};
+const STUDIO_BRAND_NOTES: Record<string, string> = { sezane: "la marque parisienne" };
+const STUDIO_WOMEN_BRANDS = new Set(["sezane", "maje", "sandro", "ba&sh", "rouje"]);
+const WARM_FIBRES = /laine|alpaga|cachemire|mohair|merinos|angora/;
+
+function mockStudioListing(text: string, h: Hints): Record<string, unknown> {
+  const f = parseStudioFacts(text);
+  const key = (v: string | null | undefined) => simplify(v ?? "").replace(/[^a-z0-9&]/g, "");
+  const brand = f.brand?.value ?? (h.brand?.trim() || null);
+  const size = f.size?.value ?? (h.size?.trim() || null);
+  const reference = f.reference?.value ?? null;
+  const material = f.material?.value ?? null;
+  const notes = simplify(f.notes);
+  const pieceText = f.piece ?? null;
+  const spec = STUDIO_PIECES.find((p) => p.kw.some((k) => simplify(pieceText ?? "").includes(k))) ?? STUDIO_PIECES.find((p) => p.kw.some((k) => new RegExp(`\\b${k}`).test(notes))) ?? null;
+  // Couleur : visible sur les photos d'exemple, ou écrite par le vendeur ; jamais devinée.
+  const noteColor = COLORS.find((c) => new RegExp(`\\b${c}\\b`).test(notes));
+  const colors = f.colors.length ? f.colors : noteColor ? [noteColor.charAt(0).toUpperCase() + noteColor.slice(1)] : [];
+  const color = colors[0]?.toLowerCase() ?? null;
+  const model = brand && reference ? STUDIO_MODELS[`${key(brand)}|${key(reference)}`] : undefined;
+  const modelName = model?.name ?? (reference && reference.length <= 12 ? reference : null);
+  const noun = spec?.noun ?? (brand ? null : "Article");
+  const pieceLabel = pieceText && spec ? pieceText.charAt(0).toUpperCase() + pieceText.slice(1) : noun;
+  const wl = size?.match(/^W\s?(\d{2})\s*L\s?(\d{2})$/i);
+  const sizeTitle = size ? (wl ? size : `taille ${size}`) : null;
+  const mat = simplify(material ?? "");
+  const warm = WARM_FIBRES.test(mat);
+  const denim = spec?.noun === "Jean";
+  const condition = /defaut|tache|trou|accroc/.test(notes) ? "satisfactory" : /neuf avec etiquette/.test(notes) ? "new_with_tags" : /\bneuf\b/.test(notes) ? "new_without_tags" : /tres bon etat/.test(notes) ? "very_good" : "good";
+  const conditionText: Record<string, string> = {
+    new_with_tags: "neuf avec étiquette, jamais porté.",
+    new_without_tags: "neuf sans étiquette, jamais porté.",
+    very_good: "très bon état, porté quelques fois, sans défaut visible. Regardez bien toutes les photos.",
+    good: "bon état, porté, avec de légères traces d'usage et sans défaut majeur repéré. Regardez bien toutes les photos.",
+    satisfactory: "état correct, défaut signalé et visible sur les photos.",
+  };
+
+  // Titre (70 caractères au plus) : pièce, marque, modèle, coupe, couleur, taille, puis la matière si elle tient.
+  let title = [noun, brand, modelName, model?.fit, color, sizeTitle].filter(Boolean).join(" ");
+  const matTitle = material ? material.replace(/\s*,\s*/g, " ") : null;
+  if (matTitle && `${title} — ${matTitle}`.length <= 70) title = `${title} — ${matTitle}`;
+  if (title.length > 70) title = title.slice(0, 70).replace(/\s+\S*$/, "");
+
+  const sentence = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
+  const intro = [
+    [pieceLabel, brand, modelName].filter(Boolean).join(" ") + (model ? ` en coupe ${model.fit === "droit" ? "droite" : model.fit}` : ""),
+    color ? `coloris ${color}` : null,
+    size ? `taille ${size}` : null,
+  ].filter(Boolean).join(", ");
+  const hook = warm ? "une pièce douce et chaude, parfaite pour l'automne et l'hiver" : spec?.hook ?? "une pièce à découvrir en photos";
+  const brandNote = brand ? STUDIO_BRAND_NOTES[key(brand)] : undefined;
+  const modelPara = model
+    ? `Modèle et coupe : ${brand} ${model.name}${f.reference?.fromLabel ? " (référence lue sur l'étiquette)" : ""}, ${model.about}.`
+    : brand || pieceText || color
+      ? `Modèle et coupe : ${[pieceText ?? spec?.noun.toLowerCase() ?? "article", brand].filter(Boolean).join(" ")}${brandNote ? `, ${brandNote}` : ""}${reference ? `, référence ${reference}` : ""}.`
+      : "";
+  const materialNote = denim && /^100\s?% coton$/.test(mat) ? ", sans élasthanne : une toile ferme qui se patine joliment avec le temps" : warm ? ", des fibres naturelles chaudes et douces au toucher" : "";
+  const care = warm
+    ? "Lavage à la main à l'eau froide ou en programme laine, séchage à plat, en suivant l'étiquette d'entretien."
+    : denim
+      ? "Lavage à l'envers et séchage à l'air libre pour préserver la couleur, en suivant l'étiquette d'entretien."
+      : "Entretien selon l'étiquette.";
+  const materialPara = material
+    ? `Matière et entretien : ${material}${f.material?.fromLabel ? " (étiquette de composition)" : ""}${materialNote}. ${care}`
+    : denim ? `Entretien : ${care.charAt(0).toLowerCase()}${care.slice(1)}` : "Entretien : suivez l'étiquette d'entretien.";
+  // Mesures : la phrase de la fiche, telle quelle (sa provenance est ajoutée par l'appelant), jamais une estimation.
+  const measuresPara = f.measures
+    ? f.measures
+    : "Mesures à plat : pas encore relevées. Demandez-les-moi, je les prends au mètre ruban et vous les envoie.";
+  const compare = spec?.compare ?? "un article similaire qui vous va bien, posé à plat";
+  const sizePara = size
+    ? `Conseils de taille : ${wl ? `W${wl[1]} correspond au tour de taille et L${wl[2]} à la longueur de jambe, en pouces.` : `taille ${size}${f.size?.fromLabel ? " indiquée sur l'étiquette" : ""}.`} Le plus sûr : ${f.measures ? `comparez ces mesures avec celles d'${compare}.` : `comparez avec ${compare}, et demandez-moi les mesures.`}`
+    : `Conseils de taille : ${f.measures ? `comparez ces mesures avec celles d'${compare}.` : "demandez-moi les mesures avant d'acheter."}`;
+  const description = [
+    `${sentence(intro || "Article")} : ${hook}.`,
+    modelPara,
+    materialPara,
+    `État : ${conditionText[condition]}`,
+    measuresPara,
+    sizePara,
+    "Envoi soigné sous 48 h, article plié et protégé. Une question ou une photo supplémentaire ? N'hésitez pas à m'écrire.",
+  ].filter(Boolean).join("\n\n").slice(0, 2000);
+
+  // Mots-clés : marque, modèle, pièce, coupe, couleur, taille, fibres lues (8 au plus).
+  const tag = (...parts: (string | null | undefined)[]) => `#${parts.map((p) => key(p).replace(/&/g, "")).join("")}`;
+  const n = spec?.noun ?? null;
+  const fibres = ["coton", "laine", "alpaga", "cachemire", "mohair", "lin", "soie", "cuir"].filter((x) => new RegExp(`\\b${x}\\b`).test(mat));
+  const hashtags = [...new Set([
+    brand ? tag(brand) : null,
+    brand && reference ? tag(brand, reference) : brand && n ? tag(n, brand) : null,
+    n ? tag(n) : null,
+    n && model ? tag(n, model.fit) : null,
+    n && color ? tag(n, color) : null,
+    size ? (wl ? tag(`w${wl[1]}l${wl[2]}`) : tag("taille", size)) : null,
+    ...fibres.map((x) => tag(x)),
+    denim ? "#denim" : null,
+  ].filter((t): t is string => Boolean(t) && t!.length >= 3 && t!.length <= 30))].slice(0, 8);
+
+  const womenBrand = brand ? STUDIO_WOMEN_BRANDS.has(key(brand)) : false;
+  return {
+    title: title.length >= 3 ? title : "Article",
+    description,
+    brand,
+    category: womenBrand && spec && !["shoes", "bags", "accessories"].includes(spec.category) ? "women" : spec?.category ?? "other",
+    size,
+    condition,
+    colors,
+    material,
+    hashtags,
+    confidence: brand && spec ? 0.8 : brand || spec ? 0.6 : 0.4,
   };
 }
 

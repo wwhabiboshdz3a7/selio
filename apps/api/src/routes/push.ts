@@ -33,7 +33,7 @@ const perUser = (prefix: string, max: number, timeWindow: string) => ({
 
 const TEST_PAYLOAD = radarAlertPayload.parse({
   title: "Selio : notifications activées",
-  body: "Cet appareil recevra les alertes de Selio Radar (bonnes affaires, paiement à valider, pause du compte Achat).",
+  body: "Cet appareil recevra les alertes de Selio Bot (bonnes affaires, paiement à valider, pause du compte Achat).",
   url: "/app/radar",
 });
 

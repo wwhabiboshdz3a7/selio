@@ -1,40 +1,68 @@
 import { Link, Navigate, useParams } from "react-router";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronRight } from "lucide-react";
 import { TRIAL_DAYS } from "@selio/contracts";
 import { buttonClass } from "@selio/ui";
 import { Container, CtaBand, Eyebrow, IndependenceNotice, JsonLd, MarketingSection, NightSky, NotList } from "../components";
-import { PRODUCTS, productBySlug, type ProductDef } from "../products";
+import { LEGACY_PRODUCT_SLUGS, MANAGER_FEATURES, PRODUCTS, productBySlug, type ProductDef } from "../products";
 import { productIcon } from "../spaces";
 import { PRODUCT_SHOTS } from "../productShots";
 import { breadcrumbJsonLd, softwareApplicationJsonLd, useMarketingMeta } from "../seo";
 
-/** Page d'un produit de la gamme : /produits/manager, /studio, /track, /radar, /bot, /cloud, /agents, /comptes. */
+/**
+ * Page d'une filiale (/produits/manager, /studio, /track, /bot, /compte) ou d'une fonctionnalité
+ * de Selio Manager (/produits/cloud, /agent). Anciennes adresses : /produits/radar mène à Selio
+ * Bot, /produits/comptes à Selio Compte, /produits/agents à Selio Agent.
+ */
 export default function Product() {
   const { slug } = useParams();
+  const legacy = slug ? LEGACY_PRODUCT_SLUGS[slug] : undefined;
+  if (legacy) return <Navigate to={`/produits/${legacy}`} replace />;
   const product = productBySlug(slug);
   if (!product) return <Navigate to="/plateforme" replace />;
   return <ProductView key={product.slug} product={product} />;
 }
 
+const MANAGER = PRODUCTS[0]!;
+
 function ProductView({ product }: { product: ProductDef }) {
   useMarketingMeta(product.path);
   const shot = PRODUCT_SHOTS[product.slug];
   const icon = productIcon(product);
-  // Selio Comptes est une prestation : on la demande, on ne s'y inscrit pas.
-  const service = product.slug === "comptes";
+  const feature = product.kind === "feature";
+  // Selio Compte est une prestation : on demande un devis, on ne s'y inscrit pas.
+  const service = product.slug === "compte";
+  const crumbs = feature
+    ? [{ name: "Accueil", path: "/" }, { name: "Plateforme", path: "/plateforme" }, { name: MANAGER.name, path: MANAGER.path }, { name: product.name, path: product.path }]
+    : [{ name: "Accueil", path: "/" }, { name: "Plateforme", path: "/plateforme" }, { name: product.name, path: product.path }];
+  // Une fonctionnalité n'est pas un produit : seul le fil d'Ariane est décrit, pas une application.
+  const ld = feature ? [breadcrumbJsonLd(crumbs)] : [softwareApplicationJsonLd({ name: product.name, path: product.path, description: product.lead }), breadcrumbJsonLd(crumbs)];
   const others = PRODUCTS.filter((p) => p.slug !== product.slug);
   return (
     <>
-      <JsonLd data={[softwareApplicationJsonLd({ name: product.name, path: product.path, description: product.lead }), breadcrumbJsonLd([{ name: "Accueil", path: "/" }, { name: "Plateforme", path: "/plateforme" }, { name: product.name, path: product.path }])]} />
-      <MarketingSection level={1} reveal eyebrow={product.name} title={product.promise} lead={product.lead}>
+      <JsonLd data={ld} />
+      {feature ? (
+        <Container>
+          <nav aria-label="Fil d'Ariane" className="pt-8 md:pt-10">
+            <ol className="flex flex-wrap items-center gap-1 text-sm text-text-muted">
+              <li><Link to={MANAGER.path} className="font-medium text-accent hover:underline">{MANAGER.name}</Link></li>
+              <li aria-hidden><ChevronRight className="size-3.5" /></li>
+              <li aria-current="page" className="text-text">{product.name}</li>
+            </ol>
+          </nav>
+        </Container>
+      ) : null}
+      <MarketingSection level={1} reveal eyebrow={feature ? `${product.name} · fonctionnalité de ${MANAGER.name}` : product.name} title={product.promise} lead={product.lead}>
         <div className="flex flex-col gap-4">
           <p className="flex flex-wrap items-center gap-3 text-sm text-text-muted">
             <span className="mk-badge" data-value={product.state.value}>{product.state.label}</span>
             <span className="max-w-2xl">{product.state.note}</span>
           </p>
+          {product.distinction ? (
+            <p className="max-w-3xl rounded-lg border border-border bg-surface px-4 py-3 text-sm text-text" data-testid="manager-bot-distinction">{product.distinction}</p>
+          ) : null}
           <div className="flex flex-wrap gap-2.5">
             {service
-              ? <Link to="/contact" className={buttonClass({ variant: "accent" })}>Demander une prestation</Link>
+              ? <Link to="/contact" className={buttonClass({ variant: "accent" })}>Demander un devis</Link>
               : <Link to="/inscription" className={buttonClass({ variant: "accent" })}>Commencer l'essai gratuit de {TRIAL_DAYS} jours</Link>}
             <Link to="/tarifs" className={buttonClass({ variant: "secondary" })}>Voir les tarifs</Link>
           </div>
@@ -52,6 +80,8 @@ function ProductView({ product }: { product: ProductDef }) {
           ))}
         </div>
       </MarketingSection>
+
+      {product.slug === "manager" ? <ManagerFeatures /> : null}
 
       <section className="border-t border-border bg-surface py-12 md:py-16">
         <Container>
@@ -91,7 +121,7 @@ function ProductView({ product }: { product: ProductDef }) {
 
       <section className="border-t border-border py-12 md:py-16" aria-labelledby="autres-produits">
         <Container>
-          <h2 id="autres-produits" className="text-md font-semibold text-text">Le reste de la gamme Selio</h2>
+          <h2 id="autres-produits" className="text-md font-semibold text-text">{feature ? "Les cinq filiales Selio" : "Les autres filiales Selio"}</h2>
           <ul className="mt-4 flex flex-wrap gap-2">
             {others.map((p) => (
               <li key={p.slug}>
@@ -105,5 +135,30 @@ function ProductView({ product }: { product: ProductDef }) {
 
       <CtaBand seed={product.slug.length + 3} title={`Essayez Selio pendant ${TRIAL_DAYS} jours`} lead="Toutes les fonctions du plan Pro sur votre propre activité. Rien n'est débité avant la fin de l'essai ; tout ce qui est encore simulé est signalé à l'écran." />
     </>
+  );
+}
+
+/** Sur la page de Selio Manager : ses deux fonctionnalités intégrées, chacune vers sa page. */
+function ManagerFeatures() {
+  return (
+    <MarketingSection reveal id="fonctionnalites-integrees" className="scroll-mt-14 border-t border-border" eyebrow="Fonctionnalités intégrées" title="Selio Cloud et Selio Agent, dans Selio Manager" lead="Deux fonctionnalités de Selio Manager, pas des produits à part : elles complètent ses possibilités.">
+      <div className="grid gap-4 md:grid-cols-2">
+        {MANAGER_FEATURES.map((f) => (
+          <article key={f.slug} id={f.slug} className="card mk-card flex scroll-mt-20 flex-col p-5 md:p-6" data-reveal="" aria-labelledby={`fonctionnalite-${f.slug}`}>
+            <div className="flex items-start justify-between gap-3">
+              <span className="mk-icon" aria-hidden>{productIcon(f)}</span>
+              <span className="mk-badge" data-value={f.state.value}>{f.state.label}</span>
+            </div>
+            <h3 id={`fonctionnalite-${f.slug}`} className="mt-4 text-md font-semibold text-text">{f.name}</h3>
+            <p className="mt-1 flex-1 text-sm text-text-muted">{f.tagline}</p>
+            <p className="mt-4">
+              <Link to={f.path} className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">
+                Découvrir<span className="sr-only"> {f.name}</span> <ArrowRight className="size-4" aria-hidden />
+              </Link>
+            </p>
+          </article>
+        ))}
+      </div>
+    </MarketingSection>
   );
 }

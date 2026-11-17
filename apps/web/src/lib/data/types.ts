@@ -471,6 +471,8 @@ export interface DemoPhotoContent {
   label?: StudioSimulatorHints["label"];
   tape?: StudioSimulatorHints["tape"];
   ocrText?: string;
+  /** Ce que montre la photo d'exemple (type de pièce, couleurs) : repris pour la rédaction, jamais deviné sur une photo du vendeur. */
+  visible?: { piece?: string; colors?: string[] };
 }
 
 export interface StudioPrepareOptions {
@@ -1066,7 +1068,7 @@ export interface DataClient {
   adminUpdateOffer(id: string, input: OfferUpdate): Promise<CommercialOffer>;
   /** Suppression réelle si l'offre n'a jamais servi, sinon archivage. */
   adminDeleteOffer(id: string): Promise<OfferDeleteResult>;
-  // Selio Agents (aperçu) : marque blanche
+  // Selio Agent (aperçu) : marque blanche
   /** Marque blanche enregistrée (null tant qu'elle n'est pas personnalisée, et toujours en mode connecté). */
   getWhiteLabel(): Promise<WhiteLabel | null>;
   /** Enregistre la marque blanche dans la démonstration. Mode connecté : aperçu non enregistré (erreur « preview_only »). */

@@ -6,8 +6,9 @@ import { ToastProvider } from "@selio/ui";
 import { BOT_AUTO_BUY_LOCKED_TEXT, type Plan, type Role } from "@selio/contracts";
 import { DataProvider, getDemoClient, queryClient } from "../../../lib/data/provider";
 import { RequireSession } from "../../layout";
+import AutomationHub from "../automation/AutomationHub";
+import { FollowUpPage, LegacyBotRedirect } from "../automation/AutomationDetail";
 import BotAutoBuy from "./BotAutoBuy";
-import BotDetail from "./BotDetail";
 import BotHome from "./BotHome";
 
 beforeAll(() => {
@@ -43,59 +44,96 @@ function mount(path: string, pattern: string, element: ReactNode) {
   return router;
 }
 
-const card = (id: string) => document.querySelector(`[data-bot="${id}"]`) as HTMLElement;
+const row = (id: string) => document.querySelector(`[data-bot="${id}"]`) as HTMLElement;
 
-describe("Selio Bot (démonstration)", () => {
-  it("tableau des bots : sept bots, Favoris « bientôt », achat auto verrouillé avec la phrase juridique, lien vers les comptes du Cloud", async () => {
+describe("Selio Bot : recherche et achat d'articles (démonstration)", () => {
+  it("accueil : recherches actives, bonnes affaires notées sur 100 avec revente et marge, alertes, limites, historique, deux modes d'achat", async () => {
     await demo();
     mount("/bot", "/bot", <BotHome />);
-    expect(await screen.findByRole("heading", { name: "Vos bots" })).toBeTruthy();
-    await waitFor(() => expect(document.querySelectorAll("[data-bot]").length).toBe(7));
-    expect(within(card("favorites")).getByText("Bientôt")).toBeTruthy();
-    expect(within(card("auto_buy")).getByText("Verrouillé")).toBeTruthy();
-    expect(within(card("auto_buy")).getByText(BOT_AUTO_BUY_LOCKED_TEXT)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Comptes dans le Cloud" }).getAttribute("href")).toBe("/cloud/comptes");
-    expect(screen.getByText("Démonstration")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Selio Bot : recherche et achat d'articles", level: 1 })).toBeTruthy();
+    for (const title of ["Bonnes affaires notées sur 100", "Recherches actives", "Alertes", "Limites de dépenses", "Historique des achats"]) expect(screen.getByRole("heading", { name: title })).toBeTruthy();
+    const deals = await screen.findByRole("list", { name: "Meilleures affaires" });
+    const first = within(deals).getAllByRole("listitem")[0]!;
+    expect(within(first).getByText(/revente estimée/)).toBeTruthy();
+    expect(within(first).getByText(/marge potentielle/)).toBeTruthy();
+    expect(within(first).getByRole("link").getAttribute("href")).toMatch(/^\/app\/radar\/affaires\//);
+    expect((await screen.findByRole("list", { name: "Recherches" })).children.length).toBeGreaterThan(0);
+    // Deux modes : achat rapide en 1 clic (disponible) et achat automatique, verrouillé avec la phrase juridique.
+    expect(await screen.findByTestId("mode-assisted")).toBeTruthy();
+    const auto = screen.getByTestId("mode-auto");
+    expect(within(auto).getByText("Verrouillé")).toBeTruthy();
+    expect(within(auto).getByText(BOT_AUTO_BUY_LOCKED_TEXT)).toBeTruthy();
+    await waitFor(() => expect(document.querySelectorAll('[data-server-lock="closed"]').length).toBe(2));
+    // Plus aucune automatisation de compte dans Selio Bot : elles sont dans Selio Manager.
+    expect(document.querySelectorAll("[data-bot]").length).toBe(0);
+    expect(screen.queryByRole("button", { name: /Tout arrêter|Arrêter toutes les automatisations/ })).toBeNull();
+    expect(screen.getByRole("link", { name: "Selio Manager › Automatisation" }).getAttribute("href")).toBe("/app/automatisation");
   });
 
-  it("« Tout arrêter » (titulaire) : confirmation, bots coupés, puis reprise", async () => {
-    const client = await demo();
-    mount("/bot", "/bot", <BotHome />);
-    fireEvent.click(await screen.findByRole("button", { name: "Tout arrêter" }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Tout arrêter" }));
-    expect(await screen.findByText("Tout est arrêté")).toBeTruthy();
-    expect((await client.getAutomationState()).globalPaused).toBe(true);
-    await waitFor(() => expect(within(card("auto_buy")).getByText("Tout arrêté")).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: "Reprendre" }));
-    await waitFor(() => expect(screen.queryByText("Tout est arrêté")).toBeNull());
-    expect((await client.getAutomationState()).globalPaused).toBe(false);
-  });
-
-  it("exécuteur : voit l'état, bouton « Tout arrêter » désactivé ; le client démo refuse aussi", async () => {
-    const client = await demo({ role: "operator" });
-    mount("/bot", "/bot", <BotHome />);
-    const btn = await screen.findByRole("button", { name: "Tout arrêter" });
-    expect((btn as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText(/seuls le titulaire et les administrateurs peuvent tout arrêter/)).toBeTruthy();
-    await expect(client.stopBots()).rejects.toMatchObject({ status: 403 });
-  });
-
-  it("page d'un bot : règles du bot, réglages existants ; achat auto : deux modes et deux verrous du serveur fermés", async () => {
+  it("achat automatique : deux modes et deux verrous du serveur fermés, réglages en lecture seule", async () => {
     await demo({ plan: "agence" });
-    mount("/bot/negociation", "/bot/:botId", <BotDetail />);
-    expect(await screen.findByRole("heading", { name: "Négociation" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Planchers, paliers et messages" }).getAttribute("href")).toBe("/app/automatisation/negociation");
-    expect(await screen.findByText("Règles du bot")).toBeTruthy();
-    cleanup();
-    queryClient.clear();
     mount("/bot/achat-auto", "/bot/achat-auto", <BotAutoBuy />);
+    expect(await screen.findByRole("heading", { name: "Achat automatique", level: 1 })).toBeTruthy();
     expect(await screen.findByTestId("mode-assisted")).toBeTruthy();
     expect(screen.getByTestId("mode-auto")).toBeTruthy();
     await waitFor(() => expect(document.querySelectorAll('[data-server-lock="closed"]').length).toBe(2));
     expect(screen.getByText("1. Achat automatique (RADAR_AUTO_ENABLED)")).toBeTruthy();
     expect(screen.getByText("2. Achat réel (RADAR_REAL_PURCHASE)")).toBeTruthy();
-    // Réglages de Radar Auto repris tels quels (lecture seule tant que le verrou serveur est fermé).
     expect(await screen.findByTestId("auto-readonly")).toBeTruthy();
+  });
+
+  it("anciennes adresses /bot/negociation… : redirigées vers les automatisations de Selio Manager", async () => {
+    await demo();
+    const router = mount("/bot/negociation", "/bot/:slug", <LegacyBotRedirect />);
+    await waitFor(() => expect(router.state.location.pathname).toBe("/app/automatisation/negociation"));
+    cleanup();
+    const r2 = mount("/bot/relance", "/bot/:slug", <LegacyBotRedirect />);
+    await waitFor(() => expect(r2.state.location.pathname).toBe("/app/automatisation/relances"));
+  });
+});
+
+describe("Selio Manager › Automatisation : état et arrêt de toutes les automatisations", () => {
+  it("tableau d'état : six automatisations de compte (sans l'achat automatique), Favoris « bientôt », lien vers les comptes du Cloud", async () => {
+    await demo();
+    mount("/app/automatisation", "/app/automatisation", <AutomationHub />);
+    expect(await screen.findByRole("heading", { name: "État des automatisations" })).toBeTruthy();
+    await waitFor(() => expect(document.querySelectorAll("[data-bot]").length).toBe(6));
+    expect(row("auto_buy")).toBeNull();
+    expect(within(row("favorites")).getByText("Bientôt")).toBeTruthy();
+    expect(within(row("follow_up")).getAllByRole("link")[0]!.getAttribute("href")).toBe("/app/automatisation/relances");
+    expect(within(row("negotiation")).getAllByRole("link")[0]!.getAttribute("href")).toBe("/app/automatisation/negociation");
+  });
+
+  it("« Arrêter toutes les automatisations » (titulaire) : confirmation, tout coupé, puis reprise", async () => {
+    const client = await demo();
+    mount("/app/automatisation", "/app/automatisation", <AutomationHub />);
+    fireEvent.click(await screen.findByRole("button", { name: "Arrêter toutes les automatisations" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Tout arrêter" }));
+    expect(await screen.findByText("Toutes les automatisations sont arrêtées")).toBeTruthy();
+    expect((await client.getAutomationState()).globalPaused).toBe(true);
+    await waitFor(() => expect(document.querySelectorAll('[data-bot] [data-bot-state="stopped"]').length).toBeGreaterThan(0));
+    // L'achat automatique de Selio Bot est coupé aussi.
+    expect((await client.botSummary()).bots.find((b) => b.id === "auto_buy")!.state).toBe("stopped");
+    fireEvent.click(screen.getByRole("button", { name: "Reprendre les automatisations" }));
+    await waitFor(() => expect(screen.queryByText("Toutes les automatisations sont arrêtées")).toBeNull());
+    expect((await client.getAutomationState()).globalPaused).toBe(false);
+  });
+
+  it("exécuteur : voit l'état, bouton désactivé ; le client démo refuse aussi", async () => {
+    const client = await demo({ role: "operator" });
+    mount("/app/automatisation", "/app/automatisation", <AutomationHub />);
+    const btn = await screen.findByRole("button", { name: "Arrêter toutes les automatisations" });
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/seuls le titulaire et les administrateurs peuvent arrêter ou reprendre/)).toBeTruthy();
+    await expect(client.stopBots()).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("page Relances : état, règles et réglages existants", async () => {
+    await demo({ plan: "agence" });
+    mount("/app/automatisation/relances", "/app/automatisation/relances", <FollowUpPage />);
+    expect(await screen.findByRole("heading", { name: "Relances", level: 1 })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Texte de la relance" }).getAttribute("href")).toBe("/app/automatisation/negociation");
+    expect(await screen.findByRole("heading", { name: "Règles" })).toBeTruthy();
   });
 });

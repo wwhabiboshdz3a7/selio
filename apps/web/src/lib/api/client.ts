@@ -445,13 +445,13 @@ export class ApiClient implements DataClient {
   adminUpdateOffer(id: string, input: OfferUpdate) { return this.patch<CommercialOffer>(`/api/admin/offers/${encodeURIComponent(id)}`, input); }
   adminDeleteOffer(id: string) { return this.del<OfferDeleteResult>(`/api/admin/offers/${encodeURIComponent(id)}`); }
 
-  // Selio Agents est en aperçu : aucune donnée serveur, rien n'est enregistré sur le compte.
+  // Selio Agent est en aperçu : aucune donnée serveur, rien n'est enregistré sur le compte.
   async getWhiteLabel(): Promise<WhiteLabel | null> {
     return null;
   }
   async saveWhiteLabel(input: WhiteLabelInput): Promise<WhiteLabel> {
     void input;
-    throw new DataError("preview_only", "Selio Agents est en aperçu : la marque blanche n'est pas encore enregistrée sur votre compte. Essayez-la dans la démonstration.", 501);
+    throw new DataError("preview_only", "Selio Agent est en aperçu : la marque blanche n'est pas encore enregistrée sur votre compte. Essayez-la dans la démonstration.", 501);
   }
 
   // Selio Cloud (/api/cloud/*). La session Vinted ne transite jamais ici : seulement « une session existe » et sa date.

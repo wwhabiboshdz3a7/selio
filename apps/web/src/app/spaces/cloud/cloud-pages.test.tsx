@@ -210,7 +210,7 @@ describe("pause globale", () => {
     expect(await screen.findByTestId("cloud-paused-banner")).toBeTruthy();
     expect((await client.getAutomationState()).globalPaused).toBe(true);
     const menu = screen.getByRole("navigation", { name: "Navigation de l'application" });
-    expect(within(within(menu).getByRole("link", { name: /Tableau de bord/ })).getByText("En pause")).toBeTruthy();
+    expect(within(within(menu).getByRole("link", { name: /Selio Cloud/ })).getByText("En pause")).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "Reprendre le Cloud" }));
     await waitFor(() => expect(screen.queryByTestId("cloud-paused-banner")).toBeNull());
   });

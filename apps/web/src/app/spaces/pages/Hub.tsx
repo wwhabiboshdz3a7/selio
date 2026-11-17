@@ -12,14 +12,15 @@ import { Sparkline } from "../../../components/charts";
 import { ItemThumb } from "../../components/common";
 import { BrandMark, initialsOf } from "../components";
 import { useNavCounts } from "../../layout";
-import { SPACES, spaceStateLabel, upcomingSectionTitle, type SpaceDef, type SpaceState } from "../spaces";
+import { MANAGER_FEATURES, SPACES, spaceStateLabel, type FeatureDef, type FeatureId, type SpaceDef, type SpaceId, type SpaceState } from "../spaces";
+import { useAutoBuyStatus } from "../../components/radar";
 import { summarizeGenerated, useAllItems, useDressingScores } from "../studio-data";
 
 interface Figure { label: string; value: ReactNode; hint?: string }
 
 const STATE_TONE: Record<SpaceState, "success" | "accent" | "neutral"> = { available: "success", preview: "accent", development: "neutral" };
 
-function SpaceCard({ space, figures, figuresNote, signal, secondary }: { space: SpaceDef; figures: Figure[]; figuresNote?: ReactNode; signal?: ReactNode; secondary?: { to: string; label: string } }) {
+function SpaceCard({ space, figures, figuresNote, signal, secondary, integrated, rank }: { space: SpaceDef | FeatureDef; figures: Figure[]; figuresNote?: ReactNode; signal?: ReactNode; secondary?: { to: string; label: string }; /** Selio Manager : ses fonctionnalités intégrées (Selio Cloud, Selio Agent). */ integrated?: ReactNode; /** Rang de la filiale dans l'écosystème (1 à 5). */ rank?: number }) {
   const { mode } = useData();
   const available = space.state === "available";
   return (
@@ -29,6 +30,7 @@ function SpaceCard({ space, figures, figuresNote, signal, secondary }: { space: 
         <div className="flex items-start gap-3.5">
           <span className="space-tile size-11" aria-hidden>{space.icon}</span>
           <div className="min-w-0 flex-1">
+            {rank ? <p className="num text-[11px] font-medium tracking-wider text-text-muted uppercase">Filiale {rank}</p> : null}
             <h2 id={`espace-${space.id}`} className="text-lg font-bold text-text">{space.name}</h2>
             <p className="text-sm text-text-muted">{space.tagline}</p>
           </div>
@@ -36,7 +38,7 @@ function SpaceCard({ space, figures, figuresNote, signal, secondary }: { space: 
         </div>
         <p className="text-sm text-text-muted">{space.description}</p>
         {signal ? <div className="min-h-10">{signal}</div> : null}
-        <div>
+        {figures.length > 0 ? <div>
           <dl className="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-border bg-border">
             {figures.map((f) => (
               <div key={f.label} className="flex min-w-0 flex-col bg-surface px-3 py-2.5">
@@ -48,12 +50,13 @@ function SpaceCard({ space, figures, figuresNote, signal, secondary }: { space: 
             ))}
           </dl>
           {figuresNote ? <p className="mt-1.5 text-xs text-text-muted">{figuresNote}</p> : null}
-        </div>
+        </div> : null}
         <ul className="flex flex-col gap-1.5 text-sm text-text">
           {space.does.map((d) => (
             <li key={d} className="flex items-start gap-2"><span className="space-dot mt-[7px]" aria-hidden />{d}</li>
           ))}
         </ul>
+        {integrated}
         <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-border pt-4">
           <Link to={space.home} className={buttonClass({ variant: available ? "primary" : "secondary" })} aria-label={`Ouvrir ${space.name}`}>
             Ouvrir {space.id === "selio" ? space.name : space.short} <ArrowRight aria-hidden />
@@ -65,34 +68,24 @@ function SpaceCard({ space, figures, figuresNote, signal, secondary }: { space: 
   );
 }
 
-const STEPS = [
-  { id: "selio", step: "Gérer", title: "Selio Manager, chaque jour", text: "Sourcing, achat, vente, bordereaux, après-vente et remise en ligne : chaque vente enregistrée devient une donnée utile." },
-  { id: "studio", step: "Créer", title: "Studio, Track et Radar s'en servent", text: "Studio écrit les annonces à partir de ce qui marche ; Track montre où sourcer ; Radar repère les bonnes affaires." },
-  { id: "bot", step: "Automatiser", title: "Selio Bot, exécuté dans Selio Cloud", text: "Négociation, relances, republications et achat automatique selon vos règles, 24 h/24, ordinateur éteint." },
-  { id: "agents", step: "Élargir", title: "Agents et Selio Comptes", text: "Travailler à plusieurs avec les bons accès ; ouvrir ou remettre à plat une boutique, à la prestation." },
-] as const;
+const STEPS: readonly { id: SpaceId; step: string; title: string; text: string }[] = [
+  { id: "selio", step: "Gérer", title: "Selio Manager, chaque jour", text: "Stock, messagerie, commandes et marges, et les automatisations du compte : négociation par IA, relances, remise en ligne. Selio Cloud et Selio Agent y sont intégrés." },
+  { id: "studio", step: "Créer", title: "Selio Studio", text: "Les annonces rédigées et optimisées à partir de vos photos, et de ce qui se vend chez vous." },
+  { id: "track", step: "Analyser", title: "Selio Track", text: "Le marché et les opportunités : quelles niches, à quel prix. Track identifie." },
+  { id: "bot", step: "Acheter", title: "Selio Bot", text: "Recherches surveillées, bonnes affaires notées sur 100, achat en 1 clic dans vos limites. Bot acquiert." },
+  { id: "generateur", step: "Accompagner", title: "Selio Compte", text: "Création et préparation de comptes, configuration et accompagnement, sur devis." },
+];
 
-/** Carte compacte d'une filiale en développement. */
-function DevCard({ space }: { space: SpaceDef }) {
-  const { mode } = useData();
+/** Selio Cloud ou Selio Agent, dans le bloc « Intégrés à Selio Manager » de la carte du Manager. */
+function IntegratedLine({ feature }: { feature: FeatureDef }) {
   return (
-    <article data-space={space.id} aria-labelledby={`espace-${space.id}`} className="card flex min-w-0 flex-col overflow-hidden">
-      <div className="space-rule" aria-hidden />
-      <div className="flex flex-1 flex-col gap-3 p-5">
-        <div className="flex items-start gap-3">
-          <span className="space-tile size-10" aria-hidden>{space.icon}</span>
-          <div className="min-w-0 flex-1">
-            <h3 id={`espace-${space.id}`} className="text-base font-bold text-text">{space.name}</h3>
-            <p className="text-sm text-text-muted">{space.tagline}</p>
-          </div>
-        </div>
-        <p className="text-sm text-text-muted">{space.description}</p>
-        <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-          <StatusBadge tone="neutral">{spaceStateLabel(space.state, mode)}</StatusBadge>
-          <Link to={space.home} className={buttonClass({ variant: "ghost", size: "sm" })} aria-label={`Découvrir ${space.name}`}>Découvrir <ArrowRight aria-hidden /></Link>
-        </div>
-      </div>
-    </article>
+    <li data-space={feature.id} className="flex items-start gap-2.5">
+      <span className="space-tile size-7" aria-hidden>{feature.icon}</span>
+      <span className="min-w-0 flex-1 text-sm">
+        <Link to={feature.home} className="font-semibold text-text underline-offset-2 hover:underline">{feature.name}</Link>
+        <span className="block text-xs text-text-muted">{feature.tagline}</span>
+      </span>
+    </li>
   );
 }
 
@@ -109,6 +102,8 @@ export default function Hub() {
   const cloudAccounts = useQuery({ queryKey: ["cloud-accounts"], queryFn: () => client.cloudAccounts() });
   const cloudConsent = useQuery({ queryKey: ["cloud-consent"], queryFn: () => client.cloudConsent() });
   const cloudAvailability = useQuery({ queryKey: ["cloud-availability"], queryFn: () => client.cloudAvailability() });
+  const searches = useQuery({ queryKey: ["searches"], queryFn: () => client.listSearches() });
+  const autoBuy = useAutoBuyStatus();
   const cloudLive = (cloudAccounts.data ?? []).filter((a) => a.status !== "stopped");
   const studio = items.data ? summarizeGenerated(items.data.items, scores.data) : null;
   const first = session.user.displayName.split(" ")[0];
@@ -116,7 +111,7 @@ export default function Hub() {
   // Exécuteur : pas de chiffre d'affaires (finances masquées) ; le nombre de ventes à la place.
   const finances = seesFinances(session.role);
   const comptes = checklistProgress(new Set(loadComptes(session.org.id).done));
-  const figures: Partial<Record<SpaceDef["id"], Figure[]>> = {
+  const figures: Partial<Record<SpaceId | FeatureId, Figure[]>> = {
     selio: [
       finances
         ? { label: "CA du mois", value: overview.data ? formatCents(overview.data.sales.revenueCents, { compact: true }) : dash }
@@ -134,6 +129,11 @@ export default function Hub() {
       { label: "Votre rôle", value: ROLE_LABELS[session.role] },
       { label: "Boutiques clientes", value: formatNumber(AGENCY_EXAMPLE_CLIENTS.length), hint: "exemples fictifs" },
     ],
+    bot: [
+      { label: "Recherches actives", value: searches.data ? formatNumber(searches.data.filter((x) => x.enabled).length) : dash },
+      { label: "Affaires à valider", value: counts.data ? formatNumber(counts.data.toReview) : dash, hint: "notées 75/100 ou plus" },
+      { label: "Achat automatique", value: autoBuy.data ? (autoBuy.data.active ? "Ouvert" : "Fermé") : dash, hint: autoBuy.data?.active ? undefined : "validation juridique attendue" },
+    ],
     generateur: [
       { label: "Checklist", value: `${comptes.done}/${comptes.total}`, hint: "étapes faites dans Vinted" },
     ],
@@ -148,7 +148,7 @@ export default function Hub() {
   const cumulative = (overview.data?.series ?? []).reduce<number[]>((acc, p) => [...acc, (acc.at(-1) ?? 0) + p.revenueCents], []);
   const recent = studio?.generated.slice(0, 5) ?? [];
   const brand = whiteLabel.data;
-  const signals: Partial<Record<SpaceDef["id"], ReactNode>> = {
+  const signals: Partial<Record<SpaceId | FeatureId, ReactNode>> = {
     selio: finances && (cumulative.at(-1) ?? 0) > 0 ? (
       <div className="flex items-center gap-3">
         <Sparkline values={cumulative} className="h-10 w-full max-w-56" tone="var(--space-tint)" />
@@ -180,38 +180,65 @@ export default function Hub() {
     ),
   };
 
+  const secondaryOf: Partial<Record<SpaceId | FeatureId, { to: string; label: string }>> = {
+    selio: { to: "/app/automatisation", label: "Automatisation" },
+    studio: { to: "/studio/performances", label: "Ce qui performe" },
+    bot: { to: "/app/purchase", label: "Affaires à valider" },
+    generateur: { to: "/contact?sujet=comptes", label: "Demander un devis" },
+    cloud: { to: "/cloud/journal", label: "Journal des actions" },
+    agents: { to: "/app/settings/access", label: "Comptes et accès" },
+  };
+  const notes: Partial<Record<SpaceId | FeatureId, ReactNode>> = {
+    selio: "Calculés depuis vos données, ce mois-ci.",
+    studio: "Note du dressing des annonces en ligne.",
+    bot: mode === "demo" ? "Démonstration : annonces du simulateur, aucun achat réel." : "Vous validez chaque achat ; l'achat automatique reste fermé.",
+    cloud: mode === "demo" ? <><Tag className="mr-1.5">Aperçu</Tag>Actions légères seulement (répondre, relancer).</> : "Actions légères seulement (répondre, relancer), avec votre accord.",
+    agents: mode === "demo" ? <><Tag className="mr-1.5">Aperçu</Tag>Boutiques clientes fictives, rien n'est facturé.</> : "L'équipe et les rôles sont actifs ; les boutiques clientes arrivent.",
+  };
+
   return (
     <>
       <PageHeader
         eyebrow={`Bonjour ${first}`}
         title="Selio et ses filiales"
-        description="Un compte, une IA, plusieurs outils. Selio Manager gère votre activité au quotidien ; les filiales s'appuient sur ses données, sans rien ressaisir. Pour passer de l'une à l'autre, utilisez le bloc « Vous êtes dans » en haut du menu."
+        description="Un compte, une IA, cinq filiales : Selio Manager gère et automatise votre activité au quotidien ; Studio, Track, Bot et Compte s'appuient sur ses données, sans rien ressaisir. Pour passer de l'une à l'autre, utilisez le bloc « Vous êtes dans » en haut du menu."
       />
 
-      <h2 className="mb-3 text-sm font-bold tracking-wider text-text uppercase">Disponibles</h2>
+      <h2 className="mb-3 text-sm font-bold tracking-wider text-text uppercase">Les cinq filiales</h2>
       <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-        {SPACES.filter((s) => s.state !== "development").map((space) => (
+        {SPACES.map((space, i) => (
           <SpaceCard
             key={space.id}
+            rank={i + 1}
             space={space}
             figures={figures[space.id] ?? []}
             signal={signals[space.id]}
-            figuresNote={space.id === "selio" ? "Calculés depuis vos données, ce mois-ci." : space.id === "studio" ? "Note du dressing des annonces en ligne." : space.id === "cloud" ? (mode === "demo" ? <><Tag className="mr-1.5">Aperçu</Tag>Actions légères seulement (répondre, relancer).</> : "Actions légères seulement (répondre, relancer), avec votre accord.") : mode === "demo" ? <><Tag className="mr-1.5">Aperçu</Tag>Boutiques clientes fictives, rien n'est facturé.</> : "L'équipe et les rôles sont actifs ; les boutiques clientes arrivent."}
-            secondary={space.id === "selio" ? { to: "/app/automatisation", label: "Automatisation" } : space.id === "studio" ? { to: "/studio/performances", label: "Ce qui performe" } : space.id === "cloud" ? { to: "/cloud/journal", label: "Journal des actions" } : { to: "/app/settings/access", label: "Comptes et accès" }}
+            figuresNote={notes[space.id]}
+            secondary={secondaryOf[space.id]}
+            integrated={space.id === "selio" ? (
+              <div className="rounded-lg border border-dashed border-border-strong p-3" aria-label="Intégrés à Selio Manager" role="group">
+                <p className="mb-2 text-xs font-bold tracking-wider text-text-muted uppercase">Intégrés à Selio Manager</p>
+                <ul className="flex flex-col gap-2">{MANAGER_FEATURES.map((f) => <IntegratedLine key={f.id} feature={f} />)}</ul>
+              </div>
+            ) : null}
           />
         ))}
       </div>
 
-      <h2 className="mt-8 mb-1 text-sm font-bold tracking-wider text-text uppercase">{upcomingSectionTitle(mode)}</h2>
-      <p className="mb-3 text-sm text-text-muted">Ce qui arrive. Rien n'est activé ni facturé ; chaque page montre aussi ce qui marche déjà dans Selio.</p>
-      <div className="grid gap-4 md:grid-cols-3">
-        {SPACES.filter((s) => s.state === "development").map((space) => <DevCard key={space.id} space={space} />)}
-      </div>
+      <section aria-labelledby="integres" className="mt-8">
+        <h2 id="integres" className="mb-1 text-sm font-bold tracking-wider text-text uppercase">Intégrés à Selio Manager</h2>
+        <p className="mb-3 max-w-3xl text-sm text-text-muted">Selio Cloud et Selio Agent ne sont pas des filiales : ce sont deux fonctionnalités de Selio Manager, avec leurs pages dans son menu (« Équipe et Cloud »).</p>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {MANAGER_FEATURES.map((f) => (
+            <SpaceCard key={f.id} space={f} figures={figures[f.id] ?? []} signal={signals[f.id]} figuresNote={notes[f.id]} secondary={secondaryOf[f.id]} />
+          ))}
+        </div>
+      </section>
 
       <section aria-labelledby="enchainement" className="card mt-8 p-5 md:p-6">
         <h2 id="enchainement" className="text-md font-bold text-text">Comment les filiales s'enchaînent</h2>
-        <p className="mt-1 max-w-3xl text-sm text-text-muted">D'abord l'outil de gestion, ensuite les filiales spécialisées : rien n'est à ressaisir de l'une à l'autre.</p>
-        <ol className="mt-5 grid gap-5 md:grid-cols-2 md:gap-6 xl:grid-cols-4">
+        <p className="mt-1 max-w-3xl text-sm text-text-muted">D'abord l'outil de gestion, ensuite les filiales spécialisées : rien n'est à ressaisir de l'une à l'autre. Track analyse et identifie, Bot acquiert.</p>
+        <ol className="mt-5 grid gap-5 md:grid-cols-2 md:gap-6 xl:grid-cols-5">
           {STEPS.map((s, i) => (
             <li key={s.id} data-space={s.id} className="relative flex gap-3 md:flex-col">
               <span className="flex items-center gap-2 md:w-full">

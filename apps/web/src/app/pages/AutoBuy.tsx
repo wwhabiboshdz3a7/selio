@@ -39,9 +39,9 @@ export default function AutoBuy() {
   return (
     <>
       <PageHeader
-        eyebrow="Radar Auto"
-        title="Achat auto"
-        description="Au-dessus d'un seuil de note, dans la limite d'un prix maximum par article et d'un plafond par jour, Radar Auto achète avec le porte-monnaie Vinted de votre compte Achat. Vous pouvez annuler pendant un court délai."
+        eyebrow="Selio Bot"
+        title="Achat automatique"
+        description="Au-dessus d'un seuil de note, dans la limite d'un prix maximum par article et d'un plafond par jour, Selio Bot achète seul avec le porte-monnaie Vinted de votre compte Achat. Vous pouvez annuler pendant un court délai."
       />
       <QueryBoundary query={status} skeleton="spinner">{(s) => <AutoBuyBody status={s} />}</QueryBoundary>
     </>
@@ -81,7 +81,7 @@ export function AutoBuyBody({ status }: { status: AutoBuyStatus }) {
   const save = useAppMutation(() => {
     const { enabledAt: _a, enabledBy: _b, ...rest } = settings;
     return client.updateRadarSettings({ autoBuy: rest });
-  }, { invalidate: ["session", "radar-auto"], success: "Réglages de Radar Auto enregistrés" });
+  }, { invalidate: ["session", "radar-auto"], success: "Réglages de l'achat automatique enregistrés" });
   const saveFees = useAppMutation(() => client.updateOrg({ settings: { buyerFees: fees } }), { invalidate: ["session"], success: "Frais d'achat enregistrés" });
   const run = useAppMutation(() => client.runAutoBuy(), {
     invalidate: RADAR_KEYS,
@@ -113,13 +113,13 @@ export function AutoBuyBody({ status }: { status: AutoBuyStatus }) {
           <Card aria-labelledby="locks-title">
             <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
               <h2 id="locks-title" className="text-md font-semibold">Verrous</h2>
-              {status.active ? <StatusBadge tone="success">Radar Auto actif</StatusBadge> : <StatusBadge tone="muted">Radar Auto verrouillé</StatusBadge>}
+              {status.active ? <StatusBadge tone="success">Achat automatique actif</StatusBadge> : <StatusBadge tone="muted">Achat automatique verrouillé</StatusBadge>}
             </div>
-            <p className="mb-3 text-sm text-text-muted">{status.active ? "Tous les verrous sont levés : Radar Auto peut acheter au prochain passage." : "Radar Auto n'achète rien tant qu'un seul de ces verrous est fermé."}</p>
-            <ul className="flex flex-col divide-y divide-border" aria-label="Verrous de Radar Auto">
+            <p className="mb-3 text-sm text-text-muted">{status.active ? "Tous les verrous sont levés : Selio Bot peut acheter seul au prochain passage." : "Selio Bot n'achète rien seul tant qu'un seul de ces verrous est fermé."}</p>
+            <ul className="flex flex-col divide-y divide-border" aria-label="Verrous de l'achat automatique">
               {status.locks.map((l) => <LockRow key={l.key} lock={l} />)}
             </ul>
-            {status.simulated ? <p className="mt-3 text-xs text-text-muted">Démonstration : le serveur simulé garde Radar Auto fermé, comme le serveur réel (RADAR_AUTO_ENABLED=false).</p> : null}
+            {status.simulated ? <p className="mt-3 text-xs text-text-muted">Démonstration : le serveur simulé garde l'achat automatique fermé, comme le serveur réel (RADAR_AUTO_ENABLED=false).</p> : null}
           </Card>
 
           <Card aria-labelledby="auto-settings-title">
@@ -127,10 +127,10 @@ export function AutoBuyBody({ status }: { status: AutoBuyStatus }) {
             {!editable ? (
               <p className="mt-1 mb-3 flex items-start gap-1.5 text-sm text-text-muted" data-testid="auto-readonly">
                 <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />
-                {status.serverEnabled ? "Lecture seule : seul le propriétaire du compte modifie Radar Auto." : "Lecture seule : le verrou du serveur est fermé. Radar Auto reste réservé aux comptes de l'équipe Selio, pour les tests."}
+                {status.serverEnabled ? "Lecture seule : seul le propriétaire du compte modifie l'achat automatique." : "Lecture seule : le verrou du serveur est fermé. L'achat automatique reste réservé aux comptes de l'équipe Selio, pour les tests."}
               </p>
             ) : null}
-            <Toggle className="mt-3" label="Activer Radar Auto" description={settings.enabled ? "Activé : chaque lecture du radar peut déclencher un achat, si tous les verrous sont levés." : "Désactivé : les affaires restent à acheter vous-même en un clic."} checked={settings.enabled} onChange={(v) => setSettings({ ...settings, enabled: v })} disabled={!editable} />
+            <Toggle className="mt-3" label="Activer l'achat automatique" description={settings.enabled ? "Activé : chaque lecture de Selio Bot peut déclencher un achat, si tous les verrous sont levés." : "Désactivé : les affaires restent à acheter vous-même en un clic."} checked={settings.enabled} onChange={(v) => setSettings({ ...settings, enabled: v })} disabled={!editable} />
             <div className="mt-5">
               <div className="flex items-end justify-between gap-3">
                 <label htmlFor="threshold" className="text-sm font-medium text-text">Seuil de note</label>
@@ -155,7 +155,7 @@ export function AutoBuyBody({ status }: { status: AutoBuyStatus }) {
 
           <Card>
             <h2 className="text-md font-semibold">Coût réel d'un achat</h2>
-            <p className="mt-1 text-sm text-text-muted">Frais payés par l'acheteur en plus du prix et du port (protection acheteurs). Ils entrent dans le total, la marge et le plafond, pour les achats « 1 clic » comme pour Radar Auto.</p>
+            <p className="mt-1 text-sm text-text-muted">Frais payés par l'acheteur en plus du prix et du port (protection acheteurs). Ils entrent dans le total, la marge et le plafond, pour les achats « 1 clic » comme pour l'achat automatique.</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <Field label="Part fixe">{(p) => <MoneyInput id={p.id} value={fees.fixedCents} onChange={(v) => setFees({ ...fees, fixedCents: v ?? 0 })} allowEmpty={false} disabled={!canEditFees} />}</Field>
               <Field label="Pourcentage du prix">{(p) => <Input id={p.id} type="number" min={0} max={30} step={0.5} value={Math.round(fees.rate * 1000) / 10} onChange={(e) => setFees({ ...fees, rate: Math.max(0, Math.min(0.3, Number(e.target.value) / 100)) })} suffix={<span className="text-sm">%</span>} disabled={!canEditFees} />}</Field>
@@ -192,7 +192,7 @@ export function AutoBuyBody({ status }: { status: AutoBuyStatus }) {
               <div className="mt-3 rounded-md bg-surface-muted p-3 text-sm">
                 {lastRun.disabled ? (
                   <>
-                    <p className="font-medium text-text">Radar Auto verrouillé : rien n'a été évalué.</p>
+                    <p className="font-medium text-text">Achat automatique verrouillé : rien n'a été évalué.</p>
                     <ul className="mt-1 list-disc pl-4 text-xs text-text-muted">{(lastRun.reasons ?? []).map((r) => <li key={r}>{r}</li>)}</ul>
                   </>
                 ) : (
@@ -213,7 +213,7 @@ export function AutoBuyBody({ status }: { status: AutoBuyStatus }) {
 
           <div>
             <h2 className="mb-2 text-md font-semibold">Achats automatiques</h2>
-            <QueryBoundary query={purchases} empty={() => autoList.length === 0 ? <EmptyState icon={<Bot />} title="Aucun achat automatique" description="Radar Auto n'a encore rien acheté. Tant qu'il est verrouillé, achetez vous-même en un clic depuis une affaire." action={<Link to="/app/radar"><Button variant="secondary">Bonnes affaires</Button></Link>} /> : null}>
+            <QueryBoundary query={purchases} empty={() => autoList.length === 0 ? <EmptyState icon={<Bot />} title="Aucun achat automatique" description="Selio Bot n'a encore rien acheté seul. Tant qu'il est verrouillé, achetez vous-même en un clic depuis une affaire." action={<Link to="/app/radar"><Button variant="secondary">Bonnes affaires</Button></Link>} /> : null}>
               {() => (
                 <ul className="flex flex-col gap-3">
                   {autoList.map((p) => {
@@ -281,7 +281,7 @@ function PurchaseAccountField({ accounts, value, onChange, disabled }: { account
     return (
       <div className="mt-5 rounded-md bg-surface-muted px-3 py-2.5 text-sm">
         <p className="font-medium text-text">Compte Achat utilisé</p>
-        <p className="mt-0.5 text-xs text-text-muted">Aucun compte Vinted classé « Achat » : Radar Auto ne peut rien acheter. <Link to="/app/accounts?categorie=achat&ajouter=1" className="font-medium text-accent underline-offset-2 hover:underline">Ajouter un compte Achat</Link></p>
+        <p className="mt-0.5 text-xs text-text-muted">Aucun compte Vinted classé « Achat » : Selio Bot ne peut rien acheter. <Link to="/app/accounts?categorie=achat&ajouter=1" className="font-medium text-accent underline-offset-2 hover:underline">Ajouter un compte Achat</Link></p>
       </div>
     );
   }

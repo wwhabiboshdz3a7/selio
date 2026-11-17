@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { SPACE_PREFIXES } from "../app/spaces/paths";
 import { EXTENSION_PRIVACY } from "./extensionPrivacy";
-import { PRODUCTS } from "./products";
+import { LEGACY_PRODUCT_SLUGS, MANAGER_FEATURES, PRODUCTS, PRODUCT_PAGES } from "./products";
 import { COMPARISON_READY, INDEPENDENCE_NOTICE, SEO_PAGES, SITE_ORIGIN, TARGET_KEYWORDS, findForbiddenClaims, organizationJsonLd, serializeJsonLd } from "./seo";
 
 const webRoot = join(__dirname, "..", "..");
@@ -35,9 +35,15 @@ describe("vitrine › référencement", () => {
     }
   });
 
-  it("une page par filiale, sous /produits, sans empiéter sur les adresses de l'application", () => {
-    expect(PRODUCTS.map((p) => p.slug)).toEqual(["manager", "studio", "track", "radar", "bot", "cloud", "agents", "comptes"]);
-    for (const p of PRODUCTS) {
+  it("une page par filiale (cinq, dans l'ordre), deux pages de fonctionnalités de Selio Manager, sous /produits, sans empiéter sur l'application", () => {
+    expect(PRODUCTS.map((p) => p.slug)).toEqual(["manager", "studio", "track", "bot", "compte"]);
+    expect(MANAGER_FEATURES.map((p) => p.slug)).toEqual(["cloud", "agent"]);
+    // Anciennes adresses : jamais référencées, redirigées par la page produit.
+    for (const [old, target] of Object.entries(LEGACY_PRODUCT_SLUGS)) {
+      expect(SEO_PAGES.some((s) => s.path === `/produits/${old}`), old).toBe(false);
+      expect(PRODUCT_PAGES.some((p) => p.slug === target), target).toBe(true);
+    }
+    for (const p of PRODUCT_PAGES) {
       expect(SEO_PAGES.some((s) => s.path === p.path && s.indexable)).toBe(true);
       const path: string = p.path;
       for (const [prefix] of SPACE_PREFIXES) expect(path === prefix || path.startsWith(`${prefix}/`)).toBe(false);
@@ -53,7 +59,7 @@ describe("vitrine › référencement", () => {
     for (const p of SEO_PAGES) {
       if (p.path === "/") continue;
       const direct = routes.has(p.path);
-      const product = p.path.startsWith("/produits/") && routes.has("/produits/:slug") && PRODUCTS.some((x) => x.path === p.path);
+      const product = p.path.startsWith("/produits/") && routes.has("/produits/:slug") && PRODUCT_PAGES.some((x) => x.path === p.path);
       expect(direct || product, p.path).toBe(true);
     }
   });
@@ -74,7 +80,8 @@ describe("vitrine › référencement", () => {
     const robots = read(webRoot, "public", "robots.txt");
     expect(robots).toContain(`Sitemap: ${SITE_ORIGIN}/sitemap.xml`);
     const disallowed = [...robots.matchAll(/^Disallow: (\S+)/gm)].map((m) => m[1]!);
-    for (const prefix of ["/app", ...SPACE_PREFIXES.map(([p]) => p)]) expect(disallowed).toContain(prefix);
+    // Chaque adresse de l'application (filiales, et les pages de Selio Cloud et Selio Agent) est couverte par une règle.
+    for (const prefix of ["/app", "/cloud", "/agents", ...SPACE_PREFIXES.map(([p]) => p)]) expect(disallowed.some((d) => prefix === d || prefix.startsWith(`${d}/`)), prefix).toBe(true);
     for (const p of SEO_PAGES.filter((x) => x.indexable)) {
       // robots.txt compare des préfixes : « Disallow: /app » bloquerait aussi « /application ».
       for (const d of disallowed) expect(p.path.startsWith(d), `${p.path} bloquée par ${d}`).toBe(false);

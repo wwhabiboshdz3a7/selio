@@ -23,7 +23,7 @@ function AgencyBillingPreview() {
   return (
     <>
       <PageHeader
-        eyebrow="Selio Agents · Aperçu"
+        eyebrow="Selio Agent · Aperçu"
         title="Facturation des clients"
         description="Comment votre agence facturerait ses boutiques clientes : un forfait mensuel, plus une commission sur les ventes si vous le souhaitez. Rien n'est facturé ni encaissé."
       />

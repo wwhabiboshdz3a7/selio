@@ -17,10 +17,12 @@ const PAGES = [
   "/app/settings/ai", "/app/settings/billing", "/app/settings/usage", "/app/settings/notifications", "/app/settings/security",
   "/app/settings/data", "/app/settings/migration", "/app/settings/status", "/studio", "/studio/annonces", "/studio/performances", "/studio/photos-portees",
   "/agents", "/agents/clients", "/agents/marque-blanche", "/agents/facturation", "/track", "/cloud", "/generateur", "/admin",
-  // Rôles, parrainage, Selio Comptes, supervision, apparence.
+  // Rôles, parrainage, Selio Compte, supervision, apparence.
   "/comptes", "/app/items/photos", "/app/settings/apparence", "/app/settings/parrainage", "/admin/supervision",
-  // Selio Manager : journal d'activité.
-  "/app/journal",
+  // Selio Manager : journal d'activité, état des relances.
+  "/app/journal", "/app/automatisation/relances",
+  // Selio Bot : recherche et achat d'articles.
+  "/bot", "/bot/achat-auto",
 ];
 
 test("aucun contenu coupé hors zone défilante (mobile et tablette)", async ({ page }, info) => {

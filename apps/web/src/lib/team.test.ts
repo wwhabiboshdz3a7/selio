@@ -65,7 +65,7 @@ describe("essai « verre liquide » : réglage", () => {
   });
 });
 
-describe("Selio Comptes", () => {
+describe("Selio Compte", () => {
   it("le bandeau dit que Selio ne crée aucun compte", () => {
     expect(COMPTES_NOTICE).toBe("Selio ne crée aucun compte à votre place : vous suivez la checklist dans Vinted.");
   });

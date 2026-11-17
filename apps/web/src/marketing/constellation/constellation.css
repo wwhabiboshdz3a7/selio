@@ -481,6 +481,7 @@
 .cst-card-status[data-status="available"]::before { background: color-mix(in oklab, var(--tone-emerald) 60%, var(--gray-0)); }
 .cst-card-status[data-status="experimental"]::before { background: var(--gold-300); }
 .cst-card-status[data-status="planned"]::before { background: var(--gray-400); }
+.cst-card-product { display: block; font-size: 11px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--cst-ink-subtle); }
 .cst-card-title { font-size: 17px; line-height: 22px; letter-spacing: -0.015em; font-weight: 600; color: var(--cst-ink); }
 .cst-card-text { display: block; font-size: 13px; line-height: 19px; color: var(--cst-ink-muted); }
 .cst-card-more { margin-top: 4px; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; color: var(--violet-300); }

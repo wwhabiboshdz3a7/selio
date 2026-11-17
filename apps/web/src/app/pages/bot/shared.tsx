@@ -1,148 +1,83 @@
-import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Ban, Cloud, Hourglass, Laptop, Lock, Play, Power, Server, Sparkles } from "lucide-react";
-import { BOT_PLACE_LABELS, BOT_STATE_LABELS, BOT_STOP_TEXT, type BotAction, type BotId, type BotPlace, type BotState, type BotSummary } from "@selio/contracts";
-import { Button, ConfirmDialog, StatusBadge, buttonClass, cn, formatRelative, type StatusTone } from "@selio/ui";
+import { Hand, Lock, LockOpen, Workflow } from "lucide-react";
+import type { BotSummary } from "@selio/contracts";
+import { REVIEW_THRESHOLD } from "@selio/domain";
+import { Alert, Card, StatusBadge, buttonClass, cn, formatCents } from "@selio/ui";
 import { useClient } from "../../../lib/data/provider";
-import { useAppMutation } from "../../components/hooks";
-
-/** Clés de cache touchées par « Tout arrêter » et « Reprendre » (le même interrupteur que l'arrêt global). */
-export const BOT_KEYS = ["bot", "automation-state", "radar-auto", "overview", "rules", "nav-counts"];
-
-export function useBotSummary() {
-  const client = useClient();
-  return useQuery({ queryKey: ["bot"], queryFn: () => client.botSummary(), refetchInterval: 30_000 });
-}
-
-/** Adresse de la page d'un bot (slugs en français, sans accent). */
-export const BOT_SLUGS: Record<BotId, string> = {
-  negotiation: "negociation",
-  follow_up: "relance",
-  republish: "republication",
-  replies: "reponses",
-  favorites: "favoris",
-  auto_buy: "achat-auto",
-  after_sale: "apres-vente",
-};
-
-export function botPath(id: BotId): string {
-  return `/bot/${BOT_SLUGS[id]}`;
-}
-
-export function botIdFromSlug(slug: string | undefined): BotId | null {
-  const found = (Object.entries(BOT_SLUGS) as [BotId, string][]).find(([, s]) => s === slug);
-  return found ? found[0] : null;
-}
-
-const STATE_TONE: Record<BotState, StatusTone> = {
-  on: "success",
-  off: "muted",
-  stopped: "danger",
-  waiting_cloud: "warning",
-  locked: "neutral",
-  plan_unavailable: "muted",
-  soon: "accent",
-};
-
-export function BotStateBadge({ state }: { state: BotState }) {
-  return <StatusBadge tone={STATE_TONE[state]} data-bot-state={state}>{BOT_STATE_LABELS[state]}</StatusBadge>;
-}
-
-const PLACE_ICON: Record<BotPlace, ReactNode> = {
-  cloud: <Cloud />,
-  extension: <Laptop />,
-  server: <Server />,
-  none: <Hourglass />,
-};
-
-/** Où tourne le bot : icône, nom court et phrase. */
-export function BotPlaceLine({ place, detail, className }: { place: BotPlace; detail: string; className?: string }) {
-  return (
-    <p className={cn("flex items-start gap-2 text-sm text-text-muted [&>svg]:mt-0.5 [&>svg]:size-4 [&>svg]:shrink-0", className)}>
-      {PLACE_ICON[place]}
-      <span><span className="font-medium text-text">{BOT_PLACE_LABELS[place]}</span> — {detail}</span>
-    </p>
-  );
-}
-
-const ACTION_TONE: Record<BotAction["status"], StatusTone> = { done: "success", pending: "warning", failed: "danger", skipped: "muted" };
-const ACTION_LABEL: Record<BotAction["status"], string> = { done: "Faite", pending: "En attente", failed: "En échec", skipped: "Écartée" };
-
-/** Dernières actions d'un bot (journal des tâches, demandes d'achat). */
-export function BotRecent({ actions, max = 5, empty = "Aucune action pour l'instant." }: { actions: BotAction[]; max?: number; empty?: string }) {
-  if (actions.length === 0) return <p className="text-sm text-text-muted">{empty}</p>;
-  return (
-    <ul className="flex flex-col divide-y divide-border">
-      {actions.slice(0, max).map((a, i) => (
-        <li key={`${a.at}-${i}`} className="flex items-start justify-between gap-2 py-2 first:pt-0 last:pb-0">
-          <div className="min-w-0">
-            <p className="truncate text-sm text-text">{a.label}</p>
-            <p className="num text-xs text-text-muted">{formatRelative(a.at)}</p>
-          </div>
-          <StatusBadge tone={ACTION_TONE[a.status]} className="shrink-0">{ACTION_LABEL[a.status]}</StatusBadge>
-        </li>
-      ))}
-    </ul>
-  );
-}
+import { BotStateBadge } from "../automation/status";
 
 /**
- * « Tout arrêter » / « Reprendre » : coupe-circuit de l'organisation (titulaire et administrateur). Les
- * autres rôles voient l'état, sans bouton actif.
+ * Selio Bot (recherche et achat d'articles) : les deux modes d'achat, côte à côte, et les deux verrous du
+ * serveur de l'achat automatique. L'achat rapide (achat assisté : vous validez chaque affaire en 1 clic) est
+ * toujours là ; l'achat automatique (anciennement « Radar Auto ») reste derrière ses deux verrous du serveur,
+ * visibles et expliqués, fermés tant que la validation juridique manque.
  */
-export function StopAllButton({ summary, size }: { summary: BotSummary; size?: "sm" | "md" }) {
+export function PurchaseModes({ summary }: { summary: BotSummary }) {
   const client = useClient();
-  const [confirm, setConfirm] = useState(false);
-  const stop = useAppMutation(() => client.stopBots(), { invalidate: BOT_KEYS, success: "Tout est arrêté : aucun bot n'agit jusqu'à la reprise" });
-  const resume = useAppMutation(() => client.resumeBots(), { invalidate: BOT_KEYS, success: "Bots repris : chacun retrouve son réglage" });
-  const title = summary.canManage ? undefined : "Réservé au titulaire et aux administrateurs";
+  const toReview = useQuery({ queryKey: ["opportunities", "to-review"], queryFn: async () => (await client.listOpportunities({ status: "new" })).filter((o) => o.score >= REVIEW_THRESHOLD) });
+  const a = summary.autoBuy;
+  const bot = summary.bots.find((b) => b.id === "auto_buy");
+  const count = toReview.data?.length ?? null;
   return (
     <>
-      {summary.stopped
-        ? <Button variant="secondary" size={size} icon={<Play />} onClick={() => resume.mutate(undefined)} loading={resume.isPending} disabled={!summary.canManage} title={title}>Reprendre</Button>
-        : <Button variant="danger" size={size} icon={<Power />} onClick={() => setConfirm(true)} disabled={!summary.canManage} title={title}>Tout arrêter</Button>}
-      <ConfirmDialog
-        open={confirm}
-        onClose={() => setConfirm(false)}
-        onConfirm={() => { stop.mutate(undefined); setConfirm(false); }}
-        loading={stop.isPending}
-        title="Tout arrêter ?"
-        description={BOT_STOP_TEXT}
-        confirmLabel="Tout arrêter"
-        danger
-      />
+      {summary.stopped ? <Alert tone="danger" className="mb-4" title="Automatisations arrêtées">L'achat automatique est coupé par l'arrêt d'urgence de Selio Manager. L'achat rapide reste disponible : vous validez chaque achat vous-même.</Alert> : null}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="flex flex-col gap-3" data-testid="mode-assisted">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="flex items-center gap-2 text-md font-semibold"><Hand className="size-4 text-accent" aria-hidden />Achat rapide, validé en 1 clic</h3>
+            <StatusBadge tone="success">Disponible</StatusBadge>
+          </div>
+          <p className="text-sm text-text-muted">Selio Bot note chaque annonce sur 100. Dès {REVIEW_THRESHOLD}/100, l'affaire arrive dans « À valider » avec le calcul achat → revente → marge : <span className="font-medium text-text">vous validez chaque achat</span> en 1 clic, ou vous l'écartez (achat assisté).</p>
+          <p className="text-sm text-text">{count === null ? "…" : count === 0 ? "Aucune affaire à valider pour l'instant." : `${count} affaire${count > 1 ? "s" : ""} à valider.`}</p>
+          <div className="mt-auto flex flex-wrap gap-2">
+            <Link to="/app/purchase" className={buttonClass({ variant: "secondary", size: "sm" })}>Affaires à valider</Link>
+            <Link to="/app/radar" className={buttonClass({ variant: "ghost", size: "sm" })}>Toutes les affaires</Link>
+          </div>
+        </Card>
+        <Card className="flex flex-col gap-3" data-testid="mode-auto">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="flex items-center gap-2 text-md font-semibold"><Workflow className="size-4 text-accent" aria-hidden />Achat automatique</h3>
+            {bot ? <BotStateBadge state={bot.state} /> : null}
+          </div>
+          <p className="text-sm text-text-muted">{bot?.stateDetail}</p>
+          <dl className="grid grid-cols-3 gap-2 text-sm">
+            <div className="rounded-md bg-surface-muted px-3 py-2"><dt className="text-xs text-text-muted">Note minimale</dt><dd className="num font-semibold text-text">{a.threshold}/100</dd></div>
+            <div className="rounded-md bg-surface-muted px-3 py-2"><dt className="text-xs text-text-muted">Budget max / jour</dt><dd className="num font-semibold text-text">{formatCents(a.dailyCapCents)}</dd></div>
+            <div className="rounded-md bg-surface-muted px-3 py-2"><dt className="text-xs text-text-muted">Max par achat</dt><dd className="num font-semibold text-text">{formatCents(a.maxItemCents)}</dd></div>
+          </dl>
+          <p className="text-xs text-text-muted">Réglables par le titulaire quand le verrou du serveur est ouvert. Paiement par le porte-monnaie Vinted ; une validation 3-D Secure vous attend toujours.</p>
+          <div className="mt-auto"><Link to="/bot/achat-auto" className={buttonClass({ variant: "ghost", size: "sm" })}>Verrous et réglages</Link></div>
+        </Card>
+      </div>
+      <ServerLocks summary={summary} className="mt-4" />
     </>
   );
 }
 
-/** État de Selio Cloud vu du Bot, avec le lien vers les comptes connectés dans le Cloud. */
-export function CloudLine({ cloud, className, stacked = false }: { cloud: BotSummary["cloud"]; className?: string; /** Colonne étroite : bouton sous le texte. */ stacked?: boolean }) {
-  const status = cloud.ready
-    ? { tone: "success" as const, label: "Prêt", text: `${cloud.activeAccounts} compte${cloud.activeAccounts > 1 ? "s" : ""} actif${cloud.activeAccounts > 1 ? "s" : ""} sur ${cloud.accounts} : les bots compatibles tournent ordinateur éteint, de ${cloud.activeHours.startHour} h à ${cloud.activeHours.endHour} h.` }
-    : !cloud.available
-      ? { tone: "muted" as const, label: "Pas sur ce forfait", text: cloud.reason }
-      : cloud.serverEnabled === false
-        ? { tone: "warning" as const, label: "Fermé sur ce serveur", text: "Selio Cloud reste fermé tant que l'avis juridique n'est pas rendu : les bots passent par l'extension, ordinateur allumé." }
-        : { tone: "warning" as const, label: "Aucun compte actif", text: `${cloud.accounts === 0 ? "Aucun compte Vinted relié au Cloud" : `${cloud.activeAccounts} compte actif sur ${cloud.accounts}`}${cloud.consent ? "" : ", accord à accepter"} : en attendant, les bots passent par l'extension, ordinateur allumé.` };
+/** Les deux verrous du serveur de l'achat automatique, expliqués. */
+export function ServerLocks({ summary, className }: { summary: BotSummary; className?: string }) {
+  const a = summary.autoBuy;
   return (
-    <div className={cn("flex flex-col gap-2", !stacked && "sm:flex-row sm:items-center sm:justify-between", className)}>
-      <div className="flex min-w-0 items-start gap-3">
-        <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent [&>svg]:size-[18px]" aria-hidden><Cloud /></span>
-        <div className="min-w-0">
-          <p className="flex flex-wrap items-center gap-2 text-base font-semibold text-text">Selio Cloud <StatusBadge tone={status.tone}>{status.label}</StatusBadge></p>
-          <p className="text-sm text-text-muted">{status.text}</p>
-        </div>
-      </div>
-      <Link to="/cloud/comptes" className={cn(buttonClass({ variant: "secondary", size: "sm" }), "shrink-0 self-start", !stacked && "sm:self-center")}>Comptes dans le Cloud</Link>
-    </div>
+    <Card className={className} aria-labelledby="server-locks">
+      <h3 id="server-locks" className="text-md font-semibold">Les deux verrous du serveur</h3>
+      <p className="mt-1 mb-3 text-sm text-text-muted">Fermés par défaut, tant que la validation juridique manque. Seule l'équipe Selio peut les ouvrir, sur ses propres comptes de test ; aucun réglage de l'application ne les contourne.</p>
+      <ul className="grid gap-3 md:grid-cols-2">
+        <ServerLock ok={a.serverEnabled} name="1. Achat automatique (RADAR_AUTO_ENABLED)" text={a.serverEnabled ? "Ouvert pour les comptes de l'équipe : Selio Bot peut choisir et lancer un achat, si vos propres verrous sont levés." : "Fermé : Selio Bot n'évalue rien pour l'achat automatique et n'ouvre aucun navigateur. Réservé aux comptes de l'équipe sur l'adresse partagée."} />
+        <ServerLock ok={a.realPurchase} name="2. Achat réel (RADAR_REAL_PURCHASE)" text={a.realPurchase ? "Ouvert : le bouton « Payer » peut être cliqué." : "Fermé : même verrou 1 ouvert, le parcours s'arrête avant le bouton de paiement ; l'achat est enregistré « simulé », sans paiement ni commande."} />
+      </ul>
+    </Card>
   );
 }
 
-/** Icône d'un bot « bientôt » ou verrouillé, pour les cartes. */
-export function BotStateIcon({ state }: { state: BotState }) {
-  if (state === "soon") return <Sparkles className="size-4 text-accent" aria-hidden />;
-  if (state === "locked") return <Lock className="size-4 text-text-muted" aria-hidden />;
-  if (state === "stopped") return <Ban className="size-4 text-danger" aria-hidden />;
-  return null;
+function ServerLock({ ok, name, text }: { ok: boolean; name: string; text: string }) {
+  return (
+    <li className={cn("flex items-start gap-3 rounded-md border px-3 py-2.5", ok ? "border-success/40" : "border-border")} data-server-lock={ok ? "open" : "closed"}>
+      {ok ? <LockOpen className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> : <Lock className="mt-0.5 size-4 shrink-0 text-text-muted" aria-hidden />}
+      <div className="min-w-0">
+        <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-text">{name}<StatusBadge tone={ok ? "success" : "muted"}>{ok ? "Ouvert" : "Fermé"}</StatusBadge></p>
+        <p className="mt-0.5 text-xs text-text-muted">{text}</p>
+      </div>
+    </li>
+  );
 }

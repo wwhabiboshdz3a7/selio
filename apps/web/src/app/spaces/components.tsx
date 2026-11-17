@@ -12,7 +12,7 @@ import { useData } from "../../lib/data/provider";
 export function PreviewNotice({ space, children }: { space: "agents" | "development"; children?: ReactNode }) {
   const { mode } = useData();
   // Mode connecté : jamais d'étiquette « aperçu » ou « en développement », un état « En cours d'activation ».
-  const title = mode === "connected" ? (space === "agents" ? "Selio Agents est en cours d'activation" : "En cours d'activation") : space === "agents" ? "Selio Agents est en aperçu" : "En développement";
+  const title = mode === "connected" ? (space === "agents" ? "Selio Agent est en cours d'activation" : "En cours d'activation") : space === "agents" ? "Selio Agent est en aperçu" : "En développement";
   return (
     <Alert tone="info" className="mb-6" title={title}>
       {children}
@@ -44,13 +44,13 @@ export function ExampleTag() {
 }
 
 /**
- * Mode connecté : pages de Selio Agents qui, en démonstration, reposent sur des boutiques clientes d'exemple
+ * Mode connecté : pages de Selio Agent qui, en démonstration, reposent sur des boutiques clientes d'exemple
  * (boutiques, facturation des clients). Aucune donnée fictive : un état « En cours d'activation ».
  */
 export function AgentsActivation({ title, does }: { title: string; does: string[] }) {
   return (
     <>
-      <PageHeader eyebrow="Selio Agents" title={title} description="Pour les agences qui gèrent plusieurs boutiques Vinted." />
+      <PageHeader eyebrow="Selio Agent" title={title} description="Pour les agences qui gèrent plusieurs boutiques Vinted." />
       <ActivationState
         testId="agents-activation"
         title={title}

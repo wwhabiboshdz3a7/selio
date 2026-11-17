@@ -32,7 +32,7 @@ export interface DemoState {
   usage: UsageEvent[];
   subscription: Subscription;
   audit: AuditLog[];
-  /** Selio Agents (aperçu) : marque blanche enregistrée dans la démonstration (null = pas encore personnalisée). */
+  /** Selio Agent (aperçu) : marque blanche enregistrée dans la démonstration (null = pas encore personnalisée). */
   whiteLabel: WhiteLabel | null;
   /** Mot de passe de démo (jamais un vrai compte). */
   passwordHint: string;

@@ -17,17 +17,24 @@ const PAGES: { href: string; heading: RegExp }[] = [
   { href: "/app/automatisation/favoris", heading: /Messages aux favoris/ },
   { href: "/app/automatisation/reponse", heading: /Réponse automatique/ },
   { href: "/app/automatisation/negociation", heading: /Négociation automatique/ },
+  { href: "/app/automatisation/relances", heading: /Relances/ },
   { href: "/app/automatisation/apres-vente", heading: /Après-vente et bordereaux/ },
   { href: "/app/automatisation/stock", heading: /Stock automatique/ },
   { href: "/app/automations", heading: /Journal des tâches/ },
-  // Selio Track est une filiale : son menu propose ensuite les Bonnes affaires, qui ramènent dans Selio.
+  // Selio Track et Selio Bot sont des filiales : le menu du Manager y mène, et chacune a son menu.
   { href: "/track", heading: /Tableau de bord/ },
+  // Track analyse, Bot achète : le menu de Track ouvre les bonnes affaires, dans Selio Bot.
   { href: "/app/radar", heading: /Bonnes affaires/ },
   { href: "/app/purchase", heading: /À valider/ },
-  { href: "/app/auto-buy", heading: /Achat auto/ },
+  { href: "/bot/achat-auto", heading: /Achat automatique/ },
+  { href: "/bot", heading: /Selio Bot : recherche et achat/ },
+  // Le menu de Selio Bot ramène dans Selio Manager par les comptes Vinted (le compte Achat).
   { href: "/app/accounts", heading: /Comptes Vinted/ },
   { href: "/app/analytics", heading: /Analyses/ },
   { href: "/app/journal", heading: /Journal d'activité/ },
+  // Selio Cloud et Selio Agent : intégrés au Manager (même menu).
+  { href: "/cloud", heading: /Tableau de bord/ },
+  { href: "/agents", heading: /Équipe et accès/ },
   { href: "/app/help", heading: /^Aide$/ },
   { href: "/app/settings", heading: /Paramètres/ },
   { href: "/app", heading: /Bonjour/ },

@@ -17,7 +17,7 @@ async function backToOwnRole(page: Page): Promise<void> {
   await expect(page.getByTestId("role-preview-banner")).toHaveCount(0);
 }
 
-test.describe("équipe : rôles, finances masquées, contributeur photos, parrainage, Selio Comptes, supervision", () => {
+test.describe("équipe : rôles, finances masquées, contributeur photos, parrainage, Selio Compte, supervision", () => {
   test("exécuteur : publie et répond, mais les finances sont masquées dans l'interface", async ({ page }) => {
     await openDemo(page);
     await expect(page.getByText("Chiffre d'affaires").first()).toBeVisible();
@@ -84,7 +84,7 @@ test.describe("équipe : rôles, finances masquées, contributeur photos, parrai
     await expect(page.getByTestId("referral-message")).toContainText("aucun mois offert");
   });
 
-  test("Selio Comptes : /generateur redirigé, bandeau, checklist cochée gardée, textes à copier", async ({ page }) => {
+  test("Selio Compte : /generateur redirigé, bandeau, checklist cochée gardée, textes à copier", async ({ page }) => {
     await openDemo(page);
     await gotoApp(page, "/generateur");
     await expect(page).toHaveURL(/\/comptes$/);

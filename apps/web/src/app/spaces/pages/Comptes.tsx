@@ -1,15 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { ArrowRight, Check, Copy, ShieldCheck } from "lucide-react";
-import { Alert, Button, Card, Field, Input, PageHeader, ProgressBar, Select, Textarea, Toggle, cn, useToast } from "@selio/ui";
+import { ArrowRight, BadgeCheck, Check, Copy, Layers, LifeBuoy, MessagesSquare, Settings2, ShieldCheck, ShieldAlert, UserPlus } from "lucide-react";
+import { Alert, Button, Card, Field, Input, PageHeader, ProgressBar, Select, Textarea, Toggle, buttonClass, cn, useToast } from "@selio/ui";
 import { useRequiredSession } from "../../../lib/data/provider";
 import {
   COMPTES_CHECKLIST, COMPTES_NOTICE, SHOP_STYLE_LABELS, checklistProgress, generateComptesTexts, loadComptes, saveComptes,
   type ComptesInput, type ShopStyle,
 } from "../../../lib/comptes";
 
+/** Les services de la filiale Selio Compte, sur devis (décision des fondateurs). */
+const SERVICES: { icon: ReactNode; title: string; text: string }[] = [
+  { icon: <UserPlus />, title: "Création de comptes Vinted", text: "Options selon les offres : identité de boutique, présentation, premières règles." },
+  { icon: <BadgeCheck />, title: "Comptes préparés ou non préparés", text: "Un compte prêt à vendre (profil, présentation, réglages) ou simplement ouvert, selon votre besoin." },
+  { icon: <Layers />, title: "Commandes en volume", text: "Plusieurs comptes pour une équipe ou une agence : sur devis." },
+  { icon: <Settings2 />, title: "Configuration personnalisée de Selio Manager", text: "Vos comptes, vos marges, vos automatisations réglées avec vous." },
+  { icon: <MessagesSquare />, title: "Messages aux favoris et négociation par IA", text: "Optimisation de vos messages, de vos paliers et de vos planchers de négociation." },
+  { icon: <LifeBuoy />, title: "Accompagnement pendant 30 jours", text: "Un suivi après la mise en place, pour ajuster ce qui doit l'être." },
+  { icon: <ShieldAlert />, title: "Accompagnement en cas de restriction", text: "Diagnostic sur devis, sans promesse de déblocage : la décision appartient à Vinted." },
+];
+
 /**
- * Selio Comptes (§5.15) : une checklist cochable à suivre soi-même dans Vinted et des textes générés à
+ * Selio Compte, filiale « services liés aux comptes et accompagnement » : en tête, ses services sur devis
+ * (bouton « Demander un devis » vers /contact). Puis (§5.15) une checklist cochable à suivre soi-même dans Vinted et des textes générés à
  * copier (présentation, règles d'envoi, réponses types). Rien n'est envoyé à Vinted ni au serveur : les
  * cases cochées et les réponses restent sur cet appareil.
  */
@@ -28,7 +40,31 @@ export default function Comptes() {
 
   return (
     <>
-      <PageHeader eyebrow="Selio Comptes" title="Ouvrir sa boutique Vinted, étape par étape" description="Une checklist à suivre dans Vinted et des textes prêts à copier. Vous gardez la main sur tout : le compte est à votre nom." />
+      <PageHeader
+        eyebrow="Selio Compte"
+        title="Services liés aux comptes et accompagnement"
+        description="La cinquième filiale de Selio : des services sur devis autour de vos comptes Vinted, et, en autonomie, une checklist et des textes prêts à copier."
+        actions={<Link to="/contact?sujet=comptes" className={buttonClass({ variant: "primary" })}>Demander un devis</Link>}
+      />
+      <section aria-labelledby="comptes-services" className="mb-8">
+        <h2 id="comptes-services" className="mb-3 text-sm font-bold tracking-wider text-text uppercase">Les services, sur devis</h2>
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Services de Selio Compte">
+          {SERVICES.map((sv) => (
+            <li key={sv.title} className="card flex flex-col gap-2 p-4">
+              <span className="inline-flex size-9 items-center justify-center rounded-lg bg-accent-soft text-accent [&>svg]:size-[18px]" aria-hidden>{sv.icon}</span>
+              <h3 className="text-sm font-semibold text-text">{sv.title}</h3>
+              <p className="text-xs text-text-muted">{sv.text}</p>
+            </li>
+          ))}
+          <li className="card flex flex-col justify-between gap-3 border-dashed p-4">
+            <p className="text-sm text-text-muted">Indiquez le service voulu et l'adresse de votre boutique : l'équipe Selio vous répond avec un devis.</p>
+            <Link to="/contact?sujet=comptes" className={cn(buttonClass({ variant: "secondary", size: "sm" }), "self-start")}>Demander un devis <ArrowRight aria-hidden /></Link>
+          </li>
+        </ul>
+      </section>
+
+      <h2 className="mb-1 text-lg font-semibold text-text">Ouvrir sa boutique Vinted, étape par étape</h2>
+      <p className="mb-4 max-w-2xl text-sm text-text-muted">En autonomie : une checklist à suivre dans Vinted et des textes prêts à copier. Vous gardez la main sur tout : le compte est à votre nom.</p>
       <Alert tone="info" className="mb-6" title="Vous restez aux commandes">
         <span data-testid="comptes-notice">{COMPTES_NOTICE}</span> Selio ne se connecte pas à Vinted, ne publie rien et ne garde aucun mot de passe.
       </Alert>

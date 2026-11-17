@@ -74,7 +74,7 @@ function AgencyClientsPreview() {
   return (
     <>
       <PageHeader
-        eyebrow="Selio Agents · Aperçu"
+        eyebrow="Selio Agent · Aperçu"
         title="Clients"
         description="Les boutiques que votre agence suit : comptes Vinted gérés, annonces en ligne, ventes du mois et note du dressing. Votre boutique est réelle ; les autres lignes sont des exemples fictifs pour montrer l'écran."
         actions={<Button variant="secondary" icon={<UserPlus />} disabled title="Aperçu : l'invitation de boutiques clientes n'est pas encore ouverte">Inviter une boutique</Button>}

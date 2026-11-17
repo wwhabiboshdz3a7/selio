@@ -91,7 +91,7 @@ export function DraftCard({ draft, form, onForm, cover, purchasePriceCents, acco
             {(p) => <div className="flex gap-2"><Input id={p.id} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} maxLength={100} /><IconButton label="Copier le titre" variant="secondary" onClick={() => copy(form.title)}><ClipboardCopy /></IconButton></div>}
           </Field>
           <Field label="Description">
-            {(p) => <div className="relative"><Textarea id={p.id} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={7} maxLength={2000} /><IconButton label="Copier la description" size="sm" variant="secondary" className="absolute top-2 right-2" onClick={() => copy(form.description)}><ClipboardCopy /></IconButton></div>}
+            {(p) => <div className="relative"><Textarea id={p.id} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={Math.min(22, Math.max(7, form.description.split("\n").length + Math.ceil(form.description.length / 90)))} maxLength={2000} /><IconButton label="Copier la description" size="sm" variant="secondary" className="absolute top-2 right-2" onClick={() => copy(form.description)}><ClipboardCopy /></IconButton></div>}
           </Field>
           {form.hashtags.length ? <p className="text-xs text-text-muted">Mots-clés : {form.hashtags.join(" ")}</p> : null}
           <div className="grid gap-3 sm:grid-cols-2">
