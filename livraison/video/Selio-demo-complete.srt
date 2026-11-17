@@ -1,280 +1,280 @@
 1
-00:00:01,677 --> 00:00:08,597
-Bonjour Felix. Voici une visite complète de Selio, l’écosystème des vendeurs et des pros de l’achat-revente sur Vinted.
+00:00:01,590 --> 00:00:08,512
+Voici une visite complète de Selio, l’écosystème des vendeurs et des pros de l’achat-revente sur Vinted.
 
 2
-00:00:08,677 --> 00:00:17,588
+00:00:08,592 --> 00:00:16,013
 Selio, ce sont cinq filiales : Manager, Studio, Track, Bot et Compte. La vidéo est sans son, et les données sont des exemples.
 
 3
-00:00:17,668 --> 00:00:23,884
+00:00:17,568 --> 00:00:23,784
 Voici la vitrine publique de Selio, en ligne sur seliovprod.netlify.app.
 
 4
-00:00:23,964 --> 00:00:32,885
+00:00:23,864 --> 00:00:32,785
 Cinq filiales, chacune avec sa mission : gérer, créer les annonces, analyser le marché, trouver et acheter, accompagner.
 
 5
-00:00:32,965 --> 00:00:42,173
+00:00:32,865 --> 00:00:42,073
 Le parcours complet : Track analyse le marché, Bot trouve et achète, Studio crée l’annonce, Manager vend, négocie et expédie.
 
 6
-00:00:42,253 --> 00:00:50,179
+00:00:42,153 --> 00:00:50,079
 Le sourcing auprès de fournisseurs partenaires arrivera ensuite : aucun accord n’est encore signé.
 
 7
-00:00:51,316 --> 00:00:59,225
+00:00:51,216 --> 00:00:59,125
 Chaque filiale a sa page. Selio Manager : la gestion complète et l’automatisation de l’activité Vinted.
 
 8
-00:00:59,305 --> 00:01:07,913
+00:00:59,205 --> 00:01:07,813
 Selio Cloud et Selio Agent ne sont pas des filiales : ce sont deux fonctionnalités intégrées à Selio Manager.
 
 9
-00:01:09,098 --> 00:01:16,137
+00:01:08,998 --> 00:01:16,037
 Les tarifs : 14 jours d’essai gratuit, puis Starter, Pro ou Agence, au mois ou à l’année.
 
 10
-00:01:16,217 --> 00:01:24,081
+00:01:16,117 --> 00:01:23,981
 Le tableau compare tout, filiale par filiale. Selio Compte se règle à la prestation ou sur devis.
 
 11
-00:01:26,892 --> 00:01:34,802
+00:01:26,792 --> 00:01:34,702
 Pour la démo, on entre avec un compte d’exemple : Marie, revendeuse, boutique « Atelier Seconde Main ».
 
 12
-00:01:34,882 --> 00:01:41,754
+00:01:34,782 --> 00:01:41,654
 L’accueil réunit les cinq filiales : Selio Manager, Studio, Track, Bot et Compte.
 
 13
-00:01:42,145 --> 00:01:49,203
+00:01:42,045 --> 00:01:49,103
 Et, intégrés à Selio Manager, ses deux fonctionnalités : Selio Cloud et Selio Agent.
 
 14
-00:01:50,371 --> 00:01:58,653
+00:01:50,271 --> 00:01:58,553
 Filiale 1 — Selio Manager : la gestion complète de l’activité Vinted, au même endroit, pour tous vos comptes.
 
 15
-00:01:58,733 --> 00:02:07,730
+00:01:58,633 --> 00:02:07,630
 La vue d’ensemble : vos raccourcis, puis le chiffre d’affaires, le bénéfice, les ventes, le stock et ce qu’il reste à traiter.
 
 16
-00:02:07,810 --> 00:02:16,232
+00:02:07,710 --> 00:02:16,132
 Plus bas : ventes et marge, objectif du mois, catégories, meilleurs jours de vente, rendement du dressing.
 
 17
-00:02:17,384 --> 00:02:26,302
+00:02:17,284 --> 00:02:26,202
 Le journal d’activité raconte tout ce que Selio et l’équipe ont fait : réponses, négociations, ventes, bordereaux.
 
 18
-00:02:27,685 --> 00:02:35,720
+00:02:27,585 --> 00:02:35,620
 Gestion du stock, centralisée : tous les articles de tous les comptes, avec filtres rapides et compteurs.
 
 19
-00:02:35,800 --> 00:02:41,060
+00:02:35,700 --> 00:02:40,960
 Exemple : les articles à remettre en ligne, en un clic.
 
 20
-00:02:42,859 --> 00:02:50,785
+00:02:42,759 --> 00:02:50,685
 Le prix se modifie directement dans la liste. On peut aussi agir sur plusieurs articles à la fois.
 
 21
-00:02:55,351 --> 00:03:02,533
+00:02:55,251 --> 00:03:02,433
 La fiche d’un article : photos, prix, marge, rendement de l’annonce et prix conseillé.
 
 22
-00:03:03,943 --> 00:03:12,489
+00:03:03,843 --> 00:03:12,389
 Le dressing intelligent note chaque annonce sur 100 et prépare la remise en ligne automatique au bon moment.
 
 23
-00:03:13,708 --> 00:03:19,633
+00:03:13,608 --> 00:03:19,533
 La messagerie automatisée réunit les conversations de tous vos comptes.
 
 24
-00:03:19,713 --> 00:03:28,963
+00:03:19,613 --> 00:03:28,863
 Négociation par intelligence artificielle : Selio accepte, refuse ou fait une contre-offre, jamais sous votre prix plancher.
 
 25
-00:03:30,253 --> 00:03:36,071
+00:03:30,153 --> 00:03:35,971
 Le suivi des commandes et des ventes, avec le bordereau d’envoi.
 
 26
-00:03:37,200 --> 00:03:46,366
+00:03:37,100 --> 00:03:46,266
 La gestion des marges : de l’achat à la revente, par catégorie, canal et marque, avec alerte avant les seuils fiscaux.
 
 27
-00:03:47,555 --> 00:03:56,477
+00:03:47,455 --> 00:03:56,377
 Les automatisations du Manager : négociation par IA, relances, republication, réponses, messages aux favoris, après-vente.
 
 28
-00:03:56,557 --> 00:04:05,165
+00:03:56,457 --> 00:04:05,065
 Chacune montre son état et se règle selon vos limites. Un bouton arrête toutes les automatisations d’un coup.
 
 29
-00:04:14,280 --> 00:04:23,204
+00:04:14,180 --> 00:04:23,104
 Fonctionnalité du Manager — Selio Cloud : fait tourner certaines automatisations à distance, sans laisser votre ordinateur allumé.
 
 30
-00:04:23,284 --> 00:04:29,784
+00:04:23,184 --> 00:04:29,684
 Tout est prêt techniquement ; son ouverture attend la validation juridique.
 
 31
-00:04:30,935 --> 00:04:39,406
+00:04:30,835 --> 00:04:39,306
 Fonctionnalité du Manager — Selio Agent : déléguer des tâches et des accès à des collaborateurs ou prestataires.
 
 32
-00:04:39,486 --> 00:04:48,736
+00:04:39,386 --> 00:04:48,636
 Chaque personne a son identifiant et un rôle qui décide de ce qu’elle voit et fait. Le travail en équipe devient simple.
 
 33
-00:04:49,881 --> 00:04:57,972
+00:04:49,781 --> 00:04:57,872
 Filiale 2 — Selio Studio : la création et l’optimisation des annonces grâce à l’intelligence artificielle.
 
 34
-00:04:58,052 --> 00:05:05,668
+00:04:57,952 --> 00:05:05,568
 Étape 1 : les photos de l’article. Ici, un jean Levi’s : face, dos, étiquette et mètre ruban.
 
 35
-00:05:06,237 --> 00:05:11,311
+00:05:06,137 --> 00:05:11,211
 Studio trie seul les photos par article et par rôle.
 
 36
-00:05:14,201 --> 00:05:22,065
+00:05:14,101 --> 00:05:21,965
 Il lit l’étiquette : marque, modèle, taille, matière. Chaque information indique d’où elle vient.
 
 37
-00:05:22,197 --> 00:05:28,201
+00:05:22,097 --> 00:05:28,101
 Puis les mesures, relevées sur le mètre ruban : rien n’est inventé.
 
 38
-00:05:34,034 --> 00:05:40,457
+00:05:33,934 --> 00:05:40,357
 Étape 2 : le titre, optimisé pour la recherche Vinted : modèle, coupe, coloris, taille et matière.
 
 39
-00:05:40,537 --> 00:05:47,959
+00:05:40,437 --> 00:05:47,859
 Étape 3 : la description complète : modèle et coupe, matière et entretien, état, mesures, conseils de taille, envoi.
 
 40
-00:05:48,039 --> 00:05:53,959
+00:05:47,939 --> 00:05:53,859
 Chaque mesure cite sa source. Les mots-clés et les attributs sont remplis automatiquement.
 
 41
-00:05:54,039 --> 00:05:59,960
+00:05:53,939 --> 00:05:59,860
 Étape 4 : le résultat final, avec trois prix proposés : vente rapide, standard ou marge maximale.
 
 42
-00:06:00,040 --> 00:06:06,416
+00:05:59,940 --> 00:06:06,316
 Rien n’est publié sans votre clic. Des minutes gagnées sur chaque article.
 
 43
-00:06:06,496 --> 00:06:12,795
+00:06:06,396 --> 00:06:12,694
 Filiale 3 — Selio Track : l’analyse du marché et la recherche d’opportunités.
 
 44
-00:06:12,875 --> 00:06:21,215
+00:06:12,774 --> 00:06:21,115
 Dans cette démo, les chiffres du marché sont simulés : la lecture réelle s’ouvrira après validation juridique.
 
 45
-00:06:21,295 --> 00:06:30,219
+00:06:21,195 --> 00:06:30,119
 Suivi du marché : chaque recherche est relue toutes les deux heures — prix médian, nouvelles annonces, annonces disparues.
 
 46
-00:06:30,299 --> 00:06:36,799
+00:06:30,199 --> 00:06:36,699
 Des alertes préviennent quand le prix bouge ou quand les ventes accélèrent.
 
 47
-00:06:37,984 --> 00:06:46,406
+00:06:37,884 --> 00:06:46,306
 L’analyse des niches : une note sur 100 selon la demande, la vitesse de vente, la concurrence et la marge.
 
 48
-00:06:47,562 --> 00:06:56,486
+00:06:47,462 --> 00:06:56,386
 Produits similaires et estimation du prix de revente à partir d’une photo : une aide à la décision avant d’acheter ou de vendre.
 
 49
-00:06:56,566 --> 00:07:02,020
+00:06:56,466 --> 00:07:01,920
 Track analyse et identifie les opportunités. Il n’achète pas : c’est le rôle de Selio Bot.
 
 50
-00:07:03,448 --> 00:07:10,735
+00:07:03,348 --> 00:07:10,635
 Filiale 4 — Selio Bot : le bot de recherche et d’achat d’articles, distinct de Selio Manager.
 
 51
-00:07:10,815 --> 00:07:18,101
+00:07:10,715 --> 00:07:18,001
 Manager gère et automatise votre compte. Bot, lui, recherche, détecte et achète les articles.
 
 52
-00:07:18,181 --> 00:07:24,726
+00:07:18,081 --> 00:07:24,626
 Recherches automatisées selon vos critères, surveillance des annonces et alertes.
 
 53
-00:07:24,806 --> 00:07:31,740
+00:07:24,706 --> 00:07:31,640
 Des limites de dépenses par jour et par achat, et l’historique de tous les achats.
 
 54
-00:07:33,069 --> 00:07:38,373
+00:07:32,969 --> 00:07:38,273
 Les bonnes affaires, chacune avec un score d’intérêt sur 100.
 
 55
-00:07:38,453 --> 00:07:45,759
+00:07:38,353 --> 00:07:45,659
 Pour chaque affaire : le prix de revente estimé et le potentiel de marge, frais compris.
 
 56
-00:07:46,980 --> 00:07:51,726
+00:07:46,880 --> 00:07:51,626
 Achat rapide : vous validez chaque achat en un clic.
 
 57
-00:07:51,806 --> 00:07:59,996
+00:07:51,706 --> 00:07:59,896
 Un clic, et l’achat est validé, avec tous les contrôles : prix maximal, budget, plafond du jour, marge positive. (Simulé dans la démo.)
 
 58
-00:08:00,076 --> 00:08:08,746
+00:07:59,976 --> 00:08:08,646
 L’historique des achats garde chaque achat, et son prix est reporté dans Selio Manager pour calculer la marge.
 
 59
-00:08:09,934 --> 00:08:18,649
+00:08:09,834 --> 00:08:18,549
 L’achat automatique, avec plafonds et garde-fous. Il reste fermé tant que la validation juridique n’est pas obtenue.
 
 60
-00:08:20,098 --> 00:08:27,635
+00:08:19,998 --> 00:08:27,535
 Filiale 5 — Selio Compte : les services liés aux comptes Vinted et l’accompagnement personnalisé.
 
 61
-00:08:27,715 --> 00:08:35,627
+00:08:27,615 --> 00:08:35,527
 Création de comptes Vinted selon les offres, comptes préparés ou non, et commandes en volume sur devis.
 
 62
-00:08:35,707 --> 00:08:44,365
+00:08:35,607 --> 00:08:44,265
 Configuration personnalisée de Selio Manager, et optimisation des messages aux favoris et de la négociation par IA.
 
 63
-00:08:44,445 --> 00:08:53,366
+00:08:44,345 --> 00:08:53,266
 Un accompagnement de 30 jours, et un accompagnement en cas de restriction : diagnostic sur devis, sans promesse de déblocage.
 
 64
-00:08:53,446 --> 00:09:00,690
+00:08:53,346 --> 00:09:00,590
 Et pour démarrer : une checklist pour ouvrir sa boutique, et des textes prêts à copier.
 
 65
-00:09:01,863 --> 00:09:11,113
+00:09:01,763 --> 00:09:11,013
 Côté client : l’abonnement, les factures et le code promo. En attendant le paiement en ligne, l’essai démarre sans débit.
 
 66
-00:09:12,213 --> 00:09:21,131
+00:09:12,113 --> 00:09:21,031
 Enfin, Selio Admin : l’espace de l’équipe Selio, séparé de l’espace client, avec le tableau de bord de croissance.
 
 67
-00:09:22,232 --> 00:09:30,840
+00:09:22,132 --> 00:09:30,740
 Les comptes clients : on peut les qualifier, offrir un forfait, prolonger un essai et noter un suivi interne.
 
 68
-00:09:31,952 --> 00:09:39,692
+00:09:31,852 --> 00:09:39,592
 Les offres commerciales : une réduction, un code promo, et l’affichage dans le bandeau du site.
 
 69
-00:09:48,332 --> 00:09:54,398
+00:09:48,232 --> 00:09:54,298
 Par exemple « Lancement bêta » : 30 % de remise avec le code BETA30.
 
 70
-00:09:59,587 --> 00:10:08,133
+00:09:58,595 --> 00:10:07,141
 Merci d’avoir regardé. Cinq filiales, un seul écosystème. Questions et retours bienvenus : Elias et Ibrahim.
 
