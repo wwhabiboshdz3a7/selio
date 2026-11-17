@@ -109,7 +109,7 @@ export function opportunityAlertPayload(opp: Pick<Opportunity, "id" | "title" | 
 export function paymentAlertPayload(purchase: Pick<PurchaseRequest, "id" | "totalCents" | "maxPriceCents">, title: string): RadarAlertPayload {
   return radarAlertPayload.parse({
     title: "Validez le paiement dans votre application bancaire",
-    body: clip(`Radar Auto : ${title.replace(/\s+/g, " ").trim()} (${formatEur(purchase.totalCents ?? purchase.maxPriceCents)}). Votre banque demande une validation : Selio attend, sans jamais saisir de code à votre place.`, 400),
+    body: clip(`Achat automatique : ${title.replace(/\s+/g, " ").trim()} (${formatEur(purchase.totalCents ?? purchase.maxPriceCents)}). Votre banque demande une validation : Selio attend, sans jamais saisir de code à votre place.`, 400),
     url: `/app/radar/achats/${purchase.id}`,
   });
 }
@@ -133,8 +133,8 @@ export function searchSuspendedAlertPayload(name: string): RadarAlertPayload {
 /** Notification de l'arrêt de Radar Auto après une issue incertaine (le paiement a pu partir). */
 export function autoSuspendedAlertPayload(purchaseId: string): RadarAlertPayload {
   return radarAlertPayload.parse({
-    title: "Radar Auto arrêté : achat à vérifier",
-    body: "Un achat automatique s'est terminé sans confirmation reconnue (le paiement a pu partir). Vérifiez la commande dans Vinted ; Radar Auto reste arrêté jusqu'à ce que vous le réactiviez.",
+    title: "Achat automatique arrêté : achat à vérifier",
+    body: "Un achat automatique s'est terminé sans confirmation reconnue (le paiement a pu partir). Vérifiez la commande dans Vinted ; l'achat automatique reste arrêté jusqu'à ce que vous le réactiviez.",
     url: `/app/radar/achats/${purchaseId}`,
   });
 }

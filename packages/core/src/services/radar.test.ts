@@ -525,7 +525,7 @@ describe("Radar Auto : verrous, 3-D Secure et prix d'achat reporté dans Manager
     await addOpportunity(ctx, search.id, "9001");
     const res = await radar.runAutoBuy(ctx);
     expect(res).toMatchObject({ disabled: true, evaluated: 0, bought: 0, account: { id: connectionId, label: "Compte achats" }, realPurchase: false });
-    expect(res.reasons).toEqual([expect.stringContaining("RADAR_AUTO_ENABLED"), "Radar Auto n'est pas activé dans les réglages de l'organisation."]);
+    expect(res.reasons).toEqual([expect.stringContaining("RADAR_AUTO_ENABLED"), "L'achat automatique n'est pas activé dans les réglages de l'organisation."]);
     expect(res.notice).toMatch(/Ibrahim/);
     await expect(radar.updateRadarSettings(ctx, { autoBuy: { enabled: true } })).rejects.toMatchObject({ code: "radar_auto_disabled", status: 403 });
     // Verrou serveur ouvert mais liste des comptes de l'équipe sans cette organisation.
@@ -797,14 +797,14 @@ describe("Radar Auto : sûreté de l'argent réel (correctifs)", () => {
     purchaser.enqueue({ status: "failed", code: "timeout", sideEffects: "unknown", launched: true, pages: 3 });
     await radar.runAutoBuy(ctx);
     const p = (await radar.listPurchases(ctx))[0]!;
-    expect(p).toMatchObject({ status: "blocked", paymentAttempted: true, resultNote: expect.stringContaining("Radar Auto est arrêté") });
+    expect(p).toMatchObject({ status: "blocked", paymentAttempted: true, resultNote: expect.stringContaining("L'achat automatique est arrêté") });
     expect(await services.db.withOrg(ctx.orgId, (tx) => repos.purchases.spentSince(tx, alerts.localDayStart(clock, "Europe/Paris").toISOString()))).toBe(p.maxPriceCents);
     const next = await radar.runAutoBuy(ctx);
     expect(next.disabled).toBe(true);
     expect(next.reasons.join(" ")).toMatch(/arrêté par Selio/);
     expect(purchaser.calls).toHaveLength(1);
     await alerts.sendDueAlerts(services, ctx.orgId);
-    expect(push.sent.map((s) => s.payload.title)).toContain("Radar Auto arrêté : achat à vérifier");
+    expect(push.sent.map((s) => s.payload.title)).toContain("Achat automatique arrêté : achat à vérifier");
     // Pages de l'achat comptées dans les plafonds de pages par minute.
     expect(await services.db.withOrg(ctx.orgId, (tx) => repos.radarReads.countLiveSince(tx, new Date(clock.getTime() - 60_000).toISOString()))).toBe(3);
   });
