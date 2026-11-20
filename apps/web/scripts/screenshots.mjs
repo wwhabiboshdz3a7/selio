@@ -1,6 +1,9 @@
+import { mkdirSync } from "node:fs";
 import { chromium } from "@playwright/test";
-const out = "/tmp/claude-0/-home-user-selio/5d0b7ce2-1718-59f4-9f45-67fea048935c/scratchpad/shots";
-const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+// Dossier de sortie des captures (par défaut : ./captures à côté de ce script).
+const out = process.env.SHOTS_DIR ?? new URL("./captures", import.meta.url).pathname;
+mkdirSync(out, { recursive: true });
+const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 const errors = [];
 async function shoot(name, path, { width = 1280, height = 800, theme = "light", demo = false, full = true } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height }, colorScheme: theme, locale: "fr-FR" });

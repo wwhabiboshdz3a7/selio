@@ -15,7 +15,6 @@ export default tseslint.config(
       "**/test-results/**",
       "**/*.gen.ts",
       "apps/web/public/**",
-      ".claude/**",
       "livraison/**",
     ],
   },
