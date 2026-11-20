@@ -5,6 +5,7 @@ import { Tag, cn } from "@selio/ui";
 import { Logo } from "../../components/Logo";
 import { HUB_PATH, MANAGER_FEATURES, SPACES, spaceStateLabel, type SpaceArea } from "./spaces";
 import { useData } from "../../lib/data/provider";
+import { prefetchProps } from "../prefetch";
 
 /** Nom court affiché dans le sélecteur. */
 export function areaLabel(area: SpaceArea): string {
@@ -92,7 +93,7 @@ export function SpaceSwitcher({ area }: { area: SpaceArea }) {
                 const current = s.id === area;
                 return (
                   <li key={s.id}>
-                    <Link to={s.home} data-space={s.id} aria-current={current ? "true" : undefined} className={cn("flex items-start gap-3 rounded-md px-2.5 py-2 transition-colors hover:bg-surface-muted", current && "bg-surface-muted")}>
+                    <Link to={s.home} {...prefetchProps(s.home)} data-space={s.id} aria-current={current ? "true" : undefined} className={cn("flex items-start gap-3 rounded-md px-2.5 py-2 transition-colors hover:bg-surface-muted", current && "bg-surface-muted")}>
                       <span className="space-tile size-8" aria-hidden>{s.icon}</span>
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm font-bold text-text">
