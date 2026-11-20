@@ -15,6 +15,7 @@ import { useNavCounts } from "../../layout";
 import { MANAGER_FEATURES, SPACES, spaceStateLabel, type FeatureDef, type FeatureId, type SpaceDef, type SpaceId, type SpaceState } from "../spaces";
 import { useAutoBuyStatus } from "../../components/radar";
 import { summarizeGenerated, useAllItems, useDressingScores } from "../studio-data";
+import { prefetchProps } from "../../prefetch";
 
 interface Figure { label: string; value: ReactNode; hint?: string }
 
@@ -58,7 +59,7 @@ function SpaceCard({ space, figures, figuresNote, signal, secondary, integrated,
         </ul>
         {integrated}
         <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-border pt-4">
-          <Link to={space.home} className={buttonClass({ variant: available ? "primary" : "secondary" })} aria-label={`Ouvrir ${space.name}`}>
+          <Link to={space.home} {...prefetchProps(space.home)} className={buttonClass({ variant: available ? "primary" : "secondary" })} aria-label={`Ouvrir ${space.name}`}>
             Ouvrir {space.id === "selio" ? space.name : space.short} <ArrowRight aria-hidden />
           </Link>
           {secondary ? <Link to={secondary.to} className={buttonClass({ variant: "ghost" })}>{secondary.label}</Link> : null}
