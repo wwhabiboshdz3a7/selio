@@ -240,7 +240,7 @@ export function CtaBand({ title, lead, seed = 7 }: { title: string; lead: string
 /**
  * Réassurance, vérifiée dans le code : aucune carte à l'inscription (pages/Register.tsx), rien
  * débité pendant l'essai, offres au mois résiliables, données stockées en France
- * (docs/STOCKAGE.md), aucun mot de passe Vinted demandé (products.ts). Jamais « zéro risque ».
+ * (docs/STOCKAGE.md), aucun mot de passe Vinted demandé (products.ts). Aucune promesse d'absence de risque.
  */
 export const TRUST_POINTS: readonly { key: string; icon: ReactNode; text: string }[] = [
   { key: "carte", icon: <CreditCard />, text: "Aucune carte bancaire à l'inscription" },

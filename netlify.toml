@@ -31,6 +31,12 @@
   for = "/*"
   [headers.values]
     Content-Security-Policy = "default-src 'self'; script-src 'self' https://merchant.revolut.com https://sandbox-merchant.revolut.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https: wss:; frame-src https://merchant.revolut.com https://sandbox-merchant.revolut.com; worker-src 'self'; manifest-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+    # Publicité et mesure (docs/VITRINE.md, « Publicité ») : AUCUN hôte de Google ni de Meta n'est autorisé
+    # tant qu'aucun identifiant n'est fourni (VITE_GA4_ID, VITE_GOOGLE_ADS_ID, VITE_META_PIXEL_ID vides par défaut).
+    # Le jour où un identifiant est renseigné dans Netlify, remplacer la ligne ci-dessus par celle-ci
+    # (et la même dans deploy/netlify/_headers), en retirant les hôtes Meta si seul Google est utilisé, ou l'inverse :
+    # Content-Security-Policy = "default-src 'self'; script-src 'self' https://merchant.revolut.com https://sandbox-merchant.revolut.com https://www.googletagmanager.com https://www.googleadservices.com https://googleads.g.doubleclick.net https://www.google.com https://connect.facebook.net; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https://www.googletagmanager.com https://*.google-analytics.com https://googleads.g.doubleclick.net https://www.google.com https://www.google.fr https://www.facebook.com; connect-src 'self' https: wss:; frame-src https://merchant.revolut.com https://sandbox-merchant.revolut.com https://td.doubleclick.net https://www.googletagmanager.com; worker-src 'self'; manifest-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+    # Le build prévient (avertissement) si un identifiant est fourni alors que la CSP ne l'autorise pas.
     Strict-Transport-Security = "max-age=63072000; includeSubDomains; preload"
     X-Content-Type-Options = "nosniff"
     X-Frame-Options = "DENY"

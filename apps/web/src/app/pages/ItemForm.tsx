@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ImagePlus, Trash2 } from "lucide-react";
+import { ImagePlus, Trash2, ArrowLeft } from "lucide-react";
 import { ITEM_CATEGORIES, ITEM_CATEGORY_LABELS, ITEM_CONDITIONS, ITEM_CONDITION_LABELS, ITEM_STATUSES, ITEM_STATUS_LABELS, inventoryItemCreate, type InventoryItemCreate, type Photo } from "@selio/contracts";
 import { PRICE_CHECK_LABELS, checkPrice, newId, projectedMargin, suggestFloorPrice } from "@selio/domain";
 import { Button, Card, Field, IconButton, Input, Money, PageHeader, Select, Textarea, formatPercent } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { dateInputToIso } from "../../lib/dates";
+import { fieldErrorMessage } from "../../lib/errors";
 import { MoneyInput, QueryBoundary } from "../components/common";
 import { useSeesFinances } from "../components/finance";
 import { useAppMutation } from "../components/hooks";
@@ -34,6 +35,29 @@ export default function ItemForm() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [photoError, setPhotoError] = useState<string | null>(null);
+  // Validation en ligne : l'erreur d'un champ disparaît dès qu'il est corrigé (les autres restent affichées).
+  const checked = useRef<FormState | null>(null);
+  useEffect(() => {
+    const snapshot = checked.current;
+    if (!snapshot) return;
+    setErrors((prev) => {
+      const keys = Object.keys(prev).filter((k) => k in form && form[k as keyof FormState] !== snapshot[k as keyof FormState]);
+      if (keys.length === 0) return prev;
+      const next = { ...prev };
+      for (const k of keys) delete next[k];
+      return next;
+    });
+  }, [form]);
+  /** Erreurs affichées : on garde l'état du formulaire et on amène le premier champ en erreur sous les yeux. */
+  const showErrors = (errs: Record<string, string>) => {
+    checked.current = form;
+    setErrors(errs);
+    if (Object.keys(errs).length > 0) requestAnimationFrame(() => {
+      const first = document.querySelector<HTMLElement>("#contenu-app form [aria-invalid=\"true\"]");
+      first?.focus();
+      first?.scrollIntoView({ block: "center", behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    });
+  };
   useEffect(() => {
     if (existing.data) {
       const it = existing.data;
@@ -71,14 +95,14 @@ export default function ItemForm() {
     const parsed = inventoryItemCreate.safeParse(payload);
     if (!parsed.success) {
       const errs: Record<string, string> = {};
-      for (const i of parsed.error.issues) errs[String(i.path[0])] = i.message;
-      setErrors(errs);
+      for (const i of parsed.error.issues) errs[String(i.path[0])] ??= fieldErrorMessage(i);
+      showErrors(errs);
       return;
     }
     const errs: Record<string, string> = {};
     if (payload.status !== "in_stock" && payload.listedPriceCents === null) errs.listedPriceCents = "Un prix affiché est requis pour mettre en vente.";
     if (payload.floorPriceCents != null && payload.listedPriceCents != null && payload.floorPriceCents > payload.listedPriceCents) errs.floorPriceCents = "Le plancher ne peut pas dépasser le prix affiché.";
-    setErrors(errs);
+    showErrors(errs);
     if (Object.keys(errs).length > 0) return;
     save.mutate(payload);
   };
@@ -171,7 +195,7 @@ export default function ItemForm() {
 
   return (
     <>
-      <PageHeader title={editing ? "Modifier l'article" : "Nouvel article"} eyebrow={<Link to="/app/items" className="hover:text-text">Articles et stock</Link>} />
+      <PageHeader title={editing ? "Modifier l'article" : "Nouvel article"} eyebrow={<Link to="/app/items" className="inline-flex items-center gap-1 hover:text-text"><ArrowLeft className="size-3.5" aria-hidden />Articles et stock</Link>} />
       {editing ? <QueryBoundary query={existing} skeleton="spinner">{() => body}</QueryBoundary> : body}
     </>
   );

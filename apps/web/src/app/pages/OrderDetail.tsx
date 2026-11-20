@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { FileText } from "lucide-react";
+import { FileText, ArrowLeft } from "lucide-react";
 import { ORDER_STATUS_LABELS, type OrderStatus } from "@selio/contracts";
 import { ORDER_TRANSITIONS, can, orderMargin } from "@selio/domain";
 import { Alert, Button, Card, DescriptionList, Field, Input, Money, PageHeader, Tag, formatDateTime, formatPercent } from "@selio/ui";
@@ -34,7 +34,7 @@ export default function OrderDetail() {
         const next = ORDER_TRANSITIONS[order.status];
         return (
           <>
-            <PageHeader eyebrow={<Link to="/app/orders" className="hover:text-text">Commandes</Link>} title={item?.title ?? "Commande"} description={<span className="flex flex-wrap items-center gap-2"><OrderStatusBadge status={order.status} /><Tag>{order.provider}</Tag>{order.simulated ? <Tag>Simulée</Tag> : null}{order.externalRef ? <Tag>{order.externalRef}</Tag> : null}</span>} actions={canWrite && next.length > 0 ? next.map((s) => <Button key={s} variant={s === "cancelled" || s === "refunded" ? "danger" : "secondary"} onClick={() => transition.mutate(s)} loading={transition.isPending}>{ORDER_STATUS_LABELS[s]}</Button>) : undefined} />
+            <PageHeader eyebrow={<Link to="/app/orders" className="inline-flex items-center gap-1 hover:text-text"><ArrowLeft className="size-3.5" aria-hidden />Commandes</Link>} title={item?.title ?? "Commande"} description={<span className="flex flex-wrap items-center gap-2"><OrderStatusBadge status={order.status} /><Tag>{order.provider}</Tag>{order.simulated ? <Tag>Simulée</Tag> : null}{order.externalRef ? <Tag>{order.externalRef}</Tag> : null}</span>} actions={canWrite && next.length > 0 ? next.map((s) => <Button key={s} variant={s === "cancelled" || s === "refunded" ? "danger" : "secondary"} onClick={() => transition.mutate(s)} loading={transition.isPending}>{ORDER_STATUS_LABELS[s]}</Button>) : undefined} />
             <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
               <div className="flex flex-col gap-4">
                 <Card>

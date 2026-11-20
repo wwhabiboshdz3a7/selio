@@ -42,7 +42,7 @@ export function PageHeader({ title, description, actions, eyebrow, className }: 
   return (
     <div className={cn("mb-8 flex flex-wrap items-start justify-between gap-x-8 gap-y-4", className)}>
       <div className="min-w-0 flex-1 basis-96">
-        {eyebrow ? <div className="mb-1.5 text-xs font-medium tracking-wide text-text-muted uppercase">{eyebrow}</div> : null}
+        {eyebrow ? <div className="mb-1.5 text-xs font-medium tracking-wide text-text-muted uppercase [&_a]:tap-target">{eyebrow}</div> : null}
         <h1 className="text-xl font-semibold tracking-tight text-text">{title}</h1>
         {description ? <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-text-muted">{description}</p> : null}
       </div>

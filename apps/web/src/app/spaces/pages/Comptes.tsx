@@ -119,8 +119,8 @@ export default function Comptes() {
           <Card>
             <h2 className="flex items-center gap-2 text-md font-semibold text-text"><ShieldCheck className="size-4 text-text-muted" aria-hidden />Ensuite, dans Selio</h2>
             <ul className="mt-3 flex flex-col divide-y divide-border">
-              <li className="py-2.5 first:pt-0"><Link to="/studio" className="group flex items-center gap-2 text-sm font-semibold text-text hover:text-accent">Préparer les premières annonces<ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden /></Link><p className="text-xs text-text-muted">Selio Studio rédige à partir de vos photos ; vous publiez vous-même.</p></li>
-              <li className="py-2.5 last:pb-0"><Link to="/app/accounts" className="group flex items-center gap-2 text-sm font-semibold text-text hover:text-accent">Relier le compte à Selio<ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden /></Link><p className="text-xs text-text-muted">Avec l'extension : c'est vous qui vous connectez à Vinted.</p></li>
+              <li className="py-2.5 first:pt-0"><Link to="/studio" className="group flex items-center gap-2 text-sm font-semibold text-text hover:text-accent max-md:min-h-11">Préparer les premières annonces<ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden /></Link><p className="text-xs text-text-muted">Selio Studio rédige à partir de vos photos ; vous publiez vous-même.</p></li>
+              <li className="py-2.5 last:pb-0"><Link to="/app/accounts" className="group flex items-center gap-2 text-sm font-semibold text-text hover:text-accent max-md:min-h-11">Relier le compte à Selio<ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden /></Link><p className="text-xs text-text-muted">Avec l'extension : c'est vous qui vous connectez à Vinted.</p></li>
             </ul>
           </Card>
         </div>

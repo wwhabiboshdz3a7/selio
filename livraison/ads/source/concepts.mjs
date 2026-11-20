@@ -28,7 +28,7 @@ function comptesCard(width = 460) {
 }
 
 const nego = (y0, width) => crop(ASSET.ecran("nego"), W_MOBILE, { x: 20, y: y0, w: 1139, h: 2490 - y0 }, width);
-const ca = (width) => crop(ASSET.ecran("overview"), W_MOBILE, { x: 20, y: 2075, w: 1139, h: 530 }, width);
+const ca = (width) => crop(ASSET.ecran("overview"), W_MOBILE, { x: 20, y: 2075, w: 1139, h: 228 }, width);
 const orders = (h, width) => crop(ASSET.ecran("orders"), W_MOBILE, { x: 20, y: 1225, w: 1139, h }, width);
 
 const manager = {
@@ -53,9 +53,9 @@ const manager = {
       return `<div class="scene" style="width:900px;height:960px">
         <div style="position:absolute;left:0;top:0;z-index:2">${comptesCard(450)}</div>
         <div style="position:absolute;right:0;top:40px;z-index:3">${nego(940, 450)}</div>
-        <div style="position:absolute;left:0;top:400px;z-index:2">${ca(420)}</div>
+        <div style="position:absolute;left:0;top:402px;z-index:2">${ca(420)}</div>
         <div style="position:absolute;left:0;top:660px;z-index:4">${orders(330, 900)}</div>
-        <div style="position:absolute;right:0;top:922px;z-index:5">${ex()}</div></div>`;
+        <div style="position:absolute;left:0;top:352px;z-index:5">${ex()}</div></div>`;
     }
     return `<div class="scene" style="width:1060px;height:720px">
       <div style="position:absolute;left:0;top:20px;z-index:2">${comptesCard(450)}</div>

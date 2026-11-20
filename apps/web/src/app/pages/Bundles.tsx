@@ -2,7 +2,7 @@ import { can } from "@selio/domain";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Copy, Layers, MessageSquarePlus } from "lucide-react";
+import { Copy, Layers, MessageSquarePlus, ArrowLeft } from "lucide-react";
 import { BUNDLE_REASON_LABELS } from "@selio/domain";
 import { Button, Card, EmptyState, Money, PageHeader, StatusBadge, Textarea, formatPercent } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
@@ -26,7 +26,7 @@ export default function Bundles() {
   return (
     <>
       <PageHeader
-        eyebrow={<Link to="/app/items" className="hover:text-text">Articles et stock</Link>}
+        eyebrow={<Link to="/app/items" className="inline-flex items-center gap-1 hover:text-text"><ArrowLeft className="size-3.5" aria-hidden />Articles et stock</Link>}
         title="Lots intelligents"
         description="Les lots à proposer, repérés dans votre stock et vos conversations : prix du lot calculé avec vos remises, jamais sous la somme des planchers, et marge projetée."
         actions={<Link to="/app/automatisation/negociation" className="text-sm font-medium text-accent hover:underline">Régler les remises de lot</Link>}

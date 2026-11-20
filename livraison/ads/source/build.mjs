@@ -20,17 +20,17 @@ function metaVertical(c, w, h, f) {
     <h1 style="font-size:${f.h1}px;margin-top:${f.gap}px;position:relative;z-index:2">${c.title}</h1>
     ${f.sub ? `<p class="sub" style="font-size:${f.sub}px;margin-top:${f.gap * 0.45}px;position:relative;z-index:2">${f.subText === "short" ? c.subShort : c.sub}</p>` : ""}
     <div class="fit" data-mode="width" data-max="${f.max}" data-ay="0" style="margin:${f.gap}px ${-f.side + f.bleed}px 0;-webkit-mask:linear-gradient(#000 ${f.fade}%,transparent 100%)">${c.scene("tall")}</div>
-    <div style="position:absolute;left:0;right:0;bottom:0;height:${f.bottom + f.ctaZone}px;background:linear-gradient(transparent,rgba(18,16,23,.92) 45%);z-index:3"></div>
+    <div style="position:absolute;left:0;right:0;bottom:0;height:${f.bottom + f.ctaZone}px;background:linear-gradient(rgba(18,16,23,0),rgba(18,16,23,.97) 42%);z-index:3"></div>
     <div style="position:absolute;left:${f.side}px;right:${f.side}px;bottom:${f.bottom}px;display:flex;${f.center ? "flex-direction:column;align-items:center;gap:18px" : "justify-content:space-between;align-items:flex-end"};z-index:4">
       <span class="cta" style="font-size:${f.cta}px;padding:${f.cta * 0.72}px ${f.cta * 1.2}px">${CTA}${arrow(f.cta)}</span>
       <span class="note" style="font-size:${f.note}px;${f.center ? "text-align:center" : "text-align:right;max-width:330px"}">${NOTE}</span></div></div>`;
 }
 
 const META = [
-  { name: "carre", w: 1080, h: 1080, f: { top: 60, side: 64, bottom: 52, logo: 44, kicker: 22, h1: 70, gap: 30, sub: 0, max: 1.1, bleed: 40, fade: 72, cta: 30, note: 18, ctaZone: 120 } },
-  { name: "portrait", w: 1080, h: 1350, f: { top: 64, side: 64, bottom: 56, logo: 46, kicker: 23, h1: 78, gap: 34, sub: 30, subText: "short", max: 1.15, bleed: 40, fade: 74, cta: 32, note: 19, ctaZone: 130 } },
+  { name: "carre", w: 1080, h: 1080, f: { top: 60, side: 64, bottom: 52, logo: 44, kicker: 22, h1: 70, gap: 30, sub: 0, max: 1.1, bleed: 40, fade: 72, cta: 30, note: 18, ctaZone: 150 } },
+  { name: "portrait", w: 1080, h: 1350, f: { top: 64, side: 64, bottom: 56, logo: 46, kicker: 23, h1: 78, gap: 34, sub: 30, subText: "short", max: 1.15, bleed: 40, fade: 74, cta: 32, note: 19, ctaZone: 170 } },
   // Story / Reel : on laisse libres ~250 px en haut et ~340 px en bas (interface d'Instagram et de Facebook).
-  { name: "story", w: 1080, h: 1920, f: { top: 250, side: 72, bottom: 330, logo: 50, kicker: 25, h1: 92, gap: 40, sub: 34, max: 1.2, bleed: 50, fade: 70, cta: 36, note: 21, center: true, ctaZone: 150 } },
+  { name: "story", w: 1080, h: 1920, f: { top: 250, side: 72, bottom: 330, logo: 50, kicker: 25, h1: 92, gap: 40, sub: 34, max: 1.2, bleed: 50, fade: 70, cta: 36, note: 21, center: true, ctaZone: 280 } },
 ];
 
 function metaLink(c, w, h) {
@@ -108,6 +108,7 @@ for (const c of CONCEPTS) {
   jobs.push({ out: join(dir("meta"), `${base}-meta-lien-1200x628.jpg`), w: 1200, h: 628, html: page(1200, 628, metaLink(c, 1200, 628)), quality: 90 });
   jobs.push({ out: join(dir("google-display"), `${base}-display-paysage-1200x628.jpg`), w: 1200, h: 628, html: page(1200, 628, rda(c, 1200, 628, "wide")), quality: 90 });
   jobs.push({ out: join(dir("google-display"), `${base}-display-carre-1200x1200.jpg`), w: 1200, h: 1200, html: page(1200, 1200, rda(c, 1200, 1200, "tall")), quality: 90 });
+  jobs.push({ out: join(dir("google-display"), `${base}-display-portrait-960x1200.jpg`), w: 960, h: 1200, html: page(960, 1200, rda(c, 960, 1200, "tall")), quality: 90 });
   for (const b of BANNERS) jobs.push({ out: join(dir("google-bannieres"), `${base}-banniere-${b.w}x${b.h}.jpg`), w: b.w, h: b.h, html: page(b.w, b.h, b.fn(c, b.w, b.h)), quality: 92, maxBytes: 150_000 });
 }
 for (const l of LOGOS) jobs.push({ out: join(dir("logos"), l.out), w: l.w, h: l.h, html: page(l.w, l.h, l.html), type: "png" });

@@ -55,7 +55,7 @@ export interface SeoPage {
 }
 
 /** Image de partage par défaut (Open Graph, Twitter), 1200 × 630. */
-export const DEFAULT_OG_IMAGE = "/og/selio.png";
+export const DEFAULT_OG_IMAGE = "/og/selio.jpg";
 export const OG_IMAGE_SIZE = { width: 1200, height: 630 } as const;
 
 /** Les pages publiques de la vitrine (hors connexion, inscription, liens reçus par email). */
@@ -80,11 +80,11 @@ export const SEO_PAGES: readonly SeoPage[] = [
   { path: "/contact", title: "Contact", description: "Contacter l'équipe Selio : question produit, devis Selio Compte, présentation guidée, signalement.", indexable: true, priority: 0.4 },
   // Pages d'atterrissage publicitaires (une intention de recherche chacune, voir landings.ts).
   // Indexées quand le sujet n'a pas déjà sa page ; sinon « noindex, follow » (doublon d'une page produit).
-  { path: "/logiciel-vinted", title: "Logiciel Vinted multi-comptes : tous vos comptes au même endroit", description: "Selio Manager, le logiciel Vinted des revendeurs : comptes, stock, messages, commandes et marges au même endroit. Essai gratuit 14 jours, sans carte.", indexable: true, priority: 0.8, ogImage: "/og/logiciel-vinted.png" },
-  { path: "/negociation-automatique-vinted", title: "Négociation automatique Vinted selon vos prix planchers", description: "Offres Vinted acceptées, refusées ou contre-proposées selon votre prix plancher et vos marges : vos règles décident, l'IA rédige. Essai gratuit 14 jours.", indexable: true, priority: 0.7, ogImage: "/og/negociation-automatique-vinted.png" },
-  { path: "/annonce-vinted-ia", title: "Annonce Vinted par IA : titre et description depuis vos photos", description: "Vos photos deviennent une annonce Vinted : titre optimisé, description détaillée, étiquette lue, aucune valeur inventée. Essai gratuit 14 jours.", indexable: false, noindexFollow: true, priority: 0.5, ogImage: "/og/annonce-vinted-ia.png" },
-  { path: "/prix-revente-vinted", title: "Prix de revente Vinted : estimer avant d'acheter ou de vendre", description: "Estimez le prix de revente d'un article Vinted : fourchette, produits similaires, délai de vente estimé et niches à forte demande, avec Selio Track.", indexable: false, noindexFollow: true, priority: 0.5, ogImage: "/og/prix-revente-vinted.png" },
-  { path: "/bot-achat-vinted", title: "Bot d'achat Vinted : bonnes affaires notées sur 100 et alertes", description: "Selio Bot surveille Vinted selon vos critères, note chaque affaire sur 100 avec sa marge estimée et vous alerte, dans vos limites de dépenses.", indexable: false, noindexFollow: true, priority: 0.5, ogImage: "/og/bot-achat-vinted.png" },
+  { path: "/logiciel-vinted", title: "Logiciel Vinted multi-comptes : tous vos comptes au même endroit", description: "Selio Manager, le logiciel Vinted des revendeurs : comptes, stock, messages, commandes et marges au même endroit. Essai gratuit 14 jours, sans carte.", indexable: true, priority: 0.8, ogImage: "/og/logiciel-vinted.jpg" },
+  { path: "/negociation-automatique-vinted", title: "Négociation automatique Vinted selon vos prix planchers", description: "Offres Vinted acceptées, refusées ou contre-proposées selon votre prix plancher et vos marges : vos règles décident, l'IA rédige. Essai gratuit 14 jours.", indexable: true, priority: 0.7, ogImage: "/og/negociation-automatique-vinted.jpg" },
+  { path: "/annonce-vinted-ia", title: "Annonce Vinted par IA : titre et description depuis vos photos", description: "Vos photos deviennent une annonce Vinted : titre optimisé, description détaillée, étiquette lue, aucune valeur inventée. Essai gratuit 14 jours.", indexable: false, noindexFollow: true, priority: 0.5, ogImage: "/og/annonce-vinted-ia.jpg" },
+  { path: "/prix-revente-vinted", title: "Prix de revente Vinted : estimer avant d'acheter ou de vendre", description: "Estimez le prix de revente d'un article Vinted : fourchette, produits similaires, délai de vente estimé et niches à forte demande, avec Selio Track.", indexable: false, noindexFollow: true, priority: 0.5, ogImage: "/og/prix-revente-vinted.jpg" },
+  { path: "/bot-achat-vinted", title: "Bot d'achat Vinted : bonnes affaires notées sur 100 et alertes", description: "Selio Bot surveille Vinted selon vos critères, note chaque affaire sur 100 avec sa marge estimée et vous alerte, dans vos limites de dépenses.", indexable: false, noindexFollow: true, priority: 0.5, ogImage: "/og/bot-achat-vinted.jpg" },
   { path: "/mentions-legales", title: "Mentions légales", description: "Mentions légales de Selio (version provisoire, définitive après l'avocat).", indexable: false, priority: 0.1 },
   { path: "/confidentialite", title: "Politique de confidentialité", description: "Politique de confidentialité de Selio (version provisoire, définitive après l'avocat).", indexable: false, priority: 0.1 },
   { path: "/conditions", title: "Conditions d'utilisation", description: "Conditions d'utilisation de Selio (version provisoire, définitive après l'avocat).", indexable: false, priority: 0.1 },

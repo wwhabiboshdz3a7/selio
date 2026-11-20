@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { MessageSquare, Package, StickyNote, UserPlus } from "lucide-react";
+import { MessageSquare, Package, StickyNote, UserPlus, ArrowLeft } from "lucide-react";
 import { Avatar, Button, Card, DescriptionList, Dialog, Field, Input, Money, PageHeader, Select, Tag, Textarea, formatDate, formatDateTime, formatPercent } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { OrderStatusBadge, QueryBoundary } from "../components/common";
@@ -27,7 +27,7 @@ export default function CustomerDetail() {
     <QueryBoundary query={q} skeleton="spinner">
       {(d) => (
         <>
-          <PageHeader eyebrow={<Link to="/app/customers" className="hover:text-text">Clients</Link>} title={<span className="flex items-center gap-3"><Avatar name={d.customer.displayName} size={36} />{d.customer.displayName}</span>} description={<span className="flex flex-wrap gap-1.5">{d.customer.handle ? <Tag>@{d.customer.handle}</Tag> : null}<Tag>{d.customer.provider}</Tag>{d.customer.tags.map((t) => <Tag key={t} accent>{t}</Tag>)}</span>} actions={canWrite ? <Button variant="secondary" icon={<UserPlus />} onClick={() => setMergeOpen(true)}>Fusionner un doublon</Button> : undefined} />
+          <PageHeader eyebrow={<Link to="/app/customers" className="inline-flex items-center gap-1 hover:text-text"><ArrowLeft className="size-3.5" aria-hidden />Clients</Link>} title={<span className="flex items-center gap-3"><Avatar name={d.customer.displayName} size={36} />{d.customer.displayName}</span>} description={<span className="flex flex-wrap gap-1.5">{d.customer.handle ? <Tag>@{d.customer.handle}</Tag> : null}<Tag>{d.customer.provider}</Tag>{d.customer.tags.map((t) => <Tag key={t} accent>{t}</Tag>)}</span>} actions={canWrite ? <Button variant="secondary" icon={<UserPlus />} onClick={() => setMergeOpen(true)}>Fusionner un doublon</Button> : undefined} />
           <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
             <div className="flex flex-col gap-4">
               <div className="grid gap-4 sm:grid-cols-3">
