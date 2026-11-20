@@ -40,7 +40,7 @@ export function Menu({ trigger, items, align = "end", side = "bottom", className
           id={id}
           role="menu"
           className={cn(
-            "absolute z-40 min-w-44 rounded-lg border border-border bg-surface p-1 shadow-md",
+            "animate-pop absolute z-40 min-w-44 rounded-lg border border-border bg-surface p-1 shadow-md",
             side === "top" ? "bottom-full mb-1" : "mt-1",
             align === "end" ? "right-0" : "left-0",
           )}
@@ -56,7 +56,7 @@ export function Menu({ trigger, items, align = "end", side = "bottom", className
                 it.onSelect();
               }}
               className={cn(
-                "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm hover:bg-surface-muted disabled:opacity-50 [&>svg]:size-4",
+                "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm hover:bg-surface-muted disabled:opacity-50 max-md:min-h-11 [&>svg]:size-4",
                 it.danger ? "text-danger" : "text-text",
               )}
             >

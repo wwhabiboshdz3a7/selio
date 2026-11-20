@@ -70,7 +70,7 @@ export default function CloudDashboard() {
         <Card>
           <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="text-md font-semibold text-text">Comptes</h2>
-            <Link to="/cloud/comptes" className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">Gérer <ArrowRight className="size-4" aria-hidden /></Link>
+            <Link to="/cloud/comptes" className="tap-target inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">Gérer <ArrowRight className="size-4" aria-hidden /></Link>
           </div>
           {accounts.isPending ? <SkeletonRows rows={2} className="border-0" /> : accounts.isError ? <ErrorState description={errorMessage(accounts.error)} onRetry={() => void accounts.refetch()} className="border-0" /> : live.length === 0 ? (
             <EmptyState
@@ -100,7 +100,7 @@ export default function CloudDashboard() {
         <Card>
           <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="text-md font-semibold text-text">Dernières actions</h2>
-            <Link to="/cloud/journal" className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">Tout le journal <ArrowRight className="size-4" aria-hidden /></Link>
+            <Link to="/cloud/journal" className="tap-target inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">Tout le journal <ArrowRight className="size-4" aria-hidden /></Link>
           </div>
           {journal.isPending ? <SkeletonRows rows={3} className="border-0" /> : journal.isError ? <ErrorState description={errorMessage(journal.error)} onRetry={() => void journal.refetch()} className="border-0" /> : journal.data.items.length === 0 ? (
             <p className="py-6 text-center text-sm text-text-muted">Aucune action pour l'instant. Chaque action ouvrant le navigateur sera inscrite ici (gardée 90 jours).</p>

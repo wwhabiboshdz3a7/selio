@@ -1,11 +1,12 @@
 import { useEffect, useId, useMemo, useRef, type ReactNode, type RefObject } from "react";
 import { Link } from "react-router";
-import { ArrowRight, Check, Clock, Minus } from "lucide-react";
+import { ArrowRight, CalendarCheck, Check, ChevronDown, Clock, CreditCard, KeyRound, MapPin, Minus, RotateCcw } from "lucide-react";
 import { TRIAL_DAYS } from "@selio/contracts";
 import { buttonClass, cn } from "@selio/ui";
 import { seeded } from "./constellation/geometry";
 import { AVAILABILITY_LABEL, type Availability } from "./catalog";
 import { INDEPENDENCE_NOTICE, serializeJsonLd } from "./seo";
+import type { ShotSources } from "./productShots";
 import "./marketing.css";
 
 /** Largeur de contenu standard, ou celle passée en classe (max-w-md, max-w-3xl…). */
@@ -150,7 +151,7 @@ function buildSky(seed: number, withFigure: boolean): { stars: SkyStar[]; halos:
 function maskStarsOverText(svg: SVGSVGElement) {
   const panel = svg.parentElement;
   if (!panel) return;
-  const boxes = Array.from(panel.querySelectorAll<HTMLElement>("h2, h3, p, a, .mk-eyebrow"))
+  const boxes = Array.from(panel.querySelectorAll<HTMLElement>("h2, h3, p, a, li, .mk-eyebrow"))
     .map((el) => el.getBoundingClientRect())
     .filter((r) => r.width > 0 && r.height > 0);
   for (const star of Array.from(svg.querySelectorAll<SVGCircleElement>(".mk-sky-star"))) {
@@ -229,9 +230,70 @@ export function CtaBand({ title, lead, seed = 7 }: { title: string; lead: string
               <Link to="/connexion" className="mk-ghost">Se connecter</Link>
             </div>
           </div>
+          <TrustRow tone="night" className="mt-7" />
         </div>
       </Container>
     </section>
+  );
+}
+
+/**
+ * Réassurance, vérifiée dans le code : aucune carte à l'inscription (pages/Register.tsx), rien
+ * débité pendant l'essai, offres au mois résiliables, données stockées en France
+ * (docs/STOCKAGE.md), aucun mot de passe Vinted demandé (products.ts). Jamais « zéro risque ».
+ */
+export const TRUST_POINTS: readonly { key: string; icon: ReactNode; text: string }[] = [
+  { key: "carte", icon: <CreditCard />, text: "Aucune carte bancaire à l'inscription" },
+  { key: "essai", icon: <CalendarCheck />, text: `Rien n'est débité pendant les ${TRIAL_DAYS} jours` },
+  { key: "resiliable", icon: <RotateCcw />, text: "Sans engagement, résiliable à tout moment" },
+  { key: "france", icon: <MapPin />, text: "Données stockées en France" },
+  { key: "mot-de-passe", icon: <KeyRound />, text: "Aucun mot de passe Vinted demandé" },
+];
+
+export function TrustRow({ tone = "default", className, only }: { tone?: "default" | "night"; className?: string; only?: string[] }) {
+  const items = only ? TRUST_POINTS.filter((t) => only.includes(t.key)) : TRUST_POINTS;
+  return (
+    <ul className={cn("mk-trust", className)} data-tone={tone} aria-label="Ce que l'essai engage">
+      {items.map((t) => (
+        <li key={t.key}>
+          <span aria-hidden>{t.icon}</span>
+          {t.text}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Capture d'écran responsive : AVIF puis WebP, en 800 et 1600 pixels de large ; le navigateur
+ * choisit le plus léger qu'il sait lire. `className` s'applique à `<picture>` (affichage selon
+ * le thème), `imgClassName` à l'image. Hors écran, chargement différé ; `priority` pour la
+ * capture du haut d'une page d'atterrissage.
+ */
+export function ShotPicture({ src, alt, sizes, className, imgClassName, priority = false }: { src: ShotSources; alt: string; sizes: string; className?: string; imgClassName?: string; priority?: boolean }) {
+  return (
+    <picture className={className}>
+      <source type="image/avif" srcSet={`${src.avif800} 800w, ${src.avif} 1600w`} sizes={sizes} />
+      <source type="image/webp" srcSet={`${src.webp800} 800w, ${src.webp} 1600w`} sizes={sizes} />
+      <img src={src.webp} alt={alt} width={1600} height={1000} loading={priority ? "eager" : "lazy"} decoding="async" {...(priority ? { fetchPriority: "high" as const } : {})} className={imgClassName} />
+    </picture>
+  );
+}
+
+/** Questions fréquentes dépliables (ancre partageable par question). */
+export function FaqList({ items, className }: { items: readonly { id: string; question: string; answer: string }[]; className?: string }) {
+  return (
+    <div className={cn("flex flex-col gap-2", className)}>
+      {items.map((it) => (
+        <details key={it.id} id={it.id} className="mk-faq group scroll-mt-20 rounded-xl border border-border bg-surface">
+          <summary className="flex cursor-pointer list-none items-start justify-between gap-4 px-4 py-3.5 text-base font-medium text-text md:px-5">
+            <span>{it.question}</span>
+            <ChevronDown className="mt-0.5 size-4 shrink-0 text-text-muted transition-transform group-open:rotate-180" aria-hidden />
+          </summary>
+          <p className="px-4 pb-4 text-sm text-text-muted md:px-5">{it.answer}</p>
+        </details>
+      ))}
+    </div>
   );
 }
 

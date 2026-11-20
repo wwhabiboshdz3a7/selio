@@ -82,7 +82,7 @@ function IntegratedLine({ feature }: { feature: FeatureDef }) {
     <li data-space={feature.id} className="flex items-start gap-2.5">
       <span className="space-tile size-7" aria-hidden>{feature.icon}</span>
       <span className="min-w-0 flex-1 text-sm">
-        <Link to={feature.home} className="font-semibold text-text underline-offset-2 hover:underline">{feature.name}</Link>
+        <Link to={feature.home} className="tap-target font-semibold text-text underline-offset-2 hover:underline">{feature.name}</Link>
         <span className="block text-xs text-text-muted">{feature.tagline}</span>
       </span>
     </li>

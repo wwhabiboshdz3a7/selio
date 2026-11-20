@@ -37,7 +37,7 @@ export default function Orders() {
         {(d) => (
           <>
             <TableWrap>
-              <Table>
+              <Table stack>
                 <thead><tr><Th>Article</Th><Th>Client</Th><Th>Statut</Th><Th className="hide-mobile">Date</Th><Th numeric>Vente</Th><Th numeric>Marge brute</Th></tr></thead>
                 <tbody>
                   {d.items.length === 0 ? <TableEmpty colSpan={6}>Aucune commande ne correspond.</TableEmpty> : d.items.map((o) => {

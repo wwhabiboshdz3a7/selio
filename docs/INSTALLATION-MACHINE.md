@@ -1,16 +1,14 @@
 # Installer Selio sur la machine — procédure du week-end
 
-Pour Ibrahim, et pour Claude Code lancé sur la machine. Une étape à la fois ; on note les chiffres relevés à la fin.
+Procédure écrite pour Ibrahim. Une étape à la fois ; on note les chiffres relevés à la fin.
 Les détails sont dans [DEPLOYMENT.md](DEPLOYMENT.md), [OLLAMA-SETUP.md](OLLAMA-SETUP.md) et [CLES-ET-CONFIGURATION.md](CLES-ET-CONFIGURATION.md).
 
 ## 0. Ce qu'il faut avant de commencer
 
 - La machine (32 Go de mémoire, carte graphique 16 Go) sous **Linux** (Ubuntu 24.04 conseillé), branchée en filaire.
 - Un accès au dépôt GitHub.
-- **Claude Code sur la machine**, au choix :
-  - l'application Claude pour ordinateur, puis Réglages › Claude Code › Remote Control, et ajouter le dossier du dépôt : une session cloud peut alors travailler dans ce dossier ;
-  - ou la commande `claude` dans un terminal, ouverte dans le dossier du dépôt.
-- Les secrets ne passent **jamais** par le chat. Les clés internes sont générées sur la machine ; les clés externes (Revolut, email, notifications) sont collées par toi directement dans le fichier `.env`.
+- Un terminal sur la machine (ou une connexion SSH depuis le portable), ouvert dans le dossier du dépôt.
+- Les secrets ne passent **jamais** par un message ni une conversation. Les clés internes sont générées sur la machine ; les clés externes (Revolut, email, notifications) sont collées par Ibrahim directement dans le fichier `.env`.
 
 ## 1. Système
 
@@ -70,7 +68,7 @@ docker compose -f docker-compose.prod.yml logs -f api      # attendre « listeni
 curl -s http://127.0.0.1:8787/api/health
 ```
 
-Le service `migrate` applique les migrations 0001 à 0018 tout seul. Les photos (MinIO) : voir DEPLOYMENT.md, partie « Photos ».
+Le service `migrate` applique les migrations 0001 à 0023 tout seul. Les photos (MinIO) : voir DEPLOYMENT.md, partie « Photos ».
 
 ## 5. Adresse publique et vitrine
 

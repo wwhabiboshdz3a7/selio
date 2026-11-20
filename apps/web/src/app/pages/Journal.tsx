@@ -109,7 +109,7 @@ export default function Journal() {
         <div className="flex flex-col gap-5">
           {groups.map((g) => (
             <section key={g.label} aria-label={g.label}>
-              <h2 className="mb-2 text-xs font-semibold tracking-wide text-text-subtle uppercase">{g.label}</h2>
+              <h2 className="mb-2 text-xs font-semibold tracking-wide text-text-muted uppercase">{g.label}</h2>
               <ol className="card divide-y divide-border overflow-hidden p-0">
                 {g.entries.map((e) => <li key={e.id}><ActivityLine entry={e} /></li>)}
               </ol>

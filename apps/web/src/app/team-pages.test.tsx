@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "@selio/ui";
 import { ROLE_LABELS } from "@selio/contracts";
 import { DataProvider, getDemoClient, queryClient } from "../lib/data/provider";
-import { glassStorageKey } from "../lib/glass";
 import { COMPTES_NOTICE, COMPTES_STEP_IDS } from "../lib/comptes";
 import { AppLayout, RequireSession } from "./layout";
 import Access from "./pages/settings/Access";
@@ -18,7 +17,6 @@ import AdminLayout from "./pages/admin/AdminLayout";
 import ItemPhotos from "./pages/ItemPhotos";
 import Comptes from "./spaces/pages/Comptes";
 
-const USER_ID = "user-demo";
 
 function renderRoutes(children: RouteObject[], initial: string) {
   const router = createMemoryRouter(
@@ -183,35 +181,12 @@ describe("Selio Compte", () => {
   });
 });
 
-describe("essai « verre liquide »", () => {
-  it("désactivé par défaut : aucune surface de verre ni dock dans le DOM (non-régression)", async () => {
+describe("Paramètres › Apparence", () => {
+  it("propose le thème (clair, sombre, système) et rien d'autre", async () => {
     renderRoutes([{ path: "app/settings/apparence", element: <Appearance /> }], "/app/settings/apparence");
-    const toggle = await screen.findByRole("switch", { name: /Essai : verre liquide/ });
-    expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(screen.queryByTestId("mobile-dock")).toBeNull();
-    expect(document.querySelectorAll(".glass-surface, [data-glass]").length).toBe(0);
-  });
-
-  it("activé : dock (4 entrées + « Générer ») construit sur GlassSurface, mémorisé pour l'utilisateur ; désactivé : plus rien", async () => {
-    renderRoutes([{ path: "app/settings/apparence", element: <Appearance /> }], "/app/settings/apparence");
-    fireEvent.click(await screen.findByRole("switch", { name: /Essai : verre liquide/ }));
-    const dock = await screen.findByTestId("mobile-dock");
-    expect(dock.classList.contains("glass-surface")).toBe(true);
-    expect(dock.getAttribute("data-glass")).toMatch(/^(glass|opaque)$/);
-    expect(dock.className).toContain("fixed");
-    expect(dock.className).toContain("md:hidden");
-    expect(dock.className).toContain("bottom-[calc(env(safe-area-inset-bottom)+12px)]");
-    const height = Number(/\bh-\[(\d+)px\]/.exec(dock.className)?.[1]);
-    expect(height).toBeGreaterThan(0);
-    expect(height).toBeLessThanOrEqual(64);
-    const links = within(dock).getAllByRole("link");
-    expect(links.map((a) => a.getAttribute("aria-label") ?? a.textContent)).toEqual(["Accueil", "Articles", "Générer", "Messages", "Affaires"]);
-    expect(localStorage.getItem(glassStorageKey(USER_ID))).toBe("on");
-    expect(document.getElementById("contenu-app")!.className).toContain("safe-area-inset-bottom");
-    fireEvent.click(screen.getByRole("switch", { name: /Essai : verre liquide/ }));
-    await waitFor(() => expect(screen.queryByTestId("mobile-dock")).toBeNull());
-    expect(document.querySelectorAll(".glass-surface, [data-glass]").length).toBe(0);
-    expect(localStorage.getItem(glassStorageKey(USER_ID))).toBe("off");
+    const group = await screen.findByRole("radiogroup", { name: "Thème" });
+    expect(within(group).getAllByRole("radio").map((r) => r.textContent)).toEqual(["Clair", "Sombre", "Système"]);
+    expect(screen.queryByRole("switch")).toBeNull();
   });
 });
 

@@ -97,7 +97,7 @@ export default function Access() {
         <QueryBoundary query={q}>
           {(members) => (
             <TableWrap className="relative mt-3 rounded-none border-0 border-t">
-              <Table>
+              <Table stack>
                 <thead><tr><Th>Membre</Th><Th>Rôle</Th><Th className="hide-mobile">Depuis</Th><Th className="text-right"><span className="sr-only">Actions</span></Th></tr></thead>
                 <tbody>
                   {members.map((m) => {

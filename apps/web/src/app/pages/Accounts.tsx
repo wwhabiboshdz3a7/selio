@@ -423,7 +423,7 @@ function ExtensionLink() {
           <QueryBoundary query={tokens}>
             {(list) => list.length === 0 ? <p className="text-sm text-text-muted">Aucun jeton pour l'instant.</p> : (
               <TableWrap>
-                <Table dense>
+                <Table stack dense>
                   <caption className="sr-only">Jetons d'extension ({active} actif{active > 1 ? "s" : ""})</caption>
                   <thead><tr><Th>Nom</Th><Th>Préfixe</Th><Th>Statut</Th><Th className="hide-mobile">Dernier usage</Th><Th className="hide-mobile">Expire</Th><Th className="text-right">Actions</Th></tr></thead>
                   <tbody>{list.map((t) => <Tr key={t.id}><Td className="font-medium">{t.label}</Td><Td className="font-mono text-xs">{t.prefix}…</Td><Td>{t.revokedAt ? <StatusBadge tone="muted">Révoqué</StatusBadge> : new Date(t.expiresAt) < new Date() ? <StatusBadge tone="danger">Expiré</StatusBadge> : <StatusBadge tone="success">Actif</StatusBadge>}</Td><Td className="hide-mobile text-text-muted">{t.lastUsedAt ? formatRelative(t.lastUsedAt) : "jamais"}</Td><Td className="hide-mobile text-text-muted">{formatDateTime(t.expiresAt)}</Td><Td className="text-right">{canTokens && !t.revokedAt ? <Button size="sm" variant="danger" onClick={() => setRevoking(t)}>Révoquer</Button> : null}</Td></Tr>)}</tbody>

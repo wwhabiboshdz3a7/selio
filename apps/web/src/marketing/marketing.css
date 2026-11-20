@@ -361,8 +361,9 @@
   border-bottom: 1px solid var(--border);
 }
 .mk-shot-bar i { width: 8px; height: 8px; border-radius: 999px; background: var(--border-strong); }
-.mk-shot-bar span { margin-left: 8px; font-size: 11px; color: var(--text-subtle); }
-.mk-shot-img { width: 100%; height: auto; }
+/* Légende de la barre : --text-muted (et non --text-subtle) pour un contraste AA. */
+.mk-shot-bar span { margin-left: 8px; font-size: 11px; color: var(--text-muted); }
+.mk-shot-img { display: block; width: 100%; height: auto; }
 
 /* Anneau d'or en orbite autour du cadre : arc arrière derrière, arc avant devant,
    une étoile qui fait le tour (animations de transformation, sans JS). */
@@ -449,7 +450,7 @@
   border-radius: 12px;
   background: var(--surface-muted);
 }
-.mk-product-shot img { width: 100%; height: auto; }
+.mk-product-shot img { display: block; width: 100%; height: auto; }
 
 /* Tableau comparatif : texte lisible, pas de filet vertical (charte §6). */
 .mk-compare { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -466,3 +467,29 @@
   .mk-compare tbody th { font-weight: 600; padding-bottom: 8px; }
   .mk-compare td::before { content: attr(data-label); display: block; font-size: 12px; font-weight: 500; color: var(--text-muted); }
 }
+
+/* ---- Réassurance (essai, résiliation, données, mot de passe) ---------------- */
+.mk-trust { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13px; line-height: 18px; color: var(--text-muted); }
+.mk-trust li { display: inline-flex; align-items: center; gap: 6px; }
+.mk-trust li > span { display: inline-flex; color: var(--accent); }
+.mk-trust li > span svg { width: 15px; height: 15px; }
+.mk-trust[data-tone="night"] { color: var(--ink-muted); }
+.mk-trust[data-tone="night"] li > span { color: var(--gold-300); }
+@media (max-width: 639px) {
+  .mk-trust { flex-direction: column; gap: 6px; }
+}
+
+/* ---- Questions fréquentes dépliables (pages d'atterrissage, accueil, FAQ) --- */
+.mk-faq summary::-webkit-details-marker { display: none; }
+.mk-faq[open] { border-color: var(--border-strong); }
+.mk-faq summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 12px; }
+
+/* ---- Pages d'atterrissage : capture du haut de page ---------------------------- */
+.mk-landing-shot {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-muted);
+  box-shadow: 0 24px 60px -32px color-mix(in oklab, var(--violet-700, #3b2a8a) 45%, transparent);
+}
+.mk-landing-shot img { display: block; width: 100%; height: auto; }

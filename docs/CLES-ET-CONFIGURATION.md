@@ -13,6 +13,7 @@ _Version du 8 novembre 2026_
 - **Supervision** : alertes sur le téléphone des opérateurs quand l'API ou l'IA ne répondent plus (section 16), avec les clés VAPID de la section 11.
 - **Extension sur le Chrome Web Store** : aucune clé ; deux variables au moment de construire le paquet (section 17). Compte développeur (5 $) à valider par Ibrahim.
 - Ce dont vous n'avez **pas** besoin : voir la section « Inutile ».
+- **Activer une fonction en production, pas à pas** (emails, paiement, parrainage, notifications, opérateurs, offres, photos, sauvegardes, mise à jour, domaine, interrupteurs fermés) : [TUTORIELS.md](TUTORIELS.md).
 
 ## 1. Site web sur Netlify (vitrine + application)
 
@@ -27,7 +28,6 @@ _Version du 8 novembre 2026_
 | `VITE_INVOICE_ISSUER_SIREN` | Recommandé | `123 456 789` | SIREN de l'émetteur. Vide = « à compléter ». |
 | `VITE_INVOICE_ISSUER_VAT` | Recommandé | `FR12345678901` | Numéro de TVA intracommunautaire. Vide = « à compléter ». |
 | `VITE_INVOICE_ISSUER_EMAIL` | Recommandé | `facturation@votre-domaine.fr` | Contact imprimé sur les factures. Vide = « à compléter ». |
-| `VITE_EXPERIMENT_GLASS` | Facultatif (démo et captures seulement) | `true` ou `false` (défaut) | Essai « verre liquide » (dock mobile et carte d'alerte Radar) activé par défaut. Faux ou absent : l'essai reste désactivé tant que l'utilisateur ne l'active pas dans Paramètres › Apparence. **Ne pas mettre à `true` en production.** Voir docs/LIQUID-GLASS.md. |
 
 ## 2. Base de données et cache (serveur métier)
 
@@ -309,7 +309,6 @@ Rien à mettre sur un serveur : deux variables **au moment de construire le paqu
 - **Coût réel d'achat** : Page « Achat auto » : protection acheteurs = part fixe + pourcentage (par défaut 0,70 € + 5 %, modifiable).
 - **Dressing intelligent** : Republication conseillée après 7 jours (réglable : 5 à 30 jours).
 - **Rôles d'équipe** : Paramètres › Comptes et accès : titulaire, administrateur, exécuteur (publie et répond, **sans les finances**), contributeur photos (consulte les articles, ajoute des photos, lance le générateur), lecture seule (le comptable).
-- **Essai « verre liquide »** : Paramètres › Apparence, désactivé par défaut, par utilisateur et par appareil (docs/LIQUID-GLASS.md).
 - **Assistant IA** : Paramètres › Assistant IA : ton, signature, validation avant envoi, quota mensuel.
 - **Négociation avancée** : Automatisation › Négociation automatique : offres sur un lot (remise maximale de lot, 25 % par défaut, jamais sous la somme des planchers), relance après 24 h (proposée en Pro, automatique en Agence, rien en Starter), situations par mots-clés (exemples proposés, désactivés tant que vous ne les choisissez pas), étape « Limites de Vinted » (statut « À mesurer » et formulaire de mesure pour les administrateurs).
 - **Migration depuis un autre outil** : Paramètres › Migration : texte collé, captures ou fichier de portabilité RGPD, écran « ancien → nouveau », champs appliqués un par un. Aucun identifiant de l'autre outil n'est demandé.
@@ -329,13 +328,13 @@ Rien à mettre sur un serveur : deux variables **au moment de construire le paqu
 
 ### Démo seule (aucune clé)
 
-1. Télécharger livraison/selio-demo-netlify.zip depuis la branche claude/gracious-wright-rf41nt du dépôt selio sur GitHub.
+1. Télécharger livraison/selio-demo-netlify.zip depuis la branche de production du dépôt selio sur GitHub (celle que Netlify construit).
 2. Le décompresser, puis glisser le DOSSIER obtenu sur https://app.netlify.com/drop (ou, pour mettre à jour un site existant : Netlify › Deploys › glisser le dossier).
 3. C'est en ligne : la démo tourne dans le navigateur, données fictives.
 
 ### Site relié à GitHub (mises à jour automatiques)
 
-1. Netlify › Add new site › Import from Git › dépôt selio › branche claude/gracious-wright-rf41nt.
+1. Netlify › Add new site › Import from Git › dépôt selio › la branche de production.
 2. Netlify lit netlify.toml : commande « pnpm build:web », dossier publié apps/web/dist. Rien à changer.
 3. Ajouter VITE_API_BASE_URL quand l'API sera en ligne (sinon : démo seule).
 

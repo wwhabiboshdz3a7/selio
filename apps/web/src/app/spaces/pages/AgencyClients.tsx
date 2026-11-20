@@ -106,7 +106,7 @@ function AgencyClientsPreview() {
       </ul>
 
       <TableWrap className="hidden md:block">
-        <Table className="min-w-[820px]">
+        <Table stack className="min-w-[820px]">
           <thead>
             <tr>
               <Th>Boutique</Th>

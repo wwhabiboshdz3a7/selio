@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Pages publiques indexables de la vitrine (liste : apps/web/src/marketing/seo.ts, vérifiée par seo.test.ts).
      Domaine à confirmer par Ibrahim. Les comparatifs Bleam ne sont ajoutés qu'une fois COMPARISON_READY vrai.
-     Cinq filiales (manager, studio, track, bot, compte), puis les deux fonctionnalités de Selio Manager (cloud, agent). -->
+     Cinq filiales (manager, studio, track, bot, compte), puis les deux fonctionnalités de Selio Manager (cloud, agent).
+     Pages d'atterrissage publicitaires : seules celles qui ne doublonnent pas une page produit (les autres sont en noindex). -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://selio.fr/</loc><priority>1</priority></url>
   <url><loc>https://selio.fr/fonctionnalites</loc><priority>0.8</priority></url>
@@ -13,6 +14,8 @@
   <url><loc>https://selio.fr/produits/compte</loc><priority>0.7</priority></url>
   <url><loc>https://selio.fr/produits/cloud</loc><priority>0.6</priority></url>
   <url><loc>https://selio.fr/produits/agent</loc><priority>0.6</priority></url>
+  <url><loc>https://selio.fr/logiciel-vinted</loc><priority>0.8</priority></url>
+  <url><loc>https://selio.fr/negociation-automatique-vinted</loc><priority>0.7</priority></url>
   <url><loc>https://selio.fr/extension</loc><priority>0.7</priority></url>
   <url><loc>https://selio.fr/assistant-ia</loc><priority>0.6</priority></url>
   <url><loc>https://selio.fr/tarifs</loc><priority>0.8</priority></url>

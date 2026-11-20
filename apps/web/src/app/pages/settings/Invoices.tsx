@@ -32,7 +32,7 @@ export default function Invoices() {
       >
         {(rows: Invoice[]) => (
           <TableWrap className="border-t border-border">
-            <Table>
+            <Table stack>
               <thead>
                 <tr>
                   <Th>Numéro</Th>

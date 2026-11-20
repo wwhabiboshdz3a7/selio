@@ -7,7 +7,6 @@ import { AppLayout, RequireSession } from "./layout";
 import Items from "./pages/Items";
 import Journal from "./pages/Journal";
 import Overview from "./pages/Overview";
-import { MobileDock } from "./components/MobileDock";
 
 /** Selio Manager : journal d'activité, raccourcis personnalisés, « Articles et stock » plus ergonomique. */
 
@@ -77,13 +76,6 @@ describe("raccourcis personnalisés", () => {
     fireEvent.click(screen.getByRole("button", { name: "Modifier les raccourcis" }));
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Raccourcis par défaut" }));
     await waitFor(async () => expect((await getDemoClient().getPreferences()).shortcuts).toBeNull());
-  });
-
-  it("dock mobile : l'accueil, puis les trois premiers raccourcis (hors Studio)", async () => {
-    await getDemoClient().updatePreferences({ shortcuts: ["studio", "journal", "orders_to_ship", "customers"] });
-    renderRoutes([{ path: "app", element: <MobileDock /> }], "/app");
-    const dock = await screen.findByTestId("mobile-dock");
-    await waitFor(() => expect(within(dock).getAllByRole("link").map((a) => a.textContent)).toEqual(["Accueil", "Journal", "", "À expédier", "Clients"]));
   });
 });
 

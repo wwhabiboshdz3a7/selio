@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { adjustedPrice } from "@selio/contracts";
 import { activeItemFilters, isTypingTarget, itemsKeyAction, itemsQueryFromParams } from "./items-view";
-import { dockShortcuts, moveItem, SHORTCUTS } from "../app/components/shortcuts";
+import { moveItem, SHORTCUTS } from "../app/components/shortcuts";
 
 describe("Articles et stock : filtres dans l'adresse", () => {
   it("lit recherche, statut, compte, sans photo, marge, en ligne, tri et page", () => {
@@ -31,11 +31,10 @@ describe("raccourcis clavier", () => {
   });
 });
 
-describe("raccourcis personnalisés : ordre et dock", () => {
-  it("déplace un raccourci ; le dock prend les trois premiers hors Studio", () => {
+describe("raccourcis personnalisés : ordre", () => {
+  it("déplace un raccourci", () => {
     expect(moveItem(["a", "b", "c"], 2, 0)).toEqual(["c", "a", "b"]);
     expect(moveItem(["a", "b"], 0, 5)).toEqual(["a", "b"]);
-    expect(dockShortcuts(["studio", "journal", "messages", "radar", "track"]).map((s) => s.short)).toEqual(["Journal", "Messages", "Affaires"]);
     expect(SHORTCUTS.orders_to_ship.to).toBe("/app/orders?status=paid");
   });
 

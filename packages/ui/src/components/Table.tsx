@@ -1,13 +1,34 @@
-import type { HTMLAttributes, ReactNode, TdHTMLAttributes, ThHTMLAttributes } from "react";
+import { useLayoutEffect, useRef, type HTMLAttributes, type ReactNode, type TdHTMLAttributes, type ThHTMLAttributes } from "react";
 import { cn } from "../lib/cn";
 
 export function TableWrap({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("card overflow-x-auto scrollbar-thin", className)} {...rest} />;
+  return <div className={cn("card animate-fade overflow-x-auto scrollbar-thin", className)} {...rest} />;
 }
 
-export function Table({ className, dense, ...rest }: HTMLAttributes<HTMLTableElement> & { dense?: boolean }) {
+/**
+ * Tableau. `stack` : sur téléphone (< md), chaque ligne devient une fiche (première cellule en titre, puis
+ * « libellé : valeur » ; libellés tirés des en-têtes), au lieu d'un défilement horizontal où les colonnes
+ * utiles (statut, montant) restent hors de l'écran. Inchangé à partir de md.
+ */
+export function Table({ className, dense, stack, ...rest }: HTMLAttributes<HTMLTableElement> & { dense?: boolean; stack?: boolean }) {
+  const ref = useRef<HTMLTableElement>(null);
+  // Sans tableau de dépendances : les lignes changent avec les données (filtres, pages).
+  useLayoutEffect(() => {
+    const table = ref.current;
+    if (!stack || !table) return;
+    const labels = [...table.querySelectorAll("thead th")].map((th) => th.textContent?.trim() ?? "");
+    for (const row of table.querySelectorAll("tbody tr")) {
+      [...row.children].forEach((cell, i) => {
+        const label = labels[i];
+        if (label && !cell.hasAttribute("colspan")) cell.setAttribute("data-label", label);
+        else cell.removeAttribute("data-label");
+      });
+    }
+  });
   return (
     <table
+      ref={ref}
+      data-stack={stack || undefined}
       className={cn("w-full min-w-[560px] text-sm text-text", dense ? "[&_td]:h-10" : "[&_td]:h-12", className)}
       {...rest}
     />

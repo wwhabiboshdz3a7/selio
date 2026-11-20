@@ -58,11 +58,6 @@ export function useShortcuts() {
   return { ids, saved, allowed, isDefault: saved === null, loading: prefs.isPending, save };
 }
 
-/** Entrées du dock mobile : les trois premiers raccourcis (hors Studio, déjà au centre du dock). */
-export function dockShortcuts(ids: readonly ShortcutId[]): ShortcutDef[] {
-  return ids.filter((id) => id !== "studio").slice(0, 3).map((id) => SHORTCUTS[id]);
-}
-
 /** Déplace l'élément d'index `from` à l'index `to` (copie). */
 export function moveItem<T>(list: readonly T[], from: number, to: number): T[] {
   if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return [...list];
@@ -78,7 +73,7 @@ export function ShortcutTiles({ ids, hints = {}, onEdit }: { ids: readonly Short
     <nav aria-label="Raccourcis" className="mb-8">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-text-muted">Vos raccourcis</h2>
-        <button type="button" onClick={onEdit} className="rounded-md px-2 py-1 text-sm font-medium text-accent hover:bg-surface-muted">Modifier les raccourcis</button>
+        <button type="button" onClick={onEdit} className="tap-target rounded-md px-2 py-1 text-sm font-medium text-accent hover:bg-surface-muted">Modifier les raccourcis</button>
       </div>
       {ids.length === 0 ? (
         <button type="button" onClick={onEdit} className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border-strong p-6 text-sm font-medium text-text-muted hover:border-accent hover:text-accent"><Plus className="size-4" aria-hidden />Ajouter des raccourcis</button>
@@ -88,7 +83,7 @@ export function ShortcutTiles({ ids, hints = {}, onEdit }: { ids: readonly Short
             const s = SHORTCUTS[id];
             return (
               <li key={id} className="flex min-w-0">
-                <Link to={s.to} className="group flex min-w-0 flex-1 items-center gap-2.5 bg-surface p-3 transition-colors hover:bg-surface-muted/60 sm:items-start sm:gap-3 md:p-4">
+                <Link to={s.to} className="press group flex min-w-0 flex-1 items-center gap-2.5 bg-surface p-3 hover:bg-surface-muted/60 sm:items-start sm:gap-3 md:p-4">
                   <span className={cn("inline-flex size-9 shrink-0 items-center justify-center rounded-lg [&>svg]:size-[18px]", i === 0 || id === "studio" ? "bg-accent-soft text-accent" : "bg-surface-muted text-text-muted group-hover:text-accent")} aria-hidden>{s.icon}</span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1 text-sm font-semibold text-text"><span className="line-clamp-2 sm:truncate">{s.label}</span><ArrowRight className="size-3 shrink-0 text-accent opacity-0 transition-opacity group-hover:opacity-100" aria-hidden /></span>
@@ -133,7 +128,7 @@ export function ShortcutsEditor({ open, onClose }: { open: boolean; onClose: () 
       onClose={onClose}
       size="lg"
       title="Personnaliser les raccourcis"
-      description="Choisissez les pages et actions que vous utilisez le plus. Les trois premiers (hors Studio) forment le dock sur téléphone. Enregistrés sur votre compte : les mêmes sur tous vos appareils."
+      description="Choisissez les pages et actions que vous utilisez le plus. Enregistrés sur votre compte : les mêmes sur tous vos appareils."
       footer={
         <>
           <Button variant="ghost" icon={<RotateCcw />} disabled={isDefault && draft.join() === ids.join()} onClick={() => save.mutate(null, { onSuccess: onClose })}>Raccourcis par défaut</Button>
@@ -161,7 +156,7 @@ export function ShortcutsEditor({ open, onClose }: { open: boolean; onClose: () 
                 <GripVertical className="size-4 shrink-0 cursor-grab text-text-subtle max-sm:hidden" aria-hidden />
                 <span className="num w-5 shrink-0 text-center text-xs text-text-muted">{i + 1}</span>
                 <span className="inline-flex shrink-0 text-text-muted [&>svg]:size-4" aria-hidden>{s.icon}</span>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">{s.label}{i < 4 && dockShortcuts(draft).some((d) => d.id === id) ? <span className="ml-2 rounded-full bg-surface-muted px-1.5 py-0.5 text-[11px] font-normal text-text-muted">dock mobile</span> : null}</span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">{s.label}</span>
                 <IconButton size="sm" label={`Monter ${s.label}`} data-move="up" disabled={i === 0} onClick={() => move(i, i - 1)}><ArrowUp /></IconButton>
                 <IconButton size="sm" label={`Descendre ${s.label}`} data-move="down" disabled={i === draft.length - 1} onClick={() => move(i, i + 1)}><ArrowDown /></IconButton>
                 <IconButton size="sm" label={`Retirer ${s.label}`} onClick={() => remove(id)}><X /></IconButton>

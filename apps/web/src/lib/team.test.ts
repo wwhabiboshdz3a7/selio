@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ROLES } from "@selio/contracts";
 import { PHOTOS_HOME, hasReducedView, reducedViewAllows, reducedViewTarget, seesFinances } from "./roles";
-import { glassEnabled, glassStorageKey, readGlassPreference, writeGlassPreference } from "./glass";
 import { COMPTES_NOTICE, COMPTES_STEP_IDS, DEFAULT_COMPTES_INPUT, checklistProgress, cleanSignature, generateComptesTexts, loadComptes, saveComptes } from "./comptes";
 import { referralCodeForSignup, referralCodeFromSearch } from "./referral";
 import { formatUptime } from "./supervision";
@@ -36,32 +35,6 @@ describe("rôles côté interface", () => {
     expect(reducedViewTarget("/app/items")).toBe(PHOTOS_HOME);
     expect(reducedViewTarget("/app/messages")).toBeNull();
     expect(reducedViewTarget("/studio")).toBe("/studio");
-  });
-});
-
-describe("essai « verre liquide » : réglage", () => {
-  it("désactivé par défaut ; VITE_EXPERIMENT_GLASS change la valeur par défaut ; le choix explicite l'emporte", () => {
-    expect(glassEnabled(null, false)).toBe(false);
-    expect(glassEnabled(null, true)).toBe(true);
-    expect(glassEnabled("off", true)).toBe(false);
-    expect(glassEnabled("on", false)).toBe(true);
-  });
-
-  it("mémorisé par utilisateur : le choix de l'un ne change rien pour l'autre", () => {
-    const storage = new MemoryStorage();
-    expect(readGlassPreference("user-a", storage)).toBeNull();
-    writeGlassPreference("user-a", "on", storage);
-    expect(readGlassPreference("user-a", storage)).toBe("on");
-    expect(readGlassPreference("user-b", storage)).toBeNull();
-    expect(glassStorageKey("user-a")).not.toBe(glassStorageKey("user-b"));
-    // Valeur inconnue (ancienne version, saisie à la main) : ignorée.
-    storage.setItem(glassStorageKey("user-c"), "peut-être");
-    expect(readGlassPreference("user-c", storage)).toBeNull();
-  });
-
-  it("stockage indisponible : aucune erreur, valeur par défaut", () => {
-    const broken = { getItem: () => { throw new Error("bloqué"); } };
-    expect(readGlassPreference("user-a", broken)).toBeNull();
   });
 });
 

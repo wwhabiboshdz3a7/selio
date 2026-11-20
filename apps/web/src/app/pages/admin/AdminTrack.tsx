@@ -132,7 +132,7 @@ function ReadsCard({ title, reads, empty }: { title: string; reads: TrackAdminRe
         <p className="px-4 pt-2 pb-4 text-sm text-text-muted md:px-5">{empty}</p>
       ) : (
         <TableWrap className="mt-3 rounded-none border-0 border-t">
-          <Table dense>
+          <Table stack dense>
             <thead><tr><Th>Lecture</Th><Th>Résultat</Th><Th className="hide-mobile">Empreinte</Th><Th numeric className="hide-mobile">Annonces</Th><Th numeric className="hide-mobile">Nouvelles</Th><Th numeric className="hide-mobile">Disparues</Th><Th numeric>Facteur</Th></tr></thead>
             <tbody>
               {reads.map((r, i) => (
@@ -165,7 +165,7 @@ function UsageCard({ d }: { d: TrackAdminStatus }) {
         <EmptyState className="py-8" title="Aucun client avec Track" description="Track est compris à partir de Pro." />
       ) : (
         <TableWrap className="mt-3 rounded-none border-0 border-t">
-          <Table dense>
+          <Table stack dense>
             <thead><tr><Th>Organisation</Th><Th className="hide-mobile">Plan</Th><Th numeric>Filtres suivis</Th><Th numeric>Scans</Th><Th numeric>Photos</Th><Th numeric className="hide-mobile">Alertes</Th></tr></thead>
             <tbody>
               {d.usage.map((u) => (

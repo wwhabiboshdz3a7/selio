@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useNavigation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, BellRing, Bot, Boxes, Camera, ChevronDown, Eye, Lock, CircleUser, ClipboardList, CreditCard, Gauge, Heart, ListChecks, LogOut, Menu as MenuIcon, MessageSquare, MessagesSquare, Moon, Package, Pause, Printer, RefreshCw, Settings, ShieldCheck, Shirt, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
 import { Avatar, Banner, Button, IconButton, LoadingState, Menu, Tag, cn, formatDate } from "@selio/ui";
@@ -18,15 +18,14 @@ import { LifeBuoy } from "lucide-react";
 import { HUB_PATH, SPACE_GROUPS, featureById, featureForPath, readLastSpace, spaceForPath, writeLastSpace, type FeatureId, type SpaceArea } from "./spaces/spaces";
 import { SpacePill, SpaceSwitcher } from "./spaces/SpaceSwitcher";
 import { PHOTOS_HOME, hasReducedView, reducedViewTarget, seesFinances } from "../lib/roles";
-import { useGlassExperiment } from "../lib/glass";
-import { DOCK_CONTENT_PADDING, MobileDock } from "./components/MobileDock";
 import { DataError, type Session } from "../lib/data/types";
 import { OfferBanner } from "./components/offers";
+import { prefetchProps } from "./prefetch";
 
 export function RequireSession({ children }: { children: ReactNode }) {
   const session = useSession();
   const location = useLocation();
-  if (session.isPending) return <LoadingState label="Ouverture de la session…" className="min-h-dvh" />;
+  if (session.isPending) return <LoadingState variant="spinner" label="Ouverture de la session…" className="min-h-dvh" />;
   // Serveur momentanément injoignable (redémarrage, tunnel) : on attend et on se reconnecte seul, sans déconnecter.
   if (session.isError && session.error instanceof DataError && session.error.code === "unavailable") return <ServerUnavailable onRetry={() => void session.refetch()} />;
   // Compte bloqué par l'équipe Selio : le message du serveur est affiché tel quel sur la page de connexion.
@@ -139,7 +138,7 @@ const PHOTOS_GROUPS: NavGroup[] = [
 
 /** Lien du menu : icônes neutres, élément actif en améthyste douce (fond teinté, icône violette). */
 const linkClass = ({ isActive }: { isActive: boolean }) => cn(
-  "group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-base font-medium transition-colors [&>svg]:size-[18px] [&>svg]:shrink-0",
+  "group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-base font-medium transition-colors max-md:min-h-11 [&>svg]:size-[18px] [&>svg]:shrink-0",
   isActive ? "bg-accent-soft text-text [&>svg]:text-accent" : "text-text-muted hover:bg-surface-muted hover:text-text [&>svg]:text-text-muted",
 );
 
@@ -190,15 +189,6 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
   const { resolved, setPreference } = useTheme();
   // Contributeur photos : vue réduite (menu restreint, aucune requête hors de ses droits).
   const reduced = hasReducedView(s.role);
-  const glass = useGlassExperiment(s.user.id).enabled;
-  // Dock en verre (mobile) : la hauteur qu'il occupe est exposée en --dock-offset (styles.css), pour que les
-  // éléments collés ou fixés en bas d'écran (barre « Enregistrer », notifications) se posent au-dessus de lui.
-  useEffect(() => {
-    const root = document.documentElement;
-    if (glass) root.dataset.dock = "on";
-    else delete root.dataset.dock;
-    return () => { delete root.dataset.dock; };
-  }, [glass]);
   const counts = useNavCounts(!reduced);
   // Carte à enregistrer pendant l'essai, ou paiement échoué : rappel discret au-dessus des pages (finances).
   const subscription = useQuery({ queryKey: ["subscription"], queryFn: () => client.getSubscription(), staleTime: 30_000, enabled: seesFinances(s.role) });
@@ -212,6 +202,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, [location.pathname]);
+  const mainRef = usePageTransition(location.pathname);
   const onboardingDone = s.org.settings.onboarding.dismissed || s.org.settings.onboarding.completedSteps.length >= 6;
   // Radar Auto « Activé » seulement si tous ses verrous sont levés (verrou serveur fermé par défaut).
   const autoBuyStatus = useQuery({ queryKey: ["radar-auto"], queryFn: () => client.autoBuyStatus(), enabled: s.org.settings.autoBuy.enabled && !reduced, staleTime: 60_000 });
@@ -248,7 +239,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
         </p>
       ) : null}
       {area === "selio" && !reduced ? <div className="shrink-0 px-3 pb-3">
-        <Link to="/studio" className="group bg-brand flex items-center gap-3 rounded-lg px-3 py-2.5 text-white shadow-sm ring-1 ring-white/10 ring-inset transition-[filter] hover:brightness-110">
+        <Link to="/studio" {...prefetchProps("/studio")} className="press group bg-brand flex items-center gap-3 rounded-lg px-3 py-2.5 text-white shadow-sm ring-1 ring-white/10 ring-inset hover:brightness-110">
           <Sparkles className="size-[18px] shrink-0 text-gold-300" aria-hidden />
           <span className="min-w-0 flex-1">
             <span className="block text-base leading-tight font-semibold">Générer une annonce</span>
@@ -259,7 +250,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
       </div> : null}
       <nav aria-label="Navigation de l'application" className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 scrollbar-thin">
         {!onboardingDone && area === "selio" && !reduced ? (
-          <NavLink to="/app/onboarding" className={linkClass}>
+          <NavLink to="/app/onboarding" className={linkClass} {...prefetchProps("/app/onboarding")}>
             <Zap aria-hidden /> Démarrage
           </NavLink>
         ) : null}
@@ -275,7 +266,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
                 const inside = it.children && (location.pathname === it.to || location.pathname.startsWith(`${it.to}/`));
                 return (
                   <li key={it.to}>
-                    <NavLink to={it.to} end={it.end ?? Boolean(it.children)} className={linkClass} title={it.hint}>
+                    <NavLink to={it.to} end={it.end ?? Boolean(it.children)} className={linkClass} title={it.hint} {...prefetchProps(it.to)}>
                       {it.icon}
                       <span className="flex-1 truncate">{it.label}</span>
                       {badge ? <span className="num min-w-5 rounded-full bg-surface-muted px-1.5 text-center text-[11px] leading-[18px] font-medium text-text-muted group-aria-[current=page]:bg-surface group-aria-[current=page]:text-accent">{badge}</span> : null}
@@ -285,7 +276,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
                     {inside ? (
                       <ul className="mt-0.5 mb-1 ml-[18px] flex flex-col gap-0.5 border-l border-border pl-2" aria-label={`Pages de ${it.label}`}>
                         {it.children!.filter((c) => c.to !== it.to).map((c) => (
-                          <li key={c.to}><NavLink to={c.to} end={c.end} className={linkClass} title={c.hint}>{c.icon}<span className="flex-1 truncate">{c.label}</span></NavLink></li>
+                          <li key={c.to}><NavLink to={c.to} end={c.end} className={linkClass} title={c.hint} {...prefetchProps(c.to)}>{c.icon}<span className="flex-1 truncate">{c.label}</span></NavLink></li>
                         ))}
                       </ul>
                     ) : null}
@@ -340,9 +331,9 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
       <aside className="sticky top-0 hidden h-dvh w-sidebar shrink-0 self-start border-r border-border bg-surface-sidebar md:block">{sidebar}</aside>
       {open ? (
         <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Menu">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
+          <div className="animate-fade absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
           {/* Tout lien touché ferme le tiroir, y compris celui de la page courante (l'adresse ne change pas). */}
-          <aside className="absolute inset-y-0 left-0 w-[290px] max-w-[88vw] bg-surface-sidebar shadow-lg" onClick={(e) => { if ((e.target as Element).closest("a[href]")) setOpen(false); }}>{sidebar}</aside>
+          <aside className="animate-drawer absolute inset-y-0 left-0 w-[290px] max-w-[88vw] bg-surface-sidebar shadow-lg" onClick={(e) => { if ((e.target as Element).closest("a[href]")) setOpen(false); }}>{sidebar}</aside>
         </div>
       ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
@@ -368,18 +359,56 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-surface/90 px-4 backdrop-blur md:hidden">
           <IconButton label="Ouvrir le menu" onClick={() => setOpen(true)}><MenuIcon /></IconButton>
           {reduced
-            ? <Link to={PHOTOS_HOME} className="flex min-w-0 flex-1 items-center gap-2" aria-label="Selio, articles à photographier"><Logo height={20} /></Link>
-            : <Link to={HUB_PATH} className="flex min-w-0 flex-1 items-center gap-2" aria-label="Selio, vos espaces"><Logo height={20} /><SpacePill area={area} /></Link>}
+            ? <Link to={PHOTOS_HOME} className="flex h-11 min-w-0 flex-1 items-center gap-2" aria-label="Selio, articles à photographier"><Logo height={20} /></Link>
+            : <Link to={HUB_PATH} className="flex h-11 min-w-0 flex-1 items-center gap-2" aria-label="Selio, vos espaces"><Logo height={20} /><SpacePill area={area} /></Link>}
           {admin ? <Tag>Admin</Tag> : null}
-          <Link to="/studio" aria-label="Générer une annonce" className="bg-brand inline-flex size-9 items-center justify-center rounded-md text-white"><Sparkles className="size-4 text-gold-300" aria-hidden /></Link>
+          <Link to="/studio" aria-label="Générer une annonce" className="press bg-brand inline-flex size-11 items-center justify-center rounded-lg text-white"><Sparkles className="size-4 text-gold-300" aria-hidden /></Link>
           <IconButton label={resolved === "dark" ? "Mode clair" : "Mode sombre"} size="sm" onClick={() => setPreference(resolved === "dark" ? "light" : "dark")}>{resolved === "dark" ? <Sun /> : <Moon />}</IconButton>
         </header>
-        <main id="contenu-app" className={cn("mx-auto w-full max-w-content flex-1 px-4 py-6 md:px-8 md:py-10 xl:px-12", glass && DOCK_CONTENT_PADDING)}>
+        <NavigationProgress />
+        <main ref={mainRef} id="contenu-app" className="mx-auto w-full max-w-content flex-1 px-4 py-6 md:px-8 md:py-10 xl:px-12">
           {reduced ? <ReducedViewGate /> : <Outlet />}
         </main>
-        {/* Essai « verre liquide » : dock flottant sur mobile ; rien n'est rendu quand l'essai est inactif. */}
-        {glass ? <MobileDock reduced={reduced} /> : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Transition de page discrète (fondu et léger glissement, 200 ms, transform et opacity seulement) sans
+ * remonter la page : rien ne se recharge. Pas d'animation entre une liste et son panneau (messagerie) ni
+ * entre les onglets des paramètres ; aucune avec « réduire les animations ».
+ */
+export function usePageTransition(pathname: string) {
+  const ref = useRef<HTMLElement>(null);
+  const section = pageSection(pathname);
+  const previous = useRef(section);
+  useEffect(() => {
+    if (section === previous.current) return;
+    previous.current = section;
+    const el = ref.current;
+    if (!el || typeof el.animate !== "function" || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    el.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], { duration: 200, easing: "cubic-bezier(0.2, 0, 0, 1)" });
+  }, [section]);
+  return ref;
+}
+
+/** Section d'une adresse, pour la transition de page : la messagerie et les paramètres gardent leur cadre. */
+export function pageSection(pathname: string): string {
+  for (const prefix of ["/app/messages", "/app/settings"]) if (pathname === prefix || pathname.startsWith(`${prefix}/`)) return prefix;
+  return pathname;
+}
+
+/**
+ * Barre de progression fine en haut de l'écran pendant le chargement d'une page (code de la page à télécharger) ;
+ * n'apparaît qu'après 150 ms, pour ne pas clignoter sur une navigation immédiate.
+ */
+export function NavigationProgress() {
+  const navigation = useNavigation();
+  if (navigation.state === "idle") return null;
+  return (
+    <div role="progressbar" aria-label="Chargement de la page" className="pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden" style={{ animation: "selio-fade 200ms 150ms both" }}>
+      <div className="h-full w-1/2 rounded-full bg-accent-vivid" style={{ animation: "selio-progress 1.1s ease-in-out infinite" }} />
     </div>
   );
 }

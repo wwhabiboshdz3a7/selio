@@ -1,30 +1,33 @@
 # Selio
 
-Plateforme de gestion pour revendeurs Vinted : vitrine, application web de gestion (responsive, installable), extension navigateur, API, worker et intégration IA prête à raccorder à un serveur Ollama.
+Selio est un écosystème d'outils pour les revendeurs Vinted : gérer son stock et ses annonces, répondre et négocier, analyser le marché, trouver et acheter des articles, au même endroit, avec une IA qui tourne sur notre propre machine. Une vitrine, une application web installable (ordinateur, tablette, téléphone), une extension Chrome, une API, un worker et trois modèles d'IA locaux.
 
 > Selio est indépendant de Vinted et n'est ni affilié, ni approuvé, ni sponsorisé par Vinted. Hors de l'API Vinted Pro Integrations (réservée aux comptes Pro admis par Vinted, accès à demander : connecteur préparé sans aucun appel), Vinted n'expose pas d'API publique pour les vendeurs : aucune compatibilité officielle n'est promise, aucun faux OAuth n'est implémenté.
 
-## Modules
+## Les cinq filiales
 
-- **Générateur d'annonces** : photos → titre, description, marque, catégorie, taille, état, couleurs ; prix conseillé calculé sur les ventes comparables ; choix du compte Vinted, brouillon ou publication. Modèle IA personnel (Ollama + modèle de vision).
-- **Dressing intelligent** : note /100 au-dessus de chaque annonce (visibilité, attractivité, qualité, prix) avec les améliorations à faire ; tri « en ligne depuis 7 jours ou plus » ; 10 republications pré-faites par annonce, suivi des variantes déjà utilisées et de leur rendement à 48 h.
-- **Analyse des revendeurs** : grands revendeurs, leur niche, marques, rotation, niches porteuses (inspiration ResellTrack).
-- **Bonnes affaires · À valider · Achat auto** : note /100 expliquée, coût réel (prix + port + protection acheteurs), revente, bénéfice et marge ; validation en un clic ; achat automatique au-dessus d'un seuil avec plafond par jour et délai d'annulation (simulé tant qu'aucun connecteur d'achat n'est autorisé).
-- Stock, messagerie, clients, commandes, analyses (galerie de graphiques personnalisable), automatisations, paramètres.
-- **Équipe** : titulaire, administrateur, exécuteur (sans les finances, masquées par le serveur), contributeur photos, lecture seule ; **parrainage** « un mois offert aux deux », fermé par défaut (`REFERRAL_ENABLED`).
-- **Filiales** : Selio Studio, Track, Radar, Cloud et Comptes, chacune avec sa page sur la vitrine (`/produits/…`, voir [docs/VITRINE.md](docs/VITRINE.md)).
-- **Supervision** : `/api/health` et `/api/ai/health` contrôlées chaque minute par le worker, alerte sur le téléphone des opérateurs ([docs/SUPERVISION.md](docs/SUPERVISION.md)).
+| Filiale | Ce qu'elle fait |
+|---|---|
+| **Selio Manager** | Gestion complète et automatisation : stock, dressing noté sur 100 et republications pré-faites, messagerie et négociation par l'IA (la politique décide, l'IA rédige), relances, commandes, marges, analyses, journal d'activité, multi-comptes. Deux fonctionnalités intégrées : **Selio Cloud** (agir quand l'ordinateur est éteint, fermé par défaut) et **Selio Agent** (équipe et délégation : titulaire, administrateur, exécuteur sans les finances, contributeur photos, lecture seule) |
+| **Selio Studio** | Annonces créées à partir des photos : tri, étiquette et mesures lues avec leur provenance (jamais de mesure inventée), prix conseillé par les ventes comparables |
+| **Selio Track** | Analyse du marché, statistiques seulement : filtres suivis, tendances, niches notées sur 100, recherche par photo, alertes de tendance |
+| **Selio Bot** | Recherche et achat : recherches surveillées, bonnes affaires notées sur 100, revente estimée, achat rapide en 1 clic ; achat automatique et achat réel fermés par défaut |
+| **Selio Compte** | Services autour des comptes Vinted et accompagnement, payés une fois ou sur devis |
 
-La démonstration utilise de **vraies annonces Vinted** (photos, titres, marques et prix issus du dépôt revendo, sans nom de compte) : `python3 packages/demo-data/scripts/import-revendo-photos.py <chemin/vers/revendo>` régénère `apps/web/public/demo/photos/` et `packages/demo-data/src/catalog.generated.ts`. Les statistiques (vues, ventes, clients) restent fictives.
+Et **Selio Admin** (`/admin`) pour l'équipe : comptes, qualification, accès offert, offres commerciales et codes promo, Track, santé, supervision. Parrainage « un mois offert aux deux » prêt, fermé par défaut (`REFERRAL_ENABLED`).
 
 ## Deux modes, clairement séparés
 
 | Mode | Ce qu'il prouve | Ce qu'il ne prouve pas |
 |---|---|---|
-| **Démonstration** (sans credentials, données fictives persistantes dans le navigateur, bandeau permanent) | Le parcours métier complet et les règles de marge/négociation, avec simulateurs déterministes pour marketplace, paiement et IA | Toute intégration externe réelle |
-| **Connecté** (authentification réelle, PostgreSQL avec isolation par organisation) | Persistance serveur, rôles, jetons d'extension, file de tâches, raccordement Ollama, paiement Revolut (bac à sable puis live : formulaire Revolut, carte enregistrée, webhooks, factures) | Les connecteurs Vinted (expérimentaux, à valider dans un navigateur réel) |
+| **Démonstration** (développement local, données fictives gardées dans le navigateur, bandeau permanent) | Le parcours métier complet et les règles de marge et de négociation, avec des simulateurs déterministes | Toute intégration externe réelle |
+| **Connecté** (production : authentification réelle, PostgreSQL isolé par organisation) | Persistance serveur, rôles, jetons d'extension, file de tâches, IA locale (Ollama), paiement (simulé tant que Revolut n'est pas configuré) | Les connecteurs Vinted (expérimentaux, à valider dans un navigateur réel) |
+
+La démonstration utilise de **vraies annonces Vinted** (photos, titres, marques et prix issus du dépôt revendo, sans nom de compte) : `python3 packages/demo-data/scripts/import-revendo-photos.py <chemin/vers/revendo>` régénère `apps/web/public/demo/photos/` et `packages/demo-data/src/catalog.generated.ts`. Les statistiques (vues, ventes, clients) restent fictives.
 
 ## Démarrage rapide
+
+Il faut Node 22 et pnpm 10 (`corepack enable`).
 
 ```bash
 corepack enable && pnpm install
@@ -34,7 +37,7 @@ pnpm dev                       # vitrine + application en mode démonstration : 
 Mode connecté (API + worker) :
 
 ```bash
-docker compose up -d                           # PostgreSQL 16 + Redis 7
+docker compose up -d                           # PostgreSQL 16 + Redis 7 (MinIO : docker compose up -d minio minio-init)
 cp apps/api/.env.example apps/api/.env         # puis renseigner SECRETS_ENCRYPTION_KEY (32 octets base64)
 DATABASE_URL=postgres://selio:selio@127.0.0.1:5432/selio pnpm db:migrate
 DATABASE_URL=postgres://selio:selio@127.0.0.1:5432/selio pnpm db:seed:demo   # facultatif : organisation de démo en base
@@ -43,23 +46,26 @@ pnpm dev:worker
 VITE_API_BASE_URL=http://127.0.0.1:8787 pnpm dev   # l'application propose alors « Compte connecté »
 ```
 
-Extension : `pnpm build:extension` puis chargement non empaqueté de `apps/extension/dist` (voir [docs/EXTENSION-INSTALL.md](docs/EXTENSION-INSTALL.md)). Paquet pour le Chrome Web Store : `pnpm extension:pack` → `apps/extension/release/selio-extension-<version>.zip`, **sans rien publier** (compte développeur à valider par Ibrahim, [docs/WEB-STORE.md](docs/WEB-STORE.md)).
+Extension : `pnpm build:extension` puis chargement non empaqueté de `apps/extension/dist` ([docs/EXTENSION-INSTALL.md](docs/EXTENSION-INSTALL.md)). Paquet pour le Chrome Web Store : `pnpm extension:pack` → `apps/extension/release/selio-extension-<version>.zip`, **sans rien publier** ([docs/WEB-STORE.md](docs/WEB-STORE.md)).
 
-## Mise en ligne
+## Production
 
-- **Démo sur Netlify, sans aucune clé** : `deploy/netlify/pack.sh` produit `livraison/selio-demo-netlify.zip` ; décompresser puis glisser le dossier sur https://app.netlify.com/drop.
-- **Clés et variables à fournir** (base de données, chiffrement, IA, paiement Revolut, emails, stockage…) : [docs/CLES-ET-CONFIGURATION.md](docs/CLES-ET-CONFIGURATION.md), aussi en PDF dans `livraison/Selio-cles-et-configuration.pdf`.
-- Détails : [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+- **Site** (vitrine + application) : Netlify, construit depuis la branche de production ; Netlify relaie `/api/*` vers l'API.
+- **Serveur** : un PC Windows, WSL 2 + Docker Desktop (API, worker, PostgreSQL, Redis), Ollama sur la carte NVIDIA (Ministral 3 8B, Qwen3-VL 8B, Qwen3-Embedding 0.6B), adresse fixe par Tailscale Funnel.
+- Installation : [docs/INSTALLATION-WINDOWS.md](docs/INSTALLATION-WINDOWS.md) · activer chaque fonction pas à pas : [docs/TUTORIELS.md](docs/TUTORIELS.md) · toutes les variables : [docs/CLES-ET-CONFIGURATION.md](docs/CLES-ET-CONFIGURATION.md) (aussi en PDF dans `livraison/Selio-cles-et-configuration.pdf`).
+- Démonstration seule sur Netlify, sans aucune clé : `deploy/netlify/pack.sh` produit `livraison/selio-demo-netlify.zip`, à glisser sur https://app.netlify.com/drop.
 
 ## Vérifications
 
 ```bash
 pnpm lint && pnpm typecheck
-pnpm test                 # unitaires + intégration (les tests base/API/worker se désactivent si PostgreSQL local est absent)
-pnpm test:e2e             # Playwright sur l'application en démonstration (desktop, tablette, mobile)
-pnpm build                # web, API, worker, extension
-pnpm extension:pack       # paquet Chrome Web Store contrôlé (permissions, manifeste, archive)
-pnpm ai:diagnose          # diagnostic du provider IA configuré
+pnpm test:unit                       # domain, contracts, ai, connectors, cloud, pricing, ui, web, extension
+npx vitest run --project core        # services serveur (PostgreSQL local)
+pnpm test:integration                # api, worker, db (PostgreSQL 16 et Redis 7 locaux)
+pnpm test:e2e                        # Playwright sur l'application en démonstration (ordinateur, tablette, téléphone)
+pnpm build                           # web, API, worker, extension
+pnpm extension:pack                  # paquet Chrome Web Store contrôlé (permissions, manifeste, archive)
+pnpm ai:diagnose                     # diagnostic des trois modèles d'IA
 ```
 
 ## Structure
@@ -67,25 +73,28 @@ pnpm ai:diagnose          # diagnostic du provider IA configuré
 ```
 apps/web         vitrine + application (React, Vite, PWA)       apps/api        API Fastify (sessions, RLS, jetons extension, webhooks)
 apps/worker      planificateur BullMQ                           apps/extension  extension Chrome MV3
-packages/ui      composants conformes aux guidelines            packages/domain règles métier pures (argent, marge, négociation…)
+packages/ui      composants de la charte violet/or              packages/domain règles métier pures, aide et tutoriels
 packages/contracts schémas Zod partagés                         packages/connectors simulateur, connecteur Vinted expérimental, paiement Revolut
-packages/ai      AIProvider, Mock, Ollama, disjoncteur, file    packages/db     migrations, RLS, dépôts
-packages/core    services serveur partagés API/worker           packages/demo-data jeu de données de démonstration
+packages/ai      AIProvider, Mock, Ollama, disjoncteur, file    packages/db     migrations 0001 → 0023, RLS, dépôts
+packages/core    services serveur partagés API/worker           packages/demo-data jeu de données de démonstration, tarifs indicatifs
+packages/cloud   navigateur de Selio Cloud (fermé par défaut)   packages/pricing modèle de prix maison (processeur)
+packages/storage stockage S3 compatible, URLs signées           packages/email  emails transactionnels (noop ou SMTP)
 ```
 
 ## Documentation
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/DECISIONS.md](docs/DECISIONS.md) · [docs/BUILD_STATUS.md](docs/BUILD_STATUS.md)
-- [docs/CONNECTORS.md](docs/CONNECTORS.md) · [docs/SECURITY.md](docs/SECURITY.md) · [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
-- [docs/CLES-ET-CONFIGURATION.md](docs/CLES-ET-CONFIGURATION.md) · [docs/OLLAMA-SETUP.md](docs/OLLAMA-SETUP.md) · [docs/EXTENSION-INSTALL.md](docs/EXTENSION-INSTALL.md)
-- [docs/TEST-REPORT.md](docs/TEST-REPORT.md) · [docs/PRODUCTION-CHECKLIST.md](docs/PRODUCTION-CHECKLIST.md)
-- [docs/CLOUD.md](docs/CLOUD.md) (Selio Cloud, désactivé par défaut) · [docs/SAUVEGARDE.md](docs/SAUVEGARDE.md) (sauvegarde chiffrée, test de restauration, bascule sur le portable)
-- [docs/TRACK.md](docs/TRACK.md) (Selio Track : statistiques seulement, simulateur par défaut, lecture en direct à valider juridiquement) · [docs/PRIX.md](docs/PRIX.md) (estimation des prix : comparables et modèle quantile, `pnpm prix:eval`)
-- [docs/RADAR.md](docs/RADAR.md) (Selio Radar : lecture depuis le compte Achat via le Cloud, alertes sur le téléphone, « 1 clic » ; Radar Auto et achat réel désactivés par défaut, mesures et procédure de test)
-- [docs/STUDIO.md](docs/STUDIO.md) (Selio Studio façon Kavis : tri des photos, étiquette et mesures avec provenance, jamais de mesure inventée, OCR d'essai facultatif, base des références de tailles, précision « à mesurer » avec `pnpm studio:eval` ; photos portées en attente de décision)
-- [docs/NEGOCIATION.md](docs/NEGOCIATION.md) (négociation avancée : la politique décide, mon IA perso rédige ; lots, relance après 24 h, situations, limites de Vinted à mesurer selon [docs/MESURES-VINTED.md](docs/MESURES-VINTED.md)) · [docs/MIGRATION.md](docs/MIGRATION.md) (reprise des réglages de Bleam ou Clemz par texte collé, captures ou fichier RGPD, jamais de connexion à leurs services)
+Sommaire complet : **[docs/README.md](docs/README.md)**. Pour commencer :
 
-- [docs/VITRINE.md](docs/VITRINE.md) (pages de la vitrine, référencement, mention d'indépendance, comparatifs en attente des textes d'Elias, pages légales en attente de l'avocat) · [docs/WEB-STORE.md](docs/WEB-STORE.md) (publication de l'extension : prêt, manquant, procédure)
-- [docs/SUPERVISION.md](docs/SUPERVISION.md) (cibles, seuils, alertes sur le téléphone, option externe) · [docs/LIQUID-GLASS.md](docs/LIQUID-GLASS.md) (essai « verre liquide » : replis, activation, captures, mesures et avis)
+- [docs/GUIDE-TECHNIQUE.md](docs/GUIDE-TECHNIQUE.md) : comment Selio a été développé (architecture, choix techniques, données, sécurité, IA, paiement, tests, déploiement, journal du développement).
+- [docs/TUTORIELS.md](docs/TUTORIELS.md) : tutoriels d'activation en production.
+- [docs/BUILD_STATUS.md](docs/BUILD_STATUS.md) : état de chaque module.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/DECISIONS.md](docs/DECISIONS.md) · [docs/SECURITY.md](docs/SECURITY.md) · [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) · [docs/SUPERVISION.md](docs/SUPERVISION.md) · [docs/SAUVEGARDE.md](docs/SAUVEGARDE.md)
+- Par filiale : [docs/STUDIO.md](docs/STUDIO.md), [docs/TRACK.md](docs/TRACK.md), [docs/PRIX.md](docs/PRIX.md), [docs/BOT.md](docs/BOT.md), [docs/RADAR.md](docs/RADAR.md), [docs/CLOUD.md](docs/CLOUD.md), [docs/NEGOCIATION.md](docs/NEGOCIATION.md), [docs/MIGRATION.md](docs/MIGRATION.md) ; vitrine : [docs/VITRINE.md](docs/VITRINE.md).
+
+Les clients trouvent les mêmes réponses et des tutoriels pas à pas dans le centre d'aide de l'application (`/app/help`) et la FAQ publique (`/faq`).
 
 La charte (tokens, preset Tailwind, guidelines) est dans `brand/` et `packages/ui`.
+
+---
+
+Développé par Ibrahim — Selio.

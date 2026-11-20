@@ -32,7 +32,7 @@ export function Field({ label, hint, error, required, className, children }: Fie
         </p>
       ) : null}
       {error ? (
-        <p id={errId} role="alert" className="text-xs text-danger">
+        <p id={errId} role="alert" className="animate-fade text-xs font-medium text-danger">
           {error}
         </p>
       ) : null}
@@ -41,7 +41,9 @@ export function Field({ label, hint, error, required, className, children }: Fie
 }
 
 const control =
-  "w-full rounded-md border border-border-strong bg-surface px-3 text-base text-text placeholder:text-text-subtle disabled:cursor-not-allowed disabled:opacity-60 aria-invalid:border-danger";
+  "w-full rounded-md border border-border-strong bg-surface px-3 text-base text-text transition-colors placeholder:text-text-subtle disabled:cursor-not-allowed disabled:opacity-60 aria-invalid:border-danger max-md:text-md";
+/* Sur téléphone : 44 px de haut et texte de 16 px (évite le zoom automatique de Safari iOS au focus). */
+const controlHeight = "h-9 max-md:h-11";
 
 export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "prefix"> {
   invalid?: boolean;
@@ -60,14 +62,14 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         <input
           ref={ref}
           aria-invalid={invalid || undefined}
-          className={cn(control, "h-9 md:h-9", prefix && "pl-9", suffix && "pr-9")}
+          className={cn(control, controlHeight, prefix && "pl-9", suffix && "pr-9")}
           {...rest}
         />
         {suffix ? <span className="pointer-events-none absolute right-3 text-text-muted [&>svg]:size-4">{suffix}</span> : null}
       </div>
     );
   }
-  return <input ref={ref} aria-invalid={invalid || undefined} className={cn(control, "h-9", className)} {...rest} />;
+  return <input ref={ref} aria-invalid={invalid || undefined} className={cn(control, controlHeight, className)} {...rest} />;
 });
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }>(
@@ -90,7 +92,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
         <select
           ref={ref}
           aria-invalid={invalid || undefined}
-          className={cn(control, "h-9 appearance-none pr-9")}
+          className={cn(control, controlHeight, "appearance-none pr-9")}
           {...rest}
         >
           {children}
@@ -107,7 +109,7 @@ export interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement
 
 export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Checkbox({ label, className, ...rest }, ref) {
   return (
-    <label className={cn("inline-flex cursor-pointer items-center gap-2 text-base text-text", className)}>
+    <label className={cn("tap-target inline-flex cursor-pointer items-center gap-2 text-base text-text", className)}>
       <input ref={ref} type="checkbox" className="size-4 shrink-0 cursor-pointer rounded-sm border border-border-strong accent-[var(--accent-vivid)]" {...rest} />
       {label}
     </label>

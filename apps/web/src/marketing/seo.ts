@@ -1,4 +1,7 @@
+import { useEffect } from "react";
+import { PLAN_OFFERS, PRICING, TRIAL_OFFER } from "@selio/demo-data";
 import { usePageMeta } from "../lib/seo";
+import { showIndicativePricing } from "../lib/env";
 
 /**
  * Référencement de la vitrine : une seule liste des pages publiques (titre,
@@ -42,7 +45,18 @@ export interface SeoPage {
   indexable: boolean;
   /** Priorité indicative du sitemap (0 à 1). */
   priority: number;
+  /** Image de partage (1200 × 630, sous public/og/) ; par défaut celle du site. */
+  ogImage?: string;
+  /**
+   * Page d'atterrissage publicitaire non indexée : « noindex, follow » (les liens restent suivis),
+   * au lieu du « noindex, nofollow » des pages légales et de connexion.
+   */
+  noindexFollow?: boolean;
 }
+
+/** Image de partage par défaut (Open Graph, Twitter), 1200 × 630. */
+export const DEFAULT_OG_IMAGE = "/og/selio.png";
+export const OG_IMAGE_SIZE = { width: 1200, height: 630 } as const;
 
 /** Les pages publiques de la vitrine (hors connexion, inscription, liens reçus par email). */
 export const SEO_PAGES: readonly SeoPage[] = [
@@ -64,6 +78,13 @@ export const SEO_PAGES: readonly SeoPage[] = [
   { path: "/tarifs", title: "Tarifs", description: "Essai gratuit de 14 jours, offres Starter, Pro et Agence pour 1, 3 ou 10 comptes Vinted, Selio Bot au mois, Selio Compte à la prestation. Montants indicatifs.", indexable: true, priority: 0.8 },
   { path: "/faq", title: "Aide et FAQ", description: "Les questions fréquentes sur Selio : essai, comptes Vinted, extension, IA, dressing, achats, négociation, équipe, tarifs et données.", indexable: true, priority: 0.6 },
   { path: "/contact", title: "Contact", description: "Contacter l'équipe Selio : question produit, devis Selio Compte, présentation guidée, signalement.", indexable: true, priority: 0.4 },
+  // Pages d'atterrissage publicitaires (une intention de recherche chacune, voir landings.ts).
+  // Indexées quand le sujet n'a pas déjà sa page ; sinon « noindex, follow » (doublon d'une page produit).
+  { path: "/logiciel-vinted", title: "Logiciel Vinted multi-comptes : tous vos comptes au même endroit", description: "Selio Manager, le logiciel Vinted des revendeurs : comptes, stock, messages, commandes et marges au même endroit. Essai gratuit 14 jours, sans carte.", indexable: true, priority: 0.8, ogImage: "/og/logiciel-vinted.png" },
+  { path: "/negociation-automatique-vinted", title: "Négociation automatique Vinted selon vos prix planchers", description: "Offres Vinted acceptées, refusées ou contre-proposées selon votre prix plancher et vos marges : vos règles décident, l'IA rédige. Essai gratuit 14 jours.", indexable: true, priority: 0.7, ogImage: "/og/negociation-automatique-vinted.png" },
+  { path: "/annonce-vinted-ia", title: "Annonce Vinted par IA : titre et description depuis vos photos", description: "Vos photos deviennent une annonce Vinted : titre optimisé, description détaillée, étiquette lue, aucune valeur inventée. Essai gratuit 14 jours.", indexable: false, noindexFollow: true, priority: 0.5, ogImage: "/og/annonce-vinted-ia.png" },
+  { path: "/prix-revente-vinted", title: "Prix de revente Vinted : estimer avant d'acheter ou de vendre", description: "Estimez le prix de revente d'un article Vinted : fourchette, produits similaires, délai de vente estimé et niches à forte demande, avec Selio Track.", indexable: false, noindexFollow: true, priority: 0.5, ogImage: "/og/prix-revente-vinted.png" },
+  { path: "/bot-achat-vinted", title: "Bot d'achat Vinted : bonnes affaires notées sur 100 et alertes", description: "Selio Bot surveille Vinted selon vos critères, note chaque affaire sur 100 avec sa marge estimée et vous alerte, dans vos limites de dépenses.", indexable: false, noindexFollow: true, priority: 0.5, ogImage: "/og/bot-achat-vinted.png" },
   { path: "/mentions-legales", title: "Mentions légales", description: "Mentions légales de Selio (version provisoire, définitive après l'avocat).", indexable: false, priority: 0.1 },
   { path: "/confidentialite", title: "Politique de confidentialité", description: "Politique de confidentialité de Selio (version provisoire, définitive après l'avocat).", indexable: false, priority: 0.1 },
   { path: "/conditions", title: "Conditions d'utilisation", description: "Conditions d'utilisation de Selio (version provisoire, définitive après l'avocat).", indexable: false, priority: 0.1 },
@@ -78,10 +99,49 @@ export function seoPage(path: string): SeoPage {
   return page;
 }
 
-/** Titre, description et indexation d'une page de la vitrine, depuis la liste ci-dessus. */
+/** Pose (ou crée) une balise meta du document. */
+function setMeta(attr: "name" | "property", key: string, content: string) {
+  let el = document.head.querySelector<HTMLMetaElement>(`meta[${attr}="${key}"]`);
+  if (!el) {
+    el = document.createElement("meta");
+    el.setAttribute(attr, key);
+    document.head.appendChild(el);
+  }
+  el.content = content;
+}
+
+/**
+ * Titre, description et indexation d'une page de la vitrine, depuis la liste ci-dessus ; plus
+ * l'adresse canonique sur le domaine public (sans paramètres de campagne : gclid, utm…), l'aperçu
+ * de partage Open Graph et Twitter (image 1200 × 630) et, pour une page d'atterrissage doublon,
+ * « noindex, follow ».
+ */
 export function useMarketingMeta(path: string, overrides: { description?: string } = {}) {
   const page = seoPage(path);
-  usePageMeta(page.title, overrides.description ?? page.description, { noindex: !page.indexable });
+  const description = overrides.description ?? page.description;
+  usePageMeta(page.title, description, { noindex: !page.indexable });
+  useEffect(() => {
+    const url = `${SITE_ORIGIN}${path === "/" ? "/" : path}`;
+    const image = `${SITE_ORIGIN}${page.ogImage ?? DEFAULT_OG_IMAGE}`;
+    let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    if (!canonical) {
+      canonical = document.createElement("link");
+      canonical.rel = "canonical";
+      document.head.appendChild(canonical);
+    }
+    canonical.href = url;
+    if (page.noindexFollow) setMeta("name", "robots", "noindex, follow");
+    setMeta("property", "og:url", url);
+    setMeta("property", "og:type", "website");
+    setMeta("property", "og:image", image);
+    setMeta("property", "og:image:width", String(OG_IMAGE_SIZE.width));
+    setMeta("property", "og:image:height", String(OG_IMAGE_SIZE.height));
+    setMeta("property", "og:image:alt", page.title);
+    setMeta("name", "twitter:card", "summary_large_image");
+    setMeta("name", "twitter:title", document.title);
+    setMeta("name", "twitter:description", description);
+    setMeta("name", "twitter:image", image);
+  }, [path, page, description]);
 }
 
 /**
@@ -122,12 +182,39 @@ export function organizationJsonLd(): Record<string, unknown> {
   };
 }
 
+const euros = (cents: number) => (cents / 100).toFixed(2);
+
 /**
- * Logiciel présenté par une page : pas de prix (les montants sont indicatifs et
- * vivent sur /tarifs), pas de note ni d'avis (aucun avis client n'est publié).
+ * Les offres réelles de Selio (essai, Starter, Pro, Agence), lues dans PRICING
+ * (@selio/demo-data) : jamais un montant en dur ici. Vide quand l'affichage des prix est
+ * masqué (VITE_SHOW_INDICATIVE_PRICING=false), comme sur la page Tarifs.
  */
-export function softwareApplicationJsonLd(input: { name: string; path: string; description: string; category?: string }): Record<string, unknown> {
+export function selioOffersJsonLd(show: boolean = showIndicativePricing): Record<string, unknown>[] {
+  if (!show) return [];
+  const url = `${SITE_ORIGIN}/tarifs`;
+  return [
+    { "@type": "Offer", name: TRIAL_OFFER.name, price: "0", priceCurrency: PRICING.currency, url, description: TRIAL_OFFER.tagline },
+    ...PLAN_OFFERS.map((p) => ({
+      "@type": "Offer",
+      name: p.name,
+      price: euros(p.indicativeMonthlyCents),
+      priceCurrency: PRICING.currency,
+      url,
+      description: p.forWhom,
+      priceSpecification: { "@type": "UnitPriceSpecification", price: euros(p.indicativeMonthlyCents), priceCurrency: PRICING.currency, billingDuration: "P1M", unitText: "mois" },
+    })),
+  ];
+}
+
+/**
+ * Logiciel présenté par une page. Pas de note ni d'avis (aucun avis client n'est publié). Les
+ * prix (`offers: true`) ne figurent que sur les pages qui parlent de l'abonnement (accueil,
+ * tarifs, pages d'atterrissage de Selio Manager), lus dans PRICING.
+ */
+export function softwareApplicationJsonLd(input: { name: string; path: string; description: string; category?: string; offers?: boolean }): Record<string, unknown> {
+  const offers = input.offers ? selioOffersJsonLd() : [];
   return {
+    ...(offers.length ? { offers } : {}),
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     name: input.name,
@@ -138,6 +225,15 @@ export function softwareApplicationJsonLd(input: { name: string; path: string; d
     inLanguage: "fr-FR",
     publisher: { "@id": ORG_ID },
     isAccessibleForFree: false,
+  };
+}
+
+/** Questions fréquentes d'une page (FAQPage) : les mêmes questions que celles affichées. */
+export function faqPageJsonLd(items: readonly { question: string; answer: string }[]): Record<string, unknown> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: items.map((it) => ({ "@type": "Question", name: it.question, acceptedAnswer: { "@type": "Answer", text: it.answer } })),
   };
 }
 

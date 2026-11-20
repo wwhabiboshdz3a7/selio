@@ -32,7 +32,7 @@ export default function Customers() {
         {(d) => (
           <>
             <TableWrap>
-              <Table>
+              <Table stack>
                 <thead><tr><Th>Client</Th><Th>Tags</Th><Th className="hide-mobile">Ville</Th><Th numeric>Commandes</Th><Th numeric>CA</Th><Th>Dernier contact</Th></tr></thead>
                 <tbody>
                   {d.items.length === 0 ? <TableEmpty colSpan={6}>Aucun client ne correspond.</TableEmpty> : d.items.map((c) => (

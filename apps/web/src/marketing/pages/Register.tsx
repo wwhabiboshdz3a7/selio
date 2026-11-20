@@ -4,7 +4,8 @@ import { PLAN_LABELS, TRIAL_DAYS, registerInput } from "@selio/contracts";
 import { Alert, Button, Field, Input, Segmented } from "@selio/ui";
 import { TRIAL_OFFER } from "@selio/demo-data";
 import { usePageMeta } from "../../lib/seo";
-import { Container, Eyebrow } from "../components";
+import { Container, Eyebrow, TrustRow } from "../components";
+import { trackConversion } from "../tracking";
 import { useData } from "../../lib/data/provider";
 import { connectedModeAvailable } from "../../lib/env";
 import { errorMessage } from "../../lib/errors";
@@ -48,6 +49,9 @@ export default function Register() {
     setLoading(true);
     try {
       const session = await client.register({ ...parsed.data, referralCode: referralCodeForSignup(referral), promoCode: promoCodeForSignup(promo) });
+      // Conversion publicitaire : seulement un vrai compte (jamais la démonstration), et seulement
+      // si la mesure ou la publicité est configurée et acceptée (../tracking.ts).
+      if (mode === "connected") trackConversion("inscription");
       // Réponses du serveur sur les codes (enregistré, ignoré, refusé) : affichées à l'arrivée dans l'application.
       const referralMessage = [session.referral?.message, session.promo?.message].filter((m): m is string => typeof m === "string").join(" ");
       navigate("/app/onboarding", { replace: true, state: referralMessage ? { referralMessage } : undefined });
@@ -63,6 +67,7 @@ export default function Register() {
         <Eyebrow>Espace Selio</Eyebrow>
         <h1 className="mt-3 text-2xl font-semibold tracking-[-0.025em] text-text">Commencer l'essai gratuit de {TRIAL_DAYS} jours</h1>
         <p className="mt-1 text-sm text-text-muted">Un compte, une organisation, les cinq filiales Selio. Vous pourrez inviter des collègues ensuite.</p>
+        <TrustRow className="mt-4" only={["carte", "essai", "resiliable"]} />
         {demoOffered ? (
           <div className="mt-4">
             <Segmented ariaLabel="Mode" value={mode} onChange={(m: Mode) => setMode(m)} items={[{ value: "demo", label: "Démonstration" }, { value: "connected", label: "Compte connecté" }]} />
@@ -83,7 +88,7 @@ export default function Register() {
             <p className="mt-1.5 text-xs text-text-muted">Aucune carte à saisir maintenant : elle vous sera demandée à la première ouverture de l'application, dans le formulaire sécurisé Revolut (le numéro ne transite jamais par Selio).</p>
           </div>
           {error ? <Alert tone="danger">{error}</Alert> : null}
-          <Button type="submit" variant="accent" loading={loading} disabled={mode === "connected" && !connectedModeAvailable} fullWidth>Créer le compte</Button>
+          <Button type="submit" variant="accent" loading={loading} disabled={mode === "connected" && !connectedModeAvailable} fullWidth>Créer le compte et commencer l'essai</Button>
           <p className="text-center text-sm text-text-muted">Déjà inscrit ? <Link to="/connexion" className="font-medium text-text underline underline-offset-2">Se connecter</Link></p>
         </form>
       </Container>

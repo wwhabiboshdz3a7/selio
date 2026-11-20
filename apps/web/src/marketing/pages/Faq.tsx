@@ -1,8 +1,9 @@
 import { Link } from "react-router";
 import { HELP_CATEGORIES, helpEntries } from "@selio/domain/help";
-import { useMarketingMeta } from "../seo";
+import { faqPageJsonLd, useMarketingMeta } from "../seo";
 import { useSession } from "../../lib/data/provider";
-import { CtaBand, MarketingSection } from "../components";
+import { CtaBand, FaqList, JsonLd, MarketingSection } from "../components";
+import { OBJECTIONS } from "../objections";
 import { FaqBrowser, HelpAskPanel, askFaqLocally } from "../../components/help";
 
 /** Questions sur la démonstration : propres à l'application, jamais montrées sur la vitrine. */
@@ -16,8 +17,10 @@ const VITRINE_HIDDEN = ["contenu-demo", "reinitialiser-demo", "demo-ou-connecte"
 export default function Faq() {
   useMarketingMeta("/faq");
   const session = useSession();
+  const visible = helpEntries().filter((e) => !(VITRINE_HIDDEN as readonly string[]).includes(e.id));
   return (
     <>
+      <JsonLd data={faqPageJsonLd([...OBJECTIONS, ...visible])} />
       <MarketingSection
         level={1}
         eyebrow="Aide"
@@ -25,6 +28,11 @@ export default function Faq() {
         lead={`${helpEntries().length - VITRINE_HIDDEN.length} réponses en ${HELP_CATEGORIES.length} catégories, fidèles à l'application telle qu'elle est aujourd'hui : ce qui n'existe pas encore est dit « en préparation ».`}
       >
         <div className="max-w-3xl">
+          <section aria-labelledby="avant-de-commencer" className="mb-10">
+            <h2 id="avant-de-commencer" className="text-lg font-semibold tracking-[-0.01em] text-text">Avant de commencer</h2>
+            <p className="mt-1 text-sm text-text-muted">Carte bancaire, résiliation, mot de passe Vinted, risques et données : les réponses courtes.</p>
+            <FaqList className="mt-4" items={OBJECTIONS} />
+          </section>
           <HelpAskPanel
             engine="local"
             ask={askFaqLocally}

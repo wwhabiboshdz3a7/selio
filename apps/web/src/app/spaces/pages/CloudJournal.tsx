@@ -89,7 +89,7 @@ export default function CloudJournal() {
       ) : (
         <>
           <TableWrap>
-            <Table aria-label="Journal des actions Cloud">
+            <Table stack aria-label="Journal des actions Cloud">
               <thead>
                 <tr>
                   <Th>Date</Th>

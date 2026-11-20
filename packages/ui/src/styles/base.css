@@ -59,3 +59,89 @@
 @utility scrollbar-thin {
   scrollbar-width: thin;
 }
+
+/* ---- Mouvement (20 novembre 2026) ---------------------------------------
+   Apparitions courtes (150–250 ms), uniquement opacity / transform. La règle
+   globale « prefers-reduced-motion » de tokens.css les coupe toutes. */
+@keyframes selio-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes selio-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes selio-pop {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes selio-sheet {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes selio-shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+@keyframes selio-progress {
+  0% { transform: translateX(-100%) scaleX(0.3); }
+  60% { transform: translateX(10%) scaleX(0.6); }
+  100% { transform: translateX(100%) scaleX(0.3); }
+}
+@utility animate-enter { animation: selio-enter 220ms var(--ease) both; }
+@utility animate-fade { animation: selio-fade 180ms var(--ease) both; }
+@utility animate-pop { animation: selio-pop 160ms var(--ease) both; transform-origin: top; }
+@utility animate-sheet { animation: selio-sheet 240ms var(--ease) both; }
+/* Squelette : reflet lent et discret (opacité constante, pas de clignotement). */
+@utility skeleton {
+  background-color: var(--surface-muted);
+  background-image: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--surface) 55%, transparent) 50%, transparent 100%);
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: selio-shimmer 1.4s ease-in-out infinite;
+}
+/* Retour au clic (boutons, tuiles) : léger enfoncement, instantané avec « réduire les animations ». */
+@utility press {
+  transition-property: color, background-color, border-color, box-shadow, filter, transform;
+  transition-duration: 120ms;
+  transition-timing-function: var(--ease);
+  &:active:not(:disabled) { transform: scale(0.97); }
+}
+
+/* Zone tactile minimale de 44 px sur téléphone, sans changer le dessin (liens courts « Voir », « Régler »…). */
+@utility tap-target {
+  @media (max-width: 767.98px) {
+    position: relative;
+    &::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      transform: translate(-50%, -50%);
+    }
+  }
+}
+
+/* Tableaux longs sur téléphone (<Table stack>) : chaque ligne devient une fiche « libellé : valeur ».
+   Les libellés viennent des en-têtes (data-label posé par Table). Hors couches : prime sur les utilitaires. */
+@media (max-width: 767.98px) {
+  table[data-stack] { display: block; width: 100%; min-width: 0; }
+  table[data-stack] thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  table[data-stack] tbody, table[data-stack] tr { display: block; }
+  table[data-stack] tbody tr { padding: 12px 16px; }
+  table[data-stack] td { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: auto; min-height: 28px; padding: 2px 0; text-align: right; }
+  table[data-stack] td.hide-mobile { display: none; }
+  table[data-stack] td[data-label]::before { content: attr(data-label); flex-shrink: 0; color: var(--text-muted); font-size: 12px; line-height: 16px; text-align: left; }
+  table[data-stack] td:first-child { display: block; padding-bottom: 6px; text-align: left; }
+  table[data-stack] td:first-child::before { content: none; }
+  table[data-stack] td[colspan] { display: block; text-align: center; }
+  table[data-stack] td[colspan]::before { content: none; }
+}
+
+@keyframes selio-drawer {
+  from { transform: translateX(-100%); }
+  to { transform: none; }
+}
+@utility animate-drawer { animation: selio-drawer 220ms var(--ease) both; }

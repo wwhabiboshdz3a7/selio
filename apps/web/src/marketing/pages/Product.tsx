@@ -2,7 +2,7 @@ import { Link, Navigate, useParams } from "react-router";
 import { ArrowRight, ChevronRight } from "lucide-react";
 import { TRIAL_DAYS } from "@selio/contracts";
 import { buttonClass } from "@selio/ui";
-import { Container, CtaBand, Eyebrow, IndependenceNotice, JsonLd, MarketingSection, NightSky, NotList } from "../components";
+import { Container, CtaBand, Eyebrow, IndependenceNotice, JsonLd, MarketingSection, NightSky, NotList, ShotPicture, TrustRow } from "../components";
 import { LEGACY_PRODUCT_SLUGS, MANAGER_FEATURES, PRODUCTS, productBySlug, type ProductDef } from "../products";
 import { productIcon } from "../spaces";
 import { PRODUCT_SHOTS } from "../productShots";
@@ -66,6 +66,7 @@ function ProductView({ product }: { product: ProductDef }) {
               : <Link to="/inscription" className={buttonClass({ variant: "accent" })}>Commencer l'essai gratuit de {TRIAL_DAYS} jours</Link>}
             <Link to="/tarifs" className={buttonClass({ variant: "secondary" })}>Voir les tarifs</Link>
           </div>
+          {service ? null : <TrustRow only={["carte", "essai", "resiliable"]} />}
         </div>
       </MarketingSection>
 
@@ -94,8 +95,8 @@ function ProductView({ product }: { product: ProductDef }) {
             <figure className="m-0">
               {shot ? (
                 <div className="mk-product-shot">
-                  <img src={shot.light} alt={product.shot.alt} width={1600} height={1000} loading="lazy" decoding="async" className="block dark:hidden" />
-                  <img src={shot.dark} alt={product.shot.alt} width={1600} height={1000} loading="lazy" decoding="async" className="hidden dark:block" />
+                  <ShotPicture src={shot.light} alt={product.shot.alt} sizes="(min-width: 1024px) 640px, calc(100vw - 32px)" className="block dark:hidden" />
+                  <ShotPicture src={shot.dark} alt={product.shot.alt} sizes="(min-width: 1024px) 640px, calc(100vw - 32px)" className="hidden dark:block" />
                 </div>
               ) : (
                 <div className="mk-night flex min-h-56 items-center justify-center px-6 py-10" role="img" aria-label={`${product.name} : illustration, capture d'écran à venir`}>

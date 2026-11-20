@@ -10,6 +10,8 @@ import { unsubscribeOnLogout } from "../../../lib/push";
 import { SERVER_OUTDATED_TEXT, SERVER_OUTDATED_TITLE, adminSectionsFor, operatorRoleOfSession, type AdminSection } from "../../../lib/admin";
 import { useCapabilities } from "../../../lib/capabilities";
 import { Logo } from "../../../components/Logo";
+import { NavigationProgress, usePageTransition } from "../../layout";
+import { prefetchProps } from "../../prefetch";
 
 const SECTION_ICONS: Record<string, ReactNode> = {
   "/admin": <LayoutDashboard />,
@@ -22,7 +24,7 @@ const SECTION_ICONS: Record<string, ReactNode> = {
 };
 
 const linkClass = ({ isActive }: { isActive: boolean }) => cn(
-  "group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-base font-medium transition-colors [&>svg]:size-[18px] [&>svg]:shrink-0",
+  "group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-base font-medium transition-colors max-md:min-h-11 [&>svg]:size-[18px] [&>svg]:shrink-0",
   isActive ? "bg-accent-soft text-text [&>svg]:text-accent" : "text-text-muted hover:bg-surface-muted hover:text-text [&>svg]:text-text-muted",
 );
 
@@ -65,7 +67,7 @@ function SectionList({ sections }: { sections: AdminSection[] }) {
     <ul className="flex flex-col gap-0.5">
       {sections.map((it) => (
         <li key={it.to}>
-          <NavLink to={it.to} end={it.end} className={linkClass}>
+          <NavLink to={it.to} end={it.end} className={linkClass} {...prefetchProps(it.to)}>
             {SECTION_ICONS[it.to]}
             <span className="flex-1 truncate">{it.label}</span>
           </NavLink>
@@ -117,6 +119,7 @@ export default function AdminLayout() {
   const location = useLocation();
   const { resolved, setPreference } = useTheme();
   const [open, setOpen] = useState(false);
+  const mainRef = usePageTransition(location.pathname);
   const role = operatorRoleOfSession(s) ?? "business";
   const sections = adminSectionsFor(role);
   const pilotage = sections.filter((x) => x.group === "pilotage");
@@ -192,8 +195,8 @@ export default function AdminLayout() {
       <aside className="sticky top-0 hidden h-dvh w-sidebar shrink-0 self-start border-r border-border bg-surface-sidebar md:block">{sidebar}</aside>
       {open ? (
         <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Menu de Selio Admin">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-[290px] max-w-[88vw] bg-surface-sidebar shadow-lg" onClick={(e) => { if ((e.target as Element).closest("a[href]")) setOpen(false); }}>{sidebar}</aside>
+          <div className="animate-fade absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
+          <aside className="animate-drawer absolute inset-y-0 left-0 w-[290px] max-w-[88vw] bg-surface-sidebar shadow-lg" onClick={(e) => { if ((e.target as Element).closest("a[href]")) setOpen(false); }}>{sidebar}</aside>
         </div>
       ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
@@ -208,11 +211,12 @@ export default function AdminLayout() {
         ) : null}
         <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-surface/90 px-4 backdrop-blur md:hidden">
           <IconButton label="Ouvrir le menu" onClick={() => setOpen(true)}><MenuIcon /></IconButton>
-          <Link to="/admin" className="flex min-w-0 flex-1 items-center gap-2" aria-label="Selio Admin"><Logo height={20} /><span className="font-semibold text-text">Admin</span></Link>
+          <Link to="/admin" className="flex h-11 min-w-0 flex-1 items-center gap-2" aria-label="Selio Admin"><Logo height={20} /><span className="font-semibold text-text">Admin</span></Link>
           <RoleBadge role={role} />
           <IconButton label={resolved === "dark" ? "Mode clair" : "Mode sombre"} size="sm" onClick={() => setPreference(resolved === "dark" ? "light" : "dark")}>{resolved === "dark" ? <Sun /> : <Moon />}</IconButton>
         </header>
-        <main id="contenu-admin" className="mx-auto w-full max-w-content flex-1 px-4 py-6 md:px-8 md:py-10 xl:px-12">
+        <NavigationProgress />
+        <main ref={mainRef} id="contenu-admin" className="mx-auto w-full max-w-content flex-1 px-4 py-6 md:px-8 md:py-10 xl:px-12">
           <Outlet />
         </main>
       </div>
