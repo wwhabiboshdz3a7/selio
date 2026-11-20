@@ -17,3 +17,6 @@ apps/extension/release/
 
 # Sauvegardes locales de Redis (développement)
 dump.rdb
+
+# Captures produites par apps/web/scripts/screenshots.mjs
+apps/web/scripts/captures/
