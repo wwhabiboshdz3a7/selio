@@ -116,9 +116,8 @@
 - [ ] Rôles vérifiés sur un compte de l'équipe : l'exécuteur ne voit ni prix d'achat, ni marges, ni chiffre d'affaires, ni facturation ; le contributeur photos ne peut que consulter les articles, ajouter des photos et lancer le générateur (403 ailleurs) ; la lecture seule voit les finances (comptable).
 - [ ] Parrainage : décision d'Ibrahim sur l'ouverture (`REFERRAL_ENABLED`), le cas de l'essai terminé sans carte et le texte des conditions (avocat) ; `REFERRAL_ENABLED` lu par l'API **et** par le worker (premier paiement de fin d'essai) avant d'ouvrir ; parcours essayé en bac à sable (code à l'inscription, premier paiement, facture à 0 € au renouvellement suivant pour les deux organisations).
 
-## Essai « verre liquide » (LIQUID-GLASS.md)
-- [ ] `VITE_EXPERIMENT_GLASS` absent ou `false` sur le site de production.
-- [ ] Captures avant / après et mesure de fluidité refaites **au doigt** sur un iPhone (Safari, application ajoutée à l'écran d'accueil) et un Android d'entrée de gamme ; avis « on garde, on étend ou on abandonne » confirmé par Ibrahim.
+## Essai « verre liquide »
+- [x] Essai retiré le 20 novembre 2026 (composant, réglage, variable `VITE_EXPERIMENT_GLASS` et documentation supprimés) : rien à vérifier. Si la variable traîne encore dans Netlify, la supprimer (elle n'est plus lue).
 
 ## Qualité
 - [ ] `pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e && pnpm build` verts sur la branche de release.

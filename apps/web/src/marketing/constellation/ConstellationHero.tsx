@@ -154,12 +154,12 @@ export function ConstellationHero() {
                 </p>
                 <div className="cst-ctas">
                   <Link to="/inscription" className={buttonClass({ variant: "accent", size: "lg", className: "cst-cta-link" })} data-cst-intro="cta" style={{ "--i": 0 } as CSSProperties}>
-                    Commencer l'essai gratuit <ArrowRight aria-hidden="true" />
+                    Commencer l'essai gratuit de {TRIAL_DAYS} jours <ArrowRight aria-hidden="true" />
                   </Link>
                   <Link to="/connexion" className="cst-ghost" data-cst-intro="cta" style={{ "--i": 1 } as CSSProperties}>Se connecter</Link>
                   {live ? <a href="#application" className="cst-skip-a11y">Passer la visite des fonctionnalités</a> : null}
                 </div>
-                <p className="cst-note" data-cst-intro="note">{TRIAL_DAYS} jours gratuits avec toutes les fonctions du plan Pro. Rien n'est débité avant la fin ; résiliable à tout moment.</p>
+                <p className="cst-note" data-cst-intro="note">{TRIAL_DAYS} jours gratuits avec toutes les fonctions du plan Pro. Aucune carte à l'inscription, rien n'est débité pendant l'essai ; résiliable à tout moment.</p>
                 {live ? (
                   <p className="cst-hint" data-cst-intro="note" aria-hidden="true">
                     <span className="cst-hint-fine">Glissez pour faire tourner la sphère, survolez une étoile, puis défilez pour entrer.</span>
@@ -227,7 +227,7 @@ export function ConstellationHero() {
               <p className="cst-finale-text">Les quatorze modules, reliés à vos propres articles. Essayez-les {TRIAL_DAYS} jours sur votre activité, sans engagement.</p>
               <div className="cst-ctas cst-finale-ctas">
                 <Link to="/inscription" className={buttonClass({ variant: "accent", size: "lg", className: "cst-cta-link" })}>
-                  Commencer l'essai gratuit <ArrowRight aria-hidden="true" />
+                  Commencer l'essai gratuit de {TRIAL_DAYS} jours <ArrowRight aria-hidden="true" />
                 </Link>
                 <Link to="/connexion" className="cst-ghost">Se connecter</Link>
               </div>

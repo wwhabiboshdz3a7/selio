@@ -34,7 +34,7 @@ export function useAutomationSection<K extends keyof AutomationSettings>(key: K)
 export function SaveBar({ dirty, editable, pending, onSave, onReset, savedText = "Réglages enregistrés : ils s'appliquent dès maintenant.", blocked = null }: { dirty: boolean; editable: boolean; pending: boolean; onSave: () => void; onReset: () => void; savedText?: string; /** Raison qui empêche d'enregistrer (réglage invalide), affichée à la place du rappel. */ blocked?: string | null }) {
   if (!editable) return <p className="mt-6 rounded-lg border border-border bg-surface px-4 py-3 text-sm text-text-muted">Consultation : seuls le propriétaire et les administrateurs modifient ces réglages. Les exemples à droite restent utilisables.</p>;
   return (
-    <div className={cn("mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-surface px-4 py-3", dirty ? "sticky bottom-[calc(var(--dock-offset,0px)+1rem)] z-10 border-accent/50 shadow-md" : "border-border")}>
+    <div className={cn("mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-surface px-4 py-3", dirty ? "sticky bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-10 border-accent/50 shadow-md" : "border-border")}>
       <p className="text-sm text-text-muted">{dirty ? <><span className="font-semibold text-text">Modifications non enregistrées.</span> {blocked ? <span className="text-danger">{blocked}</span> : "Les exemples les montrent déjà."}</> : savedText}</p>
       <div className="flex gap-2">
         {dirty ? <Button variant="ghost" onClick={onReset}>Annuler</Button> : null}
@@ -83,7 +83,7 @@ export function JourneyStep({ n, title, level, intro, children, illustration, la
 export function Sentence({ children, hint }: { children: ReactNode; hint?: ReactNode }) {
   return (
     <div>
-      <p className="text-base leading-10 text-text">{children}</p>
+      <div className="text-base leading-10 text-text">{children}</div>
       {hint ? <p className="text-xs text-text-muted">{hint}</p> : null}
     </div>
   );
@@ -93,10 +93,15 @@ export function Sentence({ children, hint }: { children: ReactNode; hint?: React
 export function NumberInput({ label, value, min, max, step = 1, suffix, onChange, disabled, width = "w-[5.5rem]" }: { label: string; value: number; min: number; max: number; step?: number; suffix?: string; onChange: (v: number) => void; disabled?: boolean; width?: string }) {
   const [text, setText] = useState<string | null>(null);
   const shown = text ?? String(value).replace(".", ",");
+  // Validation en direct : bordure rouge et consigne tant que la saisie n'est pas un nombre dans les bornes.
+  const parsed = Number((text ?? "").replace(",", ".").trim());
+  const invalid = text !== null && (text.trim() === "" || !Number.isFinite(parsed) || parsed < min || parsed > max);
   return (
     <span className={cn("inline-block align-middle", width)}>
       <Input
         aria-label={label}
+        invalid={invalid}
+        title={invalid ? `Entre ${String(min).replace(".", ",")} et ${String(max).replace(".", ",")}${suffix ? ` ${suffix}` : ""}` : undefined}
         inputMode="decimal"
         value={shown}
         disabled={disabled}
@@ -166,7 +171,7 @@ export function TemplateField({ label, hint, value, onChange, disabled, vars = I
       <div className="flex flex-wrap items-center gap-1.5 text-xs text-text-muted">
         <span>Insérer :</span>
         {TEMPLATE_VARS.filter((v) => vars.includes(v.key)).map((v) => (
-          <button key={v.key} type="button" disabled={disabled} onClick={() => insert(v.key)} className="rounded-sm border border-border px-1.5 py-0.5 font-mono text-[11px] text-text hover:bg-surface-muted disabled:opacity-50">{v.label}</button>
+          <button key={v.key} type="button" disabled={disabled} onClick={() => insert(v.key)} className="press rounded-sm border border-border px-1.5 py-0.5 font-mono text-[11px] text-text hover:bg-surface-muted disabled:opacity-50 max-md:px-2.5 max-md:py-2 max-md:text-xs">{v.label}</button>
         ))}
       </div>
       {hint ? <p className="text-xs text-text-muted">{hint}</p> : null}
@@ -244,7 +249,7 @@ function Line({ line }: { line: ChatLine }) {
             {line.status === "acceptée" ? "Acceptée" : line.status === "refusée" ? "Refusée" : mine ? "En attente de réponse" : "À traiter"}
           </p>
         </div>
-        {line.time ? <span className="num mt-0.5 px-1 text-[10px] text-text-subtle">{line.time}</span> : null}
+        {line.time ? <span className="num mt-0.5 px-1 text-[11px] text-text-muted">{line.time}</span> : null}
       </div>
     );
   }
@@ -252,7 +257,7 @@ function Line({ line }: { line: ChatLine }) {
   return (
     <div role="listitem" className={cn("flex flex-col", mine ? "items-end" : "items-start")}>
       <p className={cn("max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-snug", mine ? "rounded-br-sm bg-accent text-accent-on" : "rounded-bl-sm bg-surface-muted text-text")}>{line.text}</p>
-      <span className="num mt-0.5 flex items-center gap-1 px-1 text-[10px] text-text-subtle">{line.auto ? <AutoTag light /> : null}{line.time}</span>
+      <span className="num mt-0.5 flex items-center gap-1 px-1 text-[11px] text-text-muted">{line.auto ? <AutoTag light /> : null}{line.time}</span>
     </div>
   );
 }

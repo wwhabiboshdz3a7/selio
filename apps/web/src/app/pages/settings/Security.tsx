@@ -49,7 +49,7 @@ export default function Security() {
         <QueryBoundary query={audit}>
           {(list) => (
             <TableWrap className="mt-3 rounded-none border-0 border-t">
-              <Table dense>
+              <Table stack dense>
                 <thead><tr><Th>Date</Th><Th>Action</Th><Th className="hide-mobile">Cible</Th><Th className="hide-mobile">Détails</Th></tr></thead>
                 <tbody>{list.length === 0 ? <tr><td colSpan={4} className="h-16 text-center text-sm text-text-muted">Aucune entrée.</td></tr> : list.map((a) => <Tr key={a.id}><Td className="text-text-muted">{formatDateTime(a.createdAt)}</Td><Td className="font-mono text-xs">{a.action}</Td><Td className="hide-mobile text-xs text-text-muted">{a.targetType ? `${a.targetType} ${a.targetId?.slice(0, 8) ?? ""}` : "—"}</Td><Td className="hide-mobile max-w-xs truncate text-xs text-text-muted">{JSON.stringify(a.meta)}</Td></Tr>)}</tbody>
               </Table>

@@ -84,7 +84,7 @@ function MarginBody({ d }: { d: EndToEndMarginsView }) {
       />
       {rows.length === 0 ? <p className="text-sm text-text-muted">Aucun article ni vente sur la période.</p> : (
         <TableWrap>
-          <Table dense>
+          <Table stack dense>
             <thead><tr><Th>Article</Th><Th>Achat</Th><Th>Marge</Th><Th numeric>Coût</Th><Th numeric>Revente</Th><Th numeric>Marge</Th></tr></thead>
             <tbody>
               {rows.map((r) => (

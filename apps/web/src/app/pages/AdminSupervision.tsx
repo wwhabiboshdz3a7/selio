@@ -117,13 +117,13 @@ function SupervisionContent({ d }: { d: HealthDetailsView }) {
       {d.queues.length > 0 ? (
         <Card padding="none">
           <h2 className="px-4 pt-4 text-md font-semibold md:px-5">Files de tâches</h2>
-          <TableWrap className="mt-3 rounded-none border-0 border-t"><Table dense><thead><tr><Th>File</Th><Th numeric>Attente</Th><Th numeric>Actives</Th><Th numeric>Échecs</Th><Th>État</Th></tr></thead><tbody>{d.queues.map((qu) => <Tr key={qu.name}><Td className="font-medium">{qu.name}</Td><Td numeric>{qu.waiting}</Td><Td numeric>{qu.active}</Td><Td numeric className={qu.failed > 0 ? "text-danger" : undefined}>{qu.failed}</Td><Td>{qu.paused ? <StatusBadge tone="warning">En pause</StatusBadge> : <StatusBadge tone="success">Active</StatusBadge>}</Td></Tr>)}</tbody></Table></TableWrap>
+          <TableWrap className="mt-3 rounded-none border-0 border-t"><Table stack dense><thead><tr><Th>File</Th><Th numeric>Attente</Th><Th numeric>Actives</Th><Th numeric>Échecs</Th><Th>État</Th></tr></thead><tbody>{d.queues.map((qu) => <Tr key={qu.name}><Td className="font-medium">{qu.name}</Td><Td numeric>{qu.waiting}</Td><Td numeric>{qu.active}</Td><Td numeric className={qu.failed > 0 ? "text-danger" : undefined}>{qu.failed}</Td><Td>{qu.paused ? <StatusBadge tone="warning">En pause</StatusBadge> : <StatusBadge tone="success">Active</StatusBadge>}</Td></Tr>)}</tbody></Table></TableWrap>
         </Card>
       ) : null}
       <Card padding="none">
         <h2 className="px-4 pt-4 text-md font-semibold md:px-5">Dernières vérifications</h2>
         <TableWrap className="mt-3 rounded-none border-0 border-t">
-          <Table dense>
+          <Table stack dense>
             <thead><tr><Th>Date</Th><Th>Cible</Th><Th>Résultat</Th><Th numeric className="hide-mobile">Durée</Th><Th className="hide-mobile">Détail</Th></tr></thead>
             <tbody>
               {sup.recent.length === 0 ? <tr><td colSpan={5} className="h-16 text-center text-sm text-text-muted">Aucune vérification enregistrée.</td></tr> : sup.recent.slice(0, 40).map((c, i) => (

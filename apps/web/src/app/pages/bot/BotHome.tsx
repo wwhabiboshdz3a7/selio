@@ -150,7 +150,7 @@ function Section({ icon, title, link, children, className }: { icon: ReactNode; 
     <Card className={cn("flex min-w-0 flex-col", className)}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-md font-semibold text-text [&>svg]:size-4 [&>svg]:text-accent">{icon}{title}</h2>
-        {link ? <Link to={link.to} className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">{link.label} <ArrowRight className="size-4" aria-hidden /></Link> : null}
+        {link ? <Link to={link.to} className="tap-target inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline">{link.label} <ArrowRight className="size-4" aria-hidden /></Link> : null}
       </div>
       {children}
     </Card>

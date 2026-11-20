@@ -200,7 +200,7 @@ export function AutomationStatusBoard({ summary }: { summary: BotSummary }) {
         ]}
       />
       <div className="card overflow-x-auto p-0">
-        <table className="w-full min-w-[760px] text-sm" aria-label="État des automatisations">
+        <table data-stack className="w-full min-w-[760px] text-sm" aria-label="État des automatisations">
           <thead>
             <tr className="border-b border-border text-left">{["Automatisation", "État", "Où elle tourne", "Dernière action", ""].map((h) => <th key={h} className="th-label px-4 py-2.5 first:pl-5">{h}</th>)}</tr>
           </thead>
@@ -208,13 +208,13 @@ export function AutomationStatusBoard({ summary }: { summary: BotSummary }) {
             {list.map((b) => (
               <tr key={b.id} data-bot={b.id} className="border-b border-border align-top last:border-0">
                 <td className="px-4 py-3 pl-5">
-                  <p className="flex items-center gap-1.5 font-semibold text-text"><Link to={AUTOMATION_PATHS[b.id]} className="hover:underline underline-offset-2">{b.name}</Link><BotStateIcon state={b.state} /></p>
+                  <p className="flex items-center gap-1.5 font-semibold text-text"><Link to={AUTOMATION_PATHS[b.id]} className="tap-target hover:underline underline-offset-2">{b.name}</Link><BotStateIcon state={b.state} /></p>
                   <p className="mt-0.5 max-w-xs text-xs text-text-muted">{b.stateDetail}</p>
                 </td>
-                <td className="px-4 py-3"><BotStateBadge state={b.state} /></td>
-                <td className="px-4 py-3"><BotPlaceLine place={b.place} detail={b.placeDetail} className="max-w-xs text-xs" /></td>
-                <td className="px-4 py-3 text-xs text-text-muted">{b.recent[0] ? <><span className="block truncate text-text">{b.recent[0].label}</span><span className="num">{formatRelative(b.recent[0].at)}</span></> : "—"}</td>
-                <td className="px-4 py-3 text-right"><Link to={AUTOMATION_PATHS[b.id]} className="inline-flex items-center gap-1 text-sm font-semibold whitespace-nowrap text-accent">Régler <ArrowRight className="size-4" aria-hidden /></Link></td>
+                <td data-label="État" className="px-4 py-3"><BotStateBadge state={b.state} /></td>
+                <td data-label="Où elle tourne" className="px-4 py-3"><BotPlaceLine place={b.place} detail={b.placeDetail} className="max-w-xs text-xs" /></td>
+                <td data-label="Dernière action" className="px-4 py-3 text-xs text-text-muted">{b.recent[0] ? <><span className="block truncate text-text">{b.recent[0].label}</span><span className="num">{formatRelative(b.recent[0].at)}</span></> : "—"}</td>
+                <td className="px-4 py-3 text-right"><Link to={AUTOMATION_PATHS[b.id]} className="tap-target inline-flex items-center gap-1 text-sm font-semibold whitespace-nowrap text-accent">Régler <ArrowRight className="size-4" aria-hidden /></Link></td>
               </tr>
             ))}
           </tbody>

@@ -7,9 +7,9 @@ import { scanForInjection } from "./untrusted";
 const top = (q: string) => searchHelp(q, { limit: 1 })[0]?.entry.id;
 
 describe("aide : contenu de la FAQ", () => {
-  it("au moins 40 questions, douze catégories toutes remplies, identifiants uniques et partageables", () => {
+  it("au moins 40 questions, treize catégories toutes remplies, identifiants uniques et partageables", () => {
     expect(helpEntries().length).toBeGreaterThanOrEqual(40);
-    expect(HELP_CATEGORIES).toHaveLength(12);
+    expect(HELP_CATEGORIES).toHaveLength(13);
     for (const c of HELP_CATEGORIES) expect(helpEntries().filter((e) => e.categoryId === c.id).length, c.id).toBeGreaterThanOrEqual(3);
     const ids = helpEntries().map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -65,6 +65,62 @@ describe("aide : contenu de la FAQ", () => {
     expect(planned.length).toBeGreaterThanOrEqual(4);
     for (const e of planned) expect(e.answer, e.id).toMatch(/en développement/);
     expect(helpEntries().some((e) => /Selio Global/.test(e.answer))).toBe(false);
+  });
+});
+
+describe("aide : tutoriels pas à pas", () => {
+  const TUTORIALS = [
+    "tuto-relier-vinted",
+    "tuto-importer-stock",
+    "tuto-annonce-studio",
+    "tuto-negociation-ia",
+    "tuto-relances-republication",
+    "tuto-filtre-track",
+    "tuto-regler-bot",
+    "tuto-inviter-agent",
+    "tuto-installer-telephone",
+    "tuto-code-promo-abonnement",
+  ];
+
+  it("une catégorie à part, juste après « Démarrer », avec les dix tutoriels demandés", () => {
+    expect(HELP_CATEGORIES[1]!.id).toBe("tutoriels");
+    const ids = helpEntries().filter((e) => e.categoryId === "tutoriels").map((e) => e.id);
+    expect(ids).toEqual(TUTORIALS);
+  });
+
+  it("des étapes numérotées dans l'ordre, une par paragraphe, et un lien vers la page où agir", () => {
+    for (const id of TUTORIALS) {
+      const e = helpEntryById(id)!;
+      const steps = e.answer.split(/\n{2,}/).filter((p) => /^\d+\. /.test(p)).map((p) => Number(p.split(".")[0]));
+      expect(steps.length, id).toBeGreaterThanOrEqual(5);
+      expect(steps, id).toEqual(steps.map((_, i) => i + 1));
+      expect(e.link?.href, id).toMatch(/^\/(app|track|bot)(\/|$)/);
+      expect(e.status, id).toBeUndefined();
+    }
+  });
+
+  it("les chiffres cités viennent du code, et rien n'est promis qui n'existe pas", () => {
+    expect(helpEntryById("tuto-filtre-track")!.answer).toContain(`(${PLAN_QUOTAS.pro.trackFiltersFollowed} filtres suivis)`);
+    expect(helpEntryById("tuto-inviter-agent")!.answer).toContain(`jusqu'à ${PLAN_QUOTAS.agence.members} avec Agence`);
+    expect(helpEntryById("tuto-regler-bot")!.answer).toContain(`à partir de ${REVIEW_THRESHOLD}/100`);
+    expect(helpEntryById("tuto-code-promo-abonnement")!.answer).toContain(`L'essai dure ${TRIAL_DAYS} jours`);
+    // Jamais présentés comme ouverts : achat automatique, publication automatique sur Vinted, mot de passe Vinted.
+    expect(helpEntryById("tuto-regler-bot")!.answer).toMatch(/achat automatique reste fermé/);
+    expect(helpEntryById("tuto-annonce-studio")!.answer).toMatch(/mise en ligne sur Vinted reste un geste de votre part/);
+    expect(helpEntryById("tuto-relier-vinted")!.answer).toMatch(/jamais votre mot de passe Vinted/);
+  });
+
+  it("la recherche trouve chaque tutoriel par ses mots", () => {
+    expect(top("tutoriel studio créer une annonce")).toBe("tuto-annonce-studio");
+    expect(top("ajouter un code promo")).toBe("tuto-code-promo-abonnement");
+    expect(top("installer l'application sur mon iphone")).toBe("tuto-installer-telephone");
+    expect(top("relier mon compte vinted avec l'extension")).toBe("tuto-relier-vinted");
+    expect(top("importer mon stock depuis un fichier csv")).toBe("tuto-importer-stock");
+    expect(top("alertes de tendance d'un filtre track")).toBe("tuto-filtre-track");
+    expect(top("régler les limites de dépenses de selio bot")).toBe("tuto-regler-bot");
+    expect(top("ajouter un collaborateur avec selio agent")).toBe("tuto-inviter-agent");
+    expect(top("activer les relances et la republication")).toBe("tuto-relances-republication");
+    expect(top("régler la négociation par l'ia")).toBe("tuto-negociation-ia");
   });
 });
 

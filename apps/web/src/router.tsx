@@ -45,6 +45,12 @@ export const router = createBrowserRouter([
       // Comparatifs : textes d'Elias attendus, non référencés tant que COMPARISON_READY est faux (marketing/seo.ts).
       { path: "selio-ou-bleam", lazy: lazy(() => import("./marketing/pages/SelioOrBleam")) },
       { path: "alternative-bleam", lazy: lazy(() => import("./marketing/pages/AlternativeBleam")) },
+      // Pages d'atterrissage publicitaires : une intention de recherche chacune (marketing/landings.ts).
+      { path: "logiciel-vinted", lazy: lazy(() => import("./marketing/pages/Landing")) },
+      { path: "negociation-automatique-vinted", lazy: lazy(() => import("./marketing/pages/Landing")) },
+      { path: "annonce-vinted-ia", lazy: lazy(() => import("./marketing/pages/Landing")) },
+      { path: "prix-revente-vinted", lazy: lazy(() => import("./marketing/pages/Landing")) },
+      { path: "bot-achat-vinted", lazy: lazy(() => import("./marketing/pages/Landing")) },
       { path: "assistant-ia", lazy: lazy(() => import("./marketing/pages/Assistant")) },
       { path: "tarifs", lazy: lazy(() => import("./marketing/pages/Pricing")) },
       { path: "plateforme", lazy: lazy(() => import("./marketing/pages/Platform")) },
@@ -130,7 +136,7 @@ export const router = createBrowserRouter([
         // Les comptes Vinted ont leur propre menu (« Comptes ») : l'ancienne adresse y redirige.
         { path: "connections", element: <Navigate to="/app/accounts" replace /> },
         { path: "ai", lazy: lazy(() => import("./app/pages/settings/Ai")) },
-        // Thème et essai « verre liquide » (désactivé par défaut).
+        // Thème (clair, sombre, système).
         { path: "apparence", lazy: lazy(() => import("./app/pages/settings/Appearance")) },
         // Parrainage : masqué tant que REFERRAL_ENABLED est faux (proposition dans la démonstration).
         { path: "parrainage", lazy: lazy(() => import("./app/pages/settings/Referral")) },

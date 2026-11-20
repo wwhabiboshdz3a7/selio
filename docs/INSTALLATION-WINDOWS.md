@@ -1,6 +1,6 @@
 # Selio en production sur le PC Windows — procédure complète
 
-Pour Claude Code lancé sur le PC (et pour Ibrahim). À suivre dans l'ordre. Ne rien inventer : si une étape échoue, s'arrêter et dire pourquoi.
+Procédure écrite pour Ibrahim, à suivre dans l'ordre sur le PC. Si une étape échoue, on s'arrête, on lit le message d'erreur et on note pourquoi avant d'aller plus loin : on n'invente rien.
 
 **Ce qu'on met en place**
 
@@ -13,7 +13,7 @@ Pour Claude Code lancé sur le PC (et pour Ibrahim). À suivre dans l'ordre. Ne 
 
 Netlify relaie `https://seliovprod.netlify.app/api/*` vers le tunnel : le site et l'API ont ainsi la même adresse, et les cookies de connexion marchent.
 
-**Règle des secrets** : aucune clé ne passe par le chat. Les clés internes sont générées sur le PC. Les clés externes (Revolut, email) seront collées par Ibrahim lui-même dans `.env`, plus tard.
+**Règle des secrets** : aucune clé ne passe par un message ni une conversation. Les clés internes sont générées sur le PC. Les clés externes (Revolut, email) sont collées par Ibrahim lui-même dans `.env`, quand les comptes existent.
 
 ---
 
@@ -27,7 +27,7 @@ Netlify relaie `https://seliovprod.netlify.app/api/*` vers le tunnel : le site e
    Redémarrer, ouvrir « Ubuntu », créer l'utilisateur.
 3. Installer **Docker Desktop** (docker.com) : cocher « Use WSL 2 », puis Réglages › Resources › WSL integration › activer Ubuntu-24.04.
 4. Installer **Ollama pour Windows** (ollama.com/download).
-5. Dans Ubuntu, installer Claude Code puis le lancer dans le dossier du projet (étape 2).
+5. Ouvrir « Ubuntu » : toutes les commandes Linux qui suivent s'y tapent, dans le dossier du projet (étape 2).
 
 ## 2. Récupérer le projet (dans Ubuntu / WSL)
 

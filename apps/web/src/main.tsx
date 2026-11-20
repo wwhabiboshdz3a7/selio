@@ -4,6 +4,7 @@ import { RouterProvider } from "react-router";
 import { ToastProvider } from "@selio/ui";
 import { DataProvider } from "./lib/data/provider";
 import { router } from "./router";
+import { registerPrefetchRoutes } from "./app/prefetch";
 import { registerSW } from "virtual:pwa-register";
 import { installDiagnostics } from "./lib/diagnostics";
 import "./styles.css";
@@ -11,6 +12,8 @@ import "./styles.css";
 installDiagnostics();
 // Mise à jour automatique : le nouveau service worker prend la main dès qu'une version est publiée.
 registerSW({ immediate: true });
+// Préchargement des pages au survol des liens du menu de l'application.
+registerPrefetchRoutes(router.routes);
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

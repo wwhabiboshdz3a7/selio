@@ -22,7 +22,7 @@ const STATUS_TONE: Record<ItemStatus, string> = {
 
 /** Statut modifiable sur place : liste des transitions permises (même règle que le serveur). */
 export function QuickStatus({ item, canWrite, onChange, busy }: { item: InventoryItem; canWrite: boolean; onChange: (s: ItemStatus) => void; busy?: boolean }) {
-  const cls = cn("inline-flex h-6 items-center rounded-full px-2 text-xs font-medium", STATUS_TONE[item.status]);
+  const cls = cn("inline-flex h-6 items-center rounded-full px-2 text-xs font-medium max-md:h-8", STATUS_TONE[item.status]);
   if (!canWrite) return <span className={cls}>{ITEM_STATUS_LABELS[item.status]}</span>;
   const options = [item.status, ...ITEM_TRANSITIONS[item.status]];
   return (
@@ -49,8 +49,8 @@ export function QuickPrice({ item, canWrite, onSave, busy, className }: { item: 
   if (!canWrite) return <span className={cn("num font-semibold", className)}>{shown}</span>;
   if (!editing) {
     return (
-      <button type="button" disabled={busy} onClick={(e) => { e.stopPropagation(); setText(item.listedPriceCents === null ? "" : (item.listedPriceCents / 100).toFixed(2).replace(".", ",")); setEditing(true); }} className={cn("group/price num inline-flex items-center gap-1 rounded-md px-1 -mx-1 font-semibold hover:bg-surface-muted focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none", className)} aria-label={`Modifier le prix de ${item.title}`} title="Modifier le prix">
-        {shown}<Pencil className="size-3 text-text-subtle opacity-60 group-hover/price:opacity-100" aria-hidden />
+      <button type="button" disabled={busy} onClick={(e) => { e.stopPropagation(); setText(item.listedPriceCents === null ? "" : (item.listedPriceCents / 100).toFixed(2).replace(".", ",")); setEditing(true); }} className={cn("tap-target group/price num inline-flex items-center gap-1 rounded-md px-1 -mx-1 font-semibold hover:bg-surface-muted focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none", className)} aria-label={`Modifier le prix de ${item.title}`} title="Modifier le prix">
+        {shown}<Pencil className="size-3 text-text-muted opacity-60 group-hover/price:opacity-100" aria-hidden />
       </button>
     );
   }
@@ -65,7 +65,7 @@ export function QuickPrice({ item, canWrite, onSave, busy, className }: { item: 
   return (
     <span className="inline-flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
       <span className="relative">
-        <input ref={input} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} inputMode="decimal" aria-label={`Nouveau prix de ${item.title}`} aria-invalid={invalid || undefined} className={cn("num h-8 w-24 rounded-md border bg-surface pr-6 pl-2 text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-accent", invalid ? "border-danger" : "border-border-strong")} />
+        <input ref={input} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} inputMode="decimal" aria-label={`Nouveau prix de ${item.title}`} aria-invalid={invalid || undefined} className={cn("num h-8 w-24 rounded-md border bg-surface pr-6 pl-2 text-sm text-text outline-none max-md:h-11 max-md:text-md focus-visible:ring-2 focus-visible:ring-accent", invalid ? "border-danger" : "border-border-strong")} />
         <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-xs text-text-muted">€</span>
       </span>
       <IconButton size="sm" label="Enregistrer le prix" onClick={commit} disabled={invalid}><Check /></IconButton>
@@ -90,9 +90,9 @@ export function ItemCard({ item, rules, selected, canWrite, busy, onSelect, onSt
   const now = new Date();
   const online = daysOnline(item, now);
   return (
-    <article aria-label={item.title} className={cn("card group relative flex flex-col overflow-hidden transition-colors hover:border-border-strong", selected && "border-accent ring-1 ring-accent")}>
+    <article aria-label={item.title} className={cn("card group relative flex flex-col overflow-hidden transition-[border-color,box-shadow] hover:border-border-strong hover:shadow-md", selected && "border-accent ring-1 ring-accent")}>
       <Link to={`/app/items/${item.id}`} className="relative block aspect-[4/5] bg-surface-muted" tabIndex={-1} aria-hidden>
-        {item.photos[0] ? <img src={item.photos[0].url} alt="" loading="lazy" className="size-full object-cover" /> : <span className="flex size-full flex-col items-center justify-center gap-1 text-xs text-text-subtle"><ImageOff className="size-6" />Sans photo</span>}
+        {item.photos[0] ? <img src={item.photos[0].url} alt="" loading="lazy" className="size-full object-cover" /> : <span className="flex size-full flex-col items-center justify-center gap-1 text-xs text-text-muted"><ImageOff className="size-6" aria-hidden />Sans photo</span>}
         {online !== null && (item.status === "listed" || item.status === "reserved") ? <span className={cn("absolute right-2 bottom-2 inline-flex items-center gap-1 rounded-full bg-surface/95 px-2 py-0.5 text-[11px] font-medium shadow-sm", online >= 7 ? "text-accent" : "text-text-muted")}><CalendarClock className="size-3" aria-hidden />{online} j en ligne</span> : null}
       </Link>
       {canWrite ? <span className={cn("absolute top-2 left-2 rounded-md bg-surface/90 p-1 transition-opacity", selected ? "opacity-100" : "opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100")}><Checkbox aria-label={`Sélectionner ${item.title}`} checked={selected} onChange={(e) => onSelect(e.target.checked)} /></span> : null}

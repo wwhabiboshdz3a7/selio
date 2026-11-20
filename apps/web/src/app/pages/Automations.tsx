@@ -153,7 +153,7 @@ function Jobs({ canWrite }: { canWrite: boolean }) {
         {(d) => (
           <>
             <TableWrap>
-              <Table dense>
+              <Table stack dense>
                 <thead><tr><Th>Tâche</Th><Th>Statut</Th><Th className="hide-mobile">Exécution</Th><Th numeric>Tentatives</Th><Th>Planifiée</Th><Th className="text-right">Actions</Th></tr></thead>
                 <tbody>
                   {d.items.length === 0 ? <TableEmpty colSpan={6}>Aucune tâche pour ce filtre.</TableEmpty> : d.items.map((j) => (

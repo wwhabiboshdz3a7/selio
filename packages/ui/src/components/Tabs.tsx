@@ -33,7 +33,7 @@ export function Tabs<T extends string>({
             aria-selected={active}
             onClick={() => onChange(it.value)}
             className={cn(
-              "-mb-px flex h-10 shrink-0 items-center gap-2 border-b-2 px-3 text-base font-medium whitespace-nowrap transition-colors",
+              "-mb-px flex h-10 shrink-0 items-center gap-2 border-b-2 px-3 text-base font-medium whitespace-nowrap transition-colors max-md:h-11",
               active ? "border-accent text-text" : "border-transparent text-text-muted hover:text-text",
             )}
           >
@@ -74,8 +74,8 @@ export function Segmented<T extends string>({
             aria-checked={active}
             onClick={() => onChange(it.value)}
             className={cn(
-              "shrink-0 rounded-sm px-2.5 font-medium whitespace-nowrap transition-colors",
-              size === "sm" ? "h-7 text-xs" : "h-8 text-sm",
+              "shrink-0 rounded-sm px-2.5 font-medium whitespace-nowrap transition-colors max-md:min-w-11",
+              size === "sm" ? "h-7 text-xs max-md:h-10" : "h-8 text-sm max-md:h-10",
               active ? "bg-accent-soft text-accent" : "text-text-muted hover:text-text",
             )}
           >
@@ -116,7 +116,7 @@ export function FilterChip({
       aria-selected={role === "tab" ? active : undefined}
       onClick={onClick}
       className={cn(
-        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium whitespace-nowrap transition-colors [&_svg]:size-3.5",
+        "press inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium whitespace-nowrap [&_svg]:size-3.5 max-md:h-10",
         active ? "bg-accent-soft text-accent" : "text-text-muted hover:bg-surface-muted hover:text-text",
         className,
       )}

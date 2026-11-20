@@ -56,7 +56,7 @@ export function Dialog({ open, onClose, title, description, children, footer, si
     >
       <div
         className={cn(
-          "flex max-h-[92dvh] w-full flex-col overflow-hidden border border-border bg-surface shadow-lg",
+          "animate-sheet md:animate-pop flex max-h-[92dvh] w-full flex-col overflow-hidden border border-border bg-surface shadow-lg",
           sheet ? "rounded-t-xl md:rounded-xl" : "rounded-xl",
           size === "sm" && "md:max-w-md",
           size === "md" && "md:max-w-lg",
@@ -140,7 +140,7 @@ export function ConfirmDialog({
             Tapez <span className="font-medium text-text">{typeToConfirm}</span> pour confirmer.
           </span>
           <input
-            className="mt-2 h-9 w-full rounded-md border border-border-strong bg-surface px-3"
+            className="mt-2 h-9 w-full rounded-md border border-border-strong bg-surface px-3 max-md:h-11 max-md:text-md"
             value={typed ?? ""}
             onChange={(e) => onTypedChange?.(e.target.value)}
             autoComplete="off"

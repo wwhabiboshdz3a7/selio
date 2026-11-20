@@ -41,7 +41,7 @@ function Dashboard({ usage }: { usage: TrackUsageView }) {
                 <h2 className="text-md font-semibold">Filtres suivis</h2>
                 <p className="text-sm text-text-muted">Tendance sur 30 jours · chaque filtre est lu toutes les 2 h, une seule fois pour tous les clients qui le suivent.</p>
               </div>
-              <Link to="/track/filtres" className="text-sm font-medium text-accent hover:underline">Gérer les filtres</Link>
+              <Link to="/track/filtres" className="tap-target text-sm font-medium text-accent hover:underline">Gérer les filtres</Link>
             </div>
             <QueryBoundary query={filters} empty={(d) => (d.length === 0 ? <EmptyState className="py-10" icon={<Filter />} title="Aucun filtre suivi" description="Suivez une recherche (marques, catégories, tailles, prix) : Track en tire le prix médian et le rythme des ventes." action={<Link to="/track/filtres" className={buttonClass({ variant: "secondary" })}>Suivre un filtre</Link>} /> : null)}>
               {(d) => (
@@ -79,7 +79,7 @@ function FilterRow({ filter, trends, loading, failed }: { filter: TrackFilter; t
           <span className="mt-1 block text-xs text-text-muted">{filter.lastReadAt ? `Lu ${formatRelative(filter.lastReadAt)}` : "Première lecture à venir"}</span>
         </span>
         <span className="flex items-center gap-3">
-          {prices.length > 1 ? <Sparkline values={prices} className="h-8 w-28" /> : <span className="w-28 text-xs text-text-muted">{loading ? "Chargement…" : failed ? "Tendance indisponible, réessayez plus tard" : "Pas encore de tendance"}</span>}
+          {prices.length > 1 ? <Sparkline values={prices} className="h-8 w-28" /> : <span className="w-28 text-xs text-text-muted">{loading ? <><span className="skeleton block h-3 w-24 rounded-md" aria-hidden /><span className="sr-only">Chargement de la tendance</span></> : failed ? "Tendance indisponible, réessayez plus tard" : "Pas encore de tendance"}</span>}
         </span>
         <span className="num text-right text-sm">
           <span className="block font-semibold text-text">{last?.medianPriceCents != null ? formatCents(last.medianPriceCents) : "—"}</span>

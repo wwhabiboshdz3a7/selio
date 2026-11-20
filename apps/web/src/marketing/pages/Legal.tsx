@@ -1,10 +1,35 @@
 import { useLocation } from "react-router";
-import { Alert } from "@selio/ui";
+import { Alert, Button } from "@selio/ui";
 import { Link } from "react-router";
 import { Container, Eyebrow, IndependenceNotice } from "../components";
 import { INDEPENDENCE_NOTICE, LEGAL_DRAFT_NOTICE, useMarketingMeta } from "../seo";
+import { TRACKING, categoriesInUse, openConsentPreferences, type TrackingConfig } from "../consent";
 
-const PAGES: Record<string, { title: string; sections: { h: string; p: string[] }[] }> = {
+/** Outils de mesure et de publicité configurés sur ce site (vides par défaut). */
+function trackingTools(cfg: TrackingConfig): string[] {
+  return [cfg.ga4Id ? "Google Analytics 4" : null, cfg.adsId ? "Google Ads" : null, cfg.metaPixelId ? "le pixel Meta" : null].filter((t): t is string => t !== null);
+}
+
+/**
+ * Section « Cookies et mesure publicitaire » : dit ce qui est réellement configuré. Sans
+ * identifiant (VITE_GA4_ID, VITE_GOOGLE_ADS_ID, VITE_META_PIXEL_ID), aucun outil n'est actif.
+ */
+export function cookiesSection(cfg: TrackingConfig): { id: string; h: string; p: string[] } {
+  const tools = trackingTools(cfg);
+  return {
+    id: "cookies",
+    h: "Cookies et mesure publicitaire",
+    p: [
+      "Sans votre accord, aucun cookie de mesure d'audience ni de publicité n'est déposé et aucun script de Google ou de Meta n'est chargé. Seuls sont enregistrés les éléments nécessaires au fonctionnement : session de connexion, thème clair ou sombre, et votre choix sur les cookies, gardé six mois.",
+      tools.length
+        ? `Avec votre accord, donné catégorie par catégorie, ce site utilise ${tools.join(", ")}${categoriesInUse(cfg).includes("mesure") ? " : la mesure d'audience compte les pages vues et la provenance des visites" : ""}${cfg.adsId || cfg.metaPixelId ? " ; la publicité sert à savoir quelle annonce vous a amené et si elle a mené à un clic sur l'essai ou à une inscription" : ""}. Ces services sont fournis par Google Ireland Limited et Meta Platforms Ireland Limited ; des données peuvent être transférées hors de l'Union européenne. [À compléter par l'avocat : garanties des transferts, durées de conservation des cookies (13 mois au plus).]`
+        : "Aucun outil de mesure d'audience ni de publicité n'est activé aujourd'hui sur ce site. S'il l'est un jour (Google Analytics, Google Ads, pixel Meta), un bandeau vous demandera votre accord avant tout dépôt, catégorie par catégorie.",
+      "Refuser est aussi simple qu'accepter, et vous pouvez changer d'avis à tout moment avec le lien « Cookies » en bas de chaque page. Retirer votre accord efface les cookies de mesure et de publicité de ce site.",
+    ],
+  };
+}
+
+const PAGES: Record<string, { title: string; sections: { id?: string; h: string; p: string[] }[] }> = {
   "/mentions-legales": {
     title: "Mentions légales",
     sections: [
@@ -20,7 +45,8 @@ const PAGES: Record<string, { title: string; sections: { h: string; p: string[] 
       { h: "Finalités et base légale", p: ["[À compléter : exécution du contrat, intérêt légitime pour la sécurité, consentement pour les notifications.]"] },
       { h: "Durées de conservation", p: ["Configurables par organisation (messages, journaux d'audit, requêtes IA). Valeurs par défaut documentées dans l'application. Suppression possible à tout moment depuis Paramètres › Données."] },
       { h: "Hébergement des données", p: ["Base de données, photos et modèles d'IA (mon IA perso) sur notre machine, en France. La vitrine statique est servie par un hébergeur de sites : [hébergeur à préciser]."] },
-      { h: "Sous-traitants", p: ["[À compléter : hébergeur de la vitrine, prestataire de paiement (Revolut), service d'email à choisir ; aucun service d'analyse tiers n'est embarqué.]"] },
+      { h: "Sous-traitants", p: [`[À compléter : hébergeur de la vitrine, prestataire de paiement (Revolut), service d'email à choisir.] ${trackingTools(TRACKING).length ? `Mesure et publicité, seulement avec votre accord : ${trackingTools(TRACKING).join(", ")}.` : "Aucun service de mesure d'audience ni de publicité n'est activé."}`] },
+      cookiesSection(TRACKING),
       { h: "Extension navigateur", p: ["Ce que l'extension lit et envoie est détaillé dans la politique de confidentialité de l'extension (/extension/confidentialite)."] },
       { h: "Vos droits", p: ["Accès, rectification, export (Paramètres › Données), effacement, opposition. Contact : [adresse à compléter]."] },
     ],
@@ -49,12 +75,13 @@ export default function Legal() {
         <Alert tone="warning" title="Version provisoire" className="mt-4">{LEGAL_DRAFT_NOTICE} Ce texte doit être complété et relu par l'avocat avant d'être définitif ; les passages entre crochets sont à renseigner.</Alert>
         <div className="prose-selio mt-6 max-w-[70ch] text-base text-text">
           {page.sections.map((s) => (
-            <div key={s.h}>
+            <div key={s.h} id={s.id} className={s.id ? "scroll-mt-20" : undefined}>
               <h2>{s.h}</h2>
               {s.p.map((p, i) => <p key={i} className="text-text-muted">{p}</p>)}
             </div>
           ))}
         </div>
+        {pathname === "/confidentialite" ? <p className="mt-6"><Button variant="secondary" size="sm" onClick={openConsentPreferences}>Gérer mes préférences de cookies</Button></p> : null}
         {pathname === "/confidentialite" ? <p className="mt-6 text-sm text-text-muted">Extension : <Link to="/extension/confidentialite" className="font-medium text-accent hover:underline">confidentialité de l'extension Selio</Link>.</p> : null}
         {page.sections.some((sec) => sec.p.includes(INDEPENDENCE_NOTICE)) ? null : <IndependenceNotice className="mt-8" />}
       </Container>

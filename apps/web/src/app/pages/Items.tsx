@@ -178,8 +178,8 @@ export default function Items() {
             {finances ? <option value="margin_desc">Marge projetée</option> : null}
           </Select>
           <div className="inline-flex shrink-0 rounded-md border border-border bg-surface p-0.5" role="radiogroup" aria-label="Affichage">
-            <button type="button" role="radio" aria-checked={view === "grid"} aria-label="Grille" title="Grille" onClick={() => setView("grid")} className={cn("inline-flex h-8 w-9 items-center justify-center rounded-sm", view === "grid" ? "bg-accent-soft text-accent" : "text-text-muted hover:text-text")}><LayoutGrid className="size-4" /></button>
-            <button type="button" role="radio" aria-checked={view === "table"} aria-label="Liste" title="Liste" onClick={() => setView("table")} className={cn("inline-flex h-8 w-9 items-center justify-center rounded-sm", view === "table" ? "bg-accent-soft text-accent" : "text-text-muted hover:text-text")}><List className="size-4" /></button>
+            <button type="button" role="radio" aria-checked={view === "grid"} aria-label="Grille" title="Grille" onClick={() => setView("grid")} className={cn("inline-flex h-8 w-9 items-center justify-center rounded-sm max-md:h-10 max-md:w-11", view === "grid" ? "bg-accent-soft text-accent" : "text-text-muted hover:text-text")}><LayoutGrid className="size-4" /></button>
+            <button type="button" role="radio" aria-checked={view === "table"} aria-label="Liste" title="Liste" onClick={() => setView("table")} className={cn("inline-flex h-8 w-9 items-center justify-center rounded-sm max-md:h-10 max-md:w-11", view === "table" ? "bg-accent-soft text-accent" : "text-text-muted hover:text-text")}><List className="size-4" /></button>
           </div>
         </div>
       </div>
@@ -222,7 +222,7 @@ export default function Items() {
       ) : null}
 
       {selected.size > 0 ? (
-        <section aria-label="Actions groupées" className="sticky top-2 z-20 mb-3 rounded-lg border border-accent/40 bg-surface p-2.5 shadow-md max-md:bottom-[calc(var(--dock-offset,0px)+12px)] max-md:top-auto max-md:fixed max-md:inset-x-3 max-md:mb-0">
+        <section aria-label="Actions groupées" className="sticky top-2 z-20 mb-3 rounded-lg border border-accent/40 bg-surface p-2.5 shadow-md max-md:bottom-[calc(env(safe-area-inset-bottom)+12px)] max-md:top-auto max-md:fixed max-md:inset-x-3 max-md:mb-0">
           <div className="flex flex-wrap items-center gap-1.5 text-sm">
             <span className="num mr-1 font-semibold">{selected.size} sélectionné(s)</span>
             <Select aria-label="Changer le statut" value="" disabled={bulk.isPending} onChange={(e) => e.target.value && runBulk({ action: "set_status", status: e.target.value as ItemStatus })} className="w-48">

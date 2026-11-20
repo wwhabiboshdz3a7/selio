@@ -1,6 +1,6 @@
 # Selio — ce qu'il reste à développer
 
-> À coller tel quel au début de la session, avec l'accès au dépôt GitHub.
+> Feuille de route du développement, rédigée par Ibrahim : à relire avant de reprendre le travail, avec l'accès au dépôt GitHub.
 
 ---
 

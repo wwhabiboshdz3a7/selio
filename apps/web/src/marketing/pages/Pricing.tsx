@@ -5,10 +5,10 @@ import { TRIAL_DAYS } from "@selio/contracts";
 import { helpEntries } from "@selio/domain/help";
 import { Alert, Segmented, buttonClass, cn, formatCents, formatNumber } from "@selio/ui";
 import { PLAN_COMPARISON, PLAN_OFFERS, PRICING, TRIAL_OFFER, annualPriceCents, foundersMonthlyCents, monthlyPriceCents, type ComparisonValue, type OfferKey, type PlanOffer } from "@selio/demo-data";
-import { useMarketingMeta } from "../seo";
+import { seoPage, softwareApplicationJsonLd, useMarketingMeta } from "../seo";
 import { showIndicativePricing } from "../../lib/env";
 import { STUDIO_SLIDER, annualMonthlyEquivalentCents, studioQuote } from "../pricing";
-import { CheckList, Container, Eyebrow, MarketingSection } from "../components";
+import { CheckList, Container, Eyebrow, JsonLd, MarketingSection, TrustRow } from "../components";
 import { DiscountedPrice, OfferHint, useOfferBanner } from "../../app/components/offers";
 import { discountedFor, offerConditionLabel } from "../../lib/offers";
 import type { PublicOffer } from "@selio/contracts";
@@ -38,6 +38,7 @@ export default function Pricing() {
   const faq = helpEntries().filter((e) => e.categoryId === "tarifs");
   return (
     <>
+      <JsonLd data={softwareApplicationJsonLd({ name: "Selio Manager", path: "/tarifs", description: seoPage("/tarifs").description, offers: true })} />
       <MarketingSection
         level={1}
         reveal
@@ -53,6 +54,7 @@ export default function Pricing() {
             </div>
             <p className="mt-1 text-sm text-text-muted">{TRIAL_OFFER.profile}</p>
             <div className="mt-4"><CheckList items={TRIAL_OFFER.highlights} /></div>
+            <TrustRow className="mt-5" only={["carte", "france", "mot-de-passe"]} />
           </div>
           <div className="flex shrink-0 flex-col gap-2 md:w-72">
             <p className="text-2xl font-semibold text-text">Gratuit <span className="text-sm font-normal text-text-muted">pendant {TRIAL_DAYS} jours</span></p>

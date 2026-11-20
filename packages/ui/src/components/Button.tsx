@@ -25,12 +25,13 @@ const variantClass: Record<ButtonVariant, string> = {
 };
 
 const sizeClass: Record<ButtonSize, string> = {
-  sm: "h-8 px-3 text-sm gap-1.5",
-  md: "h-9 px-3.5 text-base gap-1.5",
+  /* Sur téléphone, 44 px de haut (cible tactile) ; inchangé à partir de md. */
+  sm: "h-8 px-3 text-sm gap-1.5 max-md:h-11",
+  md: "h-9 px-3.5 text-base gap-1.5 max-md:h-11",
   lg: "h-11 px-4 text-base gap-2",
 };
 
-const baseClass = "inline-flex shrink-0 items-center justify-center rounded-md font-medium whitespace-nowrap select-none transition-colors";
+const baseClass = "press inline-flex shrink-0 items-center justify-center rounded-md font-medium whitespace-nowrap select-none";
 
 /**
  * Classes d'un bouton, pour un lien qui en a l'apparence (<Link className={buttonClass(…)}>) :
@@ -84,9 +85,9 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       aria-label={label}
       title={label}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 [&>svg]:size-4",
+        "press inline-flex shrink-0 items-center justify-center rounded-md disabled:cursor-not-allowed disabled:opacity-50 [&>svg]:size-4",
         variant === "ghost" ? "text-text-muted hover:bg-surface-muted hover:text-text" : "border border-border bg-surface text-text hover:bg-surface-muted",
-        size === "sm" ? "size-8" : size === "lg" ? "size-11" : "size-9",
+        size === "sm" ? "size-8 max-md:size-11" : size === "lg" ? "size-11" : "size-9 max-md:size-11",
         className,
       )}
       {...rest}

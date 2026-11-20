@@ -52,7 +52,7 @@ export default function Settings() {
       <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         <nav aria-label="Sections des paramètres" className="-mx-4 overflow-x-auto px-4 lg:mx-0 lg:px-0">
           <ul className="flex gap-1 lg:flex-col">
-            {items.map((it) => <li key={it.to}><NavLink to={it.to} className={({ isActive }) => cn("block rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors", isActive ? "bg-accent-soft text-accent" : "text-text-muted hover:bg-surface-muted hover:text-text")}>{it.label}</NavLink></li>)}
+            {items.map((it) => <li key={it.to}><NavLink to={it.to} className={({ isActive }) => cn("block rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors max-lg:py-3", isActive ? "bg-accent-soft text-accent" : "text-text-muted hover:bg-surface-muted hover:text-text")}>{it.label}</NavLink></li>)}
           </ul>
         </nav>
         <div className="min-w-0"><Outlet /></div>

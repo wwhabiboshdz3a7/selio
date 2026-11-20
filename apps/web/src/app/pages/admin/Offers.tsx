@@ -158,7 +158,7 @@ export function AdminOffers() {
             <EmptyState icon={<Megaphone />} title="Aucune offre pour le moment" description="Créez une offre : un nom, une remise, un code promo si vous le souhaitez, et le bandeau si vous voulez l'annoncer." />
           ) : (
             <TableWrap>
-              <Table>
+              <Table stack>
                 <thead>
                   <tr>
                     <Th>Offre</Th><Th>Code</Th><Th>Remise</Th><Th>Forfaits</Th><Th>Durée</Th><Th>Période</Th><Th numeric>Utilisations</Th><Th>Bandeau</Th><Th>État</Th><Th><span className="sr-only">Actions</span></Th>

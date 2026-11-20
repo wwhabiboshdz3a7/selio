@@ -78,7 +78,7 @@ export default function AdminAccounts() {
           <Card padding="none">
             <p className="px-4 pt-4 text-sm text-text-muted md:px-5" aria-live="polite">{rows.length} compte{rows.length > 1 ? "s" : ""}</p>
             <TableWrap className="mt-3 rounded-none border-0 border-t">
-              <Table dense>
+              <Table stack dense>
                 <thead><tr><Th>Compte</Th><Th>Qualification</Th><Th>Plan</Th><Th>Statut</Th><Th numeric className="hide-mobile">Membres</Th><Th className="hide-mobile">Inscrit</Th></tr></thead>
                 <tbody>
                   {rows.length === 0 ? <tr><td colSpan={6} className="h-16 text-center text-sm text-text-muted">Aucun compte ne correspond à ces filtres.</td></tr> : rows.map((a) => (

@@ -1,0 +1,559 @@
+# Tutoriels d'activation en production
+
+_Version du 20 novembre 2026, pour Ibrahim (et toute personne de l'équipe qui exploite le PC de production)._
+
+Un tutoriel court par chose à activer ou à régler. Chacun dit **ce qu'il faut**, **les étapes exactes**, **comment vérifier** et **comment revenir en arrière**. Les noms de variables sont ceux de `apps/api/.env.example`, `apps/worker/.env.example` et du code (`apps/api/src/config.ts`, `apps/worker/src/config.ts`) ; leur description complète est dans [CLES-ET-CONFIGURATION.md](CLES-ET-CONFIGURATION.md).
+
+## Avant de commencer : trois gestes qui reviennent partout
+
+**Modifier la configuration du serveur.** Toutes les variables du serveur sont dans un seul fichier, `deploy/.env`, sur le PC, dans Ubuntu (WSL). L'API et le worker le lisent tous les deux (`env_file` de `deploy/docker-compose.prod.yml`) : une seule valeur suffit pour les deux.
+
+```bash
+cd ~/selio/deploy
+nano .env                                             # modifier, enregistrer (Ctrl+O, Entrée), quitter (Ctrl+X)
+docker compose -f docker-compose.prod.yml up -d       # recrée l'API et le worker avec la nouvelle configuration
+docker compose -f docker-compose.prod.yml logs --tail=60 api worker
+```
+
+**Vérifier que tout répond.**
+
+```bash
+curl -s http://127.0.0.1:8787/api/health                     # sur le PC : {"ok":true,…}
+curl -s https://seliovprod.netlify.app/api/health            # depuis Internet, à travers Netlify et Tailscale
+```
+
+**Ne jamais coller un secret ailleurs que dans `deploy/.env`** : ni dans Git, ni dans Netlify, ni dans un message. Après chaque changement de `deploy/.env`, refaire la copie chiffrée du fichier ([SAUVEGARDE.md](SAUVEGARDE.md) §1.1).
+
+## Sommaire
+
+| N° | Tutoriel | État par défaut |
+|---|---|---|
+| 1 | [Emails avec Gmail](#1-emails-avec-gmail) | désactivé (`noop`) |
+| 2 | [Paiement simulé](#2-paiement-simulé-comprendre-et-forcer) | actif tant que Revolut n'est pas configuré |
+| 3 | [Paiement Revolut en bac à sable](#3-paiement-revolut-en-bac-à-sable) | non configuré |
+| 4 | [Paiement Revolut réel](#4-paiement-revolut-réel) | fermé (`REVOLUT_LIVE_ALLOWED=false`) |
+| 5 | [Parrainage](#5-parrainage) | fermé (`REFERRAL_ENABLED=false`) |
+| 6 | [Notifications push (clés VAPID)](#6-notifications-push-clés-vapid) | désactivées |
+| 7 | [Alertes de supervision sur le téléphone](#7-alertes-de-supervision-sur-le-téléphone) | à brancher |
+| 8 | [Ajouter un opérateur et qualifier un compte](#8-ajouter-un-opérateur-et-qualifier-un-compte) | — |
+| 9 | [Créer une offre et un code promo](#9-créer-une-offre-et-un-code-promo) | aucune offre |
+| 10 | [Photos : stockage S3 (MinIO)](#10-photos-stockage-s3-minio) | désactivé |
+| 11 | [Mettre le PC à jour](#11-mettre-le-pc-à-jour) | — |
+| 12 | [Sauvegardes](#12-sauvegardes) | à installer |
+| 13 | [Adresse fixe Tailscale](#13-adresse-fixe-tailscale) | en place |
+| 14 | [Nom de domaine](#14-nom-de-domaine) | provisoire (`seliovprod.netlify.app`) |
+| 15 | [Vérifier ou changer un modèle d'IA](#15-vérifier-ou-changer-un-modèle-dia) | actif |
+| 16 | [Selio Track en réel](#16-selio-track-en-réel) | **fermé, avis de l'avocat attendu** |
+| 17 | [Selio Cloud](#17-selio-cloud) | **fermé, avis de l'avocat attendu** |
+| 18 | [Achat automatique (Selio Bot)](#18-achat-automatique-selio-bot) | **fermé, avis de l'avocat attendu** |
+| 19 | [Achat réel](#19-achat-réel) | **fermé, avis de l'avocat attendu** |
+| 20 | [Publicité](#20-publicité) | voir PUBLICITE.md |
+
+---
+
+## 1. Emails avec Gmail
+
+Sert aux invitations, au mot de passe oublié, aux emails d'échec de paiement et aux alertes. Sans email, rien ne part (le journal le dit) et l'application propose des liens d'invitation à copier.
+
+**Il faut** : un compte Google avec la validation en deux étapes activée.
+
+**Étapes**
+1. Compte Google › Sécurité › **Validation en deux étapes** : l'activer si ce n'est pas fait.
+2. Compte Google › Sécurité › **Mots de passe des applications** : en créer un (nom : « Selio »). Google affiche 16 lettres en quatre groupes : les recopier **sans espaces**.
+3. Dans `deploy/.env` (l'arobase de l'adresse s'écrit `%40` dans l'URL) :
+   ```
+   EMAIL_PROVIDER=smtp
+   SMTP_URL=smtps://adresse%40gmail.com:MOTDEPASSEAPPLICATION@smtp.gmail.com:465
+   EMAIL_FROM=Selio <adresse@gmail.com>
+   ```
+4. `docker compose -f docker-compose.prod.yml up -d`.
+
+**Vérifier**
+- `docker compose -f docker-compose.prod.yml logs --tail=80 api | grep -i email` : plus d'avertissement « EMAIL_PROVIDER=noop ».
+- Sur la page de connexion du site, « Mot de passe oublié » avec votre adresse : l'email arrive (regarder aussi les indésirables).
+
+**Revenir en arrière** : `EMAIL_PROVIDER=noop`, vider `SMTP_URL`, relancer. Pour couper l'accès de Selio au compte Google : supprimer le mot de passe d'application dans Compte Google › Sécurité.
+
+**À savoir** : Gmail limite à environ 500 envois par jour. Au-delà, ou avec un nom de domaine (tutoriel 14), passer à un service d'email transactionnel avec SPF et DKIM sur le domaine de `EMAIL_FROM`.
+
+---
+
+## 2. Paiement simulé : comprendre et forcer
+
+C'est le mode actuel. Le client choisit son offre dans Paramètres › Abonnement sans carte (« Paiement pas encore activé : aucune carte demandée, rien ne sera débité »), son essai de 14 jours court, et à la fin de l'essai son compte passe en accès de base « en attente du paiement ». Rien n'est jamais débité.
+
+**Il faut** : rien.
+
+**Étapes**
+1. Mode automatique (par défaut) : `PAYMENT_MODE=auto` et `REVOLUT_SECRET_KEY` vide dans `deploy/.env` → paiement simulé.
+2. Pour forcer le simulé même avec une clé Revolut (par exemple pendant une panne, ou pour une période d'essais gratuits) : `PAYMENT_MODE=simulated`, puis relancer.
+
+**Vérifier**
+- `curl -s http://127.0.0.1:8787/api/capabilities` : le paiement y est annoncé simulé.
+- En tant que client : Paramètres › Abonnement affiche « Choisir cette offre » et le récapitulatif sans formulaire de carte.
+
+**Gérer un compte « en attente du paiement »** : Selio Admin › Comptes › fiche du compte › **Prolonger l'essai** (1 à 90 jours) ou **Offrir l'accès** (tutoriel 8).
+
+**Revenir en arrière** : `PAYMENT_MODE=auto` (Revolut redevient actif si la clé est présente), relancer. Une organisation encore en essai verra « Enregistrer ma carte » ; aucune migration manuelle n'est nécessaire.
+
+---
+
+## 3. Paiement Revolut en bac à sable
+
+**Il faut** : un compte **Revolut Business** avec **Merchant** activé ; l'adresse fixe Tailscale de l'API (celle de la règle `/api/*` de `netlify.toml`).
+
+**Étapes**
+1. Application Revolut Business › Merchant › API : créer les clés du **bac à sable**.
+2. Dans `deploy/.env` :
+   ```
+   PAYMENT_MODE=auto
+   REVOLUT_SECRET_KEY=sk_…              # clé SECRÈTE du bac à sable
+   REVOLUT_MODE=sandbox
+   REVOLUT_LIVE_ALLOWED=false
+   FRANCHISE_TVA=false                  # true si Selio est en franchise en base de TVA (à valider avec le comptable)
+   ```
+3. Relancer, puis lire le journal : « Paiement Revolut en mode bac à sable ».
+4. Créer le webhook, une fois, depuis Ubuntu (jamais depuis le navigateur). L'adresse est celle de l'API suivie de `/api/billing/webhook/revolut` :
+   ```bash
+   read -s REVOLUT_SECRET_KEY            # coller la clé sk_… (rien ne s'affiche), Entrée
+   curl -X POST https://sandbox-merchant.revolut.com/api/1.0/webhooks \
+     -H "Authorization: Bearer $REVOLUT_SECRET_KEY" \
+     -H "Revolut-Api-Version: 2026-08-17" \
+     -H "Content-Type: application/json" \
+     -d '{"url":"https://<adresse>.ts.net/api/billing/webhook/revolut","events":["ORDER_COMPLETED","ORDER_AUTHORISED","ORDER_PAYMENT_DECLINED","ORDER_PAYMENT_FAILED","ORDER_CANCELLED"]}'
+   unset REVOLUT_SECRET_KEY
+   ```
+5. La réponse contient `signing_secret` (`wsk_…`), montré une seule fois : le copier dans `REVOLUT_WEBHOOK_SECRET` de `deploy/.env`, relancer.
+
+**Vérifier** (avec les cartes de test Revolut, sur un compte de l'équipe)
+- Pendant l'essai : « Enregistrer ma carte » → autorisation de 1 €, annulée aussitôt ; la carte apparaît enregistrée.
+- Paiement hors essai → facture `SEL-AAAA-000001` dans Paramètres › Factures.
+- Carte refusée → relances J+1, J+3, J+7 (emails si le tutoriel 1 est fait) ; « Changer de carte » → débit retenté dans l'heure.
+- Résiliation puis reprise.
+- Le journal de démarrage ne dit plus « webhooks refusés ».
+
+**Revenir en arrière** : vider `REVOLUT_SECRET_KEY` et `REVOLUT_WEBHOOK_SECRET` (ou `PAYMENT_MODE=simulated`), relancer : retour au paiement simulé (tutoriel 2).
+
+---
+
+## 4. Paiement Revolut réel
+
+**Il faut** : le tutoriel 3 entièrement validé ; le régime de TVA et les mentions des factures validés avec le comptable ; les conditions de vente relues par l'avocat.
+
+**Étapes**
+1. Netlify › Site configuration › Environment variables : renseigner `VITE_INVOICE_ISSUER_NAME`, `VITE_INVOICE_ISSUER_ADDRESS` (lignes séparées par `|`), `VITE_INVOICE_ISSUER_SIREN`, `VITE_INVOICE_ISSUER_VAT`, `VITE_INVOICE_ISSUER_EMAIL` ; puis Deploys › Trigger deploy › **Clear cache and deploy site**.
+2. Revolut Business › Merchant › API : créer les clés **live**.
+3. Créer un second webhook, même commande qu'au tutoriel 3 mais vers `https://merchant.revolut.com/api/1.0/webhooks`, avec la clé live.
+4. Dans `deploy/.env` :
+   ```
+   REVOLUT_SECRET_KEY=sk_…              # clé live
+   REVOLUT_WEBHOOK_SECRET=wsk_…         # secret du webhook live
+   REVOLUT_MODE=live
+   REVOLUT_LIVE_ALLOWED=true
+   ```
+5. Relancer. Sans `REVOLUT_LIVE_ALLOWED=true`, l'API et le worker refusent de démarrer : c'est voulu.
+
+**Vérifier** : un premier abonnement réel sur un compte de l'équipe (carte personnelle), facture sans aucun « à compléter », paiement visible dans Revolut Business.
+
+**Revenir en arrière**
+- En urgence : `PAYMENT_MODE=simulated`, relancer. Plus aucun formulaire de carte n'est proposé et le worker ne débite jamais en mode simulé ; les abonnements restent en base.
+- Pour revenir au bac à sable : remettre les clés et le secret du bac à sable, `REVOLUT_MODE=sandbox`, `REVOLUT_LIVE_ALLOWED=false`.
+- Une autorisation de vérification encaissée par erreur (audit `billing.unexpected_capture`) se rembourse à la main depuis Revolut Business.
+
+---
+
+## 5. Parrainage
+
+« Un mois offert aux deux » : la marraine et la filleule reçoivent un mois au premier paiement **réellement encaissé** de la filleule.
+
+**Il faut** : le paiement réel (tutoriel 4) : sans paiement encaissé, aucun mois n'est jamais crédité ; le texte des conditions du parrainage relu par l'avocat ; la décision d'Ibrahim (et le plafond : 12 mois offerts par marraine sur 12 mois).
+
+**Étapes**
+1. `REFERRAL_ENABLED=true` dans `deploy/.env` (l'API et le worker le lisent tous les deux, ce qui couvre aussi le premier paiement encaissé par le worker en fin d'essai).
+2. Relancer.
+
+**Vérifier**
+- En tant que titulaire d'un compte client : Paramètres › **Parrainage** apparaît, avec un code de 6 caractères et le lien `/inscription?parrain=CODE`.
+- Ouvrir ce lien dans une fenêtre privée : le champ du code est prérempli à l'inscription.
+- Après le premier paiement de la filleule : facture à 0 € « Mois offert — parrainage » au renouvellement suivant, pour les deux.
+
+**Revenir en arrière** : `REFERRAL_ENABLED=false`, relancer. La page disparaît, les routes `/api/referral*` répondent 404, un code saisi à l'inscription est ignoré avec un message (l'inscription n'est jamais bloquée). Fermer ne supprime rien en base.
+
+---
+
+## 6. Notifications push (clés VAPID)
+
+Sert aux alertes de Selio Bot (bonnes affaires, paiement à valider), aux alertes de tendance de Track et aux alertes de supervision.
+
+**Il faut** : rien d'autre que le PC. Aucun service payant : les notifications passent par les services gratuits des navigateurs.
+
+**Étapes**
+1. Générer la paire de clés, **une seule fois** :
+   ```bash
+   cd ~/selio
+   pnpm --filter @selio/worker exec web-push generate-vapid-keys
+   ```
+2. Dans `deploy/.env` :
+   ```
+   VAPID_PUBLIC_KEY=<Public Key>
+   VAPID_PRIVATE_KEY=<Private Key>        # secret
+   VAPID_SUBJECT=mailto:<adresse de contact réelle>
+   ```
+3. Relancer.
+
+**Vérifier**
+- `docker compose -f docker-compose.prod.yml logs api worker | grep -i "web push"` : « Notifications Web Push activées (clés VAPID). » (API) et « Radar : notifications Web Push activées » (worker).
+- Sur le téléphone : sur iPhone, ajouter d'abord Selio à l'écran d'accueil (Safari › Partager › Sur l'écran d'accueil) et l'ouvrir depuis son icône. Puis Paramètres › Notifications › **Activer les alertes sur ce téléphone** › **Envoyer une notification de test**.
+
+**Revenir en arrière** : vider `VAPID_PUBLIC_KEY` et `VAPID_PRIVATE_KEY`, relancer : les alertes restent en file et expirent après 12 h. Ne changer les clés qu'en cas de fuite : chaque appareil devrait se réabonner. Ranger les clés avec la copie chiffrée de `deploy/.env`.
+
+---
+
+## 7. Alertes de supervision sur le téléphone
+
+Le worker vérifie chaque minute `/api/health` et `/api/ai/health` ; après 3 échecs, il prévient les opérateurs techniques (Web Push et email), puis toutes les 60 minutes, et quand tout revient.
+
+**Il faut** : le tutoriel 6 (notifications), idéalement le tutoriel 1 (email).
+
+**Étapes**
+1. Générer un jeton : `openssl rand -hex 24`.
+2. Dans `deploy/.env` :
+   ```
+   OPERATOR_EMAILS=<email d'Ibrahim>       # destinataires des alertes techniques
+   AI_HEALTH_TOKEN=<jeton>                 # protège /api/ai/health (même valeur pour l'API et le worker)
+   PUBLIC_API_URL=http://api:8787          # l'API vue depuis le conteneur du worker (nom du service Docker)
+   ```
+3. Relancer ; activer les notifications sur le téléphone de l'opérateur (tutoriel 6).
+
+**Vérifier** : `docker compose -f docker-compose.prod.yml stop api`, attendre 3 à 4 minutes → alerte reçue ; `docker compose -f docker-compose.prod.yml start api` → « rétabli ». Selio Admin › Supervision montre les alertes des 7 derniers jours.
+
+**Revenir en arrière** : vider `AI_HEALTH_TOKEN` (seule `/api/health` reste contrôlée) ou retirer l'adresse de `OPERATOR_EMAILS` (plus personne n'est prévenu, les pannes restent enregistrées).
+
+**À savoir** : si tout le PC tombe, le worker ne peut prévenir personne. Une sonde externe gratuite sur `https://seliovprod.netlify.app/api/health`, ou `SUPERVISION_HEARTBEAT_URL`, couvre ce cas ([SUPERVISION.md](SUPERVISION.md)).
+
+---
+
+## 8. Ajouter un opérateur et qualifier un compte
+
+**Il faut** : que la personne ait déjà créé son compte Selio (inscription normale).
+
+**Étapes : donner l'accès à Selio Admin**
+1. Dans `deploy/.env`, ajouter son adresse (plusieurs adresses : séparées par des virgules, sans espace) :
+   - rôle **technique** (tout, santé, supervision, IA, interrupteurs) : `OPERATOR_EMAILS=ibrahim@…`
+   - rôle **business** (croissance, comptes, offres commerciales, usage de Track) : `OPERATOR_BUSINESS_EMAILS=elias@…`
+2. Relancer. Les listes sont relues à chaque requête : pas de réinscription, pas de SQL.
+3. La personne se déconnecte puis se reconnecte : elle arrive sur `/admin` avec le badge « Technique » ou « Business ».
+
+**Étapes : qualifier un compte** (Selio Admin › Comptes, `/admin/comptes`, puis la fiche du compte)
+- **Qualification et note interne** : client, bêta, partenaire, équipe Selio, test ou bloqué, et une note de 500 caractères au plus, jamais montrée au client.
+- **Qualifier « Équipe Selio »** : qualification « Équipe Selio » et offre Agence offerte sans fin (pour les comptes d'Ibrahim et d'Elias).
+- **Offrir l'accès** : une offre payante jusqu'à une date, sans débit (refusé sur un compte qui paie déjà par carte) ; **Retirer l'accès offert** le ramène à l'accès de base, données conservées.
+- **Prolonger l'essai** : de 1 à 90 jours.
+- **Bloquer le compte** : la connexion de ses membres est refusée (« Ce compte Selio est suspendu… »).
+- **Ajouter à mon organisation** : fait entrer la personne dans votre organisation, avec le rôle choisi.
+
+**Vérifier** : chaque action apparaît dans l'historique de la fiche.
+
+**Revenir en arrière** : retirer l'adresse de `OPERATOR_EMAILS` / `OPERATOR_BUSINESS_EMAILS` et relancer ; changer la qualification depuis la fiche.
+
+**Si `/admin` affiche « Le serveur n'est pas à jour : relancez la mise à jour »** : le site est plus récent que l'API, faire le tutoriel 11.
+
+---
+
+## 9. Créer une offre et un code promo
+
+**Il faut** : un compte opérateur (technique ou business).
+
+**Étapes** (Selio Admin › **Offres**, `/admin/offres`)
+1. **Nouvelle offre**.
+2. **Nom affiché** (par exemple « Printemps »).
+3. **Code promo** (facultatif) : 3 à 24 caractères, lettres, chiffres et tirets, par exemple `PRINTEMPS`.
+4. Remise : **Pourcentage** (1 à 100 ; à 100 %, facture à 0 € sans débit) ou **Montant fixe** (retiré de chaque échéance, une fois sur l'échéance annuelle).
+5. Forfaits concernés (aucun coché = tous).
+6. **Durée de la remise** : un **nombre de mois** (1 à 36) ou tant que l'abonnement dure.
+7. **Début** et **Fin (incluse)** (facultatifs), **Maximum d'utilisations** (vide : sans limite).
+8. **Afficher dans le bandeau** si l'offre doit apparaître en haut de la vitrine et de l'application ; l'aperçu du bandeau se met à jour.
+9. **Créer l'offre**.
+
+**Vérifier**
+- Le bandeau apparaît sur la vitrine (si coché).
+- `https://seliovprod.netlify.app/inscription?code=PRINTEMPS` préremplit le champ « Code promo ».
+- Côté client : Paramètres › Abonnement › **Ajouter un code promo** › **Appliquer** ; le prix remisé s'affiche à côté du prix normal.
+
+**Revenir en arrière** : **Désactiver** l'offre (elle ne s'applique plus aux nouvelles organisations). Une offre jamais utilisée peut être supprimée ; une offre déjà utilisée est archivée (« Archiver l'offre »). Les organisations qui l'ont déjà appliquée gardent leur remise pour la durée prévue.
+
+---
+
+## 10. Photos : stockage S3 (MinIO)
+
+Aujourd'hui, sans stockage, `/api/uploads` répond 503 et les photos restent des URL en base. Le stockage sert surtout à Selio Studio (préparation par clés de stockage, photos portées).
+
+> **Procédure proposée, jamais essayée sur le PC** (MinIO est « à valider » dans [BUILD_STATUS.md](BUILD_STATUS.md)). La suivre sur un compte de l'équipe et noter le résultat.
+
+**Il faut** : de la place sur le disque ; une adresse HTTPS joignable **par les navigateurs** (les URLs signées sont appelées directement) **et par l'API**.
+
+**Étapes**
+1. Lancer MinIO à côté des autres conteneurs, avec des identifiants longs (jamais ceux de développement) :
+   ```bash
+   MINIO_USER=selio-root-$(openssl rand -hex 4); MINIO_PASS=$(openssl rand -hex 24)
+   echo "$MINIO_USER / $MINIO_PASS"     # à ranger dans le gestionnaire de mots de passe
+   docker run -d --name selio-minio --restart unless-stopped \
+     -p 127.0.0.1:9000:9000 -v selio_minio:/data \
+     -e MINIO_ROOT_USER="$MINIO_USER" -e MINIO_ROOT_PASSWORD="$MINIO_PASS" \
+     -e MINIO_API_CORS_ALLOW_ORIGIN=https://seliovprod.netlify.app \
+     minio/minio server /data
+   ```
+2. Créer le bucket et un utilisateur limité à lui (jamais le compte racine pour l'API) :
+   ```bash
+   docker run --rm --network host -e MC_HOST_local="http://$MINIO_USER:$MINIO_PASS@127.0.0.1:9000" minio/mc \
+     sh -c 'mc mb --ignore-existing local/selio-photos && mc anonymous set none local/selio-photos'
+   ```
+   Puis créer l'utilisateur de l'API (`mc admin user add`) avec une politique limitée à `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` sur `selio-photos/*` ([STOCKAGE.md](STOCKAGE.md)).
+3. Publier MinIO en HTTPS avec Tailscale Funnel, sur un second port public (PowerShell sur Windows) : `tailscale funnel --bg --https=8443 9000`, puis `tailscale funnel status` pour lire l'adresse `https://<machine>.<réseau>.ts.net:8443`.
+4. Dans `deploy/.env` :
+   ```
+   STORAGE_ENDPOINT=https://<machine>.<réseau>.ts.net:8443
+   STORAGE_BUCKET=selio-photos
+   STORAGE_ACCESS_KEY=<utilisateur de l'API>
+   STORAGE_SECRET_KEY=<son secret>
+   STORAGE_REGION=fr-mrs-1
+   STORAGE_FORCE_PATH_STYLE=true
+   STORAGE_PRESIGN_TTL_SECONDS=900
+   ```
+5. Relancer.
+
+**Vérifier**
+- Le journal de l'API ne signale plus « stockage absent ».
+- Depuis le conteneur de l'API, l'adresse répond : `docker compose -f docker-compose.prod.yml exec api wget -qO- https://<machine>.<réseau>.ts.net:8443/minio/health/live; echo $?` (0 attendu).
+- Dans Studio, préparer une annonce avec une photo : aucune erreur 503, et l'objet apparaît sous `org/<organisation>/` (`mc ls`).
+
+**Revenir en arrière** : vider `STORAGE_ENDPOINT`, relancer (retour au 503 propre) ; `tailscale funnel --https=8443 off` ; `docker stop selio-minio`. Les objets restent dans le volume `selio_minio`.
+
+**Ensuite** : ajouter les photos à la sauvegarde (`BACKUP_MINIO_SOURCE`, tutoriel 12).
+
+---
+
+## 11. Mettre le PC à jour
+
+À faire **après chaque mise en ligne du site** sur Netlify : un site plus récent que l'API affiche « Le serveur n'est pas à jour » dans Selio Admin.
+
+**Il faut** : une sauvegarde récente si la mise à jour contient une migration (tutoriel 12).
+
+**Étapes**
+```bash
+cd ~/selio
+git status                                   # aucun fichier modifié à la main : sinon, s'arrêter et regarder
+git log --oneline -1                         # noter l'empreinte actuelle (pour revenir en arrière)
+git pull
+pnpm install --frozen-lockfile
+cd deploy
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml logs --tail=60 migrate api worker
+```
+
+**Vérifier**
+- `docker compose -f docker-compose.prod.yml ps` : `migrate` « exited (0) », `api`, `worker`, `postgres`, `redis` en marche.
+- `curl -s http://127.0.0.1:8787/api/health` puis `https://seliovprod.netlify.app/api/health`.
+- `/admin` n'affiche plus « Le serveur n'est pas à jour ».
+
+**Revenir en arrière**
+```bash
+cd ~/selio
+git checkout <empreinte notée avant>
+cd deploy && docker compose -f docker-compose.prod.yml up -d --build
+```
+Les migrations sont additives : l'ancienne version fonctionne sur la base plus récente. Revenir ensuite sur la branche de production avec `git checkout <branche>` puis `git pull`. Ne jamais supprimer une migration déjà appliquée.
+
+**Si `migrate` échoue** : lire son message dans le journal, ne rien forcer, corriger puis relancer `up -d --build` ([INSTALLATION-WINDOWS.md](INSTALLATION-WINDOWS.md) §11).
+
+---
+
+## 12. Sauvegardes
+
+Chaque nuit à 03:30 : base PostgreSQL (et photos MinIO si réglé), chiffrées avec `age`, copiées hors du PC, gardées 30 jours. Procédure complète : [SAUVEGARDE.md](SAUVEGARDE.md).
+
+**Il faut** : `age` et `rclone` dans Ubuntu ; une destination hors du PC (portable de secours en SFTP, disque chez un proche…) ; la clé privée `age` **seulement** sur le portable de secours et sur papier.
+
+**Étapes**
+1. Sur le portable de secours : `age-keygen -o ~/.config/selio/selio-sauvegarde.key` (noter la ligne « Public key: age1… ») ; une seconde clé imprimée et rangée.
+2. Sur le PC (Ubuntu) :
+   ```bash
+   sudo apt-get install -y age rclone
+   sudo install -d -m 700 /etc/selio /var/backups/selio
+   sudo install -m 600 ~/selio/scripts/sauvegarde/backup.env.example /etc/selio/backup.env
+   sudoedit /etc/selio/backup.env
+   ```
+   Renseigner au minimum : `BACKUP_PG_DOCKER_CONTAINER=deploy-postgres-1` (nom exact : `docker ps`), `BACKUP_PG_USER=selio`, `BACKUP_PG_DB=selio`, `BACKUP_AGE_RECIPIENT=age1…,age1…`, `BACKUP_RCLONE_REMOTE=selio-hors-machine:selio-sauvegardes`, `BACKUP_RCLONE_CONFIG=/etc/selio/rclone.conf` (et `BACKUP_MINIO_SOURCE` si le tutoriel 10 est fait).
+3. Configurer la destination rclone dans `/etc/selio/rclone.conf` (`chmod 600`), avec des identifiants qui ne donnent accès qu'à ce dossier.
+4. Premier lancement à la main :
+   ```bash
+   sudo ~/selio/scripts/sauvegarde/backup.sh; echo "code $?"
+   sudo rclone --config /etc/selio/rclone.conf lsf selio-hors-machine:selio-sauvegardes
+   ```
+5. Planifier : `sudo crontab -e`, recopier la ligne de `scripts/sauvegarde/crontab.example` en remplaçant `/opt/selio` par le chemin réel du dépôt (`/home/<utilisateur>/selio`). Dans WSL, vérifier que `cron` tourne : `systemctl status cron` (ou `sudo service cron start`).
+
+**Vérifier**
+- Code de sortie **0** (1 : échec ; 2 : configuration invalide ; 3 : sauvegarde locale faite mais copie hors du PC absente).
+- Le 1er du mois, test de restauration sur le portable : `restore-test.sh --remote` ([SAUVEGARDE.md](SAUVEGARDE.md) §6), résultat noté dans le registre.
+
+**Revenir en arrière** : retirer la ligne de `sudo crontab -e`. Les sauvegardes déjà faites restent chiffrées et tournent sur 30 jours.
+
+**Toute restauration** se termine par `select app_cloud_after_restore();` (obligatoire).
+
+---
+
+## 13. Adresse fixe Tailscale
+
+Déjà en place : Netlify relaie `/api/*` vers une adresse `https://<machine>.<réseau>.ts.net` qui ne change jamais. À refaire seulement sur un nouveau PC ou après une réinstallation.
+
+**Il faut** : un compte Tailscale gratuit ; Tailscale pour **Windows** (le service démarre avec le PC).
+
+**Étapes**
+1. Installer Tailscale pour Windows et se connecter.
+2. Console Tailscale › DNS : activer **MagicDNS** et **HTTPS Certificates**.
+3. PowerShell (utilisateur normal) : `tailscale funnel --bg 8787`, puis `tailscale funnel status`. Si un lien d'autorisation s'affiche, l'ouvrir, accepter, relancer la commande.
+4. Mettre l'adresse dans `netlify.toml`, règle `from = "/api/*"` (`to = "https://<adresse>.ts.net/api/:splat"`), pousser sur la branche de production : Netlify redéploie.
+
+**Vérifier** : `curl -s https://<adresse>.ts.net/api/health` puis `curl -s https://seliovprod.netlify.app/api/health` répondent `{"ok":true,…}`.
+
+**Revenir en arrière** : `tailscale funnel --https=443 off` coupe l'accès public (le site affiche alors « Selio revient dans un instant »). L'ancien tunnel rapide Cloudflare reste décrit dans [INSTALLATION-WINDOWS.md](INSTALLATION-WINDOWS.md) §6.b.
+
+**Dépannage d'une 502** : [INSTALLATION-WINDOWS.md](INSTALLATION-WINDOWS.md) §11 (veille du PC, Docker Desktop arrêté, configuration).
+
+---
+
+## 14. Nom de domaine
+
+**Il faut** : un domaine acheté (registraire au choix) ; la décision d'Ibrahim sur le nom définitif.
+
+**Étapes**
+1. Netlify › Domain management › **Add a domain** : saisir le domaine, suivre les enregistrements DNS demandés (ou déléguer les serveurs DNS à Netlify). Le certificat HTTPS est automatique.
+2. Dans `deploy/.env` : `PUBLIC_WEB_URL=https://<domaine>` et `CORS_ORIGINS=https://<domaine>` (garder aussi `https://seliovprod.netlify.app` dans `CORS_ORIGINS`, séparés par une virgule, pendant la transition). Relancer.
+3. Netlify › Environment variables : `VITE_API_BASE_URL=https://<domaine>` ; redéployer (**Clear cache and deploy site**). La règle `/api/*` de `netlify.toml` ne change pas : elle vaut pour tous les domaines du site.
+4. Dans le code, mettre le domaine à jour **ensemble** : `SITE_ORIGIN` (`apps/web/src/marketing/seo.ts`), `apps/web/public/sitemap.xml`, `apps/web/public/robots.txt` et `apps/web/index.html` (le test `seo.test.ts` vérifie qu'ils concordent), puis déclarer le sitemap dans la Search Console.
+5. Avec le domaine : `EMAIL_FROM` sur une adresse du domaine (SPF et DKIM chez le service d'email), `VAPID_SUBJECT=mailto:contact@<domaine>`, `MINIO_API_CORS_ALLOW_ORIGIN` (tutoriel 10).
+6. Revolut : si un webhook pointe vers l'adresse Netlify, le recréer ; un webhook vers l'adresse Tailscale ne change pas.
+
+**Vérifier** : `https://<domaine>` s'ouvre, connexion et inscription fonctionnent (cookie bien posé), `https://<domaine>/api/health` répond, un email de mot de passe oublié contient des liens vers le domaine.
+
+**Revenir en arrière** : remettre `PUBLIC_WEB_URL`, `CORS_ORIGINS` et `VITE_API_BASE_URL` sur `https://seliovprod.netlify.app`, relancer, redéployer. L'adresse Netlify d'origine reste valable.
+
+---
+
+## 15. Vérifier ou changer un modèle d'IA
+
+Les trois modèles (Ministral 3 8B, Qwen3-VL 8B, Qwen3-Embedding 0.6B) tournent dans Ollama pour Windows. Détails : [OLLAMA-SETUP.md](OLLAMA-SETUP.md).
+
+**Étapes : vérifier**
+```bash
+cd ~/selio
+AI_PROVIDER=ollama OLLAMA_BASE_URL=http://127.0.0.1:11434 OLLAMA_MODEL=ministral-3:8b pnpm ai:diagnose
+```
+Les trois modèles doivent être « présent » (la ligne OCR peut rester « non configuré »). Dans l'application : Paramètres › Assistant IA › état « Opérationnel ».
+
+**Étapes : changer un modèle**
+1. PowerShell : `ollama pull <nouveau nom>` puis `ollama list`.
+2. Dans `deploy/.env` : `OLLAMA_MODEL`, `OLLAMA_VISION_MODEL` ou `OLLAMA_EMBED_MODEL`. Relancer.
+3. Relancer `pnpm ai:diagnose`, puis mesurer avec `pnpm ai:bench` et reporter les chiffres dans OLLAMA-SETUP.md.
+
+**Revenir en arrière** : remettre l'ancien nom dans `deploy/.env` et relancer (l'ancien modèle reste dans `ollama list` tant qu'il n'est pas supprimé). Changer de modèle d'embeddings rend le cache de vecteurs inutile pour l'ancien modèle : il se reconstruit au fil des estimations.
+
+---
+
+## 16. Selio Track en réel
+
+> **Fermé tant que l'avocat n'a pas validé.** `TRACK_LIVE_ENABLED=false` : Track lit le simulateur, données marquées « démonstration ». Procédure complète et à jour : [TRACK.md](TRACK.md) §7.
+
+**Prérequis (tous obligatoires)**
+1. Avis écrit de l'avocat sur la lecture des pages publiques du catalogue et l'usage des données (statistiques, base de références, entraînement), rangé dans [DECISIONS.md](DECISIONS.md).
+2. Accord daté d'Ibrahim dans DECISIONS.md.
+3. Adaptateur du catalogue vérifié à la main sur une vraie page publique, depuis un navigateur ordinaire de l'équipe (adaptateur `v2` si besoin).
+4. `pnpm cloud:bench` passé sur le PC pour régler `CLOUD_MAX_BROWSERS`.
+5. Migrations jusqu'à `0021_track_suivi.sql` appliquées, API et worker de la même version (tutoriel 11).
+6. Selio Cloud prêt techniquement : Chromium dans le conteneur du worker, bac à sable vérifié (tutoriel 17, partie technique). **Aujourd'hui, l'image du worker n'a pas Chromium : ce prérequis bloque.**
+
+**Étapes**
+1. Vérifier hors ligne : `pnpm track:check -- --env-file deploy/.env --live --db` → aucune ligne `[MANQUE]`.
+2. `deploy/.env` : `TRACK_LIVE_ENABLED=true`, `CLOUD_ENABLED=true`, `CLOUD_CHROMIUM_PATH=<chemin dans le conteneur>`, `TRACK_MAX_PAGES_PER_MINUTE=2`, `TRACK_READ_INTERVAL_MINUTES=120`, `TRACK_SELLER_ANALYSIS_ENABLED=false`.
+3. `/admin/track` › **Mettre Track en pause** (raison : « passage au réel »), puis relancer l'API et le worker.
+4. Journal du worker : « Track : lecture en direct des pages publiques OUVERTE » ; `/admin/track` : « Interrupteur : Ouvert », « Source : En direct ».
+5. **Reprendre** quand vous êtes prêt à observer.
+
+**Vérifier** : `/admin/track` (dernières lectures « Lue », erreurs et blocages, ralentissement). **Un seul** CAPTCHA, blocage ou « trop de requêtes » la première semaine → retour en arrière.
+
+**Revenir en arrière** : `/admin/track` › **Mettre Track en pause** (immédiat), puis `TRACK_LIVE_ENABLED=false` et relancer ; `CLOUD_ENABLED=false` coupe toute lecture en direct. Montée par paliers ensuite : 2 → 4 → 6 → 10 pages par minute, une semaine sans signal par palier.
+
+---
+
+## 17. Selio Cloud
+
+> **Fermé tant que l'avocat n'a pas validé.** `CLOUD_ENABLED=false` : réglages et journal consultables, rien ne s'exécute. Détails : [CLOUD.md](CLOUD.md) et [PRODUCTION-CHECKLIST.md](PRODUCTION-CHECKLIST.md).
+
+**Prérequis**
+1. Avis écrit de l'avocat sur le Cloud (conditions de Vinted, texte d'accord `CLOUD_CONSENT_TEXT`, conditions de vente) ; si le texte change, nouvelle `CLOUD_CONSENT_VERSION`.
+2. Décisions d'Ibrahim : offre Pro (`CLOUD_PRO_OPTION`, prix), actions lourdes (`CLOUD_HEAVY_ACTIONS=false` tant que rien n'est décidé), coupe-circuit de 60 min.
+3. **Image du worker avec Chromium** (Debian, `playwright-core install --with-deps chromium`, polices) et **bac à sable** opérationnel (worker hors root, profil seccomp adapté, jamais `CLOUD_CHROMIUM_SANDBOX=false`) : [DEPLOYMENT.md](DEPLOYMENT.md), partie « Selio Cloud ». **Pas encore fait.**
+4. Dossier de travail en mémoire vive (`CLOUD_PROFILE_DIR` sur un tmpfs), pare-feu des plages privées pour Chromium.
+5. `CLOUD_CHROMIUM_PATH=… pnpm --filter @selio/cloud test` vert ; `pnpm cloud:bench` à 5, 10, 25, 50 navigateurs, `CLOUD_MAX_BROWSERS` fixé d'après la mesure.
+6. Sélecteurs propres au Cloud validés sur un **compte Vinted de test de l'équipe** (adaptateur `v2`).
+
+**Étapes (équipe d'abord)**
+1. `deploy/.env` : `CLOUD_ENABLED=true`, `CLOUD_CHROMIUM_PATH=<chemin>`, `CLOUD_MAX_BROWSERS=<mesuré>`, `CLOUD_PROFILE_DIR=/var/lib/selio-cloud`, `CLOUD_ACTIVE_HOURS=8-23`. Relancer.
+2. Journal du worker : « Cloud activé … sandbox: true » (et non « Cloud désactivé : … bac à sable »).
+3. Sur le compte de test : espace `/cloud` › accepter l'accord › relier le compte Vinted › se connecter dans la fenêtre sécurisée › attendre une réponse envoyée et confirmée dans le journal ; essayer la pause, la suppression de la session, l'arrêt.
+
+**Vérifier** : aucune frappe dans les journaux de l'API, du worker et de Redis ; journal `/cloud` complet ; aucune ligne « COUPE-CIRCUIT ».
+
+**Revenir en arrière** : `CLOUD_ENABLED=false` puis relancer le worker (les tâches restent en file, celles de plus de 24 h sont écartées). Un compte : bouton Pause ou Arrêter (arrêter efface la session). Coupe-circuit levé à la main, après vérification seulement : `update cloud_runtime set suspended_until = null, reason = null;`.
+
+---
+
+## 18. Achat automatique (Selio Bot)
+
+> **Fermé tant que l'avocat n'a pas validé et qu'Ibrahim n'a pas tranché.** Deux verrous serveur : `RADAR_AUTO_ENABLED=false` et `RADAR_REAL_PURCHASE=false`. Même ouvert, il est réservé aux organisations de l'équipe (`RADAR_AUTO_ORG_IDS`) : pas activable pour les clients sur l'adresse partagée. Détails : [RADAR.md](RADAR.md) §6 et §10, [BOT.md](BOT.md).
+
+**Prérequis**
+1. Selio Cloud ouvert et validé (tutoriel 17), avec un compte Vinted **de l'équipe** rangé en **Achat**, relié au Cloud, accord accepté.
+2. Notifications push en place (tutoriel 6) et au moins un téléphone abonné.
+3. Avis écrit de l'avocat sur le bot d'achat ; texte d'accord du Cloud étendu à la lecture des recherches et à l'achat automatique (nouvelle `CLOUD_CONSENT_VERSION`).
+4. Lecture en direct essayée selon RADAR.md §10 (étapes 1 à 4), zéro blocage.
+
+**Étapes (essai à blanc, sur l'organisation de l'équipe)**
+1. Trouver l'identifiant de l'organisation de l'équipe :
+   ```bash
+   cd ~/selio/deploy
+   docker compose -f docker-compose.prod.yml exec postgres psql -U selio -d selio -c "select id, name from organizations;"
+   ```
+2. `deploy/.env` : `RADAR_AUTO_ENABLED=true`, `RADAR_AUTO_ORG_IDS=<identifiant>`, `RADAR_REAL_PURCHASE=false`. Relancer (en production, `RADAR_AUTO_ENABLED=true` sans `RADAR_AUTO_ORG_IDS` arrête le démarrage).
+3. Dans l'application, en titulaire de l'organisation de l'équipe : Selio Bot › **Achat automatique** (`/bot/achat-auto`) : activer, régler la note minimale (85 conseillé), le budget par jour, le prix maximal par article, le délai d'annulation et le compte Achat.
+
+**Vérifier** : chaque achat s'arrête **avant** le bouton de paiement et est enregistré « simulé » ; le total relu correspond à la page ; le porte-monnaie Vinted est choisi ; l'annulation fonctionne.
+
+**Revenir en arrière** : `RADAR_AUTO_ENABLED=false`, vider `RADAR_AUTO_ORG_IDS`, relancer (le passage `radar.auto` disparaît). Pour une organisation seulement : « Arrêter toutes les automatisations » dans Selio Manager › Automatisation.
+
+---
+
+## 19. Achat réel
+
+> **Fermé tant que l'avocat n'a pas validé, et seulement sur décision écrite d'Ibrahim, le temps d'un test sur un compte de l'équipe** (D11). Il faut `RADAR_AUTO_ENABLED=true` **et** `RADAR_REAL_PURCHASE=true` pour que le navigateur clique sur « Payer ».
+
+**Prérequis** : tutoriel 18 validé en essai à blanc ; décision écrite d'Ibrahim (date, article, montant) ; un petit solde dans le porte-monnaie Vinted du compte de l'équipe (le porte-monnaie est imposé ; jamais la carte à sa place).
+
+**Étapes** ([RADAR.md](RADAR.md) §10, étape 6)
+1. Régler un prix maximal par article et un budget par jour bas, sur un article que l'équipe veut vraiment acheter.
+2. `deploy/.env` : `RADAR_REAL_PURCHASE=true`, relancer.
+3. Suivre le journal du worker pendant tout le test. Si la banque demande une validation 3-D Secure, la faire dans l'application bancaire puis toucher « J'ai validé » (délai : `CLOUD_3DS_TIMEOUT_MS`, 10 min par défaut).
+
+**Vérifier** : la demande d'achat passe « Achetée » avec la référence de commande ; le prix d'achat est reporté dans Selio Manager ; le total payé ne dépasse pas le maximum.
+
+**Revenir en arrière, aussitôt après le test** : `RADAR_REAL_PURCHASE=false` (et `RADAR_AUTO_ENABLED=false` si le test est fini), relancer. Un achat réel ne s'annule pas depuis Selio : une annulation éventuelle se fait dans Vinted. Tout résultat « effets inconnus » arrête l'achat automatique jusqu'à vérification dans Vinted.
+
+---
+
+## 20. Publicité
+
+Les campagnes, les visuels et leur suivi sont décrits dans [PUBLICITE.md](PUBLICITE.md) ; les comptes, identifiants et réglages des régies sont dans la section « Publicité » de [CLES-ET-CONFIGURATION.md](CLES-ET-CONFIGURATION.md). Aucune promesse « zéro risque », « 100 % légal » ni « partenaire Vinted » dans une publicité ; la mention d'indépendance vis-à-vis de Vinted reste obligatoire ([VITRINE.md](VITRINE.md)).
+
+---
+
+_Développé par Ibrahim — Selio._

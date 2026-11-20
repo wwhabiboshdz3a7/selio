@@ -20,6 +20,7 @@ export { helpStem, helpTokens, normalizeHelpText } from "./help-text";
 
 export type HelpCategoryId =
   | "demarrer"
+  | "tutoriels"
   | "comptes"
   | "generateur"
   | "dressing"
@@ -74,6 +75,7 @@ const band = (key: (typeof SCORE_BANDS)[number]["key"]) => SCORE_BANDS.find((b) 
 
 export const HELP_CATEGORIES: readonly HelpCategory[] = [
   { id: "demarrer", title: "Démarrer", summary: "Ce qu'est Selio, la démonstration, les premiers pas et l'aide." },
+  { id: "tutoriels", title: "Tutoriels pas à pas", summary: "Les gestes clés, étape par étape : relier Vinted, importer son stock, créer une annonce, régler la négociation, les relances, Track, Selio Bot, l'équipe, le téléphone et l'abonnement." },
   { id: "comptes", title: "Comptes Vinted et extension", summary: "Plusieurs comptes vente, achat et perso, l'extension navigateur et ses jetons." },
   { id: "generateur", title: "Générateur d'annonces et IA", summary: "Des photos à l'annonce, le prix conseillé, le rôle exact de l'IA." },
   { id: "dressing", title: "Dressing et republication", summary: "La note de chaque annonce et les republications pré-faites." },
@@ -169,6 +171,166 @@ function buildHelpEntries(): HelpEntry[] {
     answer: "Il cherche dans cette FAQ les passages les plus pertinents pour votre question, puis affiche une réponse avec ses questions sources, cliquables. Sur le site public et en démonstration, la réponse est tirée directement de la FAQ par une recherche locale. En mode connecté, l'assistant IA rédige la réponse à partir de ces mêmes passages, sans rien ajouter d'autre ; si l'IA est indisponible, la réponse de la FAQ s'affiche.\n\nLes questions posées à l'aide ne sont pas décomptées de la limite IA de votre plan.",
     keywords: ["aide", "assistant", "poser une question", "support", "chercher", "faq", "réponse"],
     link: { label: "Ouvrir l'aide", href: "/app/help" },
+  },
+
+  // ---- Tutoriels pas à pas ------------------------------------------------
+  // Une étape par paragraphe (« 1. … »), avec les libellés exacts des boutons de l'application.
+  {
+    id: "tuto-relier-vinted",
+    categoryId: "tutoriels",
+    question: "Comment relier mon compte Vinted à Selio avec l'extension ?",
+    answer: [
+      "Il faut un ordinateur avec Chrome, Edge, Brave ou Chromium, et votre compte Selio connecté (l'extension ne fonctionne pas en démonstration). Selio ne vous demande jamais votre mot de passe Vinted.",
+      `1. Dans Selio, menu Comptes › Comptes Vinted, cliquez « Ajouter un compte », donnez-lui un nom et choisissez sa catégorie : ${CONNECTION_USAGE_LABELS.sale}, ${CONNECTION_USAGE_LABELS.purchase} ou ${CONNECTION_USAGE_LABELS.personal}.`,
+      "2. Installez l'extension Selio. Tant qu'elle n'est pas publiée sur le Chrome Web Store, elle s'installe en mode développeur : page des extensions du navigateur, « Mode développeur », puis « Charger l'extension non empaquetée » avec le dossier fourni par l'équipe Selio.",
+      "3. En bas de la page Comptes Vinted, ouvrez « Avancé — relier l'extension Selio », nommez l'appareil et cliquez « Créer un jeton ». Copiez-le tout de suite : il ne s'affiche qu'une fois.",
+      "4. Dans les options de l'extension, collez l'adresse de l'API Selio et le jeton, puis cliquez « Associer » et acceptez l'autorisation demandée par le navigateur.",
+      "5. Ouvrez Vinted dans ce même navigateur, connecté à votre compte. La fenêtre de l'extension affiche « Associé », et dans Selio le compte passe à « Connecté ».",
+      "Si le compte reste « Prêt » ou passe « Expiré », rouvrez Vinted dans ce navigateur et vérifiez que le jeton n'a pas été révoqué.",
+    ].join("\n\n"),
+    keywords: ["tutoriel", "relier vinted", "lier mon compte", "associer l'extension", "jeton", "brancher vinted", "installer l'extension pas à pas"],
+    link: { label: "Comptes Vinted", href: "/app/accounts" },
+  },
+  {
+    id: "tuto-importer-stock",
+    categoryId: "tutoriels",
+    question: "Comment importer mon stock depuis un fichier CSV, étape par étape ?",
+    answer: [
+      "1. Ouvrez Articles et stock, puis « Importer » (ou « Importer un CSV » quand le stock est vide).",
+      "2. Cliquez « Télécharger le modèle » : un fichier CSV d'exemple, une ligne par article (titre, marque, taille, état, statut, prix d'achat, frais, prix affiché, date d'achat, notes).",
+      "3. Remplissez-le dans votre tableur (ou adaptez votre propre fichier : séparateur point-virgule ou virgule, en-têtes en français ou en anglais), puis enregistrez-le au format CSV.",
+      "4. Cliquez « Choisir un fichier CSV » et sélectionnez-le. Chaque ligne est vérifiée et un tableau affiche les problèmes éventuels ; rien n'est encore enregistré.",
+      "5. Corrigez les lignes en erreur dans le fichier si vous voulez les garder (elles seraient ignorées), puis cliquez « Importer … article(s) ».",
+      "Les articles arrivent dans Articles et stock avec le statut indiqué. Ajoutez ensuite les photos depuis la fiche de chaque article.",
+    ].join("\n\n"),
+    keywords: ["tutoriel", "importer", "csv", "tableur", "excel", "fichier", "modèle", "reprendre mon stock", "inventaire"],
+    link: { label: "Importer des articles", href: "/app/items/import" },
+  },
+  {
+    id: "tuto-annonce-studio",
+    categoryId: "tutoriels",
+    question: "Comment créer une annonce avec Selio Studio, étape par étape ?",
+    answer: [
+      `Selio Studio est inclus dans les offres ${P.pro} et ${P.agence}. Il ne devine jamais une mesure : chaque valeur indique d'où elle vient, ou reste vide avec une question.`,
+      "1. Ouvrez Studio, puis « Choisir des photos » ou « Prendre une photo » : face, dos, étiquette, défauts, et le mètre ruban posé à plat sur l'article pour les mesures (12 photos au plus). Elles sont réduites dans votre navigateur avant l'envoi.",
+      "2. Choisissez le compte Vente et, si vous les connaissez, le type de pièce, la marque, la taille et le prix d'achat (pour la marge et le prix plancher). Cliquez « Préparer l'annonce ».",
+      "3. Tri des photos : vérifiez que chaque photo est rangée avec le bon article et le bon rôle ; corrigez par glisser-déposer si besoin.",
+      "4. « Continuer vers l'étiquette » : marque, taille, matière et référence lues sur l'étiquette, avec leur confiance. Répondez aux questions et confirmez les lectures peu sûres (« Confirmer »).",
+      "5. « Continuer vers les mesures » : les mesures lues sur le mètre ruban. Une mesure absente reste vide ; ajoutez-la vous-même si vous la connaissez.",
+      "6. « Générer l'annonce » : titre, description et prix conseillé en trois stratégies. Relisez et modifiez tout.",
+      "7. « Enregistrer en brouillon » ou « Publier directement » : l'article passe « En vente » dans Selio. La mise en ligne sur Vinted reste un geste de votre part (boutons pour copier le titre et la description).",
+    ].join("\n\n"),
+    keywords: ["tutoriel", "studio", "créer une annonce", "photos", "étiquette", "mesures", "mètre ruban", "générer l'annonce", "préparer l'annonce"],
+    link: { label: "Ouvrir Studio", href: "/app/studio" },
+  },
+  {
+    id: "tuto-negociation-ia",
+    categoryId: "tutoriels",
+    question: "Comment régler la négociation par l'IA, étape par étape ?",
+    answer: [
+      "La règle décide toujours du prix ; l'IA ne fait que rédiger les messages. Seuls le titulaire et les administrateurs peuvent modifier ces réglages.",
+      "1. Renseignez le prix d'achat de vos articles (fiche de l'article) : c'est lui qui fixe le prix plancher, sous lequel Selio n'accepte jamais une offre.",
+      "2. Ouvrez Automatisation › Négociation automatique et suivez les étapes de haut en bas. D'abord la marge de négociation par tranche de prix (« Ajouter une tranche »), puis la marge minimale en euros et en pourcentage.",
+      "3. Réglez les paliers de réduction : chaque contre-offre accorde une part de votre marge, la dernière est l'offre finale (« Ajouter une contre-offre » pour un palier de plus).",
+      "4. Décidez des lots (« Proposer une remise de lot ») et des baisses de prix des articles qui ne partent pas.",
+      "5. Personnalisez les messages (accueil, contre-offre, offre finale, acceptation, repli) et les horaires de réponse (« Je réponds entre … »). À droite, une conversation d'exemple suit vos réglages.",
+      "6. Activez « Négociation automatique activée » et enregistrez. La règle s'applique aux offres de vos comptes Vente ; les comptes Perso ne sont jamais concernés.",
+      "Par défaut, chaque réponse reste un brouillon à valider dans la messagerie (Paramètres › Assistant IA › validation avant envoi).",
+    ].join("\n\n"),
+    keywords: ["tutoriel", "négociation", "négocier", "ia", "paliers", "plancher", "contre-offre", "offre finale", "régler la négociation"],
+    link: { label: "Négociation automatique", href: "/app/automatisation/negociation" },
+  },
+  {
+    id: "tuto-relances-republication",
+    categoryId: "tutoriels",
+    question: "Comment activer les relances et la republication, étape par étape ?",
+    answer: [
+      `Relance après 24 h : ${P.pro} prépare un brouillon à valider dans la messagerie ; ${P.agence} relance seul par Selio Cloud quand il est ouvert, sinon en brouillon ; ${P.starter} n'a pas de relance. Une seule relance par conversation, sans chiffre ni « dernier prix ».`,
+      "1. Ouvrez Automatisation › Relances : l'état, la limite de votre offre et les dernières actions s'affichent.",
+      "2. Le texte de la relance se règle dans Automatisation › Négociation automatique (« Message après l'offre finale (relance) »).",
+      "3. Pour l'allumer, ouvrez « Règles, horaires et file des tâches », cliquez « Nouvelle règle » et choisissez « Relance après 24 h sans réponse » (ou « Relance sans réponse »), avec ses horaires et ses limites. Activez-la.",
+      `4. Republication : dans le Dressing intelligent, le filtre « À republier » liste les annonces en ligne depuis ${DEFAULT_REPUBLISH_AFTER_DAYS} jours ou plus. « Republier » propose une variante prête ; remettez l'annonce en ligne sur Vinted, puis cliquez « J'ai republié » pour suivre son rendement.`,
+      "5. Pour l'automatiser, créez dans les règles « Remise en avant d'un article dormant » ou « Baisse de prix d'un article dormant » (jamais sous le plancher). Automatisation › Republication montre leur état.",
+      "Le bouton « Arrêter toutes les automatisations » de la page Automatisation coupe tout d'un coup ; la reprise se fait au même endroit.",
+    ].join("\n\n"),
+    keywords: ["tutoriel", "relance", "relancer", "24 h", "republication", "republier", "dormant", "activer les relances", "nouvelle règle"],
+    link: { label: "Relances", href: "/app/automatisation/relances" },
+  },
+  {
+    id: "tuto-filtre-track",
+    categoryId: "tutoriels",
+    question: "Comment suivre un filtre Selio Track et recevoir ses alertes ?",
+    answer: [
+      `Selio Track est inclus dans ${P.pro} (${Q.pro.trackFiltersFollowed} filtres suivis) et ${P.agence} (${Q.agence.trackFiltersFollowed}). Il ne garde que des statistiques : aucune annonce, aucun pseudo, aucune photo.`,
+      "1. Ouvrez Track › Filtres suivis, puis « Nouveau filtre » : donnez-lui un nom, puis les critères (marques, mots-clés, tailles, prix maximal, catégories, états) et enregistrez.",
+      "2. Le filtre est relu toutes les 2 heures. La page du filtre montre le prix médian jour par jour et les annonces nouvelles et disparues (une disparition reste une estimation : vendue ou retirée).",
+      "3. Dans la page du filtre, section « Alertes de tendance », cochez « Recevoir les alertes de ce filtre » et réglez ce qui vous intéresse : « Écart du prix médian, en % », « Seuil de nouvelles annonces par lecture », « Baisse du délai de vente, en % ». Enregistrez.",
+      "4. Pour les recevoir sur le téléphone, activez les notifications dans Paramètres › Notifications (voir le tutoriel sur l'installation de l'application). Une alerte au plus par filtre et par règle toutes les 24 h.",
+      "5. « Mettre en pause » arrête la relecture d'un filtre sans le perdre ; « Reprendre » le relance.",
+      "Tant que la lecture en direct n'est pas ouverte sur le serveur, Track l'indique (« en cours d'activation ») : vos filtres sont enregistrés et lus dès l'ouverture.",
+    ].join("\n\n"),
+    keywords: ["tutoriel", "track", "filtre", "filtres suivis", "alerte", "alertes de tendance", "prix médian", "suivre le marché", "nouveau filtre"],
+    link: { label: "Filtres suivis", href: "/track/filtres" },
+  },
+  {
+    id: "tuto-regler-bot",
+    categoryId: "tutoriels",
+    question: "Comment régler Selio Bot : recherches, limites de dépenses et achat rapide ?",
+    answer: [
+      "1. Ouvrez Selio Bot, puis la page des bonnes affaires, et cliquez « Nouvelle recherche » : nom, marques, mots-clés, tailles, catégories, prix d'achat maximal, marge cible et budget de la recherche. Enregistrez.",
+      `2. Les affaires trouvées sont notées sur 100 et triées de la meilleure à la moins bonne ; à partir de ${REVIEW_THRESHOLD}/100, elles arrivent dans « À valider ». Ouvrez « Comment lire la note » pour le détail des critères.`,
+      `3. Fixez vos limites de dépenses (lien « Réglages » de l'encadré « Limites de dépenses ») : budget par jour (${eur(AUTO_BUY.dailyCapCents)} par défaut) et maximum par achat (${eur(AUTO_BUY.maxItemCents)} par défaut), port et protection acheteurs compris. Un achat qui dépasse une limite est bloqué, même validé à la main.`,
+      "4. Achat rapide : ouvrez une affaire, cliquez « Ouvrir l'annonce sur Vinted », vérifiez et payez vous-même sur Vinted, puis revenez cliquer « Je l'ai achetée » en indiquant le prix réellement payé. L'article arrive dans le stock de Selio Manager avec son prix d'achat.",
+      "5. Alertes sur le téléphone : Paramètres › Notifications, avec la note minimale d'une alerte et les heures calmes.",
+      "L'achat automatique reste fermé tant que la validation juridique n'est pas faite : en attendant, l'achat rapide vous propose chaque affaire à valider en 1 clic.",
+    ].join("\n\n"),
+    keywords: ["tutoriel", "bot", "selio bot", "recherche", "nouvelle recherche", "budget", "limites de dépenses", "achat rapide", "je l'ai achetée"],
+    link: { label: "Selio Bot", href: "/bot" },
+  },
+  {
+    id: "tuto-inviter-agent",
+    categoryId: "tutoriels",
+    question: "Comment ajouter un collaborateur avec Selio Agent, étape par étape ?",
+    answer: [
+      `Selio Agent, c'est le travail en équipe dans Selio Manager. Nombre de personnes : ${Q.starter.members} avec ${P.starter}, jusqu'à ${Q.pro.members} avec ${P.pro}, jusqu'à ${Q.agence.members} avec ${P.agence}. Seuls le titulaire et les administrateurs peuvent inviter.`,
+      "1. Ouvrez Paramètres › Comptes et accès, section « Inviter un membre ».",
+      "2. Saisissez son email et choisissez son rôle : administrateur, exécuteur (publie et répond, sans voir les finances), contributeur photos (ajoute des photos et prépare des annonces) ou lecture seule (par exemple votre comptable). Cliquez « Inviter ».",
+      "3. Si l'email part, la personne reçoit un lien valable 7 jours. Sinon, Selio affiche le « Lien d'invitation » : cliquez « Copier le lien » et envoyez-le-lui vous-même.",
+      "4. Elle ouvre le lien, choisit son nom et son mot de passe, et arrive directement dans votre organisation. Quelqu'un qui a déjà un compte Selio retrouve l'organisation en se connectant.",
+      "5. Depuis la même page, vous changez son rôle ou retirez son accès à tout moment ; un membre retiré perd l'accès immédiatement. Le rôle titulaire ne s'attribue pas par invitation : invitez la personne, puis nommez-la titulaire.",
+    ].join("\n\n"),
+    keywords: ["tutoriel", "agent", "selio agent", "collaborateur", "inviter", "lien d'invitation", "copier le lien", "rôle", "équipe"],
+    link: { label: "Comptes et accès", href: "/app/settings/access" },
+  },
+  {
+    id: "tuto-installer-telephone",
+    categoryId: "tutoriels",
+    question: "Comment installer l'application Selio sur mon téléphone ?",
+    answer: [
+      "Selio s'installe depuis le navigateur, sans passer par un magasin d'applications.",
+      "1. iPhone : ouvrez Selio dans Safari, touchez le bouton Partager, puis « Sur l'écran d'accueil ». Ouvrez ensuite Selio depuis sa nouvelle icône (c'est indispensable pour recevoir les notifications).",
+      "2. Android : ouvrez Selio dans Chrome, touchez le menu (les trois points), puis « Installer l'application » ou « Ajouter à l'écran d'accueil ».",
+      "3. Ordinateur : dans Chrome ou Edge, cliquez l'icône d'installation à droite de la barre d'adresse.",
+      "4. Connectez-vous. L'application se met à jour toute seule à chaque nouvelle version.",
+      "5. Pour les alertes : Paramètres › Notifications › « Activer les alertes sur ce téléphone », puis « Envoyer une notification de test ». Si le navigateur a bloqué les notifications, autorisez-les dans les réglages du site et revenez sur cette page.",
+    ].join("\n\n"),
+    keywords: ["tutoriel", "installer", "application", "téléphone", "iphone", "android", "écran d'accueil", "notifications", "pwa"],
+    link: { label: "Paramètres › Notifications", href: "/app/settings/notifications" },
+  },
+  {
+    id: "tuto-code-promo-abonnement",
+    categoryId: "tutoriels",
+    question: "Comment ajouter un code promo et choisir mon abonnement ?",
+    answer: [
+      `Seul le titulaire de l'organisation gère l'abonnement. L'essai dure ${TRIAL_DAYS} jours avec les fonctions de l'offre ${P.pro}.`,
+      "1. Un code reçu avant de vous inscrire : saisissez-le dans le champ « Code promo » de l'inscription (un lien qui contient le code le remplit tout seul).",
+      "2. Déjà inscrit : Paramètres › Abonnement, « Ajouter un code promo », saisissez le code, puis « Appliquer ». Le prix remisé s'affiche à côté du prix normal ; une seule offre par organisation.",
+      `3. Choisissez votre forfait (${P.starter}, ${P.pro} ou ${P.agence}) et la périodicité (mensuelle ou annuelle), puis « Choisir cette offre ». Un récapitulatif indique le prix, la remise, la fin de l'essai et la première échéance.`,
+      "4. Tant que le paiement n'est pas activé, Selio l'écrit clairement : aucune carte n'est demandée et rien n'est débité. Une fois le paiement activé, « Enregistrer ma carte » ouvre le formulaire sécurisé de Revolut ; pendant l'essai, seule une vérification de 1 € est faite puis annulée.",
+      "5. Plus tard : « Changer d'offre » s'applique au prochain renouvellement ; la résiliation prend effet à la fin de la période payée. Vos factures sont dans Paramètres › Factures.",
+    ].join("\n\n"),
+    keywords: ["tutoriel", "code promo", "promo", "appliquer", "choisir cette offre", "abonnement", "forfait", "s'abonner", "changer d'offre"],
+    link: { label: "Paramètres › Abonnement", href: "/app/settings/billing" },
   },
 
   // ---- Comptes Vinted et extension ---------------------------------------
@@ -515,15 +677,15 @@ function buildHelpEntries(): HelpEntry[] {
     id: "roles-equipe",
     categoryId: "equipe",
     question: "Quels sont les rôles et que permettent-ils ?",
-    answer: "Quatre rôles. Propriétaire : tout, y compris l'abonnement, l'achat réel et la suppression définitive. Administrateur : les réglages, les membres, les comptes connectés, les automatisations et les exports. Opérateur : le travail du quotidien (articles, messages, commandes, IA, bonnes affaires) sans toucher aux réglages ni aux membres. Lecture seule : consulte articles, ventes et analyses sans rien modifier ni envoyer. La matrice complète « qui peut faire quoi » est dans Paramètres › Comptes et accès.",
-    keywords: ["rôles", "propriétaire", "administrateur", "opérateur", "lecture seule", "droits", "permissions"],
+    answer: "Cinq rôles. Titulaire (le propriétaire) : tout, y compris l'abonnement, l'achat réel et la suppression définitive. Administrateur : les réglages, les membres, les comptes connectés, les automatisations et les exports. Exécuteur : le travail du quotidien (articles, messages, commandes, IA, bonnes affaires), sans les finances (prix d'achat, marges, chiffre d'affaires et facturation lui sont masqués) ni les réglages. Contributeur photos : consulte les articles, ajoute des photos et lance le générateur, l'annonce restant en brouillon. Lecture seule : consulte articles, ventes, finances et analyses sans rien modifier ni envoyer, par exemple pour le comptable. La matrice complète « qui peut faire quoi » est dans Paramètres › Comptes et accès.",
+    keywords: ["rôles", "titulaire", "propriétaire", "administrateur", "exécuteur", "opérateur", "contributeur photos", "lecture seule", "droits", "permissions"],
     link: { label: "Comptes et accès", href: "/app/settings/access" },
   },
   {
     id: "inviter-membre",
     categoryId: "equipe",
     question: "Comment inviter quelqu'un dans mon équipe ?",
-    answer: `Dans Paramètres › Comptes et accès, saisissez son email et choisissez son rôle ; le propriétaire et les administrateurs peuvent inviter. Le nombre de personnes dépend de l'offre : ${Q.starter.members} personne avec ${P.starter}, jusqu'à ${Q.pro.members} avec ${P.pro} (et pendant l'essai), jusqu'à ${Q.agence.members} avec ${P.agence}, qui ajoute les rôles d'équipe.\n\nLa personne reçoit un email avec un lien valable 7 jours, à usage unique, pour choisir son nom et son mot de passe ; elle est connectée directement dans l'organisation. Quelqu'un qui a déjà un compte Selio garde son mot de passe et retrouve l'organisation en se connectant. Si l'email ne peut pas partir, l'invitation est annulée et peut être refaite.`,
+    answer: `Dans Paramètres › Comptes et accès, saisissez son email et choisissez son rôle ; le propriétaire et les administrateurs peuvent inviter. Le nombre de personnes dépend de l'offre : ${Q.starter.members} personne avec ${P.starter}, jusqu'à ${Q.pro.members} avec ${P.pro} (et pendant l'essai), jusqu'à ${Q.agence.members} avec ${P.agence}, qui ajoute les rôles d'équipe.\n\nLa personne reçoit un email avec un lien valable 7 jours, à usage unique, pour choisir son nom et son mot de passe ; elle est connectée directement dans l'organisation. Quelqu'un qui a déjà un compte Selio garde son mot de passe et retrouve l'organisation en se connectant. Si aucun email ne peut partir (service d'email pas encore branché), Selio affiche un lien d'invitation à copier et à lui envoyer vous-même.`,
     keywords: ["inviter", "ajouter un membre", "collaborateur", "équipe", "employé", "invitation"],
     link: { label: "Comptes et accès", href: "/app/settings/access" },
   },
@@ -556,7 +718,7 @@ function buildHelpEntries(): HelpEntry[] {
     id: "essai-decouverte",
     categoryId: "tarifs",
     question: `Comment fonctionne l'essai gratuit de ${TRIAL_DAYS} jours ?`,
-    answer: `C'est un essai gratuit de ${TRIAL_DAYS} jours, un seul choix de durée, avec toutes les fonctions et les limites de l'offre ${P.pro}. La carte bancaire est enregistrée dès l'inscription et rien n'est débité avant la fin de l'essai. À la fin, vous choisissez ${P.starter}, ${P.pro} ou ${P.agence}, ou vous arrêtez sans frais. Tant que le paiement n'est pas branché (en préparation), l'enregistrement de la carte et la fin d'essai ne sont pas appliqués.`,
+    answer: `C'est un essai gratuit de ${TRIAL_DAYS} jours, un seul choix de durée, avec toutes les fonctions et les limites de l'offre ${P.pro}. La carte bancaire est enregistrée dès l'inscription et rien n'est débité avant la fin de l'essai. À la fin, vous choisissez ${P.starter}, ${P.pro} ou ${P.agence}, ou vous arrêtez sans frais. Tant que le paiement n'est pas activé, aucune carte n'est demandée : à la fin de l'essai, le compte passe en accès de base, « en attente du paiement », et vos données sont conservées.`,
     keywords: ["essai", "gratuit", "14 jours", "deux semaines", "tester", "carte bancaire", "période d'essai", "découverte"],
     link: { label: "Voir les tarifs", href: "/tarifs" },
   },
@@ -619,7 +781,7 @@ function buildHelpEntries(): HelpEntry[] {
     id: "paiement",
     categoryId: "tarifs",
     question: "Comment se passe le paiement ?",
-    answer: "Le paiement par carte (avec Apple Pay et Google Pay) est en préparation : la carte sera enregistrée dès l'essai et débitée chaque mois seulement à partir de la fin de l'essai. En attendant, seul un adaptateur de test est présent : aucun abonnement réel n'est créé sans configuration et validation volontaires, et en démonstration aucun paiement n'est déclenché. Seul le propriétaire gère l'abonnement.",
+    answer: "Le paiement passe par Revolut, dans un formulaire sécurisé (carte, Apple Pay, Google Pay, Revolut Pay) : aucun numéro de carte ne transite par Selio. Tant que le paiement n'est pas activé sur le serveur, vous choisissez votre offre sans carte et rien n'est débité ; à la fin de l'essai, le compte passe en accès de base « en attente du paiement » et l'équipe Selio peut prolonger l'essai. Une fois le paiement activé, la carte est enregistrée pendant l'essai (une vérification de 1 €, aussitôt annulée) puis débitée à chaque échéance à partir de la fin de l'essai ; les factures sont dans Paramètres › Factures. En démonstration, aucun paiement n'est déclenché. Seul le titulaire gère l'abonnement.",
     keywords: ["paiement", "payer", "carte bancaire", "apple pay", "google pay", "facture", "abonnement", "prélèvement"],
   },
 
@@ -794,6 +956,7 @@ const SYNONYM_GROUPS: string[][] = [
   ["compte", "comptes", "boutique", "profil"],
   ["duree", "durer", "longtemps", "periode", "jours"],
   ["garder", "conserver", "conservation", "retention"],
+  ["tutoriel", "tutoriels", "tuto", "guide", "etape", "etapes", "procedure"],
 ];
 
 /**

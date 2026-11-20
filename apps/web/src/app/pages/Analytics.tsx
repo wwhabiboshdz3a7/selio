@@ -64,7 +64,7 @@ export default function Analytics() {
             {finances ? <Card padding="none">
               <h2 className="px-4 pt-4 text-md font-semibold md:px-5">Meilleures marges de la période</h2>
               <TableWrap className="mt-3 rounded-none border-0 border-t">
-                <Table dense>
+                <Table stack dense>
                   <thead><tr><Th>Article</Th><Th>Marque</Th><Th numeric>Vente</Th><Th numeric>Marge brute</Th></tr></thead>
                   <tbody>{d.topItems.length === 0 ? <tr><td colSpan={4} className="h-16 px-4 text-center text-sm text-text-muted">Aucune vente sur la période.</td></tr> : d.topItems.map((t) => <Tr key={t.order.id}><Td><Link to={`/app/orders/${t.order.id}`} className="hover:text-accent">{t.item.title}</Link></Td><Td className="text-text-muted">{t.item.brand ?? "—"}</Td><Td numeric><Money cents={t.order.salePriceCents} /></Td><Td numeric><Money cents={t.marginCents} signed /></Td></Tr>)}</tbody>
                 </Table>

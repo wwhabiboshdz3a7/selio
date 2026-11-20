@@ -2,12 +2,15 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { ArrowRight, Camera, Handshake, MessageSquare, RefreshCw, ShoppingBag, Tag, TrendingUp } from "lucide-react";
 import { TRIAL_DAYS } from "@selio/contracts";
-import { useMarketingMeta } from "../seo";
-import { CheckList, Container, CtaBand, Eyebrow, Lead, MarketingSection, PlannedList } from "../components";
+import { faqPageJsonLd, seoPage, softwareApplicationJsonLd, useMarketingMeta } from "../seo";
+import { CheckList, Container, CtaBand, Eyebrow, FaqList, JsonLd, Lead, MarketingSection, PlannedList, ShotPicture } from "../components";
 import { ConstellationHero } from "../constellation/ConstellationHero";
 import { RANGE, RangeCard } from "../spaces";
-import apercuClair from "../assets/apercu-clair.webp";
-import apercuSombre from "../assets/apercu-sombre.webp";
+import { MANAGER_SHOT } from "../productShots";
+import { OBJECTIONS } from "../objections";
+
+/** Les questions qui freinent avant l'essai, en bas de l'accueil (et en FAQPage). */
+const HOME_OBJECTIONS = OBJECTIONS.filter((o) => ["carte-essai", "resiliation", "mot-de-passe", "risque-compte", "donnees-france"].includes(o.id));
 
 /**
  * Le parcours, de l'achat à l'étiquette : chaque étape nomme la filiale Selio qui s'en charge
@@ -43,8 +46,8 @@ function ProductShowcase() {
           <span className="mk-orbit mk-orbit-back" aria-hidden="true" />
           <figure className="mk-shot">
             <div className="mk-shot-bar" aria-hidden="true"><i /><i /><i /><span>Selio Manager · dressing intelligent</span></div>
-            <img src={apercuClair} alt={SHOT_ALT} width={1600} height={1000} loading="lazy" decoding="async" className="mk-shot-img dark:hidden" />
-            <img src={apercuSombre} alt={SHOT_ALT} width={1600} height={1000} loading="lazy" decoding="async" className="mk-shot-img hidden dark:block" />
+            <ShotPicture src={MANAGER_SHOT.light} alt={SHOT_ALT} sizes="(min-width: 1280px) 1100px, calc(100vw - 32px)" className="block dark:hidden" imgClassName="mk-shot-img" />
+            <ShotPicture src={MANAGER_SHOT.dark} alt={SHOT_ALT} sizes="(min-width: 1280px) 1100px, calc(100vw - 32px)" className="hidden dark:block" imgClassName="mk-shot-img" />
           </figure>
           <span className="mk-orbit mk-orbit-front" aria-hidden="true">
             <span className="mk-orbit-path"><span className="mk-orbit-arm"><span className="mk-orbit-star" /></span></span>
@@ -68,6 +71,7 @@ export default function Home() {
   useMarketingMeta("/");
   return (
     <>
+      <JsonLd data={[softwareApplicationJsonLd({ name: "Selio Manager", path: "/", description: seoPage("/").description, offers: true }), faqPageJsonLd(HOME_OBJECTIONS)]} />
       <ConstellationHero />
       <ProductShowcase />
 
@@ -118,6 +122,17 @@ export default function Home() {
           </div>
         </div>
       </MarketingSection>
+
+      <section className="border-t border-border py-12 md:py-16" aria-labelledby="avant-essai">
+        <Container className="max-w-3xl">
+          <Eyebrow>Avant d'essayer</Eyebrow>
+          <h2 id="avant-essai" className="mt-3 text-xl font-semibold tracking-[-0.015em] text-balance text-text md:text-[28px] md:leading-[34px]">Les questions qu'on nous pose avant de commencer</h2>
+          <FaqList className="mt-6" items={HOME_OBJECTIONS} />
+          <p className="mt-6">
+            <Link to="/faq" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">Toutes les questions fréquentes <ArrowRight className="size-4" aria-hidden /></Link>
+          </p>
+        </Container>
+      </section>
 
       <CtaBand seed={3} title={`Essayez Selio sur votre propre activité pendant ${TRIAL_DAYS} jours`} lead="Toutes les fonctions du plan Pro, rien n'est débité avant la fin de l'essai. Résiliable à tout moment." />
     </>

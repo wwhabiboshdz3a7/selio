@@ -7,7 +7,7 @@ import {
   OPERATOR_ROLE_LABELS, ORG_QUALIFICATIONS, ORG_QUALIFICATION_LABELS, PAID_PLANS, PLAN_LABELS, QUALIFICATION_NOTE_MAX, ROLE_LABELS, TRIAL_EXTENSION_MAX_DAYS,
   isGrantWithoutEnd, type AdminAccountDetail, type AdminAccountEvent, type OrgQualification, type PaidPlan, type UsageCounter,
 } from "@selio/contracts";
-import { Alert, Button, Card, Checkbox, ConfirmDialog, DescriptionList, Field, Input, PageHeader, Select, StatusBadge, Textarea, formatDate, formatDateTime, formatNumber } from "@selio/ui";
+import { Alert, Button, Card, Checkbox, ConfirmDialog, DescriptionList, Field, Input, PageHeader, Select, Skeleton, StatusBadge, Textarea, formatDate, formatDateTime, formatNumber } from "@selio/ui";
 import { useClient, useData, useRequiredSession } from "../../../lib/data/provider";
 import { QUALIFICATION_TONES, adminActionLabel, grantEndLabel, isServerOutdated } from "../../../lib/admin";
 import { ServerOutdatedState } from "./AdminLayout";
@@ -263,7 +263,7 @@ export default function AdminAccountDetail() {
                     <UsageLine label="Recherches photo Track" c={u.track.photoSearches} />
                     <UsageLine label="Actions Cloud (jour)" c={u.cloud.actions} />
                   </ul>
-                ) : <p className="text-sm text-text-muted">{usage.isPending ? "Chargement…" : "Aucune utilisation relevée ce mois-ci."}</p>}
+                ) : usage.isPending ? <Skeleton className="h-4 w-48" /> : <p className="text-sm text-text-muted">Aucune utilisation relevée ce mois-ci.</p>}
               </Card>
               <Card>
                 <h2 className="mb-2 text-md font-semibold">Historique</h2>

@@ -61,7 +61,7 @@ function AgencyBillingPreview() {
       </ul>
 
       <TableWrap className="hidden md:block">
-        <Table className="min-w-[680px]">
+        <Table stack className="min-w-[680px]">
           <thead>
             <tr>
               <Th>Client</Th>

@@ -38,7 +38,7 @@ export default function Admin() {
       <QueryBoundary query={q}>
         {(d) => (
           <div className="flex flex-col gap-6">
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-4">
               <KpiCard label="Requêtes IA · 24 h" value={formatNumber(d.ai.requests24h)} hint={`${d.ai.failures24h} échec(s) · ${formatNumber(d.ai.tokens24h)} jetons`} />
               <KpiCard label="Tâches en échec" value={formatNumber(d.queues.reduce((s, x) => s + x.failed, 0))} hint="Toutes files confondues" />
               <KpiCard label="Organisations" value={formatNumber(d.orgs.length)} />
@@ -51,7 +51,7 @@ export default function Admin() {
               </Card>
               <Card>
                 <h2 className="mb-3 text-md font-semibold">Files de tâches</h2>
-                <TableWrap className="rounded-md"><Table dense><thead><tr><Th>File</Th><Th numeric>Attente</Th><Th numeric>Actives</Th><Th numeric>Échecs</Th><Th numeric>Terminées</Th><Th>État</Th></tr></thead><tbody>{d.queues.map((qu) => <Tr key={qu.name}><Td className="font-mono text-xs">{qu.name}</Td><Td numeric>{qu.waiting}</Td><Td numeric>{qu.active}</Td><Td numeric>{qu.failed}</Td><Td numeric>{qu.completed}</Td><Td><StatusBadge tone={qu.paused ? "warning" : "success"}>{qu.paused ? "En pause" : "Active"}</StatusBadge></Td></Tr>)}</tbody></Table></TableWrap>
+                <TableWrap className="rounded-md"><Table stack dense><thead><tr><Th>File</Th><Th numeric>Attente</Th><Th numeric>Actives</Th><Th numeric>Échecs</Th><Th numeric>Terminées</Th><Th>État</Th></tr></thead><tbody>{d.queues.map((qu) => <Tr key={qu.name}><Td className="font-mono text-xs">{qu.name}</Td><Td numeric>{qu.waiting}</Td><Td numeric>{qu.active}</Td><Td numeric>{qu.failed}</Td><Td numeric>{qu.completed}</Td><Td><StatusBadge tone={qu.paused ? "warning" : "success"}>{qu.paused ? "En pause" : "Active"}</StatusBadge></Td></Tr>)}</tbody></Table></TableWrap>
               </Card>
               <Card>
                 <h2 className="mb-3 text-md font-semibold">Connecteurs</h2>
@@ -66,7 +66,7 @@ export default function Admin() {
             </div>
             <Card padding="none">
               <h2 className="px-4 pt-4 text-md font-semibold md:px-5">Organisations et plans</h2>
-              <TableWrap className="mt-3 rounded-none border-0 border-t"><Table dense><thead><tr><Th>Organisation</Th><Th>Plan</Th><Th numeric>Membres</Th><Th numeric>Articles</Th><Th className="hide-mobile">Créée</Th></tr></thead><tbody>{d.orgs.map((o) => <Tr key={o.id}><Td className="font-medium">{o.name}</Td><Td><Select value={o.plan} onChange={(e) => setPlan.mutate({ orgId: o.id, plan: e.target.value as Plan })} aria-label={`Plan de ${o.name}`} className="max-w-40">{d.plans.map((p) => <option key={p.plan} value={p.plan}>{PLAN_LABELS[p.plan]}</option>)}</Select></Td><Td numeric>{o.members}</Td><Td numeric>{o.items}</Td><Td className="hide-mobile text-text-muted">{formatDate(o.createdAt)}</Td></Tr>)}</tbody></Table></TableWrap>
+              <TableWrap className="mt-3 rounded-none border-0 border-t"><Table stack dense><thead><tr><Th>Organisation</Th><Th>Plan</Th><Th numeric>Membres</Th><Th numeric>Articles</Th><Th className="hide-mobile">Créée</Th></tr></thead><tbody>{d.orgs.map((o) => <Tr key={o.id}><Td className="font-medium">{o.name}</Td><Td><Select value={o.plan} onChange={(e) => setPlan.mutate({ orgId: o.id, plan: e.target.value as Plan })} aria-label={`Plan de ${o.name}`} className="max-w-40">{d.plans.map((p) => <option key={p.plan} value={p.plan}>{PLAN_LABELS[p.plan]}</option>)}</Select></Td><Td numeric>{o.members}</Td><Td numeric>{o.items}</Td><Td className="hide-mobile text-text-muted">{formatDate(o.createdAt)}</Td></Tr>)}</tbody></Table></TableWrap>
             </Card>
             <Card padding="none">
               <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-4 md:px-5">
@@ -77,7 +77,7 @@ export default function Admin() {
               <QueryBoundary query={usage}>
                 {(r) => (
                   <TableWrap className="mt-3 rounded-none border-0 border-t">
-                    <Table dense>
+                    <Table stack dense>
                       <thead><tr><Th>Organisation</Th><Th>Plan</Th><Th numeric>Réponses IA</Th><Th numeric className="hide-mobile">Annonces Studio</Th><Th numeric className="hide-mobile">Scans Track</Th><Th numeric className="hide-mobile">Actions Cloud / jour</Th><Th numeric>Le plus avancé</Th><Th>État</Th></tr></thead>
                       <tbody>
                         {r.orgs.length === 0 ? <tr><td colSpan={8} className="h-16 text-center text-sm text-text-muted">Aucune organisation.</td></tr> : r.orgs.map((o) => (
@@ -108,7 +108,7 @@ export default function Admin() {
             </Card>
             <Card padding="none">
               <h2 className="px-4 pt-4 text-md font-semibold md:px-5">Journal des actions sensibles</h2>
-              <QueryBoundary query={audit}>{(list) => <TableWrap className="mt-3 rounded-none border-0 border-t"><Table dense><thead><tr><Th>Date</Th><Th>Action</Th><Th className="hide-mobile">Cible</Th></tr></thead><tbody>{list.length === 0 ? <tr><td colSpan={3} className="h-16 text-center text-sm text-text-muted">Aucune entrée.</td></tr> : list.map((a) => <Tr key={a.id}><Td className="text-text-muted">{formatDateTime(a.createdAt)}</Td><Td className="font-mono text-xs">{a.action}</Td><Td className="hide-mobile text-xs text-text-muted">{a.targetType ?? "—"}</Td></Tr>)}</tbody></Table></TableWrap>}</QueryBoundary>
+              <QueryBoundary query={audit}>{(list) => <TableWrap className="mt-3 rounded-none border-0 border-t"><Table stack dense><thead><tr><Th>Date</Th><Th>Action</Th><Th className="hide-mobile">Cible</Th></tr></thead><tbody>{list.length === 0 ? <tr><td colSpan={3} className="h-16 text-center text-sm text-text-muted">Aucune entrée.</td></tr> : list.map((a) => <Tr key={a.id}><Td className="text-text-muted">{formatDateTime(a.createdAt)}</Td><Td className="font-mono text-xs">{a.action}</Td><Td className="hide-mobile text-xs text-text-muted">{a.targetType ?? "—"}</Td></Tr>)}</tbody></Table></TableWrap>}</QueryBoundary>
             </Card>
             <Alert tone="info">Les secrets (clés de chiffrement, jetons, mots de passe) ne sont jamais consultables depuis cette page, ni depuis l'API.</Alert>
           </div>

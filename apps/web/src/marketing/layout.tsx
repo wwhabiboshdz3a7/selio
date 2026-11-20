@@ -10,6 +10,9 @@ import { HUB_PATH } from "../app/spaces/paths";
 import { MANAGER_FEATURES, PRODUCTS } from "./products";
 import { COMPARISON_READY, INDEPENDENCE_NOTICE, LEGAL_DRAFT_NOTICE } from "./seo";
 import { OfferBanner } from "../app/components/offers";
+import { ConsentBanner } from "./ConsentBanner";
+import { getConsent, openConsentPreferences, subscribeConsent } from "./consent";
+import { applyConsent, trackConversion, trackPageView } from "./tracking";
 
 const NAV = [
   { to: "/fonctionnalites", label: "Fonctionnalités" },
@@ -29,6 +32,17 @@ export function MarketingLayout() {
   const { pathname, hash } = location;
   const navigationType = useNavigationType();
   const overNight = useSyncExternalStore(subscribeOverNight, getOverNight, getOverNightServer) && !open;
+  // Mesure et publicité : rien sans identifiant configuré ni sans accord (./consent.ts, ./tracking.ts).
+  const consent = useSyncExternalStore(subscribeConsent, getConsent, () => null);
+  useEffect(() => {
+    applyConsent(consent);
+    trackPageView(pathname);
+  }, [consent, pathname]);
+  // Clic sur un appel à l'essai (tout lien vers l'inscription) : conversion « essai_clic ».
+  const onClickCapture = (e: React.MouseEvent) => {
+    const target = e.target as Element | null;
+    if (target?.closest?.('a[href^="/inscription"]')) trackConversion("essai_clic");
+  };
   // Navigation interne : haut de page, ou ancre (/fonctionnalites#generateur) si présente.
   // Retour arrière (POP) : le navigateur restaure lui-même la position.
   useEffect(() => {
@@ -43,7 +57,7 @@ export function MarketingLayout() {
     window.scrollTo({ top: 0 });
   }, [pathname, hash, navigationType]);
   return (
-    <div className="mk-scope flex min-h-dvh flex-col bg-bg">
+    <div className="mk-scope flex min-h-dvh flex-col bg-bg" onClickCapture={onClickCapture}>
       <a href="#contenu" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-surface focus:px-3 focus:py-2">Aller au contenu</a>
       {/* Offre commerciale en cours (gérée dans Selio Admin) : refermable, rien sans offre. */}
       <OfferBanner scope="vitrine" />
@@ -105,7 +119,9 @@ export function MarketingLayout() {
           <FooterCol title="Produit" links={[["/fonctionnalites", "Fonctionnalités"], ["/plateforme", "Les cinq filiales"], ["/extension", "Extension navigateur"], ["/assistant-ia", "Assistant IA"], ["/tarifs", "Tarifs"]]} />
           <FooterCol title="Les filiales" links={[...FILIALE_LINKS, ...(COMPARISON_READY ? ([["/selio-ou-bleam", "Selio ou Bleam ?"], ["/alternative-bleam", "Alternative à Bleam"]] as FooterLink[]) : [])]} />
           <FooterCol title="Aide" links={[["/faq", "FAQ"], ["/contact", "Contact"], ["/inscription", "Essai gratuit 14 jours"], ["/connexion", "Connexion"]]} />
-          <FooterCol title="Légal" links={[["/mentions-legales", "Mentions légales"], ["/confidentialite", "Confidentialité"], ["/conditions", "Conditions d'utilisation"], ["/extension/confidentialite", "Confidentialité de l'extension"]]} />
+          <FooterCol title="Légal" links={[["/mentions-legales", "Mentions légales"], ["/confidentialite", "Confidentialité"], ["/conditions", "Conditions d'utilisation"], ["/extension/confidentialite", "Confidentialité de l'extension"]]}>
+            <li><button type="button" onClick={openConsentPreferences} className="text-sm text-text hover:text-accent">Cookies</button></li>
+          </FooterCol>
         </div>
         <div className="border-t border-border">
           <div className="mx-auto max-w-content px-4 py-4 text-xs text-text-muted md:px-8">
@@ -114,6 +130,7 @@ export function MarketingLayout() {
           </div>
         </div>
       </footer>
+      <ConsentBanner />
     </div>
   );
 }
@@ -124,7 +141,7 @@ type FooterLink = [to: string, label: string, sub?: "sub"];
 /** Les cinq filiales dans l'ordre officiel ; Selio Cloud et Selio Agent en retrait sous Selio Manager. */
 const FILIALE_LINKS: FooterLink[] = PRODUCTS.flatMap((p): FooterLink[] => [[p.path, p.name], ...(p.slug === "manager" ? MANAGER_FEATURES.map((f): FooterLink => [f.path, f.name, "sub"]) : [])]);
 
-function FooterCol({ title, links }: { title: string; links: FooterLink[] }) {
+function FooterCol({ title, links, children }: { title: string; links: FooterLink[]; children?: React.ReactNode }) {
   return (
     <div>
       <h2 className="text-xs font-medium tracking-[0.08em] text-text-muted uppercase">{title}</h2>
@@ -132,6 +149,7 @@ function FooterCol({ title, links }: { title: string; links: FooterLink[] }) {
         {links.map(([to, label, sub]) => (
           <li key={to} className={sub ? "pl-3" : undefined}><Link to={to} className={sub ? "text-sm text-text-muted hover:text-accent" : "text-sm text-text hover:text-accent"}>{sub ? <span aria-hidden>↳ </span> : null}{label}{sub ? <span className="sr-only"> (fonctionnalité de Selio Manager)</span> : null}</Link></li>
         ))}
+        {children}
       </ul>
     </div>
   );

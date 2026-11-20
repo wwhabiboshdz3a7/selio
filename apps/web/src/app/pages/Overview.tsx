@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowRight, BarChart3, CalendarDays, Clock, Coins, Gauge as GaugeIcon, Hourglass, Info, LayoutGrid, LineChart, Package, PieChart, Plus, Shirt, ShoppingBag, Tags, Target, TrendingUp, Trophy, Wallet, X, XCircle } from "lucide-react";
 import type { PeriodPreset } from "@selio/domain";
 import { ORDER_STATUS_LABELS, type OrderStatus } from "@selio/contracts";
-import { Button, Dialog, EmptyState, IconTile, PageHeader, StatStrip, Tag, cn, formatCents, formatNumber, formatPercent, formatRelative } from "@selio/ui";
+import { Button, CountUp, Dialog, EmptyState, IconTile, PageHeader, StatStrip, Tag, cn, formatCents, formatNumber, formatPercent, formatRelative } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import type { OverviewData } from "../../lib/data/types";
 import { AreaChart, BarChart, ColumnChart, DonutChart, Gauge, HorizontalBars, ScoreRing, Sparkline, StackedBar, scoreTone } from "../../components/charts";
@@ -140,11 +140,11 @@ export default function Overview() {
             <StatStrip
               className="grid-cols-2 lg:grid-cols-5"
               items={[
-                { label: "Chiffre d'affaires", value: finances ? formatCents(d.sales.revenueCents) : <MaskedAmount />, sub: !finances ? undefined : <Delta current={d.sales.revenueCents} previous={d.previousSales.revenueCents} format={(v) => formatCents(v)} />, extra: finances ? <Spark values={d.series.map((s) => s.revenueCents)} /> : undefined },
-                { label: "Bénéfice (marge brute)", value: finances ? formatCents(d.sales.marginCents) : <MaskedAmount />, sub: !finances ? undefined : <span className={d.sales.marginCents >= 0 ? "text-success" : "text-danger"}>{formatPercent(d.sales.marginRate)} du CA</span>, extra: finances ? <Spark values={d.dashboard.cumulativeMargin.map((x) => x.value)} /> : undefined },
-                { label: "Ventes", value: formatNumber(d.sales.orderCount), sub: finances ? <>Panier moyen {formatCents(d.sales.averageBasketCents)}</> : undefined, extra: <Spark values={d.series.map((s) => s.orderCount)} /> },
-                { label: "Stock actif", value: formatNumber(d.stock.activeCount), sub: <>{formatNumber(d.stock.listedCount)} en vente{finances ? <> · {formatCents(d.stock.stockValueCents, { compact: true })} investis</> : null}</> },
-                { label: "À traiter", value: formatNumber(d.counts.unreadMessages + d.counts.pendingOrders + d.counts.jobsAwaiting), sub: <>{d.counts.unreadMessages} message(s) · {d.counts.pendingOrders} commande(s) · {d.counts.jobsAwaiting} action(s)</> },
+                { label: "Chiffre d'affaires", value: finances ? <CountUp value={d.sales.revenueCents} format={(v) => formatCents(v)} /> : <MaskedAmount />, sub: !finances ? undefined : <Delta current={d.sales.revenueCents} previous={d.previousSales.revenueCents} format={(v) => formatCents(v)} />, extra: finances ? <Spark values={d.series.map((s) => s.revenueCents)} /> : undefined },
+                { label: "Bénéfice (marge brute)", value: finances ? <CountUp value={d.sales.marginCents} format={(v) => formatCents(v)} /> : <MaskedAmount />, sub: !finances ? undefined : <span className={d.sales.marginCents >= 0 ? "text-success" : "text-danger"}>{formatPercent(d.sales.marginRate)} du CA</span>, extra: finances ? <Spark values={d.dashboard.cumulativeMargin.map((x) => x.value)} /> : undefined },
+                { label: "Ventes", value: <CountUp value={d.sales.orderCount} format={formatNumber} />, sub: finances ? <>Panier moyen {formatCents(d.sales.averageBasketCents)}</> : undefined, extra: <Spark values={d.series.map((s) => s.orderCount)} /> },
+                { label: "Stock actif", value: <CountUp value={d.stock.activeCount} format={formatNumber} />, sub: <>{formatNumber(d.stock.listedCount)} en vente{finances ? <> · {formatCents(d.stock.stockValueCents, { compact: true })} investis</> : null}</> },
+                { label: "À traiter", value: <CountUp value={d.counts.unreadMessages + d.counts.pendingOrders + d.counts.jobsAwaiting} format={formatNumber} />, sub: <>{d.counts.unreadMessages} message(s) · {d.counts.pendingOrders} commande(s) · {d.counts.jobsAwaiting} action(s)</> },
               ]}
             />
 
@@ -154,7 +154,7 @@ export default function Overview() {
                   <div key={a.id} role={a.tone === "info" ? "status" : "alert"} className="flex items-start gap-3 px-4 py-3 md:px-5">
                     <span className="mt-0.5 shrink-0">{ALERT_ICON[a.tone]}</span>
                     <div className="min-w-0 flex-1 text-sm"><p className="font-medium text-text">{a.title}</p><p className="text-text-muted">{a.description}</p></div>
-                    <Link to={a.to} className="inline-flex shrink-0 items-center gap-1 self-center rounded-md px-2 py-1 text-sm font-medium text-text-muted hover:bg-surface-muted hover:text-text">Voir<ArrowRight className="size-3.5" aria-hidden /></Link>
+                    <Link to={a.to} className="tap-target inline-flex shrink-0 items-center gap-1 self-center rounded-md px-2 py-1 text-sm font-medium text-text-muted hover:bg-surface-muted hover:text-text">Voir<ArrowRight className="size-3.5" aria-hidden /></Link>
                   </div>
                 ))}
                 {d.alerts.length > 2 ? <button type="button" className="w-full px-4 py-2.5 text-left text-sm font-medium text-text-muted hover:text-text md:px-5" onClick={() => setShowAlerts(!showAlerts)}>{showAlerts ? "Masquer" : `Voir les ${d.alerts.length - 2} autre(s) alerte(s)`}</button> : null}
@@ -169,7 +169,7 @@ export default function Overview() {
                   <section key={w.id} className={cn("card group/widget flex min-w-0 flex-col p-5 md:p-6", w.wide && "md:col-span-2")}>
                     <div className="mb-4 flex items-start gap-3">
                       <div className="min-w-0 flex-1"><h2 className="text-md font-semibold text-text">{w.title}</h2><p className="text-xs text-text-muted">{w.description}</p></div>
-                      <button type="button" onClick={() => toggle(w.id)} className="rounded-md p-1 text-text-muted opacity-100 transition-opacity hover:bg-surface-muted hover:text-text focus-visible:opacity-100 md:opacity-0 md:group-hover/widget:opacity-100" aria-label={`Retirer « ${w.title} »`} title="Retirer"><X className="size-4" /></button>
+                      <button type="button" onClick={() => toggle(w.id)} className="tap-target rounded-md p-1 text-text-muted opacity-100 transition-opacity hover:bg-surface-muted hover:text-text focus-visible:opacity-100 md:opacity-0 md:group-hover/widget:opacity-100" aria-label={`Retirer « ${w.title} »`} title="Retirer"><X className="size-4" /></button>
                     </div>
                     <div className="min-w-0 flex-1">{w.render(d)}</div>
                   </section>
@@ -183,7 +183,7 @@ export default function Overview() {
 
             {recent.data ? (
               <section aria-label="Dernières actions" className="card p-0">
-                <div className="flex items-center justify-between px-4 pt-4 md:px-5"><h2 className="text-md font-semibold">Dernières actions</h2><Link to="/app/journal" className="text-sm text-text-muted hover:text-text">Tout le journal</Link></div>
+                <div className="flex items-center justify-between px-4 pt-4 md:px-5"><h2 className="text-md font-semibold">Dernières actions</h2><Link to="/app/journal" className="tap-target text-sm text-text-muted hover:text-text">Tout le journal</Link></div>
                 {recent.data.entries.length === 0 ? <p className="p-4 text-sm text-text-muted md:px-5">Rien pour l'instant : vos actions et celles de Selio apparaîtront ici.</p> : (
                   <ol className="mt-2 divide-y divide-border">{recent.data.entries.map((e) => <li key={e.id}><ActivityLine entry={e} showDate /></li>)}</ol>
                 )}
@@ -192,7 +192,7 @@ export default function Overview() {
 
             <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2">
               <section className="card p-0">
-                <div className="flex items-center justify-between px-4 pt-4"><h2 className="text-md font-semibold">Dernières conversations</h2><Link to="/app/messages" className="text-sm text-text-muted hover:text-text">Tout voir</Link></div>
+                <div className="flex items-center justify-between px-4 pt-4"><h2 className="text-md font-semibold">Dernières conversations</h2><Link to="/app/messages" className="tap-target text-sm text-text-muted hover:text-text">Tout voir</Link></div>
                 <div className="mt-2 divide-y divide-border">
                   {d.recentConversations.length === 0 ? <p className="p-4 text-sm text-text-muted">Aucune conversation ouverte.</p> : d.recentConversations.map((c) => (
                     <Link key={c.id} to={`/app/messages/${c.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-surface-muted">
@@ -203,7 +203,7 @@ export default function Overview() {
                 </div>
               </section>
               <section className="card p-0">
-                <div className="flex items-center justify-between px-4 pt-4"><h2 className="text-md font-semibold">Dernières commandes</h2><Link to="/app/orders" className="text-sm text-text-muted hover:text-text">Tout voir</Link></div>
+                <div className="flex items-center justify-between px-4 pt-4"><h2 className="text-md font-semibold">Dernières commandes</h2><Link to="/app/orders" className="tap-target text-sm text-text-muted hover:text-text">Tout voir</Link></div>
                 <div className="mt-2 divide-y divide-border">
                   {d.recentOrders.length === 0 ? <p className="p-4 text-sm text-text-muted">Aucune commande.</p> : d.recentOrders.map((o) => (
                     <Link key={o.id} to={`/app/orders/${o.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-surface-muted">
