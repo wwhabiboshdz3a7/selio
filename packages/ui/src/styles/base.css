@@ -133,10 +133,14 @@
   table[data-stack] tbody tr { padding: 12px 16px; }
   table[data-stack] td { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: auto; min-height: 28px; padding: 2px 0; text-align: right; }
   table[data-stack] td.hide-mobile { display: none; }
+  table[data-stack] td[data-label]:empty { display: none; }
   table[data-stack] td[data-label]::before { content: attr(data-label); flex-shrink: 0; color: var(--text-muted); font-size: 12px; line-height: 16px; text-align: left; }
   table[data-stack] td:first-child { display: block; padding-bottom: 6px; text-align: left; }
   table[data-stack] td:first-child::before { content: none; }
   table[data-stack] td[colspan] { display: block; text-align: center; }
+  /* Valeur longue (phrase) : libellé au-dessus, texte aligné à gauche. */
+  table[data-stack] td[data-stack-block] { display: block; text-align: left; }
+  table[data-stack] td[data-stack-block]::before { display: block; margin-bottom: 2px; }
   table[data-stack] td[colspan]::before { content: none; }
 }
 

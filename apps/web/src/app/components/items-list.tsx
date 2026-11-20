@@ -97,7 +97,7 @@ export function ItemCard({ item, rules, selected, canWrite, busy, onSelect, onSt
       </Link>
       {canWrite ? <span className={cn("absolute top-2 left-2 rounded-md bg-surface/90 p-1 transition-opacity", selected ? "opacity-100" : "opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100")}><Checkbox aria-label={`Sélectionner ${item.title}`} checked={selected} onChange={(e) => onSelect(e.target.checked)} /></span> : null}
       <div className="flex flex-1 flex-col gap-1 p-3">
-        <Link to={`/app/items/${item.id}`} className="line-clamp-2 text-sm leading-snug font-medium text-text hover:text-accent">{item.title}</Link>
+        <Link to={`/app/items/${item.id}`} className="tap-target line-clamp-2 text-sm leading-snug font-medium text-text hover:text-accent">{item.title}</Link>
         <p className="truncate text-xs text-text-muted">{[item.brand, item.size, item.sku].filter(Boolean).join(" · ") || "—"}</p>
         <div className="mt-auto flex flex-wrap items-center justify-between gap-x-2 gap-y-1 pt-2">
           <QuickPrice item={item} canWrite={canWrite} onSave={onPrice} busy={busy} className="text-base" />

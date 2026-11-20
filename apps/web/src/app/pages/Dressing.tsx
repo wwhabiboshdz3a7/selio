@@ -154,7 +154,7 @@ function ListingCard({ listing, canWrite, onRepublish, onInsight }: { listing: D
       </div>
       <div className="flex flex-1 flex-col gap-2 p-3.5">
         <div className="flex items-start justify-between gap-2">
-          <Link to={`/app/items/${item.id}`} className="line-clamp-2 min-w-0 text-sm leading-snug font-medium text-text hover:text-accent">{item.title}</Link>
+          <Link to={`/app/items/${item.id}`} className="tap-target line-clamp-2 min-w-0 text-sm leading-snug font-medium text-text hover:text-accent">{item.title}</Link>
           <span className="num shrink-0 text-sm font-semibold">{item.listedPriceCents !== null ? formatCents(item.listedPriceCents) : "—"}</span>
         </div>
         <p className="truncate text-xs text-text-muted">{[item.brand, item.size].filter(Boolean).join(" · ") || "—"}</p>

@@ -10,7 +10,7 @@ import { INDEPENDENCE_NOTICE } from "./seo";
  *   DATA_RETENTION_DAYS_AFTER_END jours (@selio/contracts) ;
  * - aucun mot de passe Vinted demandé ni stocké (products.ts) ;
  * - base, photos et modèles d'IA sur notre machine en France (docs/STOCKAGE.md).
- * Jamais « zéro risque » : aucun outil ne peut garantir qu'un compte ne sera pas limité.
+ * Aucune promesse d'absence de risque : aucun outil ne peut garantir qu'un compte ne sera pas limité.
  */
 export interface Objection {
   id: string;

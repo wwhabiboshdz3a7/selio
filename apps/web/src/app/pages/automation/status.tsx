@@ -212,7 +212,7 @@ export function AutomationStatusBoard({ summary }: { summary: BotSummary }) {
                   <p className="mt-0.5 max-w-xs text-xs text-text-muted">{b.stateDetail}</p>
                 </td>
                 <td data-label="État" className="px-4 py-3"><BotStateBadge state={b.state} /></td>
-                <td data-label="Où elle tourne" className="px-4 py-3"><BotPlaceLine place={b.place} detail={b.placeDetail} className="max-w-xs text-xs" /></td>
+                <td data-label="Où elle tourne" data-stack-block className="px-4 py-3"><BotPlaceLine place={b.place} detail={b.placeDetail} className="max-w-xs text-xs" /></td>
                 <td data-label="Dernière action" className="px-4 py-3 text-xs text-text-muted">{b.recent[0] ? <><span className="block truncate text-text">{b.recent[0].label}</span><span className="num">{formatRelative(b.recent[0].at)}</span></> : "—"}</td>
                 <td className="px-4 py-3 text-right"><Link to={AUTOMATION_PATHS[b.id]} className="tap-target inline-flex items-center gap-1 text-sm font-semibold whitespace-nowrap text-accent">Régler <ArrowRight className="size-4" aria-hidden /></Link></td>
               </tr>

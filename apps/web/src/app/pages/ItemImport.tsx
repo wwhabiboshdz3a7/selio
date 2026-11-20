@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { FileUp } from "lucide-react";
+import { FileUp, ArrowLeft } from "lucide-react";
 import { previewInventoryImport, toCsv, EXPORT_HEADERS, type ImportPreview } from "@selio/domain";
 import { Alert, Button, Card, PageHeader, Table, TableWrap, Td, Th, Tr, formatNumber } from "@selio/ui";
 import { useClient } from "../../lib/data/provider";
@@ -33,7 +33,7 @@ export default function ItemImport() {
 
   return (
     <>
-      <PageHeader title="Importer des articles" eyebrow={<Link to="/app/items" className="hover:text-text">Articles et stock</Link>} description="Fichier CSV (séparateur ; ou ,), en-têtes en français ou en anglais. Chaque ligne est vérifiée avant l'import : rien n'est enregistré tant que vous ne confirmez pas." actions={<Button variant="secondary" onClick={() => downloadFile("selio-modele-import.csv", TEMPLATE)}>Télécharger le modèle</Button>} />
+      <PageHeader title="Importer des articles" eyebrow={<Link to="/app/items" className="inline-flex items-center gap-1 hover:text-text"><ArrowLeft className="size-3.5" aria-hidden />Articles et stock</Link>} description="Fichier CSV (séparateur ; ou ,), en-têtes en français ou en anglais. Chaque ligne est vérifiée avant l'import : rien n'est enregistré tant que vous ne confirmez pas." actions={<Button variant="secondary" onClick={() => downloadFile("selio-modele-import.csv", TEMPLATE)}>Télécharger le modèle</Button>} />
       <Card>
         <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border-strong px-4 py-10 text-center text-sm text-text-muted hover:bg-surface-muted">
           <FileUp className="size-6" aria-hidden />

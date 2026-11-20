@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Archive, Lightbulb, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, Lightbulb, Pencil, RotateCcw, Trash2, ArrowLeft } from "lucide-react";
 import { ITEM_CATEGORY_LABELS, ITEM_CONDITION_LABELS, ITEM_STATUS_LABELS, type InventoryItem, type ItemStatus, type PriceEstimate, type PriceStrategies } from "@selio/contracts";
 import { ITEM_TRANSITIONS, can, daysInStock, projectedMargin } from "@selio/domain";
 import { Button, Card, ConfirmDialog, DescriptionList, Menu, Money, PageHeader, Tag, cn, formatDate, formatDateTime, formatPercent } from "@selio/ui";
@@ -39,7 +39,7 @@ export default function ItemDetail() {
         return (
           <>
             <PageHeader
-              eyebrow={<Link to="/app/items" className="hover:text-text">Articles et stock</Link>}
+              eyebrow={<Link to="/app/items" className="inline-flex items-center gap-1 hover:text-text"><ArrowLeft className="size-3.5" aria-hidden />Articles et stock</Link>}
               title={it.title}
               description={<span className="flex flex-wrap items-center gap-2"><ItemStatusBadge status={it.status} />{it.sku ? <Tag>{it.sku}</Tag> : null}{it.tags.map((t) => <Tag key={t}>{t}</Tag>)}</span>}
               actions={canWrite ? (
@@ -105,7 +105,7 @@ export default function ItemDetail() {
               <div className="flex flex-col gap-4">
                 {dressing.data ? (
                   <Card>
-                    <div className="mb-3 flex items-center justify-between gap-2"><h2 className="text-md font-semibold">Rendement de l'annonce</h2><Link to="/app/dressing" className="text-xs font-medium text-accent">Dressing →</Link></div>
+                    <div className="mb-3 flex items-center justify-between gap-2"><h2 className="text-md font-semibold">Rendement de l'annonce</h2><Link to="/app/dressing" className="tap-target text-xs font-medium text-accent">Dressing →</Link></div>
                     <div className="flex items-center gap-4">
                       <ScoreRing score={dressing.data.performance.score} size={64} stroke={6} scale="listing" />
                       <div className="text-sm">
@@ -173,7 +173,7 @@ function ItemChecksCard({ item }: { item: InventoryItem }) {
   return (
     <Card>
       <ListingChecks item={item} scores={scores} />
-      <Link to={`/app/items/${item.id}/edit`} className="mt-2 inline-block text-xs font-medium text-accent hover:underline">Compléter les photos ou la description</Link>
+      <Link to={`/app/items/${item.id}/edit`} className="tap-target mt-2 inline-block text-xs font-medium text-accent hover:underline">Compléter les photos ou la description</Link>
     </Card>
   );
 }
