@@ -197,7 +197,7 @@ describe("page de paiement factice", () => {
       "GET /api/auth/session": () => [200, session(beta({ state: "ended", blocked: true }))],
       "GET /api/capabilities": () => [200, CAPS],
       "GET /api/billing/subscription": () => [200, sub({ status: "canceled", plan: "free", awaitingPaymentSince: END })],
-      "GET /api/billing/checkout/preview": (init) => [200, preview({ plan: "starter", planLabel: "Starter", priceCents: 699, dueCents: 699 })],
+      "GET /api/billing/checkout/preview": () => [200, preview({ plan: "starter", planLabel: "Starter", priceCents: 699, dueCents: 699 })],
       "POST /api/billing/checkout": () => [200, { orderToken: null, orderId: null, mode: null, amountCents: 0, captureMode: null, simulated: true, message: "Forfait Starter (mensuel, 6,99 €) retenu, sans carte : rien n'est débité." }],
     });
     renderApp([{ path: "/app/paiement", element: <Payment /> }], "/app/paiement");
@@ -243,7 +243,7 @@ describe("inscription avec le code", () => {
 
   it("code faux : message clair sous le champ, aucun compte créé ; champ vidé → essai normal", async () => {
     const calls = stubApi({
-      "POST /api/offers/check-signup": () => [200, { valid: false, message: "Code promo inconnu : vérifiez son orthographe. Corrigez-le, ou videz le champ pour commencer l'essai gratuit." }],
+      "POST /api/offers/check-signup": () => [200, { valid: false, message: "Code promo inconnu. Corrigez-le, ou videz le champ pour commencer l'essai gratuit." }],
       "POST /api/auth/register": () => [201, session(null)],
     });
     const router = createMemoryRouter([{ path: "/inscription", element: <Register /> }, { path: "/app/onboarding", element: <p>Démarrage</p> }], { initialEntries: ["/inscription"] });
@@ -273,7 +273,7 @@ describe("Selio Admin : comptes bêta et offre bêta", () => {
     const calls = stubApi({ "GET /api/auth/session": () => [200, session(null)], "GET /api/admin/offers": () => [200, [offer]], "PATCH /api/admin/offers/of-beta": () => [200, { ...offer, betaDays: 45 }] });
     renderApp([{ path: "/admin/offres", element: <AdminOffers /> }], "/admin/offres");
     const row = await screen.findByTestId("offer-row-BETA2026SELIO");
-    expect(row.textContent).toMatch(/Accès offert, sans carte/);
+    expect(row.textContent).toMatch(/Accès offert/);
     expect(row.textContent).toMatch(/30 jours/);
     expect(row.textContent).toMatch(/Jamais/);
     expect(row.textContent).toMatch(/12/);

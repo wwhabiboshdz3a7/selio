@@ -175,7 +175,7 @@ export function AdminOffers() {
                       <Tr key={o.id} data-testid={`offer-row-${o.code ?? o.id}`}>
                         <Td className="font-medium text-text">{o.name}{beta ? <StatusBadge tone="accent" className="ml-2">Bêta</StatusBadge> : null}</Td>
                         <Td className="num">{o.code ?? <span className="text-text-muted">Sans code</span>}</Td>
-                        <Td className="num">{beta ? `Accès offert, sans carte` : offerDiscountLabel(o)}</Td>
+                        <Td className="num">{beta ? "Accès offert" : offerDiscountLabel(o)}</Td>
                         <Td>{beta ? PLAN_LABELS[BETA_PLAN] : offerPlansLabel(o.plans)}</Td>
                         <Td>{beta ? `${o.betaDays ?? 30} jours` : o.durationMonths === null ? "Tant que l'abonnement dure" : `${o.durationMonths} mois`}</Td>
                         <Td>{periodLabel(o)}</Td>

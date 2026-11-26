@@ -6,7 +6,7 @@ import { TRIAL_OFFER } from "@selio/demo-data";
 import { usePageMeta } from "../../lib/seo";
 import { Container, Eyebrow, TrustRow } from "../components";
 import { trackConversion } from "../tracking";
-import { useData } from "../../lib/data/provider";
+import { queryClient, sessionKey, useData } from "../../lib/data/provider";
 import { connectedModeAvailable } from "../../lib/env";
 import { errorMessage } from "../../lib/errors";
 import type { Mode } from "../../lib/data/types";
@@ -48,7 +48,6 @@ export default function Register() {
   // Lien « /inscription?code=BETA2026SELIO » : le code est vérifié dès l'ouverture (titre et conditions de la bêta).
   useEffect(() => {
     if (promo.trim()) void checkPromo(promo);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -86,6 +85,9 @@ export default function Register() {
       // Conversion publicitaire : seulement un vrai compte (jamais la démonstration), et seulement
       // si la mesure ou la publicité est configurée et acceptée (../tracking.ts).
       if (mode === "connected") trackConversion("inscription");
+      // La session ouverte remplace celle en cache (« aucune session », lue par la vitrine), comme à la connexion :
+      // sinon l'espace client relirait « aucune session » et renverrait vers la page de connexion.
+      queryClient.setQueryData([...sessionKey, mode], session);
       // Réponses du serveur sur les codes (enregistré, ignoré, refusé) : affichées à l'arrivée dans l'application.
       const referralMessage = [session.referral?.message, session.promo?.message].filter((m): m is string => typeof m === "string").join(" ");
       // Code de la bêta : « Bienvenue dans la bêta » d'abord, puis le démarrage.

@@ -120,7 +120,7 @@ export default function Payment() {
                     <div className="flex justify-between gap-3"><dt className="text-text-muted">Forfait</dt><dd className="font-medium text-text">{p.planLabel} · {p.cycle === "yearly" ? "annuel" : "mensuel"}</dd></div>
                     <div className="flex justify-between gap-3"><dt className="text-text-muted">Prix</dt><dd className="num text-text">{formatCents(p.priceCents)} / {p.cycle === "yearly" ? "an" : "mois"}</dd></div>
                     {p.discount ? <div className="flex justify-between gap-3"><dt className="text-text-muted">{p.discount.label}</dt><dd className="num text-success">−{formatCents(p.discount.amountCents)}</dd></div> : null}
-                    <div className="flex justify-between gap-3"><dt className="text-text-muted">{p.afterBeta ? "Première échéance" : "Après l'essai"}</dt><dd className="num text-text">{formatCents(p.dueCents)}{p.trialEndsAt ? <span className="block text-right text-xs text-text-muted">à partir du {betaDateLabel(p.trialEndsAt)}</span> : null}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-text-muted">{p.afterBeta ? "Première échéance" : s.beta?.state === "running" ? "Après la bêta" : "Après l'essai"}</dt><dd className="num text-text">{formatCents(p.dueCents)}{p.trialEndsAt ? <span className="block text-right text-xs text-text-muted">à partir du {betaDateLabel(p.trialEndsAt)}</span> : null}</dd></div>
                   </dl>
                   <div className="mt-4 flex items-baseline justify-between gap-3 border-t border-border pt-4">
                     <span className="text-sm font-semibold text-text">À payer aujourd'hui</span>
