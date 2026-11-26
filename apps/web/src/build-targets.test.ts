@@ -17,7 +17,7 @@ const work = mkdtempSync(join(tmpdir(), "selio-cibles-"));
 /** Textes propres aux pages de Selio Admin (barre latérale, refus, supervision, fiche compte). */
 const ADMIN_MARKERS = ["Sections de l'administration", "Page réservée à l'opérateur technique", "Cibles vérifiées chaque minute", "Qualifier « Équipe Selio »", "Selio Admin", "Accès réservé à l'équipe Selio"];
 /** Client de démonstration et entrée /demo : jamais livrés en production. */
-const DEMO_MARKERS = ["Session de démonstration absente", "Préparation des données de démonstration", "Ouvrir la démonstration"];
+const DEMO_MARKERS = ["Session de démonstration absente", "Préparation des données de démonstration", "Ouvrir la démonstration", "Entrer dans la démonstration"];
 
 async function buildTarget(target: "public" | "admin", apiBase: string, outDir: string): Promise<void> {
   const saved = { target: process.env.VITE_APP_TARGET, api: process.env.VITE_API_BASE_URL };

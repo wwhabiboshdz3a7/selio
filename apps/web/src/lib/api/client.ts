@@ -27,6 +27,7 @@ import type { HealthDetailsView, ReferralView, StudioDraftInput } from "../data/
 import type { Photo, ReferralOverview } from "@selio/contracts";
 import type { AdminAccountDetail, AdminAccountRow, AdminAccountsQuery, AdminGrantInput, AdminGrowth, AdminQualificationInput } from "@selio/contracts";
 import type { CommercialOffer, OfferInput, OfferRedemption, OfferUpdate, PromoCheckResult, PublicOffer } from "@selio/contracts";
+import type { BetaStatus, SignupCodeCheck } from "@selio/contracts";
 import type { OfferDeleteResult, PromoApplyResult } from "../data/types";
 import type { BundleSuggestionView, DeclarationThresholdsView, EndToEndMarginsView, MigrationApplyView, MigrationConversion, VintedLimitsView } from "../data/types";
 
@@ -212,6 +213,10 @@ export class ApiClient implements DataClient {
     return (await this.get<{ offers: PublicOffer[] }>("/api/offers/banner")).offers;
   }
   checkPromoCode(input: { code: string; plan?: PaidPlan; cycle?: BillingCycle }) { return this.post<PromoCheckResult>("/api/offers/check", input); }
+  checkSignupCode(code: string) { return this.post<SignupCodeCheck>("/api/offers/check-signup", { code }); }
+  async markBetaWelcomeSeen(): Promise<BetaStatus | null> {
+    return (await this.post<{ beta: BetaStatus | null }>("/api/beta/welcome", {})).beta;
+  }
   async getOrgOffer(): Promise<OfferRedemption | null> {
     return (await this.get<{ redemption: OfferRedemption | null }>("/api/billing/offer")).redemption;
   }

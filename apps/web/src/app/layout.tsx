@@ -21,6 +21,8 @@ import { SpacePill, SpaceSwitcher } from "./spaces/SpaceSwitcher";
 import { PHOTOS_HOME, hasReducedView, reducedViewTarget, seesFinances } from "../lib/roles";
 import { DataError, type Session } from "../lib/data/types";
 import { OfferBanner } from "./components/offers";
+import { BetaBadge, BetaGate, BetaReminderBanner } from "./beta";
+import type { BetaStatus } from "@selio/contracts";
 import { prefetchProps } from "./prefetch";
 
 export function RequireSession({ children }: { children: ReactNode }) {
@@ -236,6 +238,8 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
         {reduced ? <Link to={PHOTOS_HOME} className="flex min-w-0 flex-1 items-center gap-2 px-2" aria-label="Selio, articles à photographier"><Logo height={20} /></Link> : <SpaceSwitcher area={area} />}
         <IconButton label="Fermer le menu" className="md:hidden" onClick={() => setOpen(false)} size="sm"><X /></IconButton>
       </div>
+      {/* Bêta : badge discret avec la date de fin. */}
+      {s.beta?.state === "running" ? <div className="-mt-1 shrink-0 px-4 pb-3"><BetaBadge beta={s.beta} /></div> : null}
       {!reduced && spaceNote ? (
         <p className="mx-3 mb-3 shrink-0 rounded-md bg-surface-muted px-3 py-2 text-xs text-text-muted">
           <span className="font-semibold text-text">{spaceNote.label}</span> — {spaceNote.text}
@@ -339,7 +343,9 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
           </Banner>
         ) : null}
         {mode === "demo" ? <RolePreviewBanner s={s} /> : null}
-        <BillingBanner s={subscription.data ?? null} pathname={location.pathname} simulated={paymentSimulated} />
+        <BillingBanner s={subscription.data ?? null} pathname={location.pathname} simulated={paymentSimulated} beta={s.beta} />
+        {/* Bêta : rappel J-7 puis J-1 tant qu'aucun moyen de paiement n'est enregistré. */}
+        <BetaReminderBanner beta={s.beta} pathname={location.pathname} />
         {/* Offre commerciale en cours (gérée dans Selio Admin) : refermable, rien sans offre. */}
         {reduced ? null : <OfferBanner scope="app" />}
         {cloudPaused ? (
@@ -356,13 +362,15 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
           {reduced
             ? <Link to={PHOTOS_HOME} className="flex h-11 min-w-0 flex-1 items-center gap-2" aria-label="Selio, articles à photographier"><Logo height={20} /></Link>
             : <Link to={HUB_PATH} className="flex h-11 min-w-0 flex-1 items-center gap-2" aria-label="Selio, vos espaces"><Logo height={20} /><SpacePill area={area} /></Link>}
+          <BetaBadge beta={s.beta} className="max-[380px]:hidden [&>span]:hidden" />
           {admin ? <Tag>Admin</Tag> : null}
           <Link to="/studio" aria-label="Générer une annonce" className="press bg-brand inline-flex size-11 items-center justify-center rounded-lg text-white"><Sparkles className="size-4 text-gold-300" aria-hidden /></Link>
           <IconButton label={resolved === "dark" ? "Mode clair" : "Mode sombre"} size="sm" onClick={() => setPreference(resolved === "dark" ? "light" : "dark")}>{resolved === "dark" ? <Sun /> : <Moon />}</IconButton>
         </header>
         <NavigationProgress />
         <main ref={mainRef} id="contenu-app" className="mx-auto w-full max-w-content flex-1 px-4 py-6 md:px-8 md:py-10 xl:px-12">
-          {reduced ? <ReducedViewGate /> : <Outlet />}
+          {/* Bêta : écran de bienvenue tant qu'il n'est pas vu ; mois terminé sans paiement → écran de blocage. */}
+          <BetaGate>{reduced ? <ReducedViewGate /> : <Outlet />}</BetaGate>
         </main>
       </div>
     </div>
@@ -452,8 +460,10 @@ function RolePreviewBanner({ s }: { s: Session }) {
  * après l'essai » avec les jours restants (la carte est demandée à la première ouverture de
  * l'application, pas à l'inscription) ; après un débit échoué, la prochaine tentative.
  */
-export function BillingBanner({ s, pathname, simulated = false }: { s: Subscription | null; pathname: string; simulated?: boolean }) {
+export function BillingBanner({ s, pathname, simulated = false, beta = null }: { s: Subscription | null; pathname: string; simulated?: boolean; beta?: BetaStatus | null }) {
   if (!s) return null;
+  // Bêta : le bandeau de la bêta (J-7, J-1) et l'écran de blocage remplacent ceux de l'essai.
+  if (beta && (beta.blocked || (beta.state === "running" && s.status === "trialing"))) return null;
   const onBilling = pathname.startsWith("/app/settings/billing");
   // Essai terminé alors que le paiement n'était pas activé : accès de base, en attente du paiement.
   if (s.status === "canceled" && s.awaitingPaymentSince) {

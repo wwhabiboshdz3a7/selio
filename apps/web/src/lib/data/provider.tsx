@@ -46,7 +46,7 @@ let demoLoading: Promise<DemoClient> | null = null;
  * vidéos). En production (__SELIO_DEMO__ faux au build), cette branche disparaît et son code n'est pas livré.
  */
 export function loadDemoClient(): Promise<DemoClient> {
-  if (!__SELIO_DEMO__) return Promise.reject(new Error("Démonstration indisponible sur cette installation."));
+  if (!__SELIO_DEMO__) return Promise.reject(new Error("Mode indisponible sur cette installation."));
   if (demoSingleton) return Promise.resolve(demoSingleton);
   demoLoading ??= import("../demo/client").then((m) => (demoSingleton ??= new m.DemoClient()));
   return demoLoading;
@@ -64,6 +64,11 @@ export function getDemoClient(): DemoClient {
  * à la connexion (avec la page en cours comme page de retour) au lieu de laisser des écrans en erreur.
  */
 function onUnauthorized(err: unknown, key?: readonly unknown[]): void {
+  // Bêta : mois terminé pendant que la page était ouverte (402 beta_ended) : la session relue affiche l'écran de blocage.
+  if ((err as { code?: string } | null)?.code === "beta_ended" && key?.[0] !== sessionKey[0]) {
+    void queryClient.invalidateQueries({ queryKey: [...sessionKey] });
+    return;
+  }
   if ((err as { status?: number } | null)?.status !== 401 || key?.[0] === sessionKey[0]) return;
   void queryClient.invalidateQueries({ queryKey: [...sessionKey] });
 }

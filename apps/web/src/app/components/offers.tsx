@@ -51,14 +51,16 @@ export function OfferHint({ text, title }: { text: string; title?: string }) {
 }
 
 /** Champ « Code promo » du formulaire d'inscription (facultatif, jamais bloquant). */
-export function PromoCodeField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+export function PromoCodeField({ value, onChange, onBlur, error, hint }: { value: string; onChange: (v: string) => void; onBlur?: () => void; error?: string; hint?: string }) {
   return (
-    <Field label="Code promo" hint="Facultatif. La remise s'appliquera à votre premier paiement ; un code inconnu est simplement ignoré.">
+    <Field label="Code promo" error={error} hint={hint ?? "Facultatif. Code bêta ou code promo : vérifié avant la création du compte."}>
       {(p) => (
         <Input
           id={p.id}
+          invalid={p.invalid}
           aria-describedby={p.describedBy}
           value={value}
+          onBlur={onBlur}
           onChange={(e) => onChange(e.target.value.toUpperCase())}
           autoComplete="off"
           spellCheck={false}

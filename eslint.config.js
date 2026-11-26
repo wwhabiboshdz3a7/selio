@@ -7,11 +7,13 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
+      "**/dist-admin/**",
       "**/build/**",
       "**/coverage/**",
       "**/node_modules/**",
       "**/dev-dist/**",
       "**/playwright-report/**",
+      "**/playwright-report-admin/**",
       "**/test-results/**",
       "**/*.gen.ts",
       "apps/web/public/**",

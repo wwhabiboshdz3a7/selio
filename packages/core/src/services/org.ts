@@ -6,17 +6,20 @@ import { invitationEmail } from "@selio/email";
 import { AppError, operatorRoleOf, requireAction, sendEmail, validationError, webLink, withOrg, type OrgContext } from "../context";
 import type { Session } from "../types";
 import { INVITE_TTL_DAYS, TOKEN_BYTES } from "./auth";
+import { betaStatusFor } from "./beta";
 
 export async function getSession(ctx: OrgContext): Promise<Session> {
-  return ctx.services.db.withGlobal(async (tx) => {
+  const base = await ctx.services.db.withGlobal(async (tx) => {
     const stored = await repos.users.byId(tx, ctx.userId);
     // Rôle d'opérateur recalculé depuis la configuration (Selio Admin) : `isOperator` reste vrai pour les deux rôles.
     const operatorRole = operatorRoleOf(ctx);
     const user = { ...stored, isOperator: operatorRole !== null, operatorRole };
     const org = await repos.orgs.byId(tx, ctx.orgId);
     const memberships = await repos.memberships.forUser(tx, ctx.userId);
-    return { mode: "connected", user, org, role: ctx.role, memberships };
+    return { mode: "connected" as const, user, org, role: ctx.role, memberships };
   });
+  // Bêta : badge, rappels J-7 / J-1, écran de bienvenue et écran de blocage (null pour un compte sans bêta).
+  return { ...base, beta: await betaStatusFor(ctx.services, ctx.orgId) };
 }
 
 export async function updateOrg(ctx: OrgContext, raw: unknown): Promise<Organization> {

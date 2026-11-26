@@ -50,6 +50,7 @@ Même fichier .env que ci-dessus (API et worker).
 |---|---|---|---|
 | `PUBLIC_WEB_URL` | Obligatoire | `https://votre-site.netlify.app` | Adresse du site web (retours de paiement, liens). |
 | `CORS_ORIGINS` | Obligatoire | `https://votre-site.netlify.app` | Origines autorisées à appeler l'API avec cookies (plusieurs : séparées par des virgules). |
+| `ADMIN_WEB_URL` | Facultatif | `https://seliovprod-admin.netlify.app` | Adresse du site Selio Admin séparé ; son origine rejoint `CORS_ORIGINS`. Inutile derrière le relais `/api/*` de Netlify (même origine), utile pour les appels directs (TUTORIELS.md §21). |
 | `COOKIE_SECURE` | Obligatoire | `true` | Obligatoire en production (HTTPS). Le serveur refuse de démarrer sinon. |
 | `TRUST_PROXY` | Recommandé | `true` | Derrière Caddy/Nginx, pour lire la vraie adresse IP (limites de débit, audit). |
 | `NODE_ENV` | Obligatoire | `production` | Active les garde-fous de production (pas d'IA simulée, cookies sécurisés). |

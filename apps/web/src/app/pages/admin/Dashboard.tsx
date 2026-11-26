@@ -36,6 +36,14 @@ export default function AdminDashboard() {
               <KpiCard label="Comptes bloqués" value={formatNumber(g.accounts.blocked)} />
               <KpiCard label="Parrainages" value={formatNumber(g.referrals.pending + g.referrals.qualified + g.referrals.credited)} hint={`${g.referrals.pending} en attente · ${g.referrals.qualified} qualifiés · ${g.referrals.credited} crédités · ${g.referrals.refused} refusés`} />
             </div>
+            {g.beta ? (
+              <div className="grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-4" data-testid="admin-beta-kpis">
+                <KpiCard label="Bêta : inscrits" value={formatNumber(g.beta.total)} hint="Inscriptions avec le code bêta" />
+                <KpiCard label="Bêta en cours" value={formatNumber(g.beta.running)} hint="Mois offert en cours" to={<Link to="/admin/comptes?status=beta" className="text-xs font-medium text-accent hover:underline">Voir</Link>} />
+                <KpiCard label="Bêta : fin sous 7 jours" value={formatNumber(g.beta.endingSoon)} hint="Rappels J-7 et J-1 affichés" />
+                <KpiCard label="Bêta terminée, bloqués" value={formatNumber(g.beta.blocked)} hint="Sans moyen de paiement : prolonger débloque" to={<Link to="/admin/comptes?status=beta_blocked" className="text-xs font-medium text-accent hover:underline">Voir</Link>} />
+              </div>
+            ) : null}
             <div className="grid gap-4 lg:grid-cols-2">
               <Card>
                 <h2 className="mb-3 text-md font-semibold">Par qualification</h2>

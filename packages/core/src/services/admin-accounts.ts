@@ -61,8 +61,22 @@ export function accountBlockedError(): AppError {
 
 // ---------------------------------------------------------------- lecture
 
+const RUNNING_STATUSES = ["trialing", "active", "past_due"];
+
+/**
+ * Bêta d'un compte : fin du mois en cours (essai bêta, prolongé, ou accès offert) et blocage (mois terminé sans
+ * moyen de paiement, abonnement toujours en attente : même règle que l'API et la session).
+ */
+function betaOf(r: repos.AdminAccountRecord): Pick<AdminAccountRow, "betaStartedAt" | "betaEndsAt" | "betaBlocked"> {
+  if (!r.betaStartedAt) return { betaStartedAt: null, betaEndsAt: null, betaBlocked: false };
+  const blocked = !!r.betaEndedAt && !!r.awaitingPaymentSince && !RUNNING_STATUSES.includes(r.status);
+  const endsAt = r.grantedUntil && !isGrantWithoutEnd(r.grantedUntil) ? r.grantedUntil : r.status === "trialing" ? r.currentPeriodEnd : null;
+  return { betaStartedAt: r.betaStartedAt, betaEndsAt: blocked ? null : endsAt, betaBlocked: blocked };
+}
+
 function rowOf(r: repos.AdminAccountRecord): AdminAccountRow {
   return {
+    ...betaOf(r),
     id: r.id,
     name: r.name,
     createdAt: r.createdAt,
@@ -97,9 +111,18 @@ export async function adminGrowth(ctx: OrgContext): Promise<AdminGrowth> {
   const byPlan = Object.fromEntries(PLANS.map((p) => [p, 0])) as Record<Plan, number>;
   const payingByPlan = Object.fromEntries(PAID_PLANS.map((p) => [p, 0])) as Record<PaidPlan, number>;
   const accounts = { total: records.length, trialing: 0, paying: 0, granted: 0, free: 0, blocked: 0 };
+  const beta = { total: 0, running: 0, endingSoon: 0, blocked: 0 };
   let mrrCents = 0, last7Days = 0, last30Days = 0;
   for (const rec of records) {
     const r = rowOf(rec);
+    if (r.betaStartedAt) {
+      beta.total++;
+      if (r.betaBlocked) beta.blocked++;
+      else if (r.betaEndsAt && new Date(r.betaEndsAt) > now) {
+        beta.running++;
+        if (new Date(r.betaEndsAt).getTime() - now.getTime() <= 7 * 86_400_000) beta.endingSoon++;
+      }
+    }
     byQualification[r.qualification]++;
     byPlan[r.plan]++;
     if (r.qualification === "bloque") accounts.blocked++;
@@ -124,6 +147,7 @@ export async function adminGrowth(ctx: OrgContext): Promise<AdminGrowth> {
     mrrCents,
     payingByPlan,
     referrals: { pending: referrals.pending ?? 0, qualified: referrals.qualified ?? 0, credited: referrals.credited ?? 0, refused: referrals.refused ?? 0 },
+    beta,
   };
 }
 
@@ -138,7 +162,11 @@ export async function listAccounts(ctx: OrgContext, rawQuery: unknown = {}): Pro
   return rows.filter((r) => {
     if (q.qualification && r.qualification !== q.qualification) return false;
     if (q.plan && r.plan !== q.plan) return false;
-    if (q.status === "granted" ? r.grantedUntil === null : q.status && (r.status !== q.status || r.grantedUntil !== null)) return false;
+    if (q.status === "beta") {
+      if (!r.betaEndsAt) return false;
+    } else if (q.status === "beta_blocked") {
+      if (!r.betaBlocked) return false;
+    } else if (q.status === "granted" ? r.grantedUntil === null : q.status && (r.status !== q.status || r.grantedUntil !== null)) return false;
     if (needle && ![r.name, r.ownerEmail ?? "", r.id].some((v) => v.toLowerCase().includes(needle))) return false;
     return true;
   });

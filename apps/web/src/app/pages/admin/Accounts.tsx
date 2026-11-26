@@ -15,10 +15,15 @@ const STATUS_FILTERS: { value: NonNullable<AdminAccountsQuery["status"]>; label:
   { value: "past_due", label: "Paiement en retard" },
   { value: "granted", label: "Accès offert" },
   { value: "canceled", label: "Résilié / accès de base" },
+  { value: "beta", label: "Bêta en cours" },
+  { value: "beta_blocked", label: "Bêta terminée (bloqué)" },
 ];
 
 /** Statut lisible d'un compte : accès offert, essai (avec sa fin), ou l'état de l'abonnement. */
-export function AccountStatus({ a }: { a: Pick<AdminAccountRow, "status" | "grantedUntil" | "currentPeriodEnd" | "awaitingPaymentSince"> }) {
+export function AccountStatus({ a }: { a: Pick<AdminAccountRow, "status" | "grantedUntil" | "currentPeriodEnd" | "awaitingPaymentSince" | "betaEndsAt" | "betaBlocked"> }) {
+  // Bêta (code BETA2026SELIO) : fin du mois, ou blocage faute de moyen de paiement (prolonger débloque).
+  if (a.betaBlocked) return <StatusBadge tone="danger">Bêta terminée · bloqué</StatusBadge>;
+  if (a.betaEndsAt && !a.grantedUntil) return <StatusBadge tone="accent">Bêta · fin {formatDate(a.betaEndsAt)}</StatusBadge>;
   // Essai terminé pendant que le paiement n'était pas activé : à relancer (prolonger l'essai ou offrir l'accès).
   if (a.status === "canceled" && a.awaitingPaymentSince && !a.grantedUntil) return <StatusBadge tone="warning">En attente du paiement</StatusBadge>;
   if (a.grantedUntil) return <StatusBadge tone="success">Offert · {grantEndLabel(a.grantedUntil, (d) => `jusqu'au ${formatDate(d)}`)}</StatusBadge>;

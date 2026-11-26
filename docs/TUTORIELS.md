@@ -48,6 +48,9 @@ curl -s https://seliovprod.netlify.app/api/health            # depuis Internet, 
 | 18 | [Achat automatique (Selio Bot)](#18-achat-automatique-selio-bot) | **fermé, avis de l'avocat attendu** |
 | 19 | [Achat réel](#19-achat-réel) | **fermé, avis de l'avocat attendu** |
 | 20 | [Publicité](#20-publicité) | voir PUBLICITE.md |
+| 21 | [Site Selio Admin séparé](#21-site-selio-admin-séparé) | à créer (deuxième projet Netlify) |
+| 22 | [Bêta : le code BETA2026SELIO](#22-bêta-le-code-beta2026selio) | **actif** (créé par la migration 0024) |
+| 23 | [Brancher Stripe](#23-brancher-stripe) | emplacement prêt, adaptateur à écrire (`PAYMENT_MODE=stripe` refusé au démarrage) |
 
 ---
 
@@ -242,7 +245,7 @@ Le worker vérifie chaque minute `/api/health` et `/api/ai/health` ; après 3 é
    - rôle **technique** (tout, santé, supervision, IA, interrupteurs) : `OPERATOR_EMAILS=ibrahim@…`
    - rôle **business** (croissance, comptes, offres commerciales, usage de Track) : `OPERATOR_BUSINESS_EMAILS=elias@…`
 2. Relancer. Les listes sont relues à chaque requête : pas de réinscription, pas de SQL.
-3. La personne se déconnecte puis se reconnecte : elle arrive sur `/admin` avec le badge « Technique » ou « Business ».
+3. La personne se connecte sur le **site Selio Admin** (tutoriel 21) : elle arrive sur `/admin` avec le badge « Technique » ou « Business ». Le site public n'a plus aucune page ni aucun lien d'administration : un opérateur qui s'y connecte arrive sur son espace client, comme tout le monde.
 
 **Étapes : qualifier un compte** (Selio Admin › Comptes, `/admin/comptes`, puis la fiche du compte)
 - **Qualification et note interne** : client, bêta, partenaire, équipe Selio, test ou bloqué, et une note de 500 caractères au plus, jamais montrée au client.
@@ -257,6 +260,8 @@ Le worker vérifie chaque minute `/api/health` et `/api/ai/health` ; après 3 é
 **Revenir en arrière** : retirer l'adresse de `OPERATOR_EMAILS` / `OPERATOR_BUSINESS_EMAILS` et relancer ; changer la qualification depuis la fiche.
 
 **Si `/admin` affiche « Le serveur n'est pas à jour : relancez la mise à jour »** : le site est plus récent que l'API, faire le tutoriel 11.
+
+**Si le site Selio Admin affiche « Accès réservé à l'équipe Selio »** : l'adresse de connexion n'est ni dans `OPERATOR_EMAILS` ni dans `OPERATOR_BUSINESS_EMAILS` ; l'ajouter (étapes ci-dessus), puis « Se déconnecter » et se reconnecter.
 
 ---
 
@@ -553,6 +558,92 @@ Les trois modèles doivent être « présent » (la ligne OCR peut rester « non
 ## 20. Publicité
 
 Les campagnes, les visuels et leur suivi sont décrits dans [PUBLICITE.md](PUBLICITE.md) ; les comptes, identifiants et réglages des régies sont dans la section « Publicité » de [CLES-ET-CONFIGURATION.md](CLES-ET-CONFIGURATION.md). Aucune promesse « zéro risque », « 100 % légal » ni « partenaire Vinted » dans une publicité ; la mention d'indépendance vis-à-vis de Vinted reste obligatoire ([VITRINE.md](VITRINE.md)).
+
+---
+
+## 21. Site Selio Admin séparé
+
+Selio Admin ne fait plus partie du site public : `/admin` y renvoie la page 404 de la vitrine et le code de l'administration n'est pas dans ses fichiers. L'administration a **son propre site Netlify**, construit à partir du **même dépôt et du même `netlify.toml`**, avec la cible `VITE_APP_TARGET=admin` : une page de connexion « Selio Admin », puis `/admin` et ses pages ; la racine mène à `/admin`. Ce site n'a ni vitrine, ni espace client, ni application installable ; il n'est jamais indexé (`<meta name="robots" content="noindex, nofollow">`, en-tête `X-Robots-Tag: noindex, nofollow` par le fichier `_headers` écrit au build, `robots.txt` « Disallow: / », pas de sitemap).
+
+**Il faut** : un compte Netlify (le même que le site public) et un compte opérateur (tutoriel 8).
+
+**Étapes**
+1. Netlify › **Add new project** › Import an existing project › le même dépôt GitHub, même branche. Ne rien changer aux réglages de build : `netlify.toml` les donne (commande `pnpm build:site`, dossier `apps/web/dist`).
+2. Nommer le projet, par exemple `seliovprod-admin` : l'adresse sera `https://seliovprod-admin.netlify.app`.
+3. Project configuration › Environment variables, ajouter :
+   - `VITE_APP_TARGET` = `admin`
+   - `VITE_API_BASE_URL` = l'adresse de **ce** site (ex. `https://seliovprod-admin.netlify.app`) : comme pour le site public, `/api/*` est relayé vers l'API du PC par `netlify.toml`, la session reste donc sur l'origine du site ;
+   - facultatif : `VITE_PUBLIC_SITE_URL` = `https://seliovprod.netlify.app` (lien « Ouvrir le site Selio » et « Mot de passe oublié »).
+4. Lancer le déploiement (Deploys › Trigger deploy).
+5. Sur le PC, rien n'est obligatoire : derrière le relais, les appels sont de même origine. Pour que l'API connaisse aussi cette origine (WebSocket, appels directs), ajouter dans `deploy/.env` `ADMIN_WEB_URL=https://seliovprod-admin.netlify.app` (elle rejoint `CORS_ORIGINS`), puis relancer. `PUBLIC_WEB_URL` ne change pas (liens des emails : site public).
+6. Site public : vérifier que son projet Netlify n'a **pas** `VITE_APP_TARGET=admin` (absente ou `public`).
+
+**Vérifier**
+```bash
+curl -sI https://seliovprod-admin.netlify.app/ | grep -i x-robots-tag      # x-robots-tag: noindex, nofollow
+curl -s https://seliovprod-admin.netlify.app/robots.txt                     # Disallow: /
+curl -s https://seliovprod-admin.netlify.app/api/health                     # {"ok":true,…} à travers le relais
+```
+Puis se connecter sur le site Selio Admin avec un compte opérateur : arrivée sur `/admin`. Sur le site public, `https://seliovprod.netlify.app/admin` affiche « Page introuvable ».
+
+**Revenir en arrière** : supprimer le projet Netlify d'administration (le site public n'est pas touché) et retirer `ADMIN_WEB_URL` de `deploy/.env`.
+
+---
+
+## 22. Bêta : le code BETA2026SELIO
+
+Pour la bêta, les inscrits ne donnent pas de carte : ils saisissent **`BETA2026SELIO`** dans le champ « Code promo » de l'inscription (ou arrivent par `https://seliovprod.netlify.app/inscription?code=BETA2026SELIO`, qui préremplit le champ et affiche « Rejoindre la bêta Selio »). Majuscules, espaces et tirets ne comptent pas : `beta2026selio`, `BETA-2026-SELIO` et `Beta 2026 Selio` marchent aussi.
+
+**Ce que le code donne** (rien à faire, la migration 0024 crée le code au déploiement) :
+- **30 jours de Selio Pro**, sans carte. Pro est le forfait de l'essai (`TRIAL_PLAN`) : la bêta donne la même chose que l'essai, en plus long. Agence (10 comptes, équipe) reste une décision au cas par cas : **Offrir l'accès** dans la fiche du compte (tutoriel 8).
+- Une **facture à 0,00 €** « Selio — accès bêta, 1 mois offert », numérotée comme les autres (SEL-AAAA-000001), visible dans Paramètres › Factures. Aucun prestataire de paiement n'est appelé.
+- Le compte est qualifié **« Bêta »** dans Selio Admin (avec la note « Inscription avec le code bêta BETA2026SELIO »).
+- Un écran animé **« Bienvenue dans la bêta Selio »** juste après l'inscription (et à la première connexion s'il n'a pas été vu), puis le Démarrage. Un badge « Bêta · jusqu'au JJ/MM/AAAA » reste dans le menu.
+- Une seule fois par compte. Un code faux est signalé sous le champ avant la création du compte ; si la personne vide le champ, elle a l'essai normal de 14 jours.
+
+**Avant la fin** : bandeau dans l'application à **J-7** puis à **J-1** (« ajoutez un moyen de paiement pour continuer »), et un email aux mêmes dates **seulement si l'envoi d'emails est configuré** (tutoriel 1 ; sinon, rien n'est envoyé).
+
+**À la fin du mois** (tâche horaire du worker) :
+- **sans moyen de paiement** : « accès bêta terminé ». L'application affiche un écran de blocage « Votre mois de bêta est terminé — ajoutez un moyen de paiement pour continuer » sur toutes les pages, sauf Paramètres › Abonnement, Factures, Données (export) et la déconnexion. L'API refuse les actions métier (création d'article, réponses, extension…) avec l'erreur **402 `beta_ended`**. **Les données sont conservées** (aucune purge) ;
+- **avec un moyen de paiement** (forfait retenu sur la page de paiement en attendant Stripe, ou carte enregistrée) : pas de blocage, la suite habituelle (« en attente du paiement » tant que le paiement en ligne n'est pas ouvert).
+
+La page « Ajouter un moyen de paiement » (`/app/paiement`) affiche « Paiement en cours d'ouverture — aucune carte n'est demandée pour l'instant » : le client choisit son forfait, confirme, rien n'est débité, et un compte bloqué est rouvert en accès de base en attendant l'ouverture du paiement en ligne. Aucun champ de carte n'y figure.
+
+**Désactiver ou régler le code** (Selio Admin › **Offres**, ligne « Bêta Selio », crayon) : nom, code, **durée de l'accès** (1 à 90 jours, pour les prochaines inscriptions), **début / fin des inscriptions**, **maximum d'utilisations** (le compteur d'utilisations est dans la liste), **Code bêta actif**. Bouton **Désactiver** dans la liste : le code est refusé avec un message clair (« Ce code bêta n'est pas valable en ce moment »), l'inscription reste possible en essai normal ; les comptes déjà en bêta gardent leur mois.
+
+**Prolonger ou débloquer un compte** (Selio Admin › **Comptes**, filtres « Bêta en cours » et « Bêta terminée (bloqué) », ou les chiffres « Bêta » du tableau de bord) : fiche du compte › **Prolonger l'essai** (1 à 90 jours : pendant la bêta, à partir de sa fin ; après, à partir d'aujourd'hui) ou **Offrir l'accès** jusqu'à une date. Le déblocage est immédiat (application et API).
+
+**Vérifier**
+```bash
+curl -s -X POST http://127.0.0.1:8787/api/offers/check-signup -H 'content-type: application/json' -d '{"code":"beta-2026-selio"}'
+# {"valid":true,"beta":{"days":30,"plan":"pro"},"message":"Code bêta valable : …"}
+```
+Puis créer un compte de test avec le code : écran de bienvenue, badge « Bêta », facture à 0,00 € dans Paramètres › Factures, compte « Bêta » dans Selio Admin.
+
+**Revenir en arrière** : désactiver l'offre dans Selio Admin › Offres. La migration ne recrée jamais un code qui existe déjà (même désactivé, même renommé avec d'autres tirets).
+
+---
+
+## 23. Brancher Stripe
+
+Aujourd'hui le paiement est **simulé** (tutoriel 2). Stripe remplacera Revolut ; l'emplacement est prêt, l'adaptateur reste à écrire **quand les clés arriveront** (il doit être testé contre le mode test de Stripe, ce qui n'est pas possible sans clés).
+
+**Ce qui existe déjà**
+- `PAYMENT_MODE=stripe` est une valeur connue, mais **l'API et le worker refusent de démarrer** avec ce message : « PAYMENT_MODE=stripe : l'adaptateur Stripe n'est pas encore installé dans cette version de Selio. Gardez PAYMENT_MODE=simulated (ou auto) en attendant ». Rien ne peut donc laisser croire que des paiements passent.
+- L'interface `PaymentProvider` (`packages/connectors/src/payments/types.ts`) : client, moyen de paiement enregistré « pour le marchand », commande, débit à l'initiative du marchand, annulation, lecture d'une commande, webhook signé. Revolut l'implémente (`revolut.ts`) ; Stripe l'implémentera de la même façon.
+- La page de paiement `/app/paiement` appelle déjà `POST /api/billing/checkout` : avec un prestataire réel, ce même bouton ouvrira son formulaire sécurisé.
+
+**Quand les clés Stripe arrivent** (à faire par un développeur, compter une journée avec les tests)
+1. Dans le tableau de bord Stripe, mode **Test** : récupérer la clé secrète `sk_test_…` et créer un point de terminaison de webhook vers `https://<adresse publique>/api/billing/webhook/stripe` (événements : `checkout.session.completed`, `payment_intent.succeeded`, `payment_intent.payment_failed`, `setup_intent.succeeded`) ; noter son secret `whsec_…`.
+2. Écrire `packages/connectors/src/payments/stripe.ts` : une classe `StripeClient` qui implémente `PaymentProvider` (`name: "stripe"`), avec ses tests sur un `fetch` simulé comme `revolut.test.ts` (carte enregistrée en mode `setup`, débit `off_session`, signature `Stripe-Signature` vérifiée sur le corps brut).
+3. `config.ts` : lire `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_MODE` (`test` par défaut, `live` seulement avec `STRIPE_LIVE_ALLOWED=true`), retirer le refus de `PAYMENT_MODE=stripe` et construire `StripeClient` dans `createPaymentProvider`.
+4. Base : ajouter `stripe` aux fournisseurs (`SUBSCRIPTION_PROVIDERS`) par une migration, et une route de webhook `POST /api/billing/webhook/stripe`.
+5. Page `/app/paiement` : en mode Stripe, ouvrir le formulaire hébergé de Stripe (redirection) au lieu du récapitulatif simulé.
+6. Essayer en mode test avec la carte de test de Stripe, de bout en bout (inscription bêta, fin du mois, paiement, déblocage, facture), puis seulement passer en `live`.
+
+**Dans `deploy/.env`, le jour venu** : `PAYMENT_MODE=stripe`, `STRIPE_SECRET_KEY=sk_test_…`, `STRIPE_WEBHOOK_SECRET=whsec_…`, relancer (`docker compose up -d api worker`). Les comptes bêta qui avaient retenu un forfait sur la page de paiement recevront le lien pour enregistrer leur carte ; ceux qui sont bloqués seront débloqués à leur premier paiement.
+
+**Revenir en arrière** : `PAYMENT_MODE=simulated`, relancer : plus aucun débit, la page de paiement redevient le récapitulatif sans carte.
 
 ---
 

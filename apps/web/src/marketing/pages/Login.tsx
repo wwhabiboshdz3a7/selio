@@ -65,7 +65,7 @@ export default function Login() {
           <Field label="Mot de passe" required>{(p) => <Input id={p.id} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />}</Field>
           <p className="-mt-2 text-right text-sm"><Link to="/mot-de-passe-oublie" className="text-text-muted underline underline-offset-2 hover:text-text">Mot de passe oublié ?</Link></p>
           {error ? <Alert tone="danger">{error}</Alert> : null}
-          <Button type="submit" variant="accent" loading={loading} disabled={mode === "connected" && !connectedModeAvailable} fullWidth>{mode === "demo" ? "Entrer dans la démonstration" : "Se connecter"}</Button>
+          <Button type="submit" variant="accent" loading={loading} disabled={mode === "connected" && !connectedModeAvailable} fullWidth>{__SELIO_DEMO__ && mode === "demo" ? "Entrer dans la démonstration" : "Se connecter"}</Button>
           <p className="text-center text-sm text-text-muted">Pas de compte ? <Link to="/inscription" className="font-medium text-text underline underline-offset-2">Créer un compte</Link></p>
         </form>
       </Container>

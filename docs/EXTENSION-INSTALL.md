@@ -1,24 +1,40 @@
 # Extension navigateur — installation non empaquetée
 
+_Mis à jour le 26 novembre 2026 : téléchargement et installation guidée depuis le site._
+
 État : **construite et testée sur fixtures, expérimentale**. Les adaptateurs de page doivent être validés sur le site réel avant toute annonce de compatibilité.
 
-## Construire
+## Installer depuis le site (parcours guidé, recommandé)
+Le site public sert lui-même l'extension : **`/extension/selio-extension.zip`** (avec sa fiche `/extension/selio-extension.json` : version, taille, empreinte). Le zip est **reconstruit à chaque build Netlify** de la cible « public » (`pnpm build:site` → `apps/web/scripts/extension-zip.mjs`) ; il n'est jamais committé. L'adresse de l'API (`VITE_API_BASE_URL` du projet Netlify, sinon l'adresse du site) est **pré-remplie** dans les options de l'extension, et l'autorisation demandée est limitée à cette seule origine (`optional_host_permissions`).
+
+Dans l'application, après l'inscription : **Démarrage** (`/app/onboarding`, étape « Extension et comptes Vinted ») ou **Comptes Vinted** (`/app/accounts`, section « Installer l'extension Selio, pas à pas », ouverte tant qu'aucun compte Vinted n'est connecté). Le parcours, avec des schémas :
+
+1. **Télécharger** : bouton « Télécharger l'extension » (fichier `selio-extension.zip`). Sur un ordinateur, avec Chrome, Edge ou Brave.
+2. **Installer** :
+   - décompresser le zip (clic droit › « Extraire tout… » sous Windows, double-clic sur Mac) et ranger le dossier `selio-extension` à un endroit stable (Documents) : le navigateur le relit à chaque démarrage ;
+   - ouvrir `chrome://extensions` (ou `edge://extensions`, `brave://extensions`), à coller dans la barre d'adresse (un site ne peut pas ouvrir ces pages) ;
+   - activer le **Mode développeur** (en haut à droite ; dans Edge, colonne de gauche) ;
+   - **Charger l'extension non empaquetée** → choisir le dossier décompressé (celui qui contient `manifest.json`) ;
+   - **épingler** : pièce de puzzle à droite de la barre d'adresse, puis l'épingle à côté de « Selio — assistant revendeur ».
+3. **Relier** : la page Options s'ouvre seule à l'installation (sinon clic droit sur le logo › Options). L'adresse de Selio y est déjà remplie (`https://seliovprod.netlify.app` en production) ; créer un jeton dans le parcours (« Créer un jeton », affiché une seule fois, bouton « Copier »), le coller dans « Jeton d'extension », **Associer**, accepter l'autorisation du navigateur. La fenêtre de l'extension affiche « Associée ».
+4. **Ajouter les comptes Vinted** : se connecter à Vinted comme d'habitude dans ce même navigateur, puis « Ajouter un compte Vinted » (pseudo et catégorie : vente, achat ou perso). **Aucun mot de passe Vinted n'est jamais demandé** : l'extension lit seulement les pages Vinted ouvertes. En ouvrant une page Vinted, le compte passe à « Connecté ».
+5. **Configuration de départ** (Comptes Vinted ; dans Démarrage, c'est l'étape suivante) : marges et négociation, automatisations, première annonce avec Selio Studio.
+
+Sur une installation sans archive (développement, build sans extension), le bouton est grisé et un message le dit.
+
+## Construire à la main (développement)
 ```bash
-pnpm build:extension      # → apps/extension/dist
+pnpm build:extension      # → apps/extension/dist (adresse par défaut : VITE_DEFAULT_API_BASE_URL, sinon http://127.0.0.1:8787)
+VITE_API_BASE_URL=https://seliovprod.netlify.app pnpm build:site   # site public + apps/web/dist/extension/selio-extension.zip
 ```
-Contrôle facultatif dans Chromium (service worker, popup, options) : `cd apps/extension && node scripts/check-extension.mjs`.
+Contrôle facultatif dans Chromium (service worker, popup, options) : `cd apps/extension && node scripts/check-extension.mjs`. Pour une installation manuelle, « Charger l'extension non empaquetée » → `apps/extension/dist`.
 
-## Installer (Chrome / Chromium / Edge / Brave)
-1. Ouvrir `chrome://extensions`, activer le **Mode développeur**.
-2. **Charger l'extension non empaquetée** → sélectionner `apps/extension/dist`.
-3. La page Options s'ouvre automatiquement à la première installation.
-
-## Associer à un compte Selio
-1. Dans l'application Selio (mode connecté) : Comptes Vinted › « Avancé — relier l'extension Selio » › **Créer un jeton** (nommer l'appareil). Le secret s'affiche une seule fois.
-2. Dans les Options de l'extension : saisir l'URL de l'API (ex. `https://api.exemple.fr`) et coller le jeton, puis **Associer**. Chrome demande l'autorisation d'accès à l'origine de l'API (nécessaire, limitée à cette origine).
+## Associer à un compte Selio (détail)
+1. Le jeton se crée dans le parcours guidé, ou dans Comptes Vinted › « Avancé — relier l'extension Selio » › **Créer un jeton** (nommer l'appareil). Le secret s'affiche une seule fois. Cette section « Avancé » liste aussi les jetons et permet de les révoquer.
+2. Dans les Options de l'extension : l'URL de l'API est pré-remplie (zip du site) ; coller le jeton, puis **Associer**. Chrome demande l'autorisation d'accès à l'origine de l'API (nécessaire, limitée à cette origine).
 3. Le popup indique « Associé » et le nom de l'organisation. Les connexions Vinted de l'organisation passent en « Connecté » tant que l'extension donne signe de vie.
 
-En mode démonstration (sans API), l'association n'est pas possible : l'extension exige un serveur Selio.
+L'extension exige un serveur Selio (mode connecté) : elle appelle `/api/ext/*` à l'adresse du site, relayée par Netlify vers l'API.
 
 ## Utiliser
 - Page **article** sur vinted.fr : bouton « Selio · article » → aperçu des champs lus, prix d'achat facultatif, **Capturer vers le stock** (statut « en stock », à compléter dans l'application).
