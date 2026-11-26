@@ -50,7 +50,7 @@ export default async function pushRoutes(app: FastifyInstance, opts: PushRouteOp
   app.post("/api/push/subscriptions", { config: perUser("push-sub", 20, "15 minutes") }, async (req, reply) => {
     const ctx = app.requireCtx(req);
     if (!enabled()) throw pushDisabled();
-    const endpoint = (req.body as { endpoint?: unknown } | null)?.endpoint;
+    const endpoint = ((req.body ?? {}) as { endpoint?: unknown } | null)?.endpoint;
     if (typeof endpoint !== "string" || !isAllowedPushEndpoint(endpoint)) {
       throw new AppError("validation", "Adresse de notification refusée : seuls les services de notification des navigateurs (Google, Mozilla, Microsoft, Apple) sont acceptés.", 400);
     }
@@ -61,7 +61,7 @@ export default async function pushRoutes(app: FastifyInstance, opts: PushRouteOp
 
   app.delete("/api/push/subscriptions", { config: perUser("push-sub", 20, "15 minutes") }, async (req) => {
     const ctx = app.requireCtx(req);
-    const fromBody = (req.body as { endpoint?: unknown } | null)?.endpoint;
+    const fromBody = ((req.body ?? {}) as { endpoint?: unknown } | null)?.endpoint;
     const fromQuery = (req.query as { endpoint?: unknown } | null)?.endpoint;
     const endpoint = typeof fromBody === "string" ? fromBody : typeof fromQuery === "string" ? fromQuery : "";
     return radarAlerts.unsubscribePush(ctx, endpoint);

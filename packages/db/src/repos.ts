@@ -402,6 +402,19 @@ export const rateLimits = {
     );
     return Number(rows[0]?.count ?? 0);
   },
+  /** Libère un compteur (verrou anti double envoi d'une action qui a échoué). */
+  async release(tx: Tx, key: string): Promise<void> {
+    await tx.query("delete from rate_limits where key = $1", [key]);
+  },
+  /** Fait expirer un compteur posé avec une fenêtre `windowMs` dans `remainingMs` (fenêtre raccourcie). */
+  async expireIn(tx: Tx, key: string, remainingMs: number, windowMs: number): Promise<void> {
+    await tx.query("update rate_limits set window_start = now() - ($2 || ' milliseconds')::interval where key = $1", [key, String(Math.max(0, windowMs - remainingMs))]);
+  },
+  /** Supprime les compteurs dont la fenêtre a commencé il y a plus d'un jour (toutes les fenêtres sont plus courtes). */
+  async purgeStale(tx: Tx): Promise<number> {
+    const rows = await tx.query("delete from rate_limits where window_start < now() - interval '1 day' returning key");
+    return rows.length;
+  },
 };
 
 // ---------------------------------------------------------------- par organisation

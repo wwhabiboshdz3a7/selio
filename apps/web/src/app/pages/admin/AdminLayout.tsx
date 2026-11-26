@@ -7,6 +7,7 @@ import { Avatar, Banner, Button, IconButton, Menu, cn } from "@selio/ui";
 import { useClient, useData, useRequiredSession, useSession } from "../../../lib/data/provider";
 import { useTheme } from "../../../lib/theme";
 import { unsubscribeOnLogout } from "../../../lib/push";
+import { announceSession } from "../../../lib/session-sync";
 import { SERVER_OUTDATED_TEXT, SERVER_OUTDATED_TITLE, adminSectionsFor, operatorRoleOfSession, type AdminSection } from "../../../lib/admin";
 import { useCapabilities } from "../../../lib/capabilities";
 import { Logo } from "../../../components/Logo";
@@ -182,7 +183,7 @@ export default function AdminLayout() {
           items={[
             { label: resolved === "dark" ? "Mode clair" : "Mode sombre", icon: resolved === "dark" ? <Sun /> : <Moon />, onSelect: () => setPreference(resolved === "dark" ? "light" : "dark") },
             { label: "Ouvrir l'espace client", icon: <ArrowUpRight />, onSelect: () => navigate("/app") },
-            { label: "Se déconnecter", icon: <LogOut />, onSelect: async () => { await unsubscribeOnLogout(client); await client.logout(); navigate("/connexion"); } },
+            { label: "Se déconnecter", icon: <LogOut />, onSelect: async () => { await unsubscribeOnLogout(client); await client.logout(); announceSession("logout"); navigate("/connexion"); } },
           ]}
         />
       </div>

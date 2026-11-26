@@ -191,5 +191,7 @@ export async function retentionCleanup(services: Services): Promise<{ orgs: numb
     });
   }
   const sessions = await services.db.withGlobal((tx) => repos.sessions.purgeExpired(tx));
+  // Compteurs de limitation (tentatives de connexion, anti double envoi) dont la fenêtre est close depuis un jour.
+  await services.db.withGlobal((tx) => repos.rateLimits.purgeStale(tx));
   return { orgs: orgs.length, messages, audit, ai, sessions };
 }

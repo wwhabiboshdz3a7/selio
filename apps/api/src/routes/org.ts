@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { PLAN_LABELS, orgUpdate, quotasForPlan, type Role } from "@selio/contracts";
 import { repos } from "@selio/db";
-import { AppError, org as orgService, radar, requireAction, withOrg } from "@selio/core";
+import { org as orgService, radar, requireAction, validationError, withOrg } from "@selio/core";
 
 export default async function orgRoutes(app: FastifyInstance) {
   /**
@@ -12,7 +12,7 @@ export default async function orgRoutes(app: FastifyInstance) {
    */
   app.patch("/api/org", async (req) => {
     const ctx = app.requireCtx(req);
-    const body = req.body && typeof req.body === "object" ? (req.body as { name?: unknown; settings?: unknown }) : {};
+    const body = req.body && typeof req.body === "object" ? ((req.body ?? {}) as { name?: unknown; settings?: unknown }) : {};
     const settings = body.settings && typeof body.settings === "object" && !Array.isArray(body.settings) ? { ...(body.settings as Record<string, unknown>) } : null;
     if (!settings || (!("radar" in settings) && !("autoBuy" in settings))) return orgService.updateOrg(ctx, req.body);
     const { radar: radarSettings, autoBuy, ...rest } = settings;
@@ -22,14 +22,14 @@ export default async function orgRoutes(app: FastifyInstance) {
     if (hasRest) {
       requireAction(ctx, "org.update");
       const parsed = orgUpdate.safeParse(restBody);
-      if (!parsed.success) throw new AppError("validation", "Paramètres invalides", 400, parsed.error.flatten());
+      if (!parsed.success) throw validationError("Paramètres invalides", parsed.error, { name: "Nom de l'organisation" });
     }
     await radar.updateRadarSettings(ctx, { ...(radarSettings !== undefined ? { radar: radarSettings } : {}), ...(autoBuy !== undefined ? { autoBuy } : {}) });
     if (hasRest) return orgService.updateOrg(ctx, restBody);
     return withOrg(ctx, (tx) => repos.orgs.byId(tx, ctx.orgId));
   });
   app.delete("/api/org", async (req, reply) => {
-    await orgService.deleteOrganization(app.requireCtx(req), String((req.body as { confirmName?: string })?.confirmName ?? ""));
+    await orgService.deleteOrganization(app.requireCtx(req), String(((req.body ?? {}) as { confirmName?: string })?.confirmName ?? ""));
     reply.clearCookie("selio_session", { path: "/" });
     reply.status(204);
   });
@@ -46,9 +46,9 @@ export default async function orgRoutes(app: FastifyInstance) {
     return { plan, planLabel: PLAN_LABELS[plan], status: sub?.status ?? "none", trial: sub?.status === "trialing", quotas: sub?.quotas ?? quotasForPlan("free") };
   });
   // Invitation : chaque appel envoie un email (aller-retour SMTP hors transaction) → 20 par quart d'heure et par adresse IP.
-  app.post("/api/org/members", { config: { rateLimit: { max: 20, timeWindow: "15 minutes" } } }, async (req, reply) => { reply.status(201); return orgService.inviteMember(app.requireCtx(req), req.body); });
+  app.post("/api/org/members", { config: { rateLimit: { max: 20, timeWindow: "15 minutes" }, doubleSubmit: true } }, async (req, reply) => { reply.status(201); return orgService.inviteMember(app.requireCtx(req), req.body); });
   app.patch<{ Params: { id: string } }>("/api/org/members/:id", async (req, reply) => {
-    await orgService.updateMemberRole(app.requireCtx(req), req.params.id, (req.body as { role: Role }).role);
+    await orgService.updateMemberRole(app.requireCtx(req), req.params.id, ((req.body ?? {}) as { role: Role }).role);
     reply.status(204);
   });
   app.delete<{ Params: { id: string } }>("/api/org/members/:id", async (req, reply) => {

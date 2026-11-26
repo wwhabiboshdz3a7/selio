@@ -15,7 +15,8 @@ import { MAX_UPLOAD_BYTES, UPLOAD_KINDS, keyBelongsToOrg, objectKey, parseObject
 const presignBody = z.object({
   kind: z.string().min(1).max(32),
   contentType: z.string().min(1).max(128),
-  size: z.number().int().positive().max(1024 * 1024 * 1024),
+  // Aucune borne ici : une taille de plusieurs Go (ou nulle, négative) reçoit le message clair de `validateUpload`.
+  size: z.number(),
 });
 
 const readQuery = z.object({ key: z.string().min(1).max(512) });

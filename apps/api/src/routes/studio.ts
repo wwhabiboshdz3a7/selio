@@ -223,7 +223,7 @@ export default async function studioRoutes(app: FastifyInstance) {
    */
   app.post("/api/studio/generate", { bodyLimit: STUDIO_PHOTOS_BODY_LIMIT, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req) => {
     const ctx = app.requireCtx(req);
-    const fromPrep = !!req.body && typeof req.body === "object" && (req.body as { prepId?: unknown }).prepId != null;
+    const fromPrep = !!req.body && typeof req.body === "object" && ((req.body ?? {}) as { prepId?: unknown }).prepId != null;
     precheckStudioPhotos(req.body, { strict: fromPrep, reducer: !!app.services.studio?.reducer });
     try {
       return await studio.generateListing(ctx, req.body, abortOnClose(req));
@@ -236,7 +236,7 @@ export default async function studioRoutes(app: FastifyInstance) {
    * Brouillon de l'annonce générée (« studio.generate ») : article « en stock », sans prix d'achat, sans
    * plancher, sans compte Vinted, jamais publié. Seule écriture du stock ouverte au contributeur photos.
    */
-  app.post("/api/studio/drafts", { bodyLimit: STUDIO_PHOTOS_BODY_LIMIT, config: perUser("studio-drafts", 30, "1 minute") }, async (req, reply) => {
+  app.post("/api/studio/drafts", { bodyLimit: STUDIO_PHOTOS_BODY_LIMIT, config: { ...perUser("studio-drafts", 30, "1 minute"), doubleSubmit: true } }, async (req, reply) => {
     const item = await items.createStudioDraft(app.requireCtx(req), req.body ?? {});
     reply.status(201);
     return item;
@@ -269,6 +269,6 @@ export default async function studioRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------- dressing et marché
 
   app.get("/api/dressing", async (req) => dressing.getDressing(app.requireCtx(req), req.query as Record<string, unknown>));
-  app.post<{ Params: { id: string } }>("/api/items/:id/republish", async (req) => dressing.republishItem(app.requireCtx(req), req.params.id, (req.body as { variantId?: unknown } | null)?.variantId));
+  app.post<{ Params: { id: string } }>("/api/items/:id/republish", { config: { doubleSubmit: true } }, async (req) => dressing.republishItem(app.requireCtx(req), req.params.id, ((req.body ?? {}) as { variantId?: unknown } | null)?.variantId));
   app.get("/api/market/insights", async (req) => market.getMarketInsights(app.requireCtx(req), req.query as Record<string, unknown>));
 }

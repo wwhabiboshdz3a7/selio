@@ -6,6 +6,7 @@ import { Alert, Button, Card, ConfirmDialog } from "@selio/ui";
 import { useClient, useData, useRequiredSession } from "../../../lib/data/provider";
 import { downloadFile } from "../../../lib/download";
 import { useAppMutation } from "../../components/hooks";
+import { announceSession } from "../../../lib/session-sync";
 
 export default function Data() {
   const client = useClient();
@@ -17,7 +18,8 @@ export default function Data() {
   const [typed, setTyped] = useState("");
   const exportAll = useAppMutation(() => client.exportAllData(), { success: "Export généré", onSuccess: (blob) => downloadFile(`selio-export-${new Date().toISOString().slice(0, 10)}.json`, blob) });
   const reset = useAppMutation(() => client.resetDemo(), { invalidate: ["session"], success: "Démonstration réinitialisée", onSuccess: () => { setConfirmReset(false); navigate("/app"); } });
-  const del = useAppMutation(() => client.deleteOrganization(typed), { onSuccess: () => { setConfirmDelete(false); navigate("/"); } });
+  // Organisation supprimée : les autres onglets ouverts sur ce compte sont déconnectés aussi.
+  const del = useAppMutation(() => client.deleteOrganization(typed), { onSuccess: () => { setConfirmDelete(false); announceSession("logout"); navigate("/"); } });
   return (
     <div className="flex flex-col gap-4">
       <Card>

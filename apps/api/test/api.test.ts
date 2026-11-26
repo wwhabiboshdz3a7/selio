@@ -115,7 +115,8 @@ function revolutWebhook(event: string, orderId: string, opts: { secret?: string;
   return built.app.inject({ method: "POST", url: "/api/billing/webhook/revolut", payload, headers: { "content-type": "application/json", "revolut-request-timestamp": String(ts), "revolut-signature": `v1=${computeRevolutSignature(opts.secret ?? REVOLUT_WEBHOOK_SECRET, ts, payload)}` } });
 }
 
-const baseEnv = { DATABASE_URL: APP_URL, SECRETS_ENCRYPTION_KEY: SecretBox.generateKey(), NODE_ENV: "test", LOG_LEVEL: "error", AI_PROVIDER: "mock", ALLOW_AI_FALLBACK: "false", OPERATOR_EMAILS: "ops@test.local", REVOLUT_SECRET_KEY: REVOLUT_KEY, REVOLUT_WEBHOOK_SECRET: REVOLUT_WEBHOOK_SECRET, REVOLUT_MODE: "sandbox", AI_HEALTH_TOKEN: "jeton-de-sante-de-test-0123", PUBLIC_WEB_URL: "https://app.selio.test" };
+// Anti double envoi : protection pendant le traitement seulement (ces tests rejouent volontairement la même requête juste après avoir changé l'état en base).
+const baseEnv = { DATABASE_URL: APP_URL, SECRETS_ENCRYPTION_KEY: SecretBox.generateKey(), NODE_ENV: "test", LOG_LEVEL: "error", AI_PROVIDER: "mock", ALLOW_AI_FALLBACK: "false", OPERATOR_EMAILS: "ops@test.local", REVOLUT_SECRET_KEY: REVOLUT_KEY, REVOLUT_WEBHOOK_SECRET: REVOLUT_WEBHOOK_SECRET, REVOLUT_MODE: "sandbox", AI_HEALTH_TOKEN: "jeton-de-sante-de-test-0123", PUBLIC_WEB_URL: "https://app.selio.test", DOUBLE_SUBMIT_WINDOW_MS: "0" };
 
 function cookieOf(res: { headers: Record<string, unknown> }): string {
   const raw = res.headers["set-cookie"];

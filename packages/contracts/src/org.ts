@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { currency, email, id, isoDate, nonNegCents, rate, role, slug } from "./common";
+import { currency, email, id, isoDate, nameText, nonNegCents, rate, role, slug } from "./common";
 import { RADAR_ALERT_MIN_SCORE_DEFAULT, RADAR_DEFAULT_MAX_PAGES_PER_MINUTE } from "./radar";
 
 /**
@@ -676,11 +676,16 @@ export const auditLog = z.object({
 });
 export type AuditLog = z.infer<typeof auditLog>;
 
+/** Longueurs maximales des noms saisis (mêmes bornes que la base et que l'affichage). */
+export const DISPLAY_NAME_MAX = 80;
+export const ORG_NAME_MAX = 120;
+
 export const registerInput = z.object({
   email,
   password: z.string().min(10).max(200),
-  displayName: z.string().trim().min(1).max(80),
-  orgName: z.string().trim().min(1).max(120),
+  /** Nom affiché (80 caractères) et nom de l'organisation (120) : au moins un caractère visible, sans caractère de contrôle. */
+  displayName: nameText(DISPLAY_NAME_MAX),
+  orgName: nameText(ORG_NAME_MAX),
   /** Durée de l'essai : 14 jours (seul choix ; 7 et 30 envoyés par d'anciens clients sont ramenés à 14). */
   trialDays: trialDays.default(DEFAULT_TRIAL_DAYS),
   /**
@@ -692,7 +697,7 @@ export const registerInput = z.object({
 export const loginInput = z.object({ email, password: z.string().min(1).max(200) });
 
 export const orgUpdate = z.object({
-  name: z.string().trim().min(1).max(120).optional(),
+  name: nameText(ORG_NAME_MAX).optional(),
   settings: orgSettings.partial().optional(),
 });
 /**

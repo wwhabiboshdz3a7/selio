@@ -24,7 +24,7 @@ export default async function billingRoutes(app: FastifyInstance) {
   app.get("/api/billing/subscription", async (req) => billing.getSubscription(financeCtx(req)));
   app.get("/api/billing/usage", async (req) => billing.getUsage(app.requireCtx(req)));
   app.get("/api/billing/usage-events", async (req) => billing.listUsageEvents(financeCtx(req), Number((req.query as { limit?: string }).limit ?? 50)));
-  app.post("/api/billing/checkout", async (req) => {
+  app.post("/api/billing/checkout", { config: { doubleSubmit: true } }, async (req) => {
     const body = (req.body ?? {}) as { plan?: unknown; cycle?: unknown };
     // L'offre est validée par le service (400 explicite) ; la périodicité par le contrat (mensuel par défaut).
     const cycle = checkoutInput.shape.cycle.safeParse(body.cycle);
@@ -38,7 +38,7 @@ export default async function billingRoutes(app: FastifyInstance) {
     return billing.previewCheckout(financeCtx(req), String(q.plan ?? ""), { cycle: cycle.success ? cycle.data : "monthly" });
   });
   // Changement de carte sans paiement : commande de vérification (1 €) en capture manuelle, annulée dès la carte enregistrée.
-  app.post("/api/billing/card", async (req) => billing.startCardUpdate(financeCtx(req)));
+  app.post("/api/billing/card", { config: { doubleSubmit: true } }, async (req) => billing.startCardUpdate(financeCtx(req)));
   app.post("/api/billing/cancel", async (req) => billing.cancelSubscription(financeCtx(req)));
   app.post("/api/billing/reactivate", async (req) => billing.reactivateSubscription(financeCtx(req)));
   app.post("/api/billing/plan", async (req) => billing.changePlan(financeCtx(req), changePlanInput.parse(req.body).plan));

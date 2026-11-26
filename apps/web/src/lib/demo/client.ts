@@ -193,6 +193,27 @@ export class DemoClient implements DataClient {
     return () => this.listeners.delete(fn);
   }
 
+  /**
+   * Deux onglets ouverts sur la démonstration : l'état enregistré par l'autre onglet est relu (au lieu d'être écrasé
+   * au prochain enregistrement de celui-ci). `null` relu = démonstration effacée ailleurs (réinitialisation, suppression
+   * de l'organisation). Les écrans se mettent à jour.
+   */
+  syncFromStorage(): void {
+    // Onglet déconnecté : il le reste (une déconnexion faite ailleurs ne doit pas être annulée par une relecture).
+    if (!this.state) return;
+    const next = this.storage.load();
+    if (next) next.org = { ...next.org, settings: orgSettingsSchema.parse(next.org.settings) };
+    this.state = next;
+    for (const l of this.listeners) l();
+  }
+
+  /** Déconnexion faite dans un autre onglet : cet onglet ferme aussi sa session (les données restent enregistrées). */
+  forgetSession(): void {
+    if (!this.state) return;
+    this.state = null;
+    for (const l of this.listeners) l();
+  }
+
   // ---------- internes ----------
   private get s(): DemoState {
     if (!this.state) throw new DataError("unauthorized", "Session de démonstration absente", 401);
@@ -601,8 +622,13 @@ export class DemoClient implements DataClient {
   async updateItem(id: string, input: InventoryItemUpdate): Promise<InventoryItem> {
     const parsed = inventoryItemUpdateSchema.safeParse(input);
     if (!parsed.success) throw new DataError("validation", "Modification invalide", 400, parsed.error.flatten());
+    const { expectedUpdatedAt, ...fields } = parsed.data;
     const before = this.itemById(id);
-    const patch = Object.fromEntries(Object.entries(parsed.data).filter(([, v]) => v !== undefined)) as Partial<InventoryItem>;
+    // Même règle que le serveur : modifié entre-temps (autre onglet) → refus clair, jamais d'écrasement silencieux.
+    if (expectedUpdatedAt && new Date(expectedUpdatedAt).getTime() !== new Date(before.updatedAt).getTime()) {
+      throw new DataError("item_conflict", "Cet article a été modifié entre-temps (dans un autre onglet ou par un membre de l'équipe). Rechargez la page pour voir sa version actuelle, puis refaites vos changements.", 409);
+    }
+    const patch = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)) as Partial<InventoryItem>;
     if (patch.status && patch.status !== before.status && !canChangeItemStatus(before.status, patch.status)) throw new DataError("validation", `Transition de statut interdite : ${before.status} → ${patch.status}`, 400);
     const after: InventoryItem = { ...before, ...patch, updatedAt: this.now() };
     if (patch.status === "listed" && !before.listedAt) after.listedAt = after.updatedAt;

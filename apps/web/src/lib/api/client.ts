@@ -83,6 +83,40 @@ const GATEWAY_STATUSES = new Set([502, 503, 504]);
 export const RETRY_DELAYS_MS = [800, 2500];
 export const SERVER_UNAVAILABLE_MESSAGE = "Le serveur Selio est momentanément injoignable (redémarrage ou maintenance). Réessayez dans quelques instants.";
 
+export const UNREADABLE_RESPONSE_MESSAGE = "La réponse du serveur n'a pas pu être lue. Réessayez dans un instant ; si le problème continue, rechargez la page.";
+
+/**
+ * Message en français pour un statut HTTP sans message exploitable (page HTML d'un proxy, corps vide, JSON brut) :
+ * jamais « Erreur 500 », « Internal Server Error », une pile d'appels ou du JSON à l'écran.
+ */
+export function httpStatusMessage(status: number): string {
+  if (status === 400) return "La demande n'a pas pu être traitée : vérifiez les informations saisies.";
+  if (status === 401) return "Votre session a expiré : reconnectez-vous.";
+  if (status === 403) return "Vous n'avez pas les droits pour cette action.";
+  if (status === 404) return "Élément introuvable : il a peut-être été supprimé.";
+  if (status === 409) return "Conflit : l'élément a changé entre-temps. Rechargez la page puis réessayez.";
+  if (status === 413) return "Envoi trop lourd : réduisez la taille des fichiers.";
+  if (status === 429) return "Trop de requêtes en peu de temps : patientez une minute avant de réessayer.";
+  if (status >= 500) return "Le serveur a rencontré un problème inattendu. Réessayez dans un instant ; vos données ne sont pas perdues.";
+  return "La demande n'a pas abouti. Réessayez dans un instant.";
+}
+
+/** Erreur d'une réponse non 2xx : le message du serveur (`{ error: { code, message } }`) s'il est lisible, sinon un message clair. */
+async function httpError(res: Response): Promise<DataError> {
+  let err: { code?: unknown; message?: unknown; details?: unknown } | undefined;
+  try {
+    const text = await res.text();
+    err = text ? (JSON.parse(text) as { error?: typeof err } | null)?.error : undefined;
+  } catch {
+    err = undefined;
+  }
+  const code = typeof err?.code === "string" ? err.code : res.status >= 500 ? "internal" : "http";
+  // Un message de serveur trop technique (anglais d'un proxy, pile d'appels) est remplacé par le message clair du statut.
+  const raw = typeof err?.message === "string" ? err.message.trim() : "";
+  const technical = !raw || code === "internal" || /Internal Server Error|Bad Gateway|stack|\bat \S+:\d+|^\s*[[{<]|Error:/i.test(raw);
+  return new DataError(code, technical ? httpStatusMessage(res.status) : raw, res.status, err?.details);
+}
+
 /**
  * Client du mode connecté : appels HTTP vers l'API Selio (apps/api), cookie
  * de session HttpOnly, aucune donnée fictive en repli. Les erreurs sont
@@ -121,20 +155,17 @@ export class ApiClient implements DataClient {
     // Passerelle (Netlify, tunnel) sans réponse de l'API : jamais d'« Erreur 502 » brute à l'écran.
     if (GATEWAY_STATUSES.has(res.status)) throw new DataError("unavailable", SERVER_UNAVAILABLE_MESSAGE, res.status);
     if (opts.raw) {
-      if (!res.ok) throw new DataError("http", `Erreur ${res.status}`, res.status);
+      if (!res.ok) throw await httpError(res);
       return (await res.text()) as unknown as T;
     }
     if (res.status === 204) return undefined as T;
+    if (!res.ok) throw await httpError(res);
     const text = await res.text();
     let json: unknown = null;
     try {
       json = text ? JSON.parse(text) : null;
     } catch {
-      throw new DataError("internal", "Réponse serveur illisible.", res.status);
-    }
-    if (!res.ok) {
-      const err = (json as { error?: { code?: string; message?: string; details?: unknown } } | null)?.error;
-      throw new DataError(err?.code ?? "http", err?.message ?? `Erreur ${res.status}`, res.status, err?.details);
+      throw new DataError("internal", UNREADABLE_RESPONSE_MESSAGE, res.status);
     }
     return json as T;
   }
@@ -319,7 +350,7 @@ export class ApiClient implements DataClient {
     } catch (e) {
       throw new DataError("network", "Impossible d'envoyer la photo au stockage. Vérifiez votre connexion.", 0, e);
     }
-    if (!res.ok) throw new DataError("upload_failed", `Envoi de la photo refusé par le stockage (${res.status}).`, res.status);
+    if (!res.ok) throw new DataError("upload_failed", res.status === 413 || res.status === 400 ? "La photo a été refusée par le stockage (trop lourde ou illisible) : choisissez une autre photo." : "L'envoi de la photo n'a pas abouti : réessayez dans un instant.", res.status);
     return { key: presign.key, readUrl: presign.readUrl ?? null };
   }
   deleteStudioPhoto(key: string) { return this.del<{ deleted: true; key: string }>(`/api/uploads/object?key=${encodeURIComponent(key)}`); }

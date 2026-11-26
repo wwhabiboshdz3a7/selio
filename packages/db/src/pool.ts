@@ -62,6 +62,12 @@ function mapPgError(err: unknown): Error {
   if (e?.code === "23505") return new DbError("conflict", "Cet enregistrement existe déjà (contrainte d'unicité).", err);
   if (e?.code === "23503") return new DbError("conflict", "Référence invalide ou enregistrement encore utilisé.", err);
   if (e?.code === "23514" || e?.code === "22P02") return new DbError("validation", "Valeur invalide pour la base de données.", err);
+  // Saisie que la base ne peut pas stocker (caractère nul, date impossible, nombre ou texte hors limites) : erreur de
+  // l'appelant (400 avec un message clair), jamais une « erreur interne » 500.
+  if (e?.code === "22021" || e?.code === "22P05") return new DbError("validation", "Un texte contient un caractère non accepté (caractère nul ou invisible) : retirez-le puis réessayez.", err);
+  if (e?.code === "22007" || e?.code === "22008") return new DbError("validation", "Date invalide : vérifiez le jour, le mois et l'année.", err);
+  if (e?.code === "22003") return new DbError("validation", "Nombre hors des limites acceptées.", err);
+  if (e?.code === "22001") return new DbError("validation", "Texte trop long.", err);
   if (e?.code === "42501") return new DbError("internal", "Accès refusé par les politiques de sécurité de la base.", err);
   return err instanceof Error ? err : new Error(String(err));
 }

@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { TRIAL_PLAN, loginInput, registerInput, orgSettings, quotasForPlan } from "@selio/contracts";
+import { DISPLAY_NAME_MAX, TRIAL_PLAN, loginInput, nameText, registerInput, orgSettings, quotasForPlan } from "@selio/contracts";
 import { repos, hashPassword, verifyPassword, newSecret, hashSecret, DbError, type Tx } from "@selio/db";
 import { passwordResetEmail } from "@selio/email";
-import { AppError, sendEmail, webLink, type EmailOutcome, type Services } from "../context";
+import { AppError, sendEmail, validationError, webLink, type EmailOutcome, type Services } from "../context";
 
 const SESSION_DAYS = 30;
 const LOGIN_WINDOW_MS = 15 * 60_000;
@@ -18,7 +18,7 @@ const tokenField = z.string().trim().min(16).max(256);
 const passwordField = z.string().min(10).max(200);
 const forgotInput = z.object({ email: z.string().trim().toLowerCase().email().max(200) });
 const resetInput = z.object({ token: tokenField, password: passwordField });
-const acceptInviteInput = z.object({ token: tokenField, password: passwordField, displayName: z.string().trim().min(1).max(80).optional() });
+const acceptInviteInput = z.object({ token: tokenField, password: passwordField, displayName: nameText(DISPLAY_NAME_MAX).optional() });
 
 export interface SessionInfo {
   sessionId: string;
@@ -33,11 +33,17 @@ export function slugify(name: string): string {
 
 export async function register(services: Services, raw: unknown, meta: { ip: string | null; userAgent: string | null; operatorEmails: string[] }): Promise<SessionInfo> {
   const parsed = registerInput.safeParse(raw);
-  if (!parsed.success) throw new AppError("validation", "Inscription invalide", 400, parsed.error.flatten());
+  if (!parsed.success) throw validationError("Inscription invalide", parsed.error, { displayName: "Votre nom", orgName: "Nom de l'organisation", email: "Email", password: "Mot de passe" });
   const input = parsed.data;
   const { hash, salt } = await hashPassword(input.password);
   const info = await services.db.withGlobal(async (tx) => {
-    if (await repos.users.byEmail(tx, input.email)) throw new AppError("conflict", "Un compte existe déjà avec cet email.", 409);
+    const existing = await repos.users.byEmail(tx, input.email);
+    if (existing) {
+      // Compte orphelin (retiré de sa seule organisation, ou organisation supprimée avant le nettoyage des comptes) :
+      // il ne peut plus se connecter à rien, l'adresse est libérée pour une nouvelle inscription, sans ses anciennes données.
+      if ((await repos.memberships.forUser(tx, existing.id)).length > 0) throw emailTaken();
+      await repos.users.delete(tx, existing.id);
+    }
     const isOperator = meta.operatorEmails.includes(input.email.toLowerCase());
     const user = await repos.users.create(tx, { email: input.email, displayName: input.displayName, passwordHash: hash, passwordSalt: salt, isOperator });
     let slug = slugify(input.orgName);
@@ -49,6 +55,16 @@ export async function register(services: Services, raw: unknown, meta: { ip: str
     await tx.query("select set_config('app.org_id', $1, true)", [org.id]);
     await repos.audit.add(tx, { orgId: org.id, actorUserId: user.id, action: "auth.register", ip: meta.ip, meta: { trialDays: input.trialDays } });
     return { sessionId, userId: user.id, orgId: org.id };
+  }).catch((err: unknown) => {
+    // Deux inscriptions simultanées avec la même adresse (double clic, deux onglets) : la contrainte d'unicité
+    // retient la première, la seconde reçoit le même message clair qu'une adresse déjà prise.
+    if (err instanceof DbError && err.code === "conflict") {
+      const constraint = String((err.cause as { constraint?: unknown } | undefined)?.constraint ?? "");
+      if (constraint.includes("email")) throw emailTaken();
+      // Même nom d'organisation au même instant (adresse courte déjà prise) : rien n'a été créé, on peut réessayer.
+      throw new AppError("conflict", "Inscription simultanée d'une organisation du même nom : réessayez dans un instant.", 409);
+    }
+    throw err;
   });
   // Essai gratuit de 14 jours : toutes les fonctions (et limites) du plan Pro. La carte est demandée
   // dès le début et enregistrée par le parcours de paiement (Revolut, semaine 2) : tant qu'il n'est
@@ -65,6 +81,10 @@ export async function register(services: Services, raw: unknown, meta: { ip: str
     testMode: true,
   }));
   return info;
+}
+
+function emailTaken(): AppError {
+  return new AppError("conflict", "Un compte existe déjà avec cet email. Connectez-vous, ou utilisez « Mot de passe oublié ».", 409);
 }
 
 export async function login(services: Services, raw: unknown, meta: { ip: string | null; userAgent: string | null }): Promise<SessionInfo> {

@@ -3,7 +3,7 @@ import { repos, hashPassword, hashSecret, newSecret } from "@selio/db";
 import { PLAN_QUOTAS } from "@selio/demo-data";
 import { can, canAssignRole } from "@selio/domain";
 import { invitationEmail } from "@selio/email";
-import { AppError, operatorRoleOf, requireAction, sendEmail, webLink, withOrg, type OrgContext } from "../context";
+import { AppError, operatorRoleOf, requireAction, sendEmail, validationError, webLink, withOrg, type OrgContext } from "../context";
 import type { Session } from "../types";
 import { INVITE_TTL_DAYS, TOKEN_BYTES } from "./auth";
 
@@ -22,7 +22,7 @@ export async function getSession(ctx: OrgContext): Promise<Session> {
 export async function updateOrg(ctx: OrgContext, raw: unknown): Promise<Organization> {
   requireAction(ctx, "org.update");
   const parsed = orgUpdate.safeParse(raw);
-  if (!parsed.success) throw new AppError("validation", "Paramètres invalides", 400, parsed.error.flatten());
+  if (!parsed.success) throw validationError("Paramètres invalides", parsed.error, { name: "Nom de l'organisation" });
   return ctx.services.db.withGlobal(async (tx) => {
     const org = await repos.orgs.byId(tx, ctx.orgId);
     const input = parsed.data.settings ?? {};
@@ -176,7 +176,14 @@ export async function deleteOrganization(ctx: OrgContext, confirmName: string): 
   await ctx.services.db.withGlobal(async (tx) => {
     const org = await repos.orgs.byId(tx, ctx.orgId);
     if (confirmName !== org.name) throw new AppError("validation", "Le nom saisi ne correspond pas.", 400);
+    const members = await repos.memberships.listOrg(tx, ctx.orgId);
     await repos.orgs.delete(tx, ctx.orgId);
+    // Comptes qui n'appartiennent plus à aucune organisation (le titulaire, et les membres qui n'avaient que
+    // celle-ci) : supprimés avec elle (sessions, jetons et préférences en cascade). Sans cela, l'adresse restait
+    // prise (« Un compte existe déjà ») alors que le compte ne pouvait plus se connecter à rien.
+    for (const m of members) {
+      if ((await repos.memberships.forUser(tx, m.userId)).length === 0) await repos.users.delete(tx, m.userId);
+    }
   });
 }
 
