@@ -1,5 +1,6 @@
 import { STUDIO_MODEL_JPEG_QUALITY, STUDIO_MODEL_MAX_BYTES, STUDIO_MODEL_MAX_SIDE_PX, type GeneratorPhoto } from "@selio/contracts";
-import { base64ByteLength, checkModelImage, newId, reducedDimensions } from "@selio/domain";
+import { FILE_TYPE_SNIFF_BYTES, base64ByteLength, checkModelImage, newId, photoContentProblem, reducedDimensions } from "@selio/domain";
+import { formatBytes } from "../photo-files";
 
 /**
  * Réduction des photos dans le navigateur, AVANT tout envoi (Studio façon Kavis, §5.11) : côté long
@@ -92,9 +93,18 @@ export async function reducePhoto(file: File, opts: ReduceOptions = {}, deps: Im
   const quality = opts.quality ?? STUDIO_MODEL_JPEG_QUALITY;
   const name = file.name || "photo";
   if (file.type && !file.type.startsWith("image/")) throw new ReduceError("not_image", `${name} n'est pas une image.`);
-  if (file.size > MAX_INPUT_BYTES) throw new ReduceError("too_big_file", `${name} est trop lourde pour être ouverte (${Math.round(file.size / 1_000_000)} Mo).`);
+  if (file.size === 0) throw new ReduceError("unreadable", `${name} est vide (0 octet) : choisissez une autre photo.`);
+  // Refusée AVANT tout décodage (mémoire du téléphone) : un fichier de plusieurs Go n'est jamais lu.
+  if (file.size > MAX_INPUT_BYTES) throw new ReduceError("too_big_file", `${name} est trop lourde pour être ouverte (${formatBytes(file.size)}) : ${formatBytes(MAX_INPUT_BYTES)} au maximum. Elle sera de toute façon réduite à 1 Mo avant l'envoi.`);
 
-  const image = await deps.load(file, name);
+  let image: LoadedImage;
+  try {
+    image = await deps.load(file, name);
+  } catch (e) {
+    // Image que le navigateur ne sait pas décoder : on dit pourquoi (PDF renommé, HEIC, SVG, fichier corrompu).
+    const problem = await contentProblem(file, name);
+    throw problem ? new ReduceError("unreadable", problem) : e;
+  }
   try {
     if (!(image.width > 0 && image.height > 0)) throw new ReduceError("unreadable", `Image illisible : ${name}`);
     const dims = reducedDimensions(image.width, image.height, maxSide);
@@ -119,6 +129,16 @@ export async function reducePhoto(file: File, opts: ReduceOptions = {}, deps: Im
     throw new ReduceError("too_heavy", `${name} reste au-dessus de ${Math.round(maxBytes / 1000)} Ko après réduction : choisissez une autre photo.`);
   } finally {
     image.release();
+  }
+}
+
+/** Motif lisible d'une image illisible, d'après ses premiers octets (null si l'en-tête est celui d'une image acceptée). */
+async function contentProblem(file: Blob, name: string): Promise<string | null> {
+  try {
+    const head = new Uint8Array(await file.slice(0, FILE_TYPE_SNIFF_BYTES).arrayBuffer());
+    return photoContentProblem(head, { name }) ?? `« ${name} » est une image tronquée ou corrompue : choisissez une autre photo.`;
+  } catch {
+    return null;
   }
 }
 

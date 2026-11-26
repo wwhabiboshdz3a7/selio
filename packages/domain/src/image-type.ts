@@ -29,7 +29,9 @@ export function detectFileType(bytes: Uint8Array): DetectedFileType {
     if (brand.startsWith("avi")) return "image/avif";
     if (["heic", "heix", "hevc", "heim", "heis", "mif1", "msf1"].includes(brand)) return "image/heic";
   }
-  const head = ascii(0, FILE_TYPE_SNIFF_BYTES).replace(/^﻿/, "").trimStart().toLowerCase();
+  // Texte (SVG) : marque d'ordre des octets UTF-8 (EF BB BF) et espaces ignorés en tête.
+  const bom = at(0, [0xef, 0xbb, 0xbf]) ? 3 : 0;
+  const head = ascii(bom, FILE_TYPE_SNIFF_BYTES).trimStart().toLowerCase();
   if (head.startsWith("<svg") || (head.startsWith("<?xml") && head.includes("<svg"))) return "image/svg+xml";
   return "unknown";
 }

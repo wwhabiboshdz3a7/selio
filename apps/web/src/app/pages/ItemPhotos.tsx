@@ -8,6 +8,8 @@ import { Button, Card, EmptyState, IconButton, Input, PageHeader, Tag, buttonCla
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { ItemThumb, QueryBoundary } from "../components/common";
 import { useAppMutation, useDebouncedValue } from "../components/hooks";
+import { photoFileProblem, readAsDataUrl } from "../../lib/photo-files";
+import { errorMessage } from "../../lib/errors";
 
 const MAX_PHOTOS = 12;
 const MAX_PHOTO_BYTES = 1_500_000;
@@ -71,13 +73,19 @@ export function ItemPhotosDetail() {
     const room = MAX_PHOTOS - existing - pending.length;
     const list = Array.from(files).slice(0, Math.max(0, room));
     if (files.length > list.length) setError(`${MAX_PHOTOS} photos au plus par article.`);
-    for (const f of list) {
-      if (!ALLOWED_TYPES.includes(f.type)) { setError(`Format refusé : ${f.name} (JPEG, PNG ou WebP uniquement).`); continue; }
-      if (f.size > MAX_PHOTO_BYTES) { setError(`Fichier trop lourd : ${f.name} (1,5 Mo max).`); continue; }
-      const reader = new FileReader();
-      reader.onload = () => setPending((s) => [...s, { id: newId(), url: String(reader.result), alt: f.name, position: existing + s.length }]);
-      reader.readAsDataURL(f);
-    }
+    void (async () => {
+      for (const f of list) {
+        // Taille et type RÉEL (premiers octets) contrôlés avant de lire le fichier : jamais d'image cassée affichée.
+        const problem = await photoFileProblem(f, { maxBytes: MAX_PHOTO_BYTES });
+        if (problem) { setError(problem); continue; }
+        try {
+          const url = await readAsDataUrl(f);
+          setPending((s) => [...s, { id: newId(), url, alt: f.name, position: existing + s.length }]);
+        } catch (e) {
+          setError(errorMessage(e));
+        }
+      }
+    })();
   };
 
   return (

@@ -3,6 +3,7 @@ import {
   type InventoryItem, type PriceConfidenceLevel, type PriceEstimate, type PriceEstimateInput, type PriceModelStatus, type Subscription, type TrackCriteria, type TrackScanComponents,
 } from "@selio/contracts";
 import type { TrackUsageView, UsageSummary } from "./data/types";
+import { photoFileProblem } from "./photo-files";
 
 /**
  * Selio Track et l'estimation des prix dans l'application : règles pures partagées par les pages, le
@@ -263,8 +264,20 @@ async function decode(file: Blob): Promise<Drawable> {
  * Réduit une photo dans le navigateur (le plus long côté ≤ 1 200 px, JPEG) avant l'envoi : la photo
  * d'origine ne quitte jamais l'appareil, la photo réduite n'est pas conservée par Selio.
  */
+/** Fichier d'origine au-delà duquel la photo n'est même pas décodée (mémoire du téléphone) : 40 Mo. */
+export const PHOTO_MAX_INPUT_BYTES = 40 * 1024 * 1024;
+
 export async function reducePhoto(file: Blob, maxSide = PHOTO_MAX_SIDE): Promise<ReducedPhoto> {
-  const img = await decode(file);
+  // Taille contrôlée AVANT le décodage : un fichier de plusieurs Go n'est jamais chargé en mémoire.
+  if (file.size === 0 || file.size > PHOTO_MAX_INPUT_BYTES) throw new Error((await photoFileProblem(file, { maxBytes: PHOTO_MAX_INPUT_BYTES })) ?? UNREADABLE_PHOTO);
+  let img: Drawable;
+  try {
+    img = await decode(file);
+  } catch (e) {
+    // Illisible : on dit pourquoi d'après les premiers octets (PDF renommé, HEIC, SVG…), sinon le message général.
+    const problem = await photoFileProblem(file, { maxBytes: PHOTO_MAX_INPUT_BYTES }).catch(() => null);
+    throw problem ? new Error(problem) : e;
+  }
   try {
     const size = targetSize(img.width, img.height, maxSide);
     const canvas = document.createElement("canvas");
