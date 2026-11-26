@@ -718,7 +718,7 @@ function buildHelpEntries(): HelpEntry[] {
     id: "essai-decouverte",
     categoryId: "tarifs",
     question: `Comment fonctionne l'essai gratuit de ${TRIAL_DAYS} jours ?`,
-    answer: `C'est un essai gratuit de ${TRIAL_DAYS} jours, un seul choix de durée, avec toutes les fonctions et les limites de l'offre ${P.pro}. La carte bancaire est enregistrée dès l'inscription et rien n'est débité avant la fin de l'essai. À la fin, vous choisissez ${P.starter}, ${P.pro} ou ${P.agence}, ou vous arrêtez sans frais. Tant que le paiement n'est pas activé, aucune carte n'est demandée : à la fin de l'essai, le compte passe en accès de base, « en attente du paiement », et vos données sont conservées.`,
+    answer: `C'est un essai gratuit de ${TRIAL_DAYS} jours, un seul choix de durée, avec toutes les fonctions et les limites de l'offre ${P.pro}. Aucune carte bancaire n'est demandée à l'inscription et rien n'est débité pendant l'essai. À la fin, vous choisissez ${P.starter}, ${P.pro} ou ${P.agence}, ou vous arrêtez sans frais. Tant que le paiement n'est pas activé, aucune carte n'est demandée : à la fin de l'essai, le compte passe en accès de base, « en attente du paiement », et vos données sont conservées.`,
     keywords: ["essai", "gratuit", "14 jours", "deux semaines", "tester", "carte bancaire", "période d'essai", "découverte"],
     link: { label: "Voir les tarifs", href: "/tarifs" },
   },

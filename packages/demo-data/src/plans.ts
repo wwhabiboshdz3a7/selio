@@ -211,7 +211,7 @@ export const PLAN_COMPARISON: readonly ComparisonGroup[] = [
     title: "Formule",
     rows: [
       { label: "Durée", hint: "L'essai dure 14 jours, puis vous choisissez un plan.", values: { trial: text(`${TRIAL_DAYS}${NBSP}jours`), starter: monthly, pro: monthly, agence: monthly } },
-      { label: "Carte bancaire", hint: "Rien n'est débité avant la fin de l'essai.", values: { trial: text("Enregistrée à l'inscription"), starter: text("Mensuel ou annuel"), pro: text("Mensuel ou annuel"), agence: text("Mensuel ou annuel") } },
+      { label: "Carte bancaire", hint: "Rien n'est débité avant la fin de l'essai.", values: { trial: text("Non demandée à l'inscription"), starter: text("Mensuel ou annuel"), pro: text("Mensuel ou annuel"), agence: text("Mensuel ou annuel") } },
       { label: "Annuel", hint: "2 mois offerts : 10 mois payés sur 12.", values: { trial: none, starter: check, pro: check, agence: check } },
     ],
   },

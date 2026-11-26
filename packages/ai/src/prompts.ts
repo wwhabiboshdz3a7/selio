@@ -308,7 +308,7 @@ Règles absolues :
 - sourceIds liste les identifiants (id) des passages réellement utilisés, du plus utile au moins utile.`;
 
 const EXAMPLE_HELP: HelpAnswerOutput = {
-  answer: `Non : rien n'est débité pendant l'essai gratuit de ${TRIAL_DAYS} jours. La carte bancaire est enregistrée dès l'inscription et, à la fin, vous choisissez ${PLAN_LABELS.starter}, ${PLAN_LABELS.pro} ou ${PLAN_LABELS.agence}, ou vous arrêtez sans frais.`,
+  answer: `Non : rien n'est débité pendant l'essai gratuit de ${TRIAL_DAYS} jours. Aucune carte n'est demandée à l'inscription et, à la fin, vous choisissez ${PLAN_LABELS.starter}, ${PLAN_LABELS.pro} ou ${PLAN_LABELS.agence}, ou vous arrêtez sans frais.`,
   sourceIds: ["essai-decouverte"],
   outOfScope: false,
 };
