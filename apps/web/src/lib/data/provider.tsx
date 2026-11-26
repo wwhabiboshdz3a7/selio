@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DEMO_STORAGE_KEY } from "@selio/demo-data";
+import { LoadingState } from "@selio/ui";
 import { onSessionEvent } from "../session-sync";
-import { DemoClient } from "../demo/client";
+import type { DemoClient } from "../demo/client";
 import { ApiClient } from "../api/client";
 import { apiBaseUrl, connectedModeAvailable } from "../env";
 import type { DataClient, Mode, Session } from "./types";
@@ -10,6 +11,8 @@ import type { DataClient, Mode, Session } from "./types";
 const MODE_KEY = "selio.mode";
 
 export function readMode(): Mode {
+  // Production (build avec API) : pas de démonstration, la session est toujours réelle.
+  if (!__SELIO_DEMO__) return "connected";
   try {
     const v = localStorage.getItem(MODE_KEY);
     if (v === "connected" && connectedModeAvailable) return "connected";
@@ -36,8 +39,22 @@ interface DataContextValue {
 const DataContext = createContext<DataContextValue | null>(null);
 
 let demoSingleton: DemoClient | null = null;
+let demoLoading: Promise<DemoClient> | null = null;
+
+/**
+ * Client de démonstration, chargé à la demande : seulement dans un build sans API (développement, tests,
+ * vidéos). En production (__SELIO_DEMO__ faux au build), cette branche disparaît et son code n'est pas livré.
+ */
+export function loadDemoClient(): Promise<DemoClient> {
+  if (!__SELIO_DEMO__) return Promise.reject(new Error("Démonstration indisponible sur cette installation."));
+  if (demoSingleton) return Promise.resolve(demoSingleton);
+  demoLoading ??= import("../demo/client").then((m) => (demoSingleton ??= new m.DemoClient()));
+  return demoLoading;
+}
+
+/** Client de démonstration déjà chargé (loadDemoClient) ; erreur sinon. */
 export function getDemoClient(): DemoClient {
-  if (!demoSingleton) demoSingleton = new DemoClient();
+  if (!demoSingleton) throw new Error("Client de démonstration pas encore chargé : appeler loadDemoClient() d'abord.");
   return demoSingleton;
 }
 
@@ -61,35 +78,45 @@ export const queryClient = new QueryClient({
 });
 
 export function DataProvider({ children, forceMode }: { children: ReactNode; forceMode?: Mode }) {
-  const [mode, setModeState] = useState<Mode>(() => forceMode ?? readMode());
-  const client = useMemo<DataClient>(() => (mode === "connected" ? new ApiClient(apiBaseUrl) : getDemoClient()), [mode]);
-  const value = useMemo<DataContextValue>(
-    () => ({
+  const [mode, setModeState] = useState<Mode>(() => (forceMode === "demo" && !__SELIO_DEMO__ ? "connected" : forceMode ?? readMode()));
+  // Démonstration : client chargé à la demande (déjà prêt s'il a été chargé avant, par exemple dans les tests).
+  const [demo, setDemo] = useState<DemoClient | null>(() => demoSingleton);
+  useEffect(() => {
+    if (mode !== "demo" || demo) return;
+    let alive = true;
+    void loadDemoClient().then((c) => { if (alive) setDemo(c); });
+    return () => { alive = false; };
+  }, [mode, demo]);
+  const client = useMemo<DataClient | null>(() => (mode === "connected" ? new ApiClient(apiBaseUrl) : demo), [mode, demo]);
+  const value = useMemo<DataContextValue | null>(
+    () => client ? ({
       client,
       mode,
       setMode: (m) => {
+        // Production : jamais de démonstration, quoi qu'on demande.
+        if (m === "demo" && !__SELIO_DEMO__) return;
         writeMode(m);
         setModeState(m);
         queryClient.clear();
       },
-    }),
+    }) : null,
     [client, mode],
   );
   useEffect(() => {
-    if (mode !== "demo") return;
+    if (mode !== "demo" || !demo) return;
     // Toute mutation du client démo invalide les requêtes (persistance locale).
-    return getDemoClient().subscribe(() => queryClient.invalidateQueries());
-  }, [mode]);
+    return demo.subscribe(() => queryClient.invalidateQueries());
+  }, [mode, demo]);
   // Deux onglets : la démonstration enregistrée par l'autre onglet est relue (pas d'écrasement silencieux) ;
   // une déconnexion ou un changement d'organisation fait ailleurs s'applique ici aussi.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (mode === "demo" && e.key === DEMO_STORAGE_KEY) getDemoClient().syncFromStorage();
+      if (mode === "demo" && demo && e.key === DEMO_STORAGE_KEY) demo.syncFromStorage();
     };
     window.addEventListener("storage", onStorage);
     const off = onSessionEvent((e) => {
       if (e.kind === "logout") {
-        if (mode === "demo") getDemoClient().forgetSession();
+        if (mode === "demo" && demo) demo.forgetSession();
         // La session relue (absente) ramène à la connexion, avec la page en cours comme page de retour.
         void queryClient.invalidateQueries({ queryKey: [...sessionKey] });
       } else {
@@ -101,7 +128,8 @@ export function DataProvider({ children, forceMode }: { children: ReactNode; for
       window.removeEventListener("storage", onStorage);
       off();
     };
-  }, [mode]);
+  }, [mode, demo]);
+  if (!value) return <LoadingState variant="spinner" label="Préparation des données…" className="min-h-dvh" />;
   return (
     <QueryClientProvider client={queryClient}>
       <DataContext.Provider value={value}>{children}</DataContext.Provider>

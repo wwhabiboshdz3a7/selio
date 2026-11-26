@@ -1,10 +1,11 @@
 import {
-  PAID_PLANS, normalizeOfferCode, offerDurationLabel, offerPlansLabel, offerAvailability, offerDiscountLabel, offerInput, offerInvoiceLineLabel, offerMonthsPerInstallment, offerRuleIssues, offerUpdate, redemptionDiscountFor, toPublicOffer, discountedPriceCents, offerCoversPlan,
+  PAID_PLANS, compactOfferCode, normalizeOfferCode, offerDurationLabel, offerPlansLabel, offerAvailability, offerDiscountLabel, offerInput, offerInvoiceLineLabel, offerMonthsPerInstallment, offerRuleIssues, offerUpdate, redemptionDiscountFor, toPublicOffer, discountedPriceCents, offerCoversPlan,
   type BillingCycle, type CommercialOffer, type InvoiceExtraLine, type OfferInput, type OfferRedemption, type PaidPlan, type PromoCheckResult, type PublicOffer,
 } from "@selio/contracts";
 import { PRICING } from "@selio/demo-data";
 import { DbError, repos, type Tx } from "@selio/db";
 import { AppError, requireAction, requireOperatorCapability, withOrg, type OrgContext, type Services } from "../context";
+import { betaRefusalForExistingAccount, checkBetaOffer, startBetaAccess } from "./beta";
 
 /**
  * Offres commerciales (promotions sur Starter, Pro et Agence), voir @selio/contracts (offers.ts).
@@ -80,6 +81,11 @@ export async function adminUpdateOffer(ctx: OrgContext, id: string, raw: unknown
       before = await repos.offers.byId(tx, id);
       if (!before) throw new AppError("not_found", "Offre introuvable.", 404);
       if (before.archivedAt) throw new AppError("conflict", "Offre archivée : elle a déjà servi et ne peut plus être modifiée. Créez-en une nouvelle.", 409);
+      // Offre bêta : un accès de N jours, jamais une remise ; offre de remise : pas de durée d'accès bêta.
+      if (before.kind === "beta" && (["discountPercent", "discountCents", "plans", "durationMonths"] as const).some((k) => patch[k] !== undefined)) {
+        throw validationError([{ path: "discountPercent", message: "Offre bêta : seuls le nom, le code, la durée de l'accès, la période, le maximum d'utilisations et l'activation se modifient." }]);
+      }
+      if (before.kind !== "beta" && patch.betaDays !== undefined) throw validationError([{ path: "betaDays", message: "La durée d'accès ne concerne que l'offre bêta." }]);
       const merged: OfferInput = { ...pickInput(before), ...stripUndefined(patch) };
       const issues = offerRuleIssues(merged);
       if (issues.length) throw validationError(issues);
@@ -87,8 +93,9 @@ export async function adminUpdateOffer(ctx: OrgContext, id: string, raw: unknown
         const other = await repos.offers.byCode(tx, patch.code);
         if (other && other.id !== id) throw CODE_TAKEN(patch.code);
       }
-      const row = await repos.offers.update(tx, id, stripUndefined(patch), now);
+      let row = await repos.offers.update(tx, id, stripUndefined(patch), now);
       if (!row) throw new AppError("not_found", "Offre introuvable.", 404);
+      if (patch.betaDays !== undefined) row = (await repos.offers.setBetaDays(tx, id, patch.betaDays, now)) ?? row;
       return row;
     });
   } catch (err) {
@@ -126,7 +133,7 @@ export async function adminDeleteOffer(ctx: OrgContext, id: string): Promise<{ d
 }
 
 function auditMeta(o: CommercialOffer): Record<string, unknown> {
-  return { name: o.name, code: o.code, discount: offerDiscountLabel(o), plans: o.plans, durationMonths: o.durationMonths, active: o.active, bannerEnabled: o.bannerEnabled, maxRedemptions: o.maxRedemptions, redemptions: o.redemptions };
+  return { name: o.name, code: o.code, kind: o.kind ?? "discount", ...(o.kind === "beta" ? { betaDays: o.betaDays } : {}), discount: offerDiscountLabel(o), plans: o.plans, durationMonths: o.durationMonths, active: o.active, bannerEnabled: o.bannerEnabled, maxRedemptions: o.maxRedemptions, redemptions: o.redemptions };
 }
 
 function pickInput(o: CommercialOffer): OfferInput {
@@ -153,12 +160,22 @@ function pricesFor(offer: CommercialOffer, cycle: BillingCycle): NonNullable<Pro
   return PAID_PLANS.filter((p) => offerCoversPlan(offer.plans, p)).map((plan) => ({ plan, cycle, priceCents: priceOf(plan, cycle), discountedCents: discountedPriceCents(priceOf(plan, cycle), offer) }));
 }
 
+/**
+ * Offre d'un code saisi : recherche exacte (casse ignorée), puis par forme compacte (espaces et tirets ignorés :
+ * « beta2026selio », « BETA-2026-SELIO »), seulement si un seul code correspond. Null : format invalide ou inconnu.
+ */
+export async function findOfferByCode(tx: Tx, rawCode: unknown): Promise<CommercialOffer | null> {
+  const code = normalizeOfferCode(rawCode);
+  if (!code) return null;
+  return (await repos.offers.byCode(tx, code)) ?? (await repos.offers.byCompactCode(tx, compactOfferCode(code)));
+}
+
 /** Offre d'un code saisi, avec la raison d'un refus (messages affichables). */
 async function resolveCode(tx: Tx, rawCode: unknown, now: Date, plan: string | null): Promise<{ offer: CommercialOffer } | { refusal: PromoCheckResult }> {
   const code = normalizeOfferCode(rawCode);
   if (!code) return { refusal: { valid: false, reason: "invalid_code", message: "Ce code promo n'a pas le bon format (3 à 24 lettres, chiffres ou tirets)." } };
-  const offer = await repos.offers.byCode(tx, code);
-  if (!offer) return { refusal: { valid: false, reason: "unknown_code", message: "Code promo inconnu." } };
+  const offer = await findOfferByCode(tx, code);
+  if (!offer) return { refusal: { valid: false, reason: "unknown_code", message: "Code promo inconnu : vérifiez son orthographe." } };
   const ok = offerAvailability(offer, { now, plan });
   if (!ok.ok) return { refusal: { valid: false, reason: ok.reason, message: ok.message } };
   return { offer };
@@ -169,6 +186,8 @@ export async function checkCode(services: Services, rawCode: unknown, opts: { pl
   const cycle: BillingCycle = opts.cycle === "yearly" ? "yearly" : "monthly";
   const found = await services.db.withGlobal((tx) => resolveCode(tx, rawCode, services.now(), opts.plan ?? null));
   if ("refusal" in found) return found.refusal;
+  // Code de la bêta : un accès d'un mois sans carte (jamais une remise ni un prix remisé).
+  if (found.offer.kind === "beta") return checkBetaOffer(found.offer, services.now());
   const pub = toPublicOffer(found.offer);
   return { valid: true, message: `Code ${pub.code} valable : ${offerSummary(found.offer)}.`, offer: pub, prices: pricesFor(found.offer, cycle) };
 }
@@ -188,6 +207,9 @@ export interface ApplyOutcome extends PromoCheckResult {
 async function applyCode(services: Services, orgId: string, rawCode: unknown, opts: { plan: string | null; actorUserId: string | null; ip: string | null; source: "signup" | "billing" }): Promise<ApplyOutcome> {
   const now = services.now();
   const at = now.toISOString();
+  // Code de la bêta : accès d'un mois sans carte, ouvert à l'inscription seulement (une fois par compte).
+  const probe = await services.db.withGlobal((tx) => findOfferByCode(tx, rawCode));
+  if (probe?.kind === "beta") return opts.source === "signup" ? startBetaAccess(services, orgId, probe, { actorUserId: opts.actorUserId, ip: opts.ip }) : betaRefusalForExistingAccount(services, orgId);
   return services.db.withGlobal(async (tx) => {
     await asOrg(tx, orgId);
     const existing = await repos.offerRedemptions.get(tx, orgId);
@@ -206,11 +228,11 @@ async function applyCode(services: Services, orgId: string, rawCode: unknown, op
 }
 
 /** À l'inscription : jamais bloquant (code vide, mal formé, inconnu, expiré : ignoré avec un message ; incident : idem). */
-export async function applyCodeAtSignup(services: Services, orgId: string, rawCode: unknown, opts: { actorUserId: string | null; ip: string | null }): Promise<Pick<ApplyOutcome, "applied" | "reason" | "message"> | null> {
+export async function applyCodeAtSignup(services: Services, orgId: string, rawCode: unknown, opts: { actorUserId: string | null; ip: string | null }): Promise<Pick<ApplyOutcome, "applied" | "reason" | "message" | "beta"> | null> {
   if (typeof rawCode !== "string" || rawCode.trim() === "") return null;
   try {
     const r = await applyCode(services, orgId, rawCode, { plan: null, actorUserId: opts.actorUserId, ip: opts.ip, source: "signup" });
-    return { applied: r.applied, ...(r.reason ? { reason: r.reason } : {}), message: r.applied ? r.message : `${r.message} Votre inscription continue.` };
+    return { applied: r.applied, ...(r.reason ? { reason: r.reason } : {}), ...(r.applied && r.beta ? { beta: r.beta } : {}), message: r.applied ? r.message : `${r.message} Votre inscription continue avec l'essai gratuit.` };
   } catch {
     return { applied: false, message: "Le code promo n'a pas pu être pris en compte pour le moment ; votre inscription continue." };
   }

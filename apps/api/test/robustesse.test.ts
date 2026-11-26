@@ -127,6 +127,8 @@ describe("1. double clic sur une action sensible", () => {
     expect((list.json as unknown as { total: number }).total).toBe(1);
     // Un autre article (corps différent) passe tout de suite : seul le doublon exact est bloqué.
     expect((await call("POST", "/api/items", cookie, { ...item, title: "Autre veste" })).status).toBe(201);
+    // Une action refusée ne bloque pas le nouvel essai : le verrou est levé dès la réponse en erreur.
+    for (let i = 0; i < 2; i++) expect((await call("POST", "/api/items", cookie, { title: "   " })).json.error?.code).toBe("validation");
   });
 
   it("paiement simulé « Confirmer » cliqué deux fois : l'offre n'est enregistrée qu'une fois", async () => {

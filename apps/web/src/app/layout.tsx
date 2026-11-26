@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useNavigation } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, BellRing, Bot, Boxes, Camera, ChevronDown, Eye, Lock, CircleUser, ClipboardList, CreditCard, Gauge, Heart, ListChecks, LogOut, Menu as MenuIcon, MessageSquare, MessagesSquare, Moon, Package, Pause, Printer, RefreshCw, Settings, ShieldCheck, Shirt, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
+import { ArrowRight, BellRing, Bot, Boxes, Camera, ChevronDown, Eye, Lock, CircleUser, ClipboardList, CreditCard, Gauge, Heart, ListChecks, LogOut, Menu as MenuIcon, MessageSquare, MessagesSquare, Moon, Package, Pause, Printer, RefreshCw, Settings, Shirt, Sparkles, Sun, TrendingUp, Users, Workflow, X, Zap } from "lucide-react";
 import { Avatar, Banner, Button, IconButton, LoadingState, Menu, Tag, cn, formatDate } from "@selio/ui";
 import type { ServerCapabilities, Subscription } from "@selio/contracts";
 import { ArrowLeftRight } from "lucide-react";
@@ -176,7 +176,7 @@ export function spaceNoteFor(area: SpaceArea | FeatureId, mode: "demo" | "connec
 const SPACE_NOTES: Partial<Record<SpaceArea | FeatureId, { label: string; text: string }>> = {
   agents: { label: "Aperçu", text: "Selio Agent, intégré à Selio Manager : l'équipe et les accès sont réels ; les boutiques clientes sont des exemples fictifs." },
   track: { label: "En développement", text: "statistiques seulement ; simulateur par défaut, lecture en direct à valider juridiquement." },
-  cloud: { label: "Aperçu", text: "Selio Cloud, intégré à Selio Manager : actions légères seulement (répondre, relancer), avec votre accord ; en démonstration, rien ne touche Vinted." },
+  cloud: { label: "Aperçu", text: "Selio Cloud, intégré à Selio Manager : actions légères seulement (répondre, relancer), avec votre accord." },
   generateur: { label: "Accompagnement", text: "services sur devis ; en autonomie, la checklist et les textes à copier." },
 };
 
@@ -289,15 +289,7 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
             </ul>
           </div>
         ))}
-        {s.user.isOperator ? (
-          <div className="mt-3">
-            <p className="px-2.5 pb-1.5 text-xs font-bold tracking-wider text-text uppercase">Équipe Selio</p>
-            <ul className="flex flex-col gap-0.5">
-              {/* Retour vers Selio Admin, l'espace séparé des opérateurs. */}
-              <li><NavLink to="/admin" className={linkClass} title="Selio Admin : croissance, comptes, offres"><ShieldCheck /> Administration</NavLink></li>
-            </ul>
-          </div>
-        ) : null}
+        {/* Selio Admin vit sur son propre site (build « admin ») : aucun lien vers l'administration ici. */}
       </nav>
       <div className="shrink-0 border-t border-border p-3">
         {reduced ? null : <AiStatusRow />}

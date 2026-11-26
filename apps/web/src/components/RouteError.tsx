@@ -3,6 +3,7 @@ import { isRouteErrorResponse, Link, useRouteError } from "react-router";
 import { Button } from "@selio/ui";
 import { DEMO_STORAGE_KEY } from "@selio/demo-data";
 import { errorReport, isStaleBuildError, reloadOnceForUpdate } from "../lib/diagnostics";
+import { DEMO_BUILD } from "../lib/target";
 
 /**
  * Écran d'erreur des routes. `inline` : affiché dans la page (le menu reste
@@ -64,7 +65,8 @@ export function RouteError({ inline = false }: { inline?: boolean }) {
           <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-surface-muted p-3 text-[11px] leading-relaxed whitespace-pre-wrap text-text-muted">{report}</pre>
         </details>
       ) : null}
-      {!is404 && !stale && inApp ? (
+      {/* Réinitialiser la démonstration : seulement là où elle existe (jamais en production). */}
+      {!is404 && !stale && inApp && DEMO_BUILD ? (
         <div className="mt-6 text-xs text-text-muted">
           {confirmReset ? (
             <span className="inline-flex flex-wrap items-center justify-center gap-2">Effacer les données de démonstration de cet appareil ?<Button size="sm" variant="secondary" onClick={resetDemo}>Oui, réinitialiser</Button><Button size="sm" variant="ghost" onClick={() => setConfirmReset(false)}>Non</Button></span>

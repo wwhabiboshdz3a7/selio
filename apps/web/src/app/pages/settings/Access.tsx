@@ -49,7 +49,9 @@ export default function Access() {
   // Le titulaire ne s'attribue jamais par invitation (on invite, puis on change le rôle).
   const invitable = ROLES.filter((r) => r !== "owner" && canAssignRole(session.role, r));
   // Même page dans Paramètres et dans Selio Admin (en-tête propre à l'administration).
-  const inAdmin = useLocation().pathname.startsWith("/admin");
+  const location = useLocation();
+  // En-tête propre à l'administration : seulement sur le site Selio Admin (absent du bundle public).
+  const inAdmin = __SELIO_TARGET__ === "admin" && location.pathname.startsWith("/admin");
 
   return (
     <div className="flex flex-col gap-4">

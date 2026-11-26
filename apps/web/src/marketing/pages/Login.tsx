@@ -7,7 +7,7 @@ import { queryClient, sessionKey, useData } from "../../lib/data/provider";
 import { connectedModeAvailable } from "../../lib/env";
 import { errorMessage } from "../../lib/errors";
 import type { Mode } from "../../lib/data/types";
-import { landingPath } from "../../lib/admin";
+import { appLandingPath } from "../../lib/landing";
 import { demoEntryAllowed } from "../demoAccess";
 
 export default function Login() {
@@ -36,8 +36,8 @@ export default function Login() {
       const session = await client.login({ email, password });
       // La session ouverte remplace celle en cache (« aucune session », lue par la vitrine).
       queryClient.setQueryData([...sessionKey, mode], session);
-      // Opérateur Selio (mode connecté) : Selio Admin ; client : l'accueil des espaces (ou la page demandée).
-      navigate(landingPath(session, location.state?.from), { replace: true });
+      // L'accueil des espaces (ou la page demandée), opérateurs compris : Selio Admin a son propre site.
+      navigate(appLandingPath(location.state?.from), { replace: true });
     } catch (err) {
       setError(errorMessage(err));
     } finally {

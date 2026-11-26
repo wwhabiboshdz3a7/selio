@@ -16,9 +16,9 @@ const PAGES = [
   "/app/settings/organisation", "/app/settings/access", "/app/settings/members", "/app/settings/connections",
   "/app/settings/ai", "/app/settings/billing", "/app/settings/usage", "/app/settings/notifications", "/app/settings/security",
   "/app/settings/data", "/app/settings/migration", "/app/settings/status", "/studio", "/studio/annonces", "/studio/performances", "/studio/photos-portees",
-  "/agents", "/agents/clients", "/agents/marque-blanche", "/agents/facturation", "/track", "/cloud", "/generateur", "/admin",
-  // Rôles, parrainage, Selio Compte, supervision, apparence.
-  "/comptes", "/app/items/photos", "/app/settings/apparence", "/app/settings/parrainage", "/admin/supervision",
+  "/agents", "/agents/clients", "/agents/marque-blanche", "/agents/facturation", "/track", "/cloud", "/generateur",
+  // Rôles, parrainage, Selio Compte, apparence (Selio Admin : son propre site, e2e/admin-site.spec.ts).
+  "/comptes", "/app/items/photos", "/app/settings/apparence", "/app/settings/parrainage",
   // Selio Manager : journal d'activité, état des relances.
   "/app/journal", "/app/automatisation/relances",
   // Selio Bot : recherche et achat d'articles.

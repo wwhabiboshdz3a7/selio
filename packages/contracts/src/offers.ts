@@ -85,6 +85,8 @@ export const offerUpdate = z.object({
   bannerEnabled: z.boolean().optional(),
   bannerText: offerBase.shape.bannerText.removeDefault().optional(),
   active: z.boolean().optional(),
+  /** Offre « beta » seulement : durée de l'accès bêta (jours). */
+  betaDays: z.number().int().min(1, "Accès bêta : 1 jour au moins").max(90, "Accès bêta : 90 jours au plus").optional(),
 });
 export type OfferUpdate = z.infer<typeof offerUpdate>;
 
@@ -94,9 +96,21 @@ export interface OfferDiscount {
   discountCents: number | null;
 }
 
+/**
+ * Sorte d'offre : « discount » (remise sur les échéances, offre_redemptions) ou « beta » (code de la bêta : accès
+ * de `betaDays` jours au forfait de l'essai, sans carte, facture à 0 € ; voir beta.ts). Une offre bêta n'est
+ * jamais une remise sur les paiements suivants et n'apparaît jamais dans le bandeau public.
+ */
+export const OFFER_KINDS = ["discount", "beta"] as const;
+export type OfferKind = (typeof OFFER_KINDS)[number];
+
 /** Offre vue par l'équipe Selio (administration) : tout, avec le nombre d'utilisations. */
 export interface CommercialOffer extends OfferDiscount {
   id: string;
+  /** Absent : « discount » (anciennes réponses, démonstration). */
+  kind?: OfferKind;
+  /** Offre « beta » : durée de l'accès en jours (1 à 90) ; null pour une remise. */
+  betaDays?: number | null;
   name: string;
   code: string | null;
   plans: PaidPlan[];
@@ -147,7 +161,7 @@ export interface OfferRedemption extends OfferDiscount {
 }
 
 /** Raisons d'un code refusé (message clair à l'écran). */
-export const OFFER_REFUSAL_REASONS = ["invalid_code", "unknown_code", "inactive", "not_started", "expired", "exhausted", "plan_not_covered", "already_applied"] as const;
+export const OFFER_REFUSAL_REASONS = ["invalid_code", "unknown_code", "inactive", "not_started", "expired", "exhausted", "plan_not_covered", "already_applied", "beta_signup_only", "beta_already_used"] as const;
 export type OfferRefusalReason = (typeof OFFER_REFUSAL_REASONS)[number];
 
 /** Réponse de la vérification d'un code (POST /api/offers/check) ou de son application. */
@@ -158,6 +172,8 @@ export interface PromoCheckResult {
   offer?: PublicOffer;
   /** Prix remisés par forfait concerné (centimes, première échéance), pour le cycle demandé. */
   prices?: { plan: PaidPlan; cycle: BillingCycle; priceCents: number; discountedCents: number }[];
+  /** Code de la bêta : accès de `days` jours au forfait `plan`, sans carte (jamais une remise). */
+  beta?: { days: number; plan: PaidPlan; endsAt?: string };
 }
 
 /** POST /api/offers/check et POST /api/billing/offer */
@@ -262,6 +278,8 @@ export function toPublicOffer(o: CommercialOffer): PublicOffer {
 
 export const commercialOfferRow = z.object({
   id,
+  kind: z.enum(OFFER_KINDS).default("discount"),
+  betaDays: z.number().int().nullable().default(null),
   name: z.string(),
   code: z.string().nullable(),
   discountPercent: z.number().int().nullable(),

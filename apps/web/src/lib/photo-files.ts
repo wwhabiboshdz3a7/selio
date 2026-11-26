@@ -6,10 +6,11 @@ import { FILE_TYPE_SNIFF_BYTES, photoContentProblem } from "@selio/domain";
  * fichier corrompu). Seuls les 64 premiers octets sont lus : un fichier de plusieurs Go est refusé sans être chargé.
  */
 
+/** Taille lisible en unités décimales (comme les limites affichées : « 1,5 Mo maximum »). */
 export function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Go`;
-  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Mo`;
-  return `${Math.max(1, Math.round(bytes / 1024))} Ko`;
+  if (bytes >= 1e9) return `${(bytes / 1e9).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Go`;
+  if (bytes >= 1e6) return `${(bytes / 1e6).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Mo`;
+  return `${Math.max(1, Math.round(bytes / 1e3))} Ko`;
 }
 
 /** Motif de refus en français, ou null si la photo peut être lue. */

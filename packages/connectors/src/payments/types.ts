@@ -76,6 +76,13 @@ export type WebhookVerification =
 /** En-têtes HTTP tels que Fastify les expose (noms en minuscules). */
 export type WebhookHeaders = Record<string, string | string[] | undefined>;
 
+/**
+ * Prestataire de paiement (aujourd'hui Revolut, `RevolutClient`). Emplacement Stripe : un adaptateur
+ * `StripeClient` implémentera cette même interface (client et moyen de paiement enregistré « pour le marchand »,
+ * commande de paiement, débit à l'initiative du marchand, webhook signé), avec `name: "stripe"`. Tant qu'il
+ * n'existe pas, PAYMENT_MODE=stripe est refusé au démarrage (config.ts) ; marche à suivre : docs/TUTORIELS.md,
+ * « Brancher Stripe ».
+ */
 export interface PaymentProvider {
   readonly name: "revolut";
   /** Bac à sable (aucun argent réel). */

@@ -265,7 +265,7 @@ async function decode(file: Blob): Promise<Drawable> {
  * d'origine ne quitte jamais l'appareil, la photo réduite n'est pas conservée par Selio.
  */
 /** Fichier d'origine au-delà duquel la photo n'est même pas décodée (mémoire du téléphone) : 40 Mo. */
-export const PHOTO_MAX_INPUT_BYTES = 40 * 1024 * 1024;
+export const PHOTO_MAX_INPUT_BYTES = 40_000_000;
 
 export async function reducePhoto(file: Blob, maxSide = PHOTO_MAX_SIDE): Promise<ReducedPhoto> {
   // Taille contrôlée AVANT le décodage : un fichier de plusieurs Go n'est jamais chargé en mémoire.
@@ -276,7 +276,8 @@ export async function reducePhoto(file: Blob, maxSide = PHOTO_MAX_SIDE): Promise
   } catch (e) {
     // Illisible : on dit pourquoi d'après les premiers octets (PDF renommé, HEIC, SVG…), sinon le message général.
     const problem = await photoFileProblem(file, { maxBytes: PHOTO_MAX_INPUT_BYTES }).catch(() => null);
-    throw problem ? new Error(problem) : e;
+    // Type reconnu (PDF, HEIC, SVG…) : on le nomme ; contenu inconnu : le message général.
+    throw problem && !problem.includes("n'est pas une image lisible") ? new Error(problem) : e;
   }
   try {
     const size = targetSize(img.width, img.height, maxSide);

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { ArrowUpRight, Building2, ServerCrash, ChevronDown, Gauge, HeartPulse, LayoutDashboard, Lock, LogOut, Menu as MenuIcon, Moon, ShieldCheck, Sun, Tags, TrendingUp, Users, X } from "lucide-react";
 import { OPERATOR_ROLE_LABELS, type OperatorRole } from "@selio/contracts";
 import { operatorCan, type OperatorCapability } from "@selio/domain";
@@ -10,6 +10,7 @@ import { unsubscribeOnLogout } from "../../../lib/push";
 import { announceSession } from "../../../lib/session-sync";
 import { SERVER_OUTDATED_TEXT, SERVER_OUTDATED_TITLE, adminSectionsFor, operatorRoleOfSession, type AdminSection } from "../../../lib/admin";
 import { useCapabilities } from "../../../lib/capabilities";
+import { publicSiteUrl } from "../../../lib/env";
 import { Logo } from "../../../components/Logo";
 import { NavigationProgress, usePageTransition } from "../../layout";
 import { prefetchProps } from "../../prefetch";
@@ -29,12 +30,44 @@ const linkClass = ({ isActive }: { isActive: boolean }) => cn(
   isActive ? "bg-accent-soft text-text [&>svg]:text-accent" : "text-text-muted hover:bg-surface-muted hover:text-text [&>svg]:text-text-muted",
 );
 
-/** Accès à Selio Admin : opérateurs seulement (les autres retournent à l'espace client). */
+/**
+ * Accès à Selio Admin : opérateurs seulement. Le site Selio Admin n'a pas d'espace client : un autre compte voit un
+ * refus clair et peut se déconnecter (sans session, RequireSession mène d'abord à la connexion).
+ */
 export function RequireOperator({ children }: { children: ReactNode }) {
   const session = useSession();
-  if (!operatorRoleOfSession(session.data)) return <Navigate to="/app" replace />;
+  if (!operatorRoleOfSession(session.data)) return <NotOperator />;
   return <>{children}</>;
 }
+
+function NotOperator() {
+  const client = useClient();
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+  const logout = async () => {
+    setBusy(true);
+    try {
+      await client.logout();
+      announceSession("logout");
+      navigate("/connexion", { replace: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <main data-testid="admin-not-operator" className="grid min-h-dvh place-items-center bg-bg px-4">
+      <div className="flex max-w-md flex-col items-center gap-3 text-center">
+        <Lock className="size-6 text-text-muted" aria-hidden />
+        <h1 className="text-xl font-semibold text-text">Accès réservé à l'équipe Selio</h1>
+        <p className="text-sm text-text-muted">Ce compte n'a pas accès à Selio Admin. Connectez-vous avec un compte opérateur.</p>
+        <Button onClick={() => void logout()} loading={busy}>Se déconnecter</Button>
+      </div>
+    </main>
+  );
+}
+
+/** Lien vers le site public (VITE_PUBLIC_SITE_URL), seulement s'il est configuré : le site Selio Admin n'a pas d'espace client. */
+const PUBLIC_APP_URL = publicSiteUrl ? `${publicSiteUrl}/app` : "";
 
 /**
  * Page réservée à un droit de la matrice (même règle que l'API) : un opérateur « business » qui ouvre une
@@ -110,7 +143,7 @@ function OperatorRolePreview({ role }: { role: OperatorRole }) {
 
 /**
  * Selio Admin : l'espace des fondateurs, séparé de l'espace client (sa propre barre latérale, aucun bandeau
- * d'essai ni de facturation). Sections selon le rôle d'opérateur ; lien « Ouvrir l'espace client ».
+ * d'essai ni de facturation). Sections selon le rôle d'opérateur ; lien vers le site public s'il est configuré.
  */
 export default function AdminLayout() {
   const s = useRequiredSession();
@@ -158,12 +191,14 @@ export default function AdminLayout() {
             <SectionList sections={technique} />
           </div>
         ) : null}
-        <div className="mt-4 border-t border-border pt-3">
-          <Link to="/app" className={linkClass({ isActive: false })}>
-            <ArrowUpRight aria-hidden />
-            <span className="flex-1 truncate">Ouvrir l'espace client</span>
-          </Link>
-        </div>
+        {PUBLIC_APP_URL ? (
+          <div className="mt-4 border-t border-border pt-3">
+            <a href={PUBLIC_APP_URL} target="_blank" rel="noopener" className={linkClass({ isActive: false })}>
+              <ArrowUpRight aria-hidden />
+              <span className="flex-1 truncate">Ouvrir le site Selio</span>
+            </a>
+          </div>
+        ) : null}
       </nav>
       <div className="shrink-0 border-t border-border p-3">
         <Menu
@@ -182,7 +217,7 @@ export default function AdminLayout() {
           )}
           items={[
             { label: resolved === "dark" ? "Mode clair" : "Mode sombre", icon: resolved === "dark" ? <Sun /> : <Moon />, onSelect: () => setPreference(resolved === "dark" ? "light" : "dark") },
-            { label: "Ouvrir l'espace client", icon: <ArrowUpRight />, onSelect: () => navigate("/app") },
+            ...(PUBLIC_APP_URL ? [{ label: "Ouvrir le site Selio", icon: <ArrowUpRight />, onSelect: () => { window.open(PUBLIC_APP_URL, "_blank", "noopener"); } }] : []),
             { label: "Se déconnecter", icon: <LogOut />, onSelect: async () => { await unsubscribeOnLogout(client); await client.logout(); announceSession("logout"); navigate("/connexion"); } },
           ]}
         />

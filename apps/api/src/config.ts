@@ -77,6 +77,12 @@ export const apiEnvSchema = z
     HOST: z.string().default("0.0.0.0"),
     CORS_ORIGINS: z.string().default("http://127.0.0.1:5173,http://localhost:5173"),
     PUBLIC_WEB_URL: z.string().url().default("http://127.0.0.1:5173"),
+    /**
+     * Adresse du site Selio Admin (build web « admin », site Netlify séparé), facultative : son origine est ajoutée
+     * aux origines autorisées (CORS_ORIGINS, contrôle d'origine des WebSockets). Derrière le relais /api/* de
+     * Netlify, les appels sont de même origine et n'en ont pas besoin ; elle sert aux appels directs.
+     */
+    ADMIN_WEB_URL: z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), z.string().url().optional()),
     TRUST_PROXY: bool,
     COOKIE_SECURE: bool,
     LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
@@ -188,6 +194,16 @@ export const apiEnvSchema = z
   .merge(paymentConfigSchema);
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
+
+/** Origines autorisées : CORS_ORIGINS, plus l'origine du site Selio Admin (ADMIN_WEB_URL) si elle est renseignée. */
+export function allowedOrigins(env: Pick<ApiEnv, "CORS_ORIGINS" | "ADMIN_WEB_URL">): string[] {
+  const list = env.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean);
+  if (env.ADMIN_WEB_URL) {
+    const origin = new URL(env.ADMIN_WEB_URL).origin;
+    if (!list.includes(origin)) list.push(origin);
+  }
+  return list;
+}
 
 /** Configuration validée au démarrage : toute incohérence arrête le processus avec un message explicite. */
 export function loadEnv(env: Record<string, string | undefined> = process.env): ApiEnv {

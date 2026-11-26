@@ -6,8 +6,8 @@ import { CtaBand, FaqList, JsonLd, MarketingSection } from "../components";
 import { OBJECTIONS } from "../objections";
 import { FaqBrowser, HelpAskPanel, askFaqLocally } from "../../components/help";
 
-/** Questions sur la démonstration : propres à l'application, jamais montrées sur la vitrine. */
-const VITRINE_HIDDEN = ["contenu-demo", "reinitialiser-demo", "demo-ou-connecte"] as const;
+/** Questions propres à l'application, jamais montrées sur la vitrine (aucune aujourd'hui : la FAQ ne parle plus de démonstration). */
+const VITRINE_HIDDEN: readonly string[] = [];
 
 /**
  * Aide publique : la FAQ complète (contenu partagé avec l'application et le serveur) et
@@ -17,7 +17,7 @@ const VITRINE_HIDDEN = ["contenu-demo", "reinitialiser-demo", "demo-ou-connecte"
 export default function Faq() {
   useMarketingMeta("/faq");
   const session = useSession();
-  const visible = helpEntries().filter((e) => !(VITRINE_HIDDEN as readonly string[]).includes(e.id));
+  const visible = helpEntries().filter((e) => !VITRINE_HIDDEN.includes(e.id));
   return (
     <>
       <JsonLd data={faqPageJsonLd([...OBJECTIONS, ...visible])} />
@@ -25,7 +25,7 @@ export default function Faq() {
         level={1}
         eyebrow="Aide"
         title="Aide et questions fréquentes"
-        lead={`${helpEntries().length - VITRINE_HIDDEN.length} réponses en ${HELP_CATEGORIES.length} catégories, fidèles à l'application telle qu'elle est aujourd'hui : ce qui n'existe pas encore est dit « en préparation ».`}
+        lead={`${visible.length} réponses en ${HELP_CATEGORIES.length} catégories, fidèles à l'application telle qu'elle est aujourd'hui : ce qui n'existe pas encore est dit « en préparation ».`}
       >
         <div className="max-w-3xl">
           <section aria-labelledby="avant-de-commencer" className="mb-10">

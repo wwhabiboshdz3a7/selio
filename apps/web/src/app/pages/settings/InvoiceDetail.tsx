@@ -50,7 +50,7 @@ export function InvoiceSheet({ view, issuer }: { view: InvoiceView; issuer: Invo
       <header className="flex flex-wrap items-start justify-between gap-6">
         <div>
           <p className="text-2xl font-semibold tracking-[-0.02em]">{issuer.name}</p>
-          <address className="mt-2 text-sm text-text-muted not-italic">
+          <address className="mt-2 text-sm text-text-muted not-italic wrap-anywhere">
             {issuer.addressLines.map((l) => <span key={l} className="block">{l}</span>)}
             <span className="block">SIREN : {issuer.siren}</span>
             <span className="block">TVA intracommunautaire : {issuer.vatNumber}</span>
@@ -70,8 +70,9 @@ export function InvoiceSheet({ view, issuer }: { view: InvoiceView; issuer: Invo
       <section className="mt-8 grid gap-6 sm:grid-cols-2">
         <div>
           <p className="text-xs font-medium tracking-wider text-text-muted uppercase">Facturé à</p>
-          <p className="mt-1 text-base font-semibold">{view.customer.orgName}</p>
-          {view.customer.email ? <p className="text-text-muted">{view.customer.email}</p> : null}
+          {/* Nom d'organisation très long (120 caractères sans espace) : coupé à la ligne, jamais hors de la feuille. */}
+          <p className="mt-1 text-base font-semibold wrap-anywhere">{view.customer.orgName}</p>
+          {view.customer.email ? <p className="text-text-muted wrap-anywhere">{view.customer.email}</p> : null}
         </div>
         <div>
           <p className="text-xs font-medium tracking-wider text-text-muted uppercase">Période couverte</p>

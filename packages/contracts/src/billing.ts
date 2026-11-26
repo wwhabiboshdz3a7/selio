@@ -72,7 +72,8 @@ export function euroLabel(cents: number): string {
  * au-delà du quota. Les factures d'avant les remises restent lisibles (les nouvelles valeurs s'ajoutent).
  */
 export const INVOICE_EXTRA_LINE_KINDS = ["overage", "credit", "discount"] as const;
-export const INVOICE_EXTRA_LINE_PRODUCTS = ["worn_photo", "referral_month", "offer_discount"] as const;
+/** `beta_access` : la ligne « Selio — accès bêta, 1 mois offert » (remise égale au prix du mois, facture à 0 €). */
+export const INVOICE_EXTRA_LINE_PRODUCTS = ["worn_photo", "referral_month", "offer_discount", "beta_access"] as const;
 export const invoiceExtraLine = z.object({
   kind: z.enum(INVOICE_EXTRA_LINE_KINDS),
   product: z.enum(INVOICE_EXTRA_LINE_PRODUCTS),
@@ -238,16 +239,22 @@ export interface CheckoutResult {
  * Mode de paiement demandé dans la configuration (PAYMENT_MODE, API et worker) :
  * - « auto » (défaut) : Revolut quand REVOLUT_SECRET_KEY est renseignée, paiement simulé sinon ;
  * - « revolut » : Revolut seulement (sans clé, « Le paiement n'est pas configuré ») ;
- * - « simulated » : paiement simulé même si Revolut est configuré (essais sans paiement).
+ * - « simulated » : paiement simulé même si Revolut est configuré (essais sans paiement) ;
+ * - « stripe » : EMPLACEMENT RÉSERVÉ. L'adaptateur Stripe n'existe pas encore : la valeur est refusée au
+ *   démarrage de l'API et du worker avec un message clair (`STRIPE_NOT_AVAILABLE_MESSAGE`). Marche à suivre :
+ *   docs/TUTORIELS.md, « Brancher Stripe ».
  */
-export const PAYMENT_MODE_SETTINGS = ["auto", "revolut", "simulated"] as const;
+export const PAYMENT_MODE_SETTINGS = ["auto", "revolut", "simulated", "stripe"] as const;
+/** Refus de démarrage tant que l'adaptateur Stripe n'est pas écrit (PAYMENT_MODE=stripe). */
+export const STRIPE_NOT_AVAILABLE_MESSAGE = "PAYMENT_MODE=stripe : l'adaptateur Stripe n'est pas encore installé dans cette version de Selio. Gardez PAYMENT_MODE=simulated (ou auto) en attendant ; marche à suivre dans docs/TUTORIELS.md, « Brancher Stripe ».";
 export type PaymentModeSetting = (typeof PAYMENT_MODE_SETTINGS)[number];
 /** Mode effectif : « revolut » (réel ou bac à sable) ou « simulated » (aucune carte, aucun débit). */
 export type BillingPaymentMode = "revolut" | "simulated";
 
 /** Mode effectif à partir du réglage et de la présence d'une configuration Revolut. */
 export function effectivePaymentMode(setting: PaymentModeSetting | undefined, revolutConfigured: boolean): BillingPaymentMode {
-  if (setting === "simulated") return "simulated";
+  // « stripe » est refusé au démarrage (loadPaymentConfig) ; s'il arrivait ici, rien n'est jamais débité.
+  if (setting === "simulated" || setting === "stripe") return "simulated";
   if (setting === "revolut") return "revolut";
   return revolutConfigured ? "revolut" : "simulated";
 }
@@ -278,6 +285,8 @@ export interface CheckoutPreview {
   noCardRequired: boolean;
   /** Confirmation impossible (essai terminé en mode simulé, accès offert…) : la raison, sinon null. */
   blockedReason: string | null;
+  /** Mois de bêta terminé (compte bloqué) : la confirmation enregistre le moyen de paiement et débloque. */
+  afterBeta?: boolean;
 }
 
 /** POST /api/billing/plan : changement d'offre appliqué au prochain renouvellement. */

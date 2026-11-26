@@ -8,10 +8,13 @@ build/
 *.local
 coverage/
 playwright-report/
+playwright-report-admin/
 test-results/
 .turbo/
 *.tsbuildinfo
 apps/web/dev-dist/
+# Build du site Selio Admin pour ses tests de bout en bout (pnpm --filter @selio/web test:e2e:admin)
+apps/web/dist-admin/
 apps/extension/release/
 .DS_Store
 

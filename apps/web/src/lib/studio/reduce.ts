@@ -14,7 +14,7 @@ const PHOTO_BACKGROUND = "#ffffff";
 /** Qualités essayées si la photo dépasse 1 Mo à 0,8 (photo très détaillée) ; au-delà, refus. */
 const FALLBACK_QUALITIES = [0.7, 0.6] as const;
 /** Fichier d'origine au-delà duquel on ne tente même pas le décodage (mémoire du téléphone). */
-export const MAX_INPUT_BYTES = 40 * 1024 * 1024;
+export const MAX_INPUT_BYTES = 40_000_000;
 
 export interface ReducedPhoto extends GeneratorPhoto {
   /** Dimensions après réduction (côté long ≤ 1 024 px). */

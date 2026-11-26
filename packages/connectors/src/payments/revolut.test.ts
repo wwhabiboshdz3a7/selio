@@ -61,6 +61,11 @@ describe("RevolutClient : configuration", () => {
     expect(notice).toHaveLength(1);
     expect(notice[0]).toMatchObject({ level: "info", message: expect.stringMatching(/SIMULÉ.*rien n'est jamais débité/) });
   });
+
+  it("PAYMENT_MODE=stripe : emplacement réservé, refusé au démarrage avec un message clair tant que l'adaptateur n'existe pas", () => {
+    expect(() => loadPaymentConfig({ PAYMENT_MODE: "stripe" })).toThrow(/adaptateur Stripe n'est pas encore installé.*TUTORIELS/);
+    expect(() => loadPaymentConfig({ PAYMENT_MODE: " Stripe ", REVOLUT_SECRET_KEY: KEY })).toThrow(PaymentConfigError);
+  });
 });
 
 describe("RevolutClient : appels HTTP (simulés)", () => {

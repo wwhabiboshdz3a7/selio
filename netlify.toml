@@ -1,15 +1,21 @@
-# Déploiement Netlify de la vitrine + application web (apps/web).
+# Déploiement Netlify des DEUX sites web (apps/web), avec ce même fichier :
+#   - site public (vitrine + application des clients) : VITE_APP_TARGET=public (ou absente) ;
+#   - site Selio Admin (administration seule, non indexé) : VITE_APP_TARGET=admin.
+# La cible et l'adresse de l'API se règlent dans les variables de chaque projet Netlify (jamais ici) :
+#   VITE_APP_TARGET, VITE_API_BASE_URL (l'adresse du site lui-même : /api/* est relayé plus bas).
+# La cible « public » construit aussi l'extension Chrome, servie en /extension/selio-extension.zip ;
+# la cible « admin » écrit un fichier _headers (X-Robots-Tag: noindex, nofollow) et un robots.txt « Disallow: / ».
 # L'API et le worker se déploient séparément (voir docs/DEPLOYMENT.md).
 [build]
   base = "/"
-  command = "corepack enable && pnpm install --frozen-lockfile && pnpm build:web"
+  command = "corepack enable && pnpm install --frozen-lockfile && pnpm build:site"
   publish = "apps/web/dist"
 
 [build.environment]
   NODE_VERSION = "22"
   PNPM_FLAGS = "--frozen-lockfile"
-  # URL publique de l'API en mode connecté. Vide = mode démonstration seul.
-  # VITE_API_BASE_URL = "https://api.exemple.fr"
+  # Production : VITE_API_BASE_URL est OBLIGATOIRE (vide = démonstration seule, réservée au développement).
+  # VITE_API_BASE_URL = "https://seliovprod.netlify.app"
 
 # API Selio (PC de production) relayée par le tunnel : même origine pour les cookies.
 # À mettre à jour quand l'adresse du tunnel change.
@@ -47,6 +53,12 @@
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+# Extension Chrome à télécharger (site public) : toujours la dernière version construite.
+[[headers]]
+  for = "/extension/*"
+  [headers.values]
+    Cache-Control = "no-cache"
 
 [[headers]]
   for = "/sw.js"

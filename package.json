@@ -12,6 +12,7 @@
     "dev:worker": "pnpm --filter @selio/worker dev",
     "build": "pnpm -r --filter './packages/*' build && pnpm -r --filter './apps/*' build",
     "build:web": "pnpm --filter @selio/web build",
+    "build:site": "node apps/web/scripts/build-site.mjs",
     "build:api": "pnpm --filter @selio/api build",
     "build:worker": "pnpm --filter @selio/worker build",
     "build:extension": "pnpm --filter @selio/extension build",

@@ -683,7 +683,8 @@ describe("négociation avancée et migration (PostgreSQL)", () => {
     const created = await items.createItemChecked(ctx, { title: "Jean droit", category: "men", status: "in_stock", purchasePriceCents: 500 });
     expect(created.id).toBeTruthy();
     expect(created.listingCheck.warnings.map((w) => w.code)).toContain("no_photos");
-    const photos = [0, 1, 2].map((i) => ({ id: `p${i}`, url: "data:image/png;base64,QUJD", alt: i === 2 ? "Étiquette" : "", position: i }));
+    // Vrai en-tête PNG (octets magiques) : le serveur vérifie le type réel des photos reçues.
+    const photos = [0, 1, 2].map((i) => ({ id: `p${i}`, url: "data:image/png;base64,iVBORw0KGgo=", alt: i === 2 ? "Étiquette" : "", position: i }));
     const updated = await items.updateItemChecked(ctx, created.id, { photos, description: "Tour de taille 40 cm", photoScores: [250, 40, 300] });
     const codes = updated.listingCheck.warnings.map((w) => w.code);
     expect(codes).not.toContain("no_photos");

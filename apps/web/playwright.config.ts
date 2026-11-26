@@ -1,7 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Tests end-to-end sur l'application en mode démonstration (aucun service externe).
+ * Tests end-to-end sur le site public (vitrine et application, cible « public ») en mode démonstration
+ * (build sans API, aucun service externe). Selio Admin a son propre site : playwright.admin.config.ts.
  * Le navigateur Chromium pré-installé est utilisé via PLAYWRIGHT_BROWSERS_PATH ou
  * PLAYWRIGHT_CHROMIUM_PATH (chemin explicite de l'exécutable).
  */
@@ -9,6 +10,8 @@ const executablePath = process.env.PLAYWRIGHT_CHROMIUM_PATH;
 
 export default defineConfig({
   testDir: "./e2e",
+  // Site Selio Admin : build séparé (cible « admin »), voir playwright.admin.config.ts.
+  testIgnore: ["**/admin-site.spec.ts"],
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,

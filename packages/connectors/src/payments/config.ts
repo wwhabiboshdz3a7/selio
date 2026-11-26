@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PAYMENT_MODES, PAYMENT_MODE_SETTINGS, effectivePaymentMode, type BillingPaymentMode, type PaymentMode } from "@selio/contracts";
+import { PAYMENT_MODES, PAYMENT_MODE_SETTINGS, STRIPE_NOT_AVAILABLE_MESSAGE, effectivePaymentMode, type BillingPaymentMode, type PaymentMode } from "@selio/contracts";
 import { DEFAULT_REVOLUT_API_VERSION, RevolutClient } from "./revolut";
 import { PaymentConfigError, type PaymentLogger, type PaymentProvider } from "./types";
 
@@ -21,8 +21,9 @@ export const paymentConfigSchema = z.object({
   REVOLUT_LIVE_ALLOWED: bool,
   /**
    * « auto » (défaut) : Revolut si REVOLUT_SECRET_KEY est renseignée, sinon paiement simulé (essai sans carte,
-   * aucun débit) ; « simulated » : simulé même avec Revolut ; « revolut » : Revolut seulement. Même valeur
-   * dans l'API et le worker.
+   * aucun débit) ; « simulated » : simulé même avec Revolut ; « revolut » : Revolut seulement ; « stripe » :
+   * emplacement réservé, REFUSÉ au démarrage tant que l'adaptateur Stripe n'existe pas. Même valeur dans l'API
+   * et le worker.
    */
   PAYMENT_MODE: z.preprocess((v) => (typeof v === "string" ? (v.trim() === "" ? undefined : v.trim().toLowerCase()) : v), z.enum(PAYMENT_MODE_SETTINGS).default("auto")),
 });
@@ -44,6 +45,9 @@ export function loadPaymentConfig(env: Record<string, unknown> = process.env): P
     throw new PaymentConfigError(`Configuration du paiement invalide : ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
   }
   const cfg = parsed.data;
+  // Emplacement Stripe : la valeur est connue (docs/TUTORIELS.md, « Brancher Stripe ») mais aucun adaptateur
+  // n'est encore écrit. Refus explicite plutôt qu'un démarrage qui laisserait croire que les paiements passent.
+  if (cfg.PAYMENT_MODE === "stripe") throw new PaymentConfigError(STRIPE_NOT_AVAILABLE_MESSAGE);
   if (!cfg.REVOLUT_SECRET_KEY) {
     if (cfg.REVOLUT_MODE === "live" && !cfg.REVOLUT_LIVE_ALLOWED) throw new PaymentConfigError("REVOLUT_MODE=live exige REVOLUT_LIVE_ALLOWED=true (bac à sable par défaut).");
     return null;

@@ -22,6 +22,7 @@ export * from "./track";
 export * from "./migration";
 export * from "./referral";
 export * from "./offers";
+export * from "./beta";
 export * from "./comptes";
 export * from "./admin";
 export * from "./bot";
