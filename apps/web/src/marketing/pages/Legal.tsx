@@ -45,7 +45,7 @@ const PAGES: Record<string, { title: string; sections: { id?: string; h: string;
       { h: "Finalités et base légale", p: ["[À compléter : exécution du contrat, intérêt légitime pour la sécurité, consentement pour les notifications.]"] },
       { h: "Durées de conservation", p: ["Configurables par organisation (messages, journaux d'audit, requêtes IA). Valeurs par défaut documentées dans l'application. Suppression possible à tout moment depuis Paramètres › Données."] },
       { h: "Hébergement des données", p: ["Base de données, photos et modèles d'IA (mon IA perso) sur notre machine, en France. La vitrine statique est servie par un hébergeur de sites : [hébergeur à préciser]."] },
-      { h: "Sous-traitants", p: [`[À compléter : hébergeur de la vitrine, prestataire de paiement (Revolut), service d'email à choisir.] ${trackingTools(TRACKING).length ? `Mesure et publicité, seulement avec votre accord : ${trackingTools(TRACKING).join(", ")}.` : "Aucun service de mesure d'audience ni de publicité n'est activé."}`] },
+      { h: "Sous-traitants", p: [`[À compléter : hébergeur de la vitrine, prestataire de paiement (Stripe), service d'email à choisir.] ${trackingTools(TRACKING).length ? `Mesure et publicité, seulement avec votre accord : ${trackingTools(TRACKING).join(", ")}.` : "Aucun service de mesure d'audience ni de publicité n'est activé."}`] },
       cookiesSection(TRACKING),
       { h: "Extension navigateur", p: ["Ce que l'extension lit et envoie est détaillé dans la politique de confidentialité de l'extension (/extension/confidentialite)."] },
       { h: "Vos droits", p: ["Accès, rectification, export (Paramètres › Données), effacement, opposition. Contact : [adresse à compléter]."] },

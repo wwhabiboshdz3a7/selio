@@ -105,7 +105,7 @@ export default function Register() {
         <Eyebrow>Espace Selio</Eyebrow>
         <h1 className="mt-3 text-2xl font-semibold tracking-[-0.025em] text-text">{betaCode ? "Rejoindre la bêta Selio" : `Commencer l'essai gratuit de ${TRIAL_DAYS} jours`}</h1>
         <p className="mt-1 text-sm text-text-muted">Un compte, une organisation, les cinq filiales Selio. Vous pourrez inviter des collègues ensuite.</p>
-        <TrustRow className="mt-4" only={["carte", "essai", "resiliable"]} />
+        <TrustRow className="mt-4" only={betaCode ? ["carte", "resiliable"] : ["carte", "essai", "resiliable"]} />
         {demoOffered ? (
           <div className="mt-4">
             <Segmented ariaLabel="Mode" value={mode} onChange={(m: Mode) => setMode(m)} items={[{ value: "demo", label: "Démonstration" }, { value: "connected", label: "Compte connecté" }]} />
