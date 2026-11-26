@@ -38,7 +38,7 @@ export function AdminTrack() {
   const q = useQuery({ queryKey: ["admin-track"], queryFn: () => client.adminTrack(), refetchInterval: 30_000 });
   return (
     <>
-      <PageHeader eyebrow="Opérateur" title="Selio Track" description="Source des lectures, état du lecteur, usage par client et pause de Track. La lecture réelle de Vinted reste fermée tant que l'avis de l'avocat n'est pas rendu." />
+      <PageHeader eyebrow="Opérateur" title="Selio Track" description="Source des lectures, état du lecteur, usage par client et pause de Track. La lecture réelle des pages publiques s'ouvre par l'interrupteur TRACK_LIVE_ENABLED, progressivement : en pause d'abord, puis par paliers de pages par minute." />
       <QueryBoundary query={q} skeleton="spinner">{(d) => <Content d={d} />}</QueryBoundary>
     </>
   );

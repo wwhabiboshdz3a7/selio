@@ -19,7 +19,7 @@ import { PurchaseModes } from "./shared";
  * (automatisées selon vos critères, surveillées), bonnes affaires notées sur 100 avec la revente estimée et
  * la marge potentielle, alertes, limites de dépenses, historique des achats, et les deux modes d'achat :
  * l'achat rapide validé en 1 clic (achat assisté) et l'achat automatique (fermé par ses deux verrous du
- * serveur tant que la validation juridique manque). Track analyse et identifie ; Bot acquiert. Les
+ * serveur tant que la configuration ne les ouvre pas, ouverture progressive). Track analyse et identifie ; Bot acquiert. Les
  * automatisations du compte (négociation, relances…) sont dans Selio Manager › Automatisation.
  */
 export default function BotHome() {
@@ -66,7 +66,7 @@ export default function BotHome() {
           { label: "Recherches actives", value: searches.data ? <>{formatNumber(active.length)}<span className="text-base font-medium text-text-muted"> / {searches.data.length}</span></> : "—", sub: "surveillées selon vos critères" },
           { label: "Bonnes affaires", value: deals.data ? formatNumber(deals.data.length) : "—", sub: `notées ${REVIEW_THRESHOLD}/100 ou plus, dont ${formatNumber(toReview)} à valider` },
           { label: "Dépensé aujourd'hui", value: formatCents(spentToday), sub: `limite ${formatCents(limits.dailyCapCents)} par jour` },
-          { label: "Achat automatique", value: auto.data ? (auto.data.active ? "Ouvert" : "Fermé") : "—", sub: auto.data?.active ? "tous les verrous sont levés" : "validation juridique attendue" },
+          { label: "Achat automatique", value: auto.data ? (auto.data.active ? "Ouvert" : "Fermé") : "—", sub: auto.data?.active ? "tous les verrous sont levés" : auto.data?.serverEnabled ? "verrous de l'organisation à lever" : "ouverture progressive" },
         ]}
       />
 
@@ -137,7 +137,7 @@ export default function BotHome() {
           <li>Contourner un CAPTCHA ou une protection de Vinted : au premier signal, la lecture s'arrête et le compte Achat se met en pause.</li>
           <li>Garder votre mot de passe Vinted : vous vous connectez vous-même dans la fenêtre sécurisée de Selio Cloud.</li>
           <li>Acheter hors de vos limites : budget par jour, prix maximal par achat, budget de chaque recherche.</li>
-          <li>Acheter sans verrous : l'achat automatique reste fermé tant que la validation juridique n'est pas rendue.</li>
+          <li>Acheter sans verrous : l'achat automatique n'agit que si tous ses verrous sont levés, ceux du serveur comme ceux de votre organisation.</li>
         </ul>
         <p className="mt-3 text-xs text-text-muted">Les automatisations de votre compte (négociation par IA, relances, remise en ligne, réponses) sont dans <Link to="/app/automatisation" className="font-medium text-accent underline-offset-2 hover:underline">Selio Manager › Automatisation</Link>.</p>
       </Card>

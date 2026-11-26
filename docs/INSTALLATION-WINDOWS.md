@@ -236,7 +236,7 @@ Plus `nvidia-smi` avec les trois modèles chargés. Reporter les chiffres dans `
 - **Après chaque mise à jour du site (Netlify), mettre aussi le PC à jour** (`git pull`, puis `docker compose -f docker-compose.prod.yml up -d --build`) : un site plus récent que l'API affiche dans `/admin` « Le serveur n'est pas à jour : relancez la mise à jour » (routes inconnues de l'ancienne API), au lieu de listes vides.
 
 - Le PC doit rester allumé, Docker Desktop, Ollama et le tunnel lancés. Désactiver la mise en veille.
-- Selio Cloud reste fermé (Chromium absent de l'image du worker, avis de l'avocat attendu).
+- Selio Cloud est fermé par défaut (`CLOUD_ENABLED=false`) ; Chromium est dans l'image du worker et l'avis de l'avocat est favorable (26 novembre 2026) : ouverture progressive selon TUTORIELS.md §17.
 - Sauvegarde : `scripts/sauvegarde/` dès que de vraies données arrivent (voir `docs/SAUVEGARDE.md`).
 
 ## 11. Dépannage : erreur 502 sur le site

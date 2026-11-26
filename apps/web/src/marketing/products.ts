@@ -124,7 +124,7 @@ export const PRODUCTS: readonly ProductDef[] = [
     tagline: "L'analyse du marché et la recherche d'opportunités, pour décider avant d'acheter ou de vendre.",
     promise: "Analyser le marché Vinted et repérer les opportunités, avant d'acheter ou de vendre",
     lead: "Suivez le marché, analysez une niche, retrouvez les produits similaires et estimez un prix de revente : Track vous aide à décider. Track analyse et identifie ; il n'achète pas.",
-    state: { value: "planned", label: "En développement", note: "Fonctionne sur un marché simulé, signalé à l'écran. La lecture réelle reste fermée tant que l'avis juridique n'est pas rendu." },
+    state: { value: "planned", label: "En développement", note: "Lecture réelle des pages publiques du catalogue en cours d'ouverture, progressivement ; tant qu'elle n'est pas ouverte, le marché est simulé et signalé à l'écran." },
     does: [
       { title: "Analyse des niches", text: "Une marque dans une catégorie, notée sur 100 : demande, concurrence, prix et rotation." },
       { title: "Suivi du marché", text: "Des filtres suivis : prix médian, annonces actives et ventes estimées, relus toutes les 2 heures, avec la tendance sur 30 jours." },
@@ -138,7 +138,7 @@ export const PRODUCTS: readonly ProductDef[] = [
       "Ne republie aucune annonce : Track n'en tire que des statistiques.",
       "Ne garde ni pseudo, ni profil, ni photo de vendeur.",
       "Ne présente jamais une annonce disparue comme une vente certaine : on parle de ventes estimées.",
-      "Ne lit pas encore le site réel : simulateur par défaut, en attendant l'avis de l'avocat.",
+      "Ne lit que les pages publiques du catalogue, sans compte ni contournement : lecture ouverte progressivement, marché simulé et signalé à l'écran d'ici là.",
     ],
     pricingHref: "/tarifs#comparer",
     pricingNote: "Compris à partir de l'offre Pro, avec des quotas de scans et de recherches par photo.",

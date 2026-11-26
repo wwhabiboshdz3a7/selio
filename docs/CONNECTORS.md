@@ -67,7 +67,7 @@ Réutilisation de l'adaptateur DOM : la page de conversation est lue par `parseC
 - Les motifs de détection des signaux de Vinted (`detectBlock` : CAPTCHA, avertissement, blocage, « trop de requêtes ») : écrits sans page réelle.
 - L'adresse d'une conversation : `https://www.vinted.fr/inbox/<référence>` par défaut. Un autre domaine Vinted peut être réglé par compte dans `connection.config.vintedHost` (contrôlé : vinted.\* seulement).
 - La connexion par Google, Facebook ou Apple, non prise en charge : les fenêtres surgissantes sont fermées.
-- Le respect des conditions d'utilisation de la plateforme : avis de l'avocat attendu avant toute activation client.
+- Le respect des conditions d'utilisation de la plateforme : avis de l'avocat favorable à Selio Cloud, Track en réel et l'achat automatique (26 novembre 2026, DECISIONS.md D62) ; ouverture progressive.
 
 Un compte de catégorie **Perso** n'est jamais utilisé par le Cloud. Déconnecter ou supprimer un compte Vinted arrête son compte Cloud et efface sa session.
 

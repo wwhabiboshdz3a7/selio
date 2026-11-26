@@ -141,20 +141,20 @@ export function TrackQuotaStrip({ usage, className }: { usage: TrackUsageView; c
   );
 }
 
-/** Source des lectures : simulateur par défaut ; lecture en direct des pages publiques à valider juridiquement. */
+/** Source des lectures : simulateur par défaut ; lecture en direct des pages publiques quand le serveur l'a ouverte (TRACK_LIVE_ENABLED). */
 export function SourceState({ usage, className }: { usage: TrackUsageView; className?: string }) {
   const live = usage.source === "cloud";
   return (
     <Card className={className}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-md font-semibold">Source des données</h2>
-        <StatusBadge tone={live ? "warning" : "accent"}>{live ? "En direct (à valider juridiquement)" : "Simulateur"}</StatusBadge>
+        <StatusBadge tone={live ? "success" : "accent"}>{live ? "En direct" : "Simulateur"}</StatusBadge>
       </div>
       <p className="mt-2 text-sm text-text">{usage.sourceLabel ?? TRACK_SOURCE_LABELS[usage.source ?? "demo"]}</p>
       <p className="mt-1 text-xs text-text-muted">
         {live
-          ? "Pages publiques du catalogue lues par Selio Cloud, sans compte, avec les mêmes garde-fous que Radar : arrêt au premier signal de Vinted, ralentissement automatique, aucun contournement. L'usage des données issues de Vinted est à valider juridiquement."
-          : "La lecture en direct des pages publiques du catalogue est désactivée par défaut : elle attend l'avis de l'avocat. En attendant, le simulateur produit des données de démonstration, signalées comme telles."}
+          ? "Pages publiques du catalogue lues par Selio Cloud, sans compte, avec les mêmes garde-fous que Radar : arrêt au premier signal de Vinted, ralentissement automatique, aucun contournement. Track n'en tire que des statistiques."
+          : "La lecture en direct des pages publiques du catalogue est en cours d'ouverture, progressivement. En attendant, le simulateur produit des données de démonstration, signalées comme telles."}
       </p>
     </Card>
   );

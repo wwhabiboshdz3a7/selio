@@ -1,10 +1,12 @@
 # Selio Track
 
-Selio Track analyse le marché pour les offres Pro et Agence : filtres suivis et relus toutes les 2 h, tendances, annonces disparues, scans de niche notés sur 100, recherche par photo, flux des ventes (Agence) et comparables dans le panneau de l'extension. **Statistiques seulement** : Track ne republie aucune annonce et ne garde ni photo d'annonce ni pseudo. Ce document décrit ce que fait le code, les règles, les quotas, ce qui n'est pas fait, et la procédure de passage au réel après l'avis de l'avocat. L'estimation des prix sur laquelle Track s'appuie est décrite dans [PRIX.md](PRIX.md).
+Selio Track analyse le marché pour les offres Pro et Agence : filtres suivis et relus toutes les 2 h, tendances, annonces disparues, scans de niche notés sur 100, recherche par photo, flux des ventes (Agence) et comparables dans le panneau de l'extension. **Statistiques seulement** : Track ne republie aucune annonce et ne garde ni photo d'annonce ni pseudo. Ce document décrit ce que fait le code, les règles, les quotas, ce qui n'est pas fait, et la procédure de passage au réel, progressive (avis de l'avocat favorable du 26 novembre 2026). L'estimation des prix sur laquelle Track s'appuie est décrite dans [PRIX.md](PRIX.md).
 
+> **Mise à jour du 26 novembre 2026.** **Avis de l'avocat favorable** à la lecture des pages publiques du catalogue, annoncé par Ibrahim ([DECISIONS.md](DECISIONS.md) D62). L'ouverture se fait par la configuration du PC de production, **progressivement** (§7 : Track en pause, puis paliers de pages par minute), garde-fous inchangés. Dans le code, `TRACK_LIVE_ENABLED` reste `false` par défaut ; les écrans suivent l'interrupteur réel (« en cours d'ouverture » tant qu'il est fermé). L'image du worker embarque désormais Chromium (`deploy/Dockerfile.worker`). L'analyse d'un vendeur concurrent reste refusée (RGPD).
+>
 > **Mise à jour du 15 novembre 2026.** Ajouts : compteur « filtres suivis / quota » réel partout (Mon utilisation, vue opérateur, refus au-delà du quota), **alertes de tendance** par filtre (§2.11), **Track dans l'administration** `/admin/track` avec pause manuelle (§8), journal partagé des lectures, lecture publique sans session rendue possible dans l'exécuteur du Cloud (elle était refusée faute de session), vérification hors ligne `pnpm track:check`, et la procédure **« Passage au réel »** (§7). **L'interrupteur reste fermé** (`TRACK_LIVE_ENABLED=false`) : toujours aucune page de Vinted lue.
 >
-> **État au 4 novembre 2026, après relecture.** Les contrats (`packages/contracts/src/track.ts`), la migration 0013, le service du cœur (`packages/core/src/services/track.ts`), les routes de l'API, le passage du worker, les pages web `/track` et le panneau de l'extension sont construits et testés, sur PostgreSQL local et sur des pages locales ; l'état détaillé fait foi dans [BUILD_STATUS.md](BUILD_STATUS.md). Corrigé après relecture : quotas contrôlés sous verrou dans la transaction qui réserve la place, empreinte retirée qui garde sa place 2 h, ralentissement qui redescend vraiment d'un cran par 24 h, disparitions jugées sur la page entière, catégorie du filtre jamais recopiée, références moins identifiables (dates au jour, photos par tranches, clé à sel propre, 24 mois), scans insuffisants sans chiffres, recherche par photo refusée sans modèle de vision. **Par défaut, la source est le simulateur** (`TRACK_LIVE_ENABLED=false`) : les données affichées sont alors marquées « données de démonstration ». **Aucune page de Vinted n'a jamais été lue par Track.** L'usage des données issues de Vinted est **à valider juridiquement** (avis de l'avocat attendu, partie 7 du prompt) : la lecture en direct reste fermée tant que cet avis n'est pas rendu, et rien n'est promis à ce sujet.
+> **État au 4 novembre 2026, après relecture.** Les contrats (`packages/contracts/src/track.ts`), la migration 0013, le service du cœur (`packages/core/src/services/track.ts`), les routes de l'API, le passage du worker, les pages web `/track` et le panneau de l'extension sont construits et testés, sur PostgreSQL local et sur des pages locales ; l'état détaillé fait foi dans [BUILD_STATUS.md](BUILD_STATUS.md). Corrigé après relecture : quotas contrôlés sous verrou dans la transaction qui réserve la place, empreinte retirée qui garde sa place 2 h, ralentissement qui redescend vraiment d'un cran par 24 h, disparitions jugées sur la page entière, catégorie du filtre jamais recopiée, références moins identifiables (dates au jour, photos par tranches, clé à sel propre, 24 mois), scans insuffisants sans chiffres, recherche par photo refusée sans modèle de vision. **Par défaut, la source est le simulateur** (`TRACK_LIVE_ENABLED=false`) : les données affichées sont alors marquées « données de démonstration ». **Aucune page de Vinted n'a jamais été lue par Track** à cette date. (Avis de l'avocat rendu depuis, favorable : voir la mise à jour du 26 novembre 2026.)
 
 ## En bref
 
@@ -161,7 +163,7 @@ Chaque filtre peut prévenir quand sa tendance bouge. Tout est **coupé par déf
 - **La photo d'une recherche par photo n'est jamais conservée.**
 - **Les disparitions sont des estimations** et le disent.
 - **Rien n'est présenté comme mesuré sans mesure** : données du simulateur toujours marquées, « données insuffisantes » plutôt qu'une note fragile.
-- **Lecture en direct fermée par défaut**, ouverte seulement après l'avis de l'avocat (§7) ; analyse d'un vendeur non construite.
+- **Lecture en direct fermée par défaut** ; avis de l'avocat favorable (26 novembre 2026), ouverture progressive par la configuration du PC (§7) ; analyse d'un vendeur non construite.
 - Selio est **indépendant de Vinted** (ni affilié, ni approuvé, ni sponsorisé).
 
 ## 5. Quotas
@@ -185,7 +187,7 @@ Chaque filtre peut prévenir quand sa tendance bouge. Tout est **coupé par déf
 ## 6. Ce qui n'est pas fait, limites connues
 
 - **Jamais exécuté contre Vinted.** Le lecteur en direct n'est testé qu'avec un lecteur simulé et des pages locales ; les sélecteurs du catalogue et les paramètres de l'adresse de recherche sont ceux de Radar, écrits sur des fixtures synthétiques (`catalog-page.v1.html`), **non vérifiés** sur une vraie page publique.
-- **Avis de l'avocat** attendu sur la collecte de Track et l'usage des données issues de Vinted (statistiques, base de références, entraînement du modèle de prix).
+- **Avis de l'avocat** : favorable à la lecture des pages publiques du catalogue (26 novembre 2026, D62) ; l'ouverture reste progressive (§7).
 - **Analyse d'un vendeur concurrent** : écran d'explication seulement (RGPD).
 - **« Disparue » = vendue ou retirée** : pas de moyen de distinguer les deux sans lire la page de l'annonce, ce que Track ne fait pas.
 - **Une page par lecture** (96 annonces au plus) : un filtre très large ne voit que les annonces les plus récentes.
@@ -199,16 +201,16 @@ Chaque filtre peut prévenir quand sa tendance bouge. Tout est **coupé par déf
 
 ## 7. Passage au réel (procédure pour Ibrahim)
 
-Tout est prêt côté code ; **l'interrupteur reste fermé** (`TRACK_LIVE_ENABLED=false`) tant que les prérequis ne sont pas tous remplis. Rien n'est promis sur la date : elle dépend de l'avis de l'avocat.
+**Avis de l'avocat : favorable (26 novembre 2026). Ouverture progressive :** Track d'abord en pause (§7.4), puis paliers de pages par minute (§7.7). Tout est prêt côté code ; **l'interrupteur est fermé par défaut** (`TRACK_LIVE_ENABLED=false`) et ne s'ouvre que par `deploy/.env`, une fois les autres prérequis remplis. Garde-fous inchangés : arrêt au premier CAPTCHA, blocage ou « trop de requêtes », coupe-circuit de la machine, plafonds, aucun contournement.
 
 ### 7.1 Prérequis (tous obligatoires)
 
-1. **Avis écrit de l'avocat** sur la lecture des pages publiques du catalogue et l'usage des données (statistiques, base de références, entraînement du modèle de prix), rangé dans [DECISIONS.md](DECISIONS.md) ; ses conditions reportées dans ce document et dans les textes de l'interface (`TRACK_LEGAL_NOTICE`, conditions de vente). L'analyse d'un vendeur concurrent reste refusée quoi qu'il arrive (`TRACK_SELLER_ANALYSIS_ENABLED=false`).
-2. **Accord d'Ibrahim**, daté, dans DECISIONS.md.
+1. [x] **Avis de l'avocat favorable** à la lecture des pages publiques du catalogue, annoncé par Ibrahim le 26 novembre 2026 et rangé dans [DECISIONS.md](DECISIONS.md) (D62). L'analyse d'un vendeur concurrent reste refusée quoi qu'il arrive (`TRACK_SELLER_ANALYSIS_ENABLED=false`).
+2. [x] **Accord d'Ibrahim**, daté, dans DECISIONS.md (D62).
 3. **Adaptateur vérifié à la main** sur une vraie page publique du catalogue, depuis un poste de l'équipe, dans un navigateur ordinaire (jamais par Selio) : sélecteurs, paramètres de l'adresse de recherche, identifiants des marques, tailles, états et catégories, nombre d'annonces par page. Adaptateur (`v2`) et fixture mis à jour si besoin. Tant que la catégorie n'est pas lue, la lecture en direct n'écrit aucune référence (instantanés seulement).
 4. **Mesures** : `pnpm cloud:bench` sur le PC de production pour régler `CLOUD_MAX_BROWSERS` (Cloud, Radar et Track partagent les navigateurs) ; mesures de Radar relevées (RADAR.md §7) si Radar tourne déjà en direct.
 5. **Base à jour** : migrations jusqu'à `0021_track_suivi.sql` appliquées (`pnpm db:migrate`), API et worker déployés depuis la même version.
-6. **Selio Cloud prêt** : Chromium installé dans le conteneur du worker, bac à sable vérifié au démarrage ([CLOUD.md](CLOUD.md) §7).
+6. **Selio Cloud prêt** : Chromium est dans l'image du worker (`deploy/Dockerfile.worker`, `/usr/local/bin/selio-chromium`), profil seccomp `deploy/chromium-seccomp.json` et dossier de travail en tmpfs déclarés dans `docker-compose.prod.yml` ; reste à vérifier le bac à sable au démarrage sur le PC ([CLOUD.md](CLOUD.md) §7).
 
 ### 7.2 Vérifier hors ligne
 
@@ -218,7 +220,7 @@ Sur le PC de production, depuis le dossier de Selio :
 pnpm track:check -- --env-file deploy/.env --live --db
 ```
 
-La commande ne lit aucune page de Vinted et n'affiche aucun secret. Elle dit, ligne par ligne : `[ok]`, `[MANQUE]` (bloquant), `[!]` (réglage à revoir), `[à faire]` (vérification à la main : avis de l'avocat, adaptateur). Avec `--db`, elle lit aussi l'état de Track en base (pause manuelle, pause après un signal, ralentissement, migration 0021). On ne passe à la suite qu'avec **aucune ligne `[MANQUE]`**.
+La commande ne lit aucune page de Vinted et n'affiche aucun secret. Elle dit, ligne par ligne : `[ok]`, `[MANQUE]` (bloquant), `[!]` (réglage à revoir), `[à faire]` (vérification à la main : mise en pause avant l'ouverture, adaptateur ; l'avis de l'avocat est compté `[ok]`). Avec `--db`, elle lit aussi l'état de Track en base (pause manuelle, pause après un signal, ralentissement, migration 0021). On ne passe à la suite qu'avec **aucune ligne `[MANQUE]`**.
 
 ### 7.3 Réglages à changer dans `deploy/.env` (PC de production)
 
@@ -228,7 +230,8 @@ L'API et le worker lisent le même fichier (`env_file` de `deploy/docker-compose
 |---|---|---|
 | `TRACK_LIVE_ENABLED` | `true` | l'interrupteur (seule variable qui ouvre la lecture) |
 | `CLOUD_ENABLED` | `true` | Track lit avec le lecteur de Selio Cloud |
-| `CLOUD_CHROMIUM_PATH` | chemin de Chromium dans le conteneur du worker | aucun navigateur n'est téléchargé |
+| `CLOUD_CHROMIUM_PATH` | `/usr/local/bin/selio-chromium` | Chromium de l'image du worker ; aucun navigateur n'est téléchargé |
+| `CLOUD_PROFILE_DIR` | `/var/lib/selio-cloud` | dossier de travail en mémoire vive (tmpfs de `docker-compose.prod.yml`) |
 | `CLOUD_CHROMIUM_SANDBOX` | ne pas définir (vrai) | refusé à `false` en production |
 | `TRACK_MAX_PAGES_PER_MINUTE` | `2` | départ prudent (défaut 10) |
 | `TRACK_READ_INTERVAL_MINUTES` | `120` (ou `180`) | une lecture par empreinte toutes les 2 h au plus |

@@ -90,4 +90,4 @@ Aucune promesse de gain chiffrée, aucun faux avis ni nombre d'utilisateurs ; ch
 - **Marques d'articles** (Levi's dans le concept B, étiquette Tommy Hilfiger dans la vidéo Studio) : montrées comme exemple d'annonce, jamais dans un texte Google. En cas de refus, utiliser une autre publicité du concept B ou retirer le nom de marque du visuel (`source/concepts.mjs`).
 - **Prix indicatifs** : absents des publicités tant qu'ils ne sont pas définitifs.
 - **Adresse du site** : `seliovprod.netlify.app` fonctionne, mais un domaine à soi inspirera plus confiance dans les annonces ; à prévoir avant d'augmenter les budgets.
-- **Selio Cloud et l'achat automatique** restent fermés (avis de l'avocat attendu) : les textes parlent de l'extension, navigateur ouvert, et de l'achat validé en 1 clic.
+- **Selio Cloud et l'achat automatique** s'ouvrent progressivement (avis de l'avocat favorable, 26 novembre 2026 ; l'achat automatique reste réservé aux organisations autorisées) : les textes parlent de l'extension, navigateur ouvert, et de l'achat validé en 1 clic.

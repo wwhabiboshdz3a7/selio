@@ -12,7 +12,7 @@ import { Change, SourceState, TrackGate, TrackNotices, TrackQuotaStrip } from ".
 
 /**
  * Selio Track · tableau de bord : filtres suivis avec leur tendance sur 30 jours, quotas du mois et
- * source des données (simulateur, ou lecture en direct à valider juridiquement). Statistiques seulement.
+ * source des données (simulateur, ou lecture en direct des pages publiques une fois ouverte sur le serveur). Statistiques seulement.
  */
 export default function TrackDashboard() {
   return <TrackGate requireLive={{ title: "Tableau de bord", does: ["Le prix médian, les annonces actives, nouvelles et disparues de chacun de vos filtres, sur 30 jours.", "Une lecture toutes les 2 h, partagée entre tous les clients qui suivent le même filtre.", "Des alertes quand un prix ou un volume bouge (facultatives, filtre par filtre)."] }}>{(u) => <Dashboard usage={u} />}</TrackGate>;

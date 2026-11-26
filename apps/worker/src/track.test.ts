@@ -398,7 +398,8 @@ describe("worker : pnpm track:check (vérification hors ligne)", () => {
     expect(asked).toMatchObject({ mode: "direct", ready: false });
     const missing = asked.items.filter((i) => i.level === "manque").map((i) => i.label);
     expect(missing).toEqual(expect.arrayContaining(["CLOUD_ENABLED=true", "CLOUD_CHROMIUM_PATH"]));
-    expect(asked.items.filter((i) => i.level === "manuel").map((i) => i.label).join(" ")).toMatch(/avocat/);
+    expect(asked.items.filter((i) => i.level === "ok").map((i) => i.label).join(" ")).toMatch(/Avis de l'avocat favorable/);
+    expect(asked.items.filter((i) => i.level === "manuel").map((i) => i.label).join(" ")).toMatch(/en pause/);
     const text = formatTrackCheck(asked);
     expect(text).toMatch(/aucune page de Vinted n'est lue/);
     expect(text).not.toMatch(/motdepasse-secret|cle-secrete/);

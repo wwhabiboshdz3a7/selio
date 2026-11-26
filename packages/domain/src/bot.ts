@@ -99,7 +99,7 @@ const DRAFTS_PLACE = "brouillons à valider dans Messages ; vous les envoyez.";
 /** Pourquoi Selio Cloud ne prend pas le relais (forfait, serveur, compte, accord). */
 export function cloudWaitReason(cloud: BotInputs["cloud"]): string {
   if (!cloud.available) return "Selio Cloud n'est pas compris dans ce forfait (compris en Agence).";
-  if (cloud.serverEnabled === false) return "Selio Cloud n'est pas encore ouvert sur ce serveur (avis juridique attendu).";
+  if (cloud.serverEnabled === false) return "Selio Cloud est en cours d'ouverture sur ce serveur, progressivement.";
   return "Aucun compte Vinted actif dans Selio Cloud (accord, connexion ou compte en pause).";
 }
 

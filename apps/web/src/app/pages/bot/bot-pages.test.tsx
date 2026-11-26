@@ -58,7 +58,7 @@ describe("Selio Bot : recherche et achat d'articles (démonstration)", () => {
     expect(within(first).getByText(/marge potentielle/)).toBeTruthy();
     expect(within(first).getByRole("link").getAttribute("href")).toMatch(/^\/app\/radar\/affaires\//);
     expect((await screen.findByRole("list", { name: "Recherches" })).children.length).toBeGreaterThan(0);
-    // Deux modes : achat rapide en 1 clic (disponible) et achat automatique, verrouillé avec la phrase juridique.
+    // Deux modes : achat rapide en 1 clic (disponible) et achat automatique, verrouillé avec la phrase « ouverture progressive ».
     expect(await screen.findByTestId("mode-assisted")).toBeTruthy();
     const auto = screen.getByTestId("mode-auto");
     expect(within(auto).getByText("Verrouillé")).toBeTruthy();

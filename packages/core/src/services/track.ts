@@ -34,8 +34,8 @@ import { RADAR_SIGNALS, validateCatalogItems, type RadarSignal } from "./radar-s
  *   derrière TRACK_LIVE_ENABLED=false, avec les garde-fous de Radar : arrêt au premier signal de Vinted
  *   (pause de toutes les lectures en direct de Track, coupe-circuit de la machine après un blocage ou un
  *   « trop de requêtes »), fenêtre glissante partagée des 1 000 dernières lectures, ralentissement au-delà
- *   de 1 blocage pour 1 000 pages, aucun contournement, rien n'est retenté. L'usage des données issues de
- *   Vinted est à valider juridiquement.
+ *   de 1 blocage pour 1 000 pages, aucun contournement, rien n'est retenté. Ouverture par la configuration
+ *   du serveur, progressivement (pause, puis paliers de pages par minute).
  * - Une annonce disparue entre deux lectures (vendue OU retirée) devient une référence au prix final
  *   ESTIMÉ (dernier prix affiché), marquée comme telle. En direct, la page est jugée sur sa version ENTIÈRE
  *   (avant le filtre local des critères) : une annonce plus ancienne que la plus ancienne de la page n'est

@@ -209,7 +209,7 @@ Ne bloque pas dessus, prépare avec un réglage désactivé et signale-le :
 - photos portées (modèle maison ou service payant) ;
 - adresse fixe par client dans le Cloud ;
 - activation de Radar Auto pour les clients ;
-- avis de l'avocat sur le Cloud, le bot d'achat, la collecte de Track et les conditions de vente.
+- avis de l'avocat sur les conditions de vente (Cloud, bot d'achat et collecte de Track : avis favorable du 26 novembre 2026, ouverture progressive).
 
 ## 8. Comment livrer
 

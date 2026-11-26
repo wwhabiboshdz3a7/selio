@@ -177,7 +177,7 @@ export function spaceNoteFor(area: SpaceArea | FeatureId, mode: "demo" | "connec
 /** Bandeau sous le sélecteur (démonstration), pour les filiales et fonctionnalités qui ne sont pas encore ouvertes. */
 const SPACE_NOTES: Partial<Record<SpaceArea | FeatureId, { label: string; text: string }>> = {
   agents: { label: "Aperçu", text: "Selio Agent, intégré à Selio Manager : l'équipe et les accès sont réels ; les boutiques clientes sont des exemples fictifs." },
-  track: { label: "En développement", text: "statistiques seulement ; simulateur par défaut, lecture en direct à valider juridiquement." },
+  track: { label: "En développement", text: "statistiques seulement ; simulateur par défaut, lecture en direct en cours d'ouverture." },
   cloud: { label: "Aperçu", text: "Selio Cloud, intégré à Selio Manager : actions légères seulement (répondre, relancer), avec votre accord." },
   generateur: { label: "Accompagnement", text: "services sur devis ; en autonomie, la checklist et les textes à copier." },
 };

@@ -2,6 +2,8 @@
 
 Selio Radar relit les recherches du client sur Vinted, note chaque nouvelle annonce et prévient le client sur son téléphone quand une bonne affaire apparaît ; le client l'achète lui-même en « 1 clic ». Radar Auto peut acheter seul, derrière des verrous fermés par défaut. Ce document décrit ce que fait le code (pas ce qu'il devrait faire), les règles qui ne se négocient pas, les mesures à relever, les garde-fous juridiques, ce qui manque, et la procédure de test sur nos propres comptes.
 
+> **Mise à jour du 26 novembre 2026.** **Avis de l'avocat favorable** à la lecture en direct par Selio Cloud et à l'achat automatique (Radar Auto), annoncé par Ibrahim ([DECISIONS.md](DECISIONS.md) D62). Ouverture **progressive** par la configuration du PC de production : d'abord en **essai à blanc** (`RADAR_REAL_PURCHASE=false`), **réservée aux organisations listées dans `RADAR_AUTO_ORG_IDS`** (sécurité technique conservée), achat réel seulement après ce test (§10, TUTORIELS.md §18 et §19). Dans le code, les verrous restent fermés par défaut ; garde-fous inchangés.
+>
 > **État au 30 octobre 2026.** Le socle est construit et testé, sur des pages locales et sur PostgreSQL local : adaptateurs catalogue et paiement (`packages/connectors`), lecture de page et achat pas à pas (`packages/cloud/src/radar/`), contrats, migration 0012, service du cœur (`packages/core/src/services/radar.ts`, `radar-sources.ts`, `alerts.ts`, pause système dans `cloud.ts`). Les routes de l'API, les passages du worker, l'envoi des notifications et les pages web sont livrés **en parallèle** de ce document : ce qui en est dit ici est écrit au conditionnel, et leur état fait foi dans [BUILD_STATUS.md](BUILD_STATUS.md). **Rien n'a jamais été lu ni acheté sur Vinted.** Radar Auto est **fermé par défaut** (`RADAR_AUTO_ENABLED=false`), l'achat réel aussi (D11, `RADAR_REAL_PURCHASE=false`) : sans eux, un achat s'arrête avant le bouton de paiement. **Aucun chiffre n'est mesuré** : les tableaux du §7 sont « à mesurer ».
 
 ## En bref
@@ -352,7 +354,7 @@ Aucun repère n'existe : les 60 s et 30 s sont des cibles du prompt, pas des mes
 
 ### 8.1 Avant toute activation pour un client
 
-- **Avis écrit de l'avocat** sur la lecture en direct (elle passe par Selio Cloud, déjà soumis à son avis) et sur le bot d'achat (Radar Auto), au regard des conditions d'utilisation de Vinted et des conditions de vente de Selio. Jusque-là, Radar en direct et Radar Auto ne servent que sur des comptes de l'équipe.
+- **Avis de l'avocat : favorable (26 novembre 2026, D62)** à la lecture en direct (par Selio Cloud) et au bot d'achat (Radar Auto). Ouverture progressive : Radar en direct et Radar Auto d'abord sur des comptes de l'équipe (§10) ; Radar Auto reste réservé aux organisations de `RADAR_AUTO_ORG_IDS` (§8.2).
 - **Texte de l'accord Cloud** : il ne parle aujourd'hui que de répondre et de relancer (`CLOUD_CONSENT_TEXT`, version `2026-10-29.2`). Avant d'ouvrir Radar en direct à un client, il faut l'étendre à la lecture des recherches (et à l'achat automatique pour Radar Auto), le faire relire par l'avocat et incrémenter `CLOUD_CONSENT_VERSION` : chacun relit et accepte de nouveau.
 - On ne promet jamais « zéro risque » ni « 100 % légal ». Selio est présenté comme indépendant de Vinted : ni affilié, ni approuvé, ni sponsorisé.
 

@@ -140,8 +140,8 @@ export const apiEnvSchema = z
     CLOUD_3DS_TIMEOUT_MS: z.coerce.number().int().min(60_000).max(30 * 60_000).default(600_000),
     /**
      * Selio Track : lecture en direct des pages PUBLIQUES du catalogue (worker, lecteur de Selio Cloud, mêmes
-     * garde-fous que Radar). Faux par défaut : la source est le simulateur (données de démonstration). L'usage
-     * des données issues de Vinted est à valider juridiquement. Même valeur que le worker.
+     * garde-fous que Radar). Faux par défaut : la source est le simulateur (données de démonstration). Ouverture
+     * par la configuration du PC, progressivement (TUTORIELS.md §16). Même valeur que le worker.
      */
     TRACK_LIVE_ENABLED: bool,
     /**
@@ -324,7 +324,7 @@ export function startupNotices(cfg: ApiEnv): StartupNotice[] {
     out.push({ level: "warn", message: "RADAR_REAL_PURCHASE=true sans RADAR_AUTO_ENABLED : sans effet, aucun achat réel." });
   }
   out.push(cfg.TRACK_LIVE_ENABLED
-    ? { level: "warn", message: "Selio Track : lecture en direct des pages publiques OUVERTE (TRACK_LIVE_ENABLED=true) — usage des données de Vinted à valider juridiquement." }
+    ? { level: "warn", message: "Selio Track : lecture en direct des pages publiques OUVERTE (TRACK_LIVE_ENABLED=true) — ouverture progressive : pause, puis paliers de pages par minute." }
     : { level: "info", message: "Selio Track : simulateur (données de démonstration) ; lecture en direct fermée (TRACK_LIVE_ENABLED=false)." });
   if (cfg.TRACK_SELLER_ANALYSIS_ENABLED) out.push({ level: "warn", message: "TRACK_SELLER_ANALYSIS_ENABLED=true : seul l'écran d'explication existe (501) ; l'analyse d'un vendeur reste à valider juridiquement (RGPD)." });
   // Studio : OCR d'essai facultatif (jamais obligatoire), photos portées sans fournisseur tant qu'Ibrahim n'a pas décidé.

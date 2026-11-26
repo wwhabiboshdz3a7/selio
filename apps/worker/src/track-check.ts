@@ -71,13 +71,14 @@ export function checkTrackConfig(env: Record<string, string | undefined>, opts: 
   }
 
   items.push(liveEnabled
-    ? { level: "attention", label: "Interrupteur TRACK_LIVE_ENABLED ouvert", detail: "la lecture en direct des pages publiques est demandée : à n'ouvrir qu'avec l'avis écrit de l'avocat" }
+    ? { level: "attention", label: "Interrupteur TRACK_LIVE_ENABLED ouvert", detail: "la lecture en direct des pages publiques est demandée : ouverture progressive, Track en pause d'abord, puis paliers de pages par minute (TUTORIELS.md §16)" }
     : { level: "info", label: "Interrupteur TRACK_LIVE_ENABLED fermé", detail: "le simulateur est la source (données de démonstration) ; aucune page de Vinted n'est lue" });
   if (truthy(env.TRACK_SELLER_ANALYSIS_ENABLED)) items.push({ level: "manque", label: "TRACK_SELLER_ANALYSIS_ENABLED doit rester à false", detail: "l'analyse d'un vendeur concurrent est refusée (RGPD) et n'est pas construite" });
   else items.push({ level: "ok", label: "Analyse d'un vendeur concurrent fermée (TRACK_SELLER_ANALYSIS_ENABLED=false)" });
 
   if (live) {
-    items.push({ level: "manuel", label: "Avis écrit de l'avocat reçu et rangé dans DECISIONS.md", detail: "lecture des pages publiques, statistiques, base de références, entraînement du modèle de prix" });
+    items.push({ level: "ok", label: "Avis de l'avocat favorable à la lecture des pages publiques (DECISIONS.md, 26 novembre 2026)" });
+    items.push({ level: "manuel", label: "Track mis en pause dans Opérateur › Track avant de relancer avec l'interrupteur ouvert", detail: "reprise quand l'équipe observe ; un seul CAPTCHA ou blocage la première semaine : retour en arrière" });
     items.push({ level: "manuel", label: `Adaptateur catalogue (${CATALOG_ADAPTER_VERSION}) vérifié à la main sur une vraie page publique`, detail: "construit sur une fixture synthétique : sélecteurs, adresse de recherche, marques, tailles, états, catégories à relever" });
     if (cfg) {
       if (!cfg.CLOUD_ENABLED) items.push({ level: "manque", label: "CLOUD_ENABLED=true", detail: "Track lit avec le lecteur de Selio Cloud ; sans lui, le simulateur reste la source" });

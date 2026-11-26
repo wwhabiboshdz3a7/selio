@@ -20,7 +20,7 @@ describe("Selio Bot : vues des bots (fonction pure)", () => {
     expect(botForRuleKind("keyword_situation")).toBe("replies");
   });
 
-  it("sans règle : arrêtés ; Favoris « bientôt » avec une phrase ; achat auto verrouillé avec la phrase de validation juridique", () => {
+  it("sans règle : arrêtés ; Favoris « bientôt » avec une phrase ; achat auto verrouillé avec la phrase « en cours d'ouverture »", () => {
     const b = byId(describeBots(inputs()));
     expect(b.negotiation!.state).toBe("off");
     expect(b.favorites!.state).toBe("soon");
@@ -52,7 +52,7 @@ describe("Selio Bot : vues des bots (fonction pure)", () => {
     const agence = { plan: "agence", quotas: quotasForPlan("agence"), rules };
     const waiting = byId(describeBots(inputs({ ...agence, cloud: { ...noCloud, available: true, serverEnabled: false } }))).follow_up!;
     expect(waiting.state).toBe("waiting_cloud");
-    expect(waiting.stateDetail).toMatch(/pas encore ouvert sur ce serveur/);
+    expect(waiting.stateDetail).toMatch(/en cours d'ouverture sur ce serveur/);
     const ready = byId(describeBots(inputs({ ...agence, cloud: { ...noCloud, available: true, serverEnabled: true, ready: true } })));
     expect(ready.follow_up!.state).toBe("on");
     expect(ready.follow_up!.place).toBe("cloud");

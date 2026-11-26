@@ -138,8 +138,8 @@ export interface ServicesConfig {
   radarRealPurchase?: boolean;
   /**
    * TRACK_LIVE_ENABLED : lecture en direct des pages publiques du catalogue par Selio Track (lecteur du Cloud,
-   * mêmes garde-fous que Radar). Faux par défaut : la source est le simulateur. Usage des données de Vinted
-   * à valider juridiquement.
+   * mêmes garde-fous que Radar). Faux par défaut : la source est le simulateur. Ouverture par la configuration
+   * du serveur, progressivement.
    */
   trackLiveEnabled?: boolean;
   /** TRACK_SELLER_ANALYSIS_ENABLED : analyse d'un vendeur concurrent (Agence). Faux par défaut, à valider juridiquement (RGPD). */

@@ -133,7 +133,7 @@ export default function Hub() {
     bot: [
       { label: "Recherches actives", value: searches.data ? formatNumber(searches.data.filter((x) => x.enabled).length) : dash },
       { label: "Affaires à valider", value: counts.data ? formatNumber(counts.data.toReview) : dash, hint: "notées 75/100 ou plus" },
-      { label: "Achat automatique", value: autoBuy.data ? (autoBuy.data.active ? "Ouvert" : "Fermé") : dash, hint: autoBuy.data?.active ? undefined : "validation juridique attendue" },
+      { label: "Achat automatique", value: autoBuy.data ? (autoBuy.data.active ? "Ouvert" : "Fermé") : dash, hint: autoBuy.data?.active ? undefined : autoBuy.data?.serverEnabled ? "verrous de l'organisation à lever" : "ouverture progressive" },
     ],
     generateur: [
       { label: "Checklist", value: `${comptes.done}/${comptes.total}`, hint: "étapes faites dans Vinted" },

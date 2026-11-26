@@ -18,7 +18,7 @@ export type BotId = (typeof BOT_IDS)[number];
  * - `off` : arrêté (aucune règle active, ou réglage désactivé) ;
  * - `stopped` : coupé par « Tout arrêter » (coupe-circuit de l'organisation) ;
  * - `waiting_cloud` : allumé, mais il attend Selio Cloud (serveur fermé, aucun compte actif, accord) ;
- * - `locked` : verrou serveur fermé (achat automatique : validation juridique attendue) ;
+ * - `locked` : verrou serveur fermé (achat automatique : en cours d'ouverture, progressivement) ;
  * - `plan_unavailable` : indisponible sur ce forfait ;
  * - `soon` : pas encore construit (une phrase dit pourquoi).
  */
@@ -124,7 +124,7 @@ export interface BotSummary {
 }
 
 /** Phrase du Bot quand les verrous serveur de l'achat automatique sont fermés. */
-export const BOT_AUTO_BUY_LOCKED_TEXT = "L'achat automatique s'ouvrira après validation juridique ; en attendant, l'achat rapide vous propose chaque affaire à valider en 1 clic.";
+export const BOT_AUTO_BUY_LOCKED_TEXT = "L'achat automatique est en cours d'ouverture, progressivement ; en attendant, l'achat rapide vous propose chaque affaire à valider en 1 clic.";
 
 /** Ce que coupe « Arrêter toutes les automatisations » (texte du bouton de confirmation et de BOT.md). */
 export const BOT_STOP_TEXT = "Toutes les automatisations s'arrêtent pour toute l'organisation : plus aucune réponse, relance, négociation, republication, ni lecture en direct ou achat automatique de Selio Bot, dans Selio Cloud comme sur le serveur. Les tâches en file attendent la reprise ; une action déjà commencée se termine proprement.";

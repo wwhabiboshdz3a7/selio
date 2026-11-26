@@ -147,7 +147,7 @@ export function CloudLine({ cloud, className, stacked = false }: { cloud: BotSum
     : !cloud.available
       ? { tone: "muted" as const, label: "Pas sur ce forfait", text: cloud.reason }
       : cloud.serverEnabled === false
-        ? { tone: "warning" as const, label: "Fermé sur ce serveur", text: "Selio Cloud reste fermé tant que l'avis juridique n'est pas rendu : les automatisations passent par l'extension, ordinateur allumé." }
+        ? { tone: "warning" as const, label: "En cours d'ouverture", text: "Selio Cloud est en cours d'ouverture sur ce serveur : en attendant, les automatisations passent par l'extension, ordinateur allumé." }
         : { tone: "warning" as const, label: "Aucun compte actif", text: `${cloud.accounts === 0 ? "Aucun compte Vinted relié au Cloud" : `${cloud.activeAccounts} compte actif sur ${cloud.accounts}`}${cloud.consent ? "" : ", accord à accepter"} : en attendant, les automatisations passent par l'extension, ordinateur allumé.` };
   return (
     <div className={cn("flex flex-col gap-2", !stacked && "sm:flex-row sm:items-center sm:justify-between", className)}>

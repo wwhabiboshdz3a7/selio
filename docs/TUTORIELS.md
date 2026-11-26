@@ -43,10 +43,10 @@ curl -s https://seliovprod.netlify.app/api/health            # depuis Internet, 
 | 13 | [Adresse fixe Tailscale](#13-adresse-fixe-tailscale) | en place |
 | 14 | [Nom de domaine](#14-nom-de-domaine) | provisoire (`seliovprod.netlify.app`) |
 | 15 | [Vérifier ou changer un modèle d'IA](#15-vérifier-ou-changer-un-modèle-dia) | actif |
-| 16 | [Selio Track en réel](#16-selio-track-en-réel) | **fermé, avis de l'avocat attendu** |
-| 17 | [Selio Cloud](#17-selio-cloud) | **fermé, avis de l'avocat attendu** |
-| 18 | [Achat automatique (Selio Bot)](#18-achat-automatique-selio-bot) | **fermé, avis de l'avocat attendu** |
-| 19 | [Achat réel](#19-achat-réel) | **fermé, avis de l'avocat attendu** |
+| 16 | [Selio Track en réel](#16-selio-track-en-réel) | fermé par défaut ; avis de l'avocat favorable (26 novembre 2026), **ouverture progressive** |
+| 17 | [Selio Cloud](#17-selio-cloud) | fermé par défaut ; avis de l'avocat favorable (26 novembre 2026), **ouverture progressive** |
+| 18 | [Achat automatique (Selio Bot)](#18-achat-automatique-selio-bot) | fermé par défaut ; avis de l'avocat favorable (26 novembre 2026), **ouverture progressive** (essai à blanc, organisations de `RADAR_AUTO_ORG_IDS`) |
+| 19 | [Achat réel](#19-achat-réel) | fermé par défaut ; avis de l'avocat favorable (26 novembre 2026), **seulement après l'essai à blanc** |
 | 20 | [Publicité](#20-publicité) | voir PUBLICITE.md |
 | 21 | [Site Selio Admin séparé](#21-site-selio-admin-séparé) | à créer (deuxième projet Netlify) |
 | 22 | [Bêta : le code BETA2026SELIO](#22-bêta-le-code-beta2026selio) | **actif** (créé par la migration 0024) |
@@ -467,19 +467,19 @@ Les trois modèles doivent être « présent » (la ligne OCR peut rester « non
 
 ## 16. Selio Track en réel
 
-> **Fermé tant que l'avocat n'a pas validé.** `TRACK_LIVE_ENABLED=false` : Track lit le simulateur, données marquées « démonstration ». Procédure complète et à jour : [TRACK.md](TRACK.md) §7.
+> **Avis de l'avocat : favorable (26 novembre 2026). Ouverture progressive :** Track d'abord en pause, puis par paliers de pages par minute ([DECISIONS.md](DECISIONS.md) D62). Tant que `TRACK_LIVE_ENABLED=false` (défaut), Track lit le simulateur, données marquées « démonstration ». Garde-fous inchangés. Procédure complète et à jour : [TRACK.md](TRACK.md) §7.
 
 **Prérequis (tous obligatoires)**
-1. Avis écrit de l'avocat sur la lecture des pages publiques du catalogue et l'usage des données (statistiques, base de références, entraînement), rangé dans [DECISIONS.md](DECISIONS.md).
-2. Accord daté d'Ibrahim dans DECISIONS.md.
+1. [x] Avis de l'avocat favorable à la lecture des pages publiques du catalogue, annoncé par Ibrahim le 26 novembre 2026 et rangé dans [DECISIONS.md](DECISIONS.md) (D62).
+2. [x] Accord daté d'Ibrahim dans DECISIONS.md (D62, 26 novembre 2026).
 3. Adaptateur du catalogue vérifié à la main sur une vraie page publique, depuis un navigateur ordinaire de l'équipe (adaptateur `v2` si besoin).
 4. `pnpm cloud:bench` passé sur le PC pour régler `CLOUD_MAX_BROWSERS`.
 5. Migrations jusqu'à `0021_track_suivi.sql` appliquées, API et worker de la même version (tutoriel 11).
-6. Selio Cloud prêt techniquement : Chromium dans le conteneur du worker, bac à sable vérifié (tutoriel 17, partie technique). **Aujourd'hui, l'image du worker n'a pas Chromium : ce prérequis bloque.**
+6. Selio Cloud prêt techniquement : Chromium dans le conteneur du worker, bac à sable vérifié (tutoriel 17, partie technique). L'image du worker embarque désormais Chromium (`deploy/Dockerfile.worker`, `CLOUD_CHROMIUM_PATH=/usr/local/bin/selio-chromium`) ; reste à vérifier le bac à sable sur le PC (tutoriel 17, étape 2).
 
 **Étapes**
 1. Vérifier hors ligne : `pnpm track:check -- --env-file deploy/.env --live --db` → aucune ligne `[MANQUE]`.
-2. `deploy/.env` : `TRACK_LIVE_ENABLED=true`, `CLOUD_ENABLED=true`, `CLOUD_CHROMIUM_PATH=<chemin dans le conteneur>`, `TRACK_MAX_PAGES_PER_MINUTE=2`, `TRACK_READ_INTERVAL_MINUTES=120`, `TRACK_SELLER_ANALYSIS_ENABLED=false`.
+2. `deploy/.env` : `TRACK_LIVE_ENABLED=true`, `CLOUD_ENABLED=true`, `CLOUD_CHROMIUM_PATH=/usr/local/bin/selio-chromium`, `TRACK_MAX_PAGES_PER_MINUTE=2`, `TRACK_READ_INTERVAL_MINUTES=120`, `TRACK_SELLER_ANALYSIS_ENABLED=false`.
 3. `/admin/track` › **Mettre Track en pause** (raison : « passage au réel »), puis relancer l'API et le worker.
 4. Journal du worker : « Track : lecture en direct des pages publiques OUVERTE » ; `/admin/track` : « Interrupteur : Ouvert », « Source : En direct ».
 5. **Reprendre** quand vous êtes prêt à observer.
@@ -492,18 +492,18 @@ Les trois modèles doivent être « présent » (la ligne OCR peut rester « non
 
 ## 17. Selio Cloud
 
-> **Fermé tant que l'avocat n'a pas validé.** `CLOUD_ENABLED=false` : réglages et journal consultables, rien ne s'exécute. Détails : [CLOUD.md](CLOUD.md) et [PRODUCTION-CHECKLIST.md](PRODUCTION-CHECKLIST.md).
+> **Avis de l'avocat : favorable (26 novembre 2026). Ouverture progressive :** d'abord sur un compte Vinted de test de l'équipe, puis les clients ([DECISIONS.md](DECISIONS.md) D62). Tant que `CLOUD_ENABLED=false` (défaut), réglages et journal sont consultables et rien ne s'exécute. Garde-fous inchangés (aucun mot de passe Vinted gardé, pause au premier signal, coupe-circuit). Détails : [CLOUD.md](CLOUD.md) et [PRODUCTION-CHECKLIST.md](PRODUCTION-CHECKLIST.md).
 
 **Prérequis**
-1. Avis écrit de l'avocat sur le Cloud (conditions de Vinted, texte d'accord `CLOUD_CONSENT_TEXT`, conditions de vente) ; si le texte change, nouvelle `CLOUD_CONSENT_VERSION`.
+1. [x] Avis de l'avocat favorable au Cloud (26 novembre 2026, [DECISIONS.md](DECISIONS.md) D62) ; si le texte d'accord `CLOUD_CONSENT_TEXT` change, nouvelle `CLOUD_CONSENT_VERSION`.
 2. Décisions d'Ibrahim : offre Pro (`CLOUD_PRO_OPTION`, prix), actions lourdes (`CLOUD_HEAVY_ACTIONS=false` tant que rien n'est décidé), coupe-circuit de 60 min.
-3. **Image du worker avec Chromium** (Debian, `playwright-core install --with-deps chromium`, polices) et **bac à sable** opérationnel (worker hors root, profil seccomp adapté, jamais `CLOUD_CHROMIUM_SANDBOX=false`) : [DEPLOYMENT.md](DEPLOYMENT.md), partie « Selio Cloud ». **Pas encore fait.**
-4. Dossier de travail en mémoire vive (`CLOUD_PROFILE_DIR` sur un tmpfs), pare-feu des plages privées pour Chromium.
+3. [x] **Image du worker avec Chromium** : fait dans `deploy/Dockerfile.worker` (Debian, `playwright-core install --with-deps chromium`, polices, utilisateur `node` et jamais root), lien stable `CLOUD_CHROMIUM_PATH=/usr/local/bin/selio-chromium`. **Bac à sable** : profil seccomp `deploy/chromium-seccomp.json` déclaré dans `deploy/docker-compose.prod.yml` (`security_opt`), jamais `CLOUD_CHROMIUM_SANDBOX=false` ; à vérifier sur le PC (étape 2). Détails : [CLOUD.md](CLOUD.md) §7 et [DEPLOYMENT.md](DEPLOYMENT.md), partie « Selio Cloud ».
+4. [x] Dossier de travail en mémoire vive : `CLOUD_PROFILE_DIR=/var/lib/selio-cloud`, monté en tmpfs par `docker-compose.prod.yml` (2 Go, propriétaire `node`, droits 0700). Reste le pare-feu des plages privées pour Chromium.
 5. `CLOUD_CHROMIUM_PATH=… pnpm --filter @selio/cloud test` vert ; `pnpm cloud:bench` à 5, 10, 25, 50 navigateurs, `CLOUD_MAX_BROWSERS` fixé d'après la mesure.
 6. Sélecteurs propres au Cloud validés sur un **compte Vinted de test de l'équipe** (adaptateur `v2`).
 
 **Étapes (équipe d'abord)**
-1. `deploy/.env` : `CLOUD_ENABLED=true`, `CLOUD_CHROMIUM_PATH=<chemin>`, `CLOUD_MAX_BROWSERS=<mesuré>`, `CLOUD_PROFILE_DIR=/var/lib/selio-cloud`, `CLOUD_ACTIVE_HOURS=8-23`. Relancer.
+1. `deploy/.env` : `CLOUD_ENABLED=true`, `CLOUD_CHROMIUM_PATH=/usr/local/bin/selio-chromium`, `CLOUD_MAX_BROWSERS=<mesuré>`, `CLOUD_PROFILE_DIR=/var/lib/selio-cloud`, `CLOUD_ACTIVE_HOURS=8-23`. Relancer.
 2. Journal du worker : « Cloud activé … sandbox: true » (et non « Cloud désactivé : … bac à sable »).
 3. Sur le compte de test : espace `/cloud` › accepter l'accord › relier le compte Vinted › se connecter dans la fenêtre sécurisée › attendre une réponse envoyée et confirmée dans le journal ; essayer la pause, la suppression de la session, l'arrêt.
 
@@ -515,12 +515,13 @@ Les trois modèles doivent être « présent » (la ligne OCR peut rester « non
 
 ## 18. Achat automatique (Selio Bot)
 
-> **Fermé tant que l'avocat n'a pas validé et qu'Ibrahim n'a pas tranché.** Deux verrous serveur : `RADAR_AUTO_ENABLED=false` et `RADAR_REAL_PURCHASE=false`. Même ouvert, il est réservé aux organisations de l'équipe (`RADAR_AUTO_ORG_IDS`) : pas activable pour les clients sur l'adresse partagée. Détails : [RADAR.md](RADAR.md) §6 et §10, [BOT.md](BOT.md).
+> **Avis de l'avocat : favorable (26 novembre 2026). Ouverture progressive :** d'abord en essai à blanc (`RADAR_REAL_PURCHASE=false`), réservé aux organisations listées dans `RADAR_AUTO_ORG_IDS` ([DECISIONS.md](DECISIONS.md) D62). Deux verrous serveur, fermés par défaut : `RADAR_AUTO_ENABLED=false` et `RADAR_REAL_PURCHASE=false`. Même ouvert, il reste réservé aux organisations de `RADAR_AUTO_ORG_IDS` (sécurité technique voulue, conservée) : pas activable pour les clients sur l'adresse partagée. Garde-fous inchangés (plafonds, arrêt au premier signal, coupe-circuit). Détails : [RADAR.md](RADAR.md) §6 et §10, [BOT.md](BOT.md).
 
 **Prérequis**
 1. Selio Cloud ouvert et validé (tutoriel 17), avec un compte Vinted **de l'équipe** rangé en **Achat**, relié au Cloud, accord accepté.
 2. Notifications push en place (tutoriel 6) et au moins un téléphone abonné.
-3. Avis écrit de l'avocat sur le bot d'achat ; texte d'accord du Cloud étendu à la lecture des recherches et à l'achat automatique (nouvelle `CLOUD_CONSENT_VERSION`).
+3. [x] Avis de l'avocat favorable à l'achat automatique (26 novembre 2026, D62).
+   - [ ] Texte d'accord du Cloud étendu à la lecture des recherches et à l'achat automatique (nouvelle `CLOUD_CONSENT_VERSION`).
 4. Lecture en direct essayée selon RADAR.md §10 (étapes 1 à 4), zéro blocage.
 
 **Étapes (essai à blanc, sur l'organisation de l'équipe)**
@@ -540,7 +541,7 @@ Les trois modèles doivent être « présent » (la ligne OCR peut rester « non
 
 ## 19. Achat réel
 
-> **Fermé tant que l'avocat n'a pas validé, et seulement sur décision écrite d'Ibrahim, le temps d'un test sur un compte de l'équipe** (D11). Il faut `RADAR_AUTO_ENABLED=true` **et** `RADAR_REAL_PURCHASE=true` pour que le navigateur clique sur « Payer ».
+> **Avis de l'avocat : favorable (26 novembre 2026). Ouverture progressive :** seulement après l'essai à blanc du tutoriel 18, **sur décision écrite d'Ibrahim, le temps d'un test sur un compte de l'équipe** (D11, D62). Fermé par défaut (`RADAR_REAL_PURCHASE=false`). Il faut `RADAR_AUTO_ENABLED=true` **et** `RADAR_REAL_PURCHASE=true` pour que le navigateur clique sur « Payer ».
 
 **Prérequis** : tutoriel 18 validé en essai à blanc ; décision écrite d'Ibrahim (date, article, montant) ; un petit solde dans le porte-monnaie Vinted du compte de l'équipe (le porte-monnaie est imposé ; jamais la carte à sa place).
 

@@ -219,8 +219,8 @@ Détail complet : [SECURITY.md](SECURITY.md).
 
 | Interrupteur | Défaut | Ce qu'il ouvre | Condition d'ouverture |
 |---|---|---|---|
-| `CLOUD_ENABLED` | `false` | Selio Cloud (et toute lecture en direct) | Avis de l'avocat, Chromium avec bac à sable |
-| `TRACK_LIVE_ENABLED` | `false` | Lecture des pages publiques par Track | Avis de l'avocat ([TRACK.md](TRACK.md) §7) |
+| `CLOUD_ENABLED` | `false` | Selio Cloud (et toute lecture en direct) | Avis de l'avocat favorable (26 novembre 2026) ; Chromium avec bac à sable ; ouverture progressive |
+| `TRACK_LIVE_ENABLED` | `false` | Lecture des pages publiques par Track | Avis de l'avocat favorable (26 novembre 2026) ; ouverture progressive ([TRACK.md](TRACK.md) §7) |
 | `TRACK_SELLER_ANALYSIS_ENABLED` | `false` | Analyse d'un vendeur concurrent (non construite) | RGPD |
 | `RADAR_AUTO_ENABLED` (+ `RADAR_AUTO_ORG_IDS`) | `false` | Achat automatique de Selio Bot | Décision d'Ibrahim, comptes de l'équipe seulement |
 | `RADAR_REAL_PURCHASE` | `false` | Clic sur « Payer » | Décision écrite d'Ibrahim, le temps d'un test |
@@ -349,7 +349,7 @@ _Reconstitué à partir de l'historique du dépôt et de [BUILD_STATUS.md](BUILD
 
 Le détail vit dans [BUILD_STATUS.md](BUILD_STATUS.md) (« Prochaine tâche exacte ») et [PRODUCTION-CHECKLIST.md](PRODUCTION-CHECKLIST.md). En résumé :
 
-- **Avis de l'avocat** : Selio Cloud, lecture en direct de Track et de Selio Bot, achat automatique, pages légales, conditions du parrainage.
+- **Avis de l'avocat** : favorable pour Selio Cloud, la lecture en direct de Track et de Selio Bot et l'achat automatique (26 novembre 2026, ouverture progressive) ; toujours attendu pour les pages légales et les conditions du parrainage.
 - **Comptes à ouvrir** : Revolut Business (bac à sable puis réel), service d'email définitif, compte développeur Chrome Web Store, nom de domaine.
 - **Mesures sur la machine** : `pnpm ai:bench`, `pnpm studio:eval`, `pnpm prix:eval` sur une vraie base, `pnpm cloud:bench`, limites de Vinted (à la main, sur des comptes de l'équipe).
 - **Développement** : image Docker du worker avec Chromium, envoi des photos du navigateur vers MinIO pour les articles et avatars, purge des données 30 jours après l'accès de base, adaptateurs Vinted vérifiés sur de vraies pages.

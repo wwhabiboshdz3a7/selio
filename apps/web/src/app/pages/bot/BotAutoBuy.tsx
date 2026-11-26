@@ -21,7 +21,7 @@ export default function BotAutoBuy() {
       <PageHeader
         eyebrow={<Link to="/bot" className="inline-flex items-center gap-1 hover:text-text"><ArrowLeft className="size-3.5" aria-hidden />Selio Bot</Link>}
         title="Achat automatique"
-        description="Soit Selio Bot achète seul, au-dessus d'une note minimale et dans un budget par jour (achat automatique, fermé tant que la validation juridique manque) ; soit il vous propose chaque bonne affaire et vous validez en 1 clic (achat rapide)."
+        description="Soit Selio Bot achète seul, au-dessus d'une note minimale et dans un budget par jour (achat automatique, ouvert progressivement par l'équipe Selio) ; soit il vous propose chaque bonne affaire et vous validez en 1 clic (achat rapide)."
       />
       <QueryBoundary query={summary} skeleton="spinner">{(s) => <PurchaseModes summary={s} />}</QueryBoundary>
       <h2 className="mt-8 mb-3 text-sm font-bold tracking-wider text-text uppercase">Achat automatique : verrous, réglages et achats</h2>

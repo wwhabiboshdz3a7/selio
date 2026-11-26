@@ -226,7 +226,7 @@ export const workerEnvSchema = z
     /**
      * Lecture en direct des pages PUBLIQUES du catalogue (lecteur de Selio Cloud, sans session, mêmes
      * garde-fous que Radar) : faux par défaut, la source est alors le simulateur (données de démonstration).
-     * Usage des données issues de Vinted à valider juridiquement. Même valeur que l'API.
+     * Ouverture par la configuration du PC, progressivement (TUTORIELS.md §16). Même valeur que l'API.
      */
     TRACK_LIVE_ENABLED: bool,
     /** Relecture d'une empreinte suivie, en minutes (2 h par défaut ; 60 au moins). */

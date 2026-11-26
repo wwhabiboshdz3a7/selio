@@ -11,8 +11,8 @@ import { radarCriteria } from "./radar";
  * - Les filtres identiques entre clients sont lus une seule fois (empreinte normalisée des critères).
  * - La lecture en direct des pages publiques du catalogue passe par le lecteur de Selio Cloud, avec les
  *   mêmes garde-fous que Radar (arrêt au premier signal, ralentissement, aucun contournement) et derrière
- *   TRACK_LIVE_ENABLED=false : par défaut, la source est le simulateur.
- * - L'usage des données issues de Vinted est à valider juridiquement (avis de l'avocat attendu).
+ *   TRACK_LIVE_ENABLED=false : par défaut, la source est le simulateur. L'ouverture se fait par la configuration
+ *   du serveur, progressivement (pause, puis paliers de pages par minute), garde-fous inchangés.
  */
 
 // ---------------------------------------------------------------- règles et textes
@@ -50,7 +50,7 @@ export const TRACK_SALES_FEED_AGENCY_ONLY = "Le flux des ventes est compris dans
 export const TRACK_SELLER_ANALYSIS_NOTICE =
   "L'analyse d'un vendeur concurrent est à valider juridiquement (RGPD) : elle n'est pas disponible tant que l'avis n'est pas rendu.";
 export const TRACK_LEGAL_NOTICE =
-  "Track n'en tire que des statistiques : aucune annonce n'est republiée, aucune photo ni aucun pseudo n'est conservé. L'usage des données issues de Vinted est à valider juridiquement.";
+  "Track n'en tire que des statistiques : aucune annonce n'est republiée, aucune photo ni aucun pseudo n'est conservé.";
 export const TRACK_GONE_NOTICE = "Annonces disparues depuis la lecture précédente : vendues ou retirées (estimation).";
 export const TRACK_DEMO_NOTICE = "Données de démonstration : le simulateur remplace la lecture des pages tant que la lecture en direct n'est pas ouverte.";
 export const TRACK_INSUFFICIENT_DATA = "Données insuffisantes pour noter cette niche.";

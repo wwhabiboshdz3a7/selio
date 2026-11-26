@@ -260,7 +260,7 @@ function buildHelpEntries(): HelpEntry[] {
       `3. Fixez vos limites de dépenses (lien « Réglages » de l'encadré « Limites de dépenses ») : budget par jour (${eur(AUTO_BUY.dailyCapCents)} par défaut) et maximum par achat (${eur(AUTO_BUY.maxItemCents)} par défaut), port et protection acheteurs compris. Un achat qui dépasse une limite est bloqué, même validé à la main.`,
       "4. Achat rapide : ouvrez une affaire, cliquez « Ouvrir l'annonce sur Vinted », vérifiez et payez vous-même sur Vinted, puis revenez cliquer « Je l'ai achetée » en indiquant le prix réellement payé. L'article arrive dans le stock de Selio Manager avec son prix d'achat.",
       "5. Alertes sur le téléphone : Paramètres › Notifications, avec la note minimale d'une alerte et les heures calmes.",
-      "L'achat automatique reste fermé tant que la validation juridique n'est pas faite : en attendant, l'achat rapide vous propose chaque affaire à valider en 1 clic.",
+      "L'achat automatique s'ouvre progressivement, par l'équipe Selio et organisation par organisation : tant qu'il n'est pas ouvert pour la vôtre, l'achat rapide vous propose chaque affaire à valider en 1 clic.",
     ].join("\n\n"),
     keywords: ["tutoriel", "bot", "selio bot", "recherche", "nouvelle recherche", "budget", "limites de dépenses", "achat rapide", "je l'ai achetée"],
     link: { label: "Selio Bot", href: "/bot" },

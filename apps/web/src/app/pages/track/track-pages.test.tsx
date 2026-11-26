@@ -66,9 +66,10 @@ describe("Selio Track : tableau de bord et offre", () => {
     expect(screen.getByText("0 / 10")).toBeTruthy();
     expect(screen.getByText("0 / 30")).toBeTruthy();
     expect(screen.getByText("3 mois")).toBeTruthy();
-    // Source : le simulateur, la lecture en direct attend l'avis de l'avocat.
+    // Source : le simulateur, la lecture en direct est en cours d'ouverture (jamais « avis de l'avocat attendu »).
     expect(screen.getByText("Simulateur")).toBeTruthy();
-    expect(screen.getByText(/attend l'avis de l'avocat/)).toBeTruthy();
+    expect(screen.getByText(/en cours d'ouverture, progressivement/)).toBeTruthy();
+    expect(screen.queryByText(/avocat|juridiquement/)).toBeNull();
     expect(await screen.findByRole("link", { name: /Levi's 501 · Homme/ })).toBeTruthy();
     await waitFor(() => expect(screen.getAllByText(/disparues \(estimation\)/).length).toBe(2));
   });

@@ -196,7 +196,7 @@ export const SPACE_GROUPS: Record<Exclude<SpaceArea, "selio">, NavGroup[]> = {
       { to: "/bot", label: "Vue d'ensemble", icon: <Bot />, end: true, hint: "Recherches, bonnes affaires, limites et achats" },
       { to: "/app/radar", label: "Recherches et affaires", icon: <Search />, hint: "Recherches surveillées, affaires notées sur 100" },
       { to: "/app/purchase", label: "À valider", icon: <ShoppingCart />, badgeKey: "toReview", hint: "Achat rapide : vous validez chaque achat en 1 clic" },
-      { to: "/bot/achat-auto", label: "Achat automatique", icon: <Workflow />, hint: "Fermé tant que la validation juridique manque" },
+      { to: "/bot/achat-auto", label: "Achat automatique", icon: <Workflow />, hint: "Ouverture progressive, dans vos limites" },
     ] },
     { title: "Dans Selio Manager", items: [
       { to: "/app/accounts", label: "Comptes Vinted", icon: <CircleUser />, hint: "Le compte Achat utilisé par Selio Bot" },

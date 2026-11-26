@@ -90,6 +90,6 @@ Reporter ces chiffres dans OLLAMA-SETUP.md et CLOUD.md, puis régler les quotas 
 
 ## 7. Ce qui attend encore
 
-- Selio Cloud reste fermé : l'image Docker du worker n'a pas encore Chromium, et l'avis de l'avocat manque.
+- Selio Cloud est fermé par défaut (`CLOUD_ENABLED=false`) : l'image Docker du worker embarque Chromium, l'avis de l'avocat est favorable (26 novembre 2026) ; ouverture progressive selon TUTORIELS.md §17.
 - Email réel (`EMAIL_PROVIDER=smtp`) et clés des notifications (`VAPID_*`) : quand le service d'email est choisi.
 - Sauvegarde nocturne : `scripts/sauvegarde/` (voir SAUVEGARDE.md), à brancher dès que de vraies données arrivent.

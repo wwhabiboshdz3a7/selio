@@ -4,7 +4,7 @@
 
 Les **automatisations du compte** (négociation par IA, relances 24 h, republication, réponses aux messages, messages aux favoris, après-vente) ne sont **pas** dans Selio Bot : elles sont dans **Selio Manager › Automatisation** (`/app/automatisation`), avec leur tableau d'état et le bouton « Arrêter toutes les automatisations ». Ce document décrit ce que fait le code au 17 novembre 2026.
 
-> **État.** Construit et testé (domaine, cœur, API, worker, pages en démonstration). Selio Cloud reste **fermé par défaut** (`CLOUD_ENABLED=false`, avis de l'avocat attendu) ; l'achat automatique reste derrière ses **deux verrous** (`RADAR_AUTO_ENABLED=false`, `RADAR_REAL_PURCHASE=false`). Rien n'a été exécuté contre Vinted.
+> **État.** Construit et testé (domaine, cœur, API, worker, pages en démonstration). Selio Cloud est **fermé par défaut** (`CLOUD_ENABLED=false`) ; l'achat automatique reste derrière ses **deux verrous** (`RADAR_AUTO_ENABLED=false`, `RADAR_REAL_PURCHASE=false`). **Avis de l'avocat favorable (26 novembre 2026, [DECISIONS.md](DECISIONS.md) D62)** : ouverture progressive par la configuration du PC de production (Cloud sur un compte de test de l'équipe d'abord ; achat automatique en essai à blanc, réservé aux organisations de `RADAR_AUTO_ORG_IDS` ; achat réel après test), garde-fous inchangés. Les écrans suivent l'état réel des verrous : fermés, ils disent « en cours d'ouverture » ou « ouverture progressive », jamais « validation juridique attendue ».
 
 ## Les écrans de Selio Bot
 
@@ -50,7 +50,7 @@ Chaque bot affiche son état et pourquoi, où il tourne, la limite du forfait, s
 Deux façons d'acheter, côte à côte :
 
 - **Achat rapide (achat assisté)** : toujours disponible. Les affaires notées 75/100 ou plus arrivent dans « À valider » ; le revendeur **valide chaque achat en 1 clic**.
-- **Achat automatique (anciennement Radar Auto)** : note minimale, budget max par jour, prix max par article, porte-monnaie Vinted, 3-D Secure validé par le client. Derrière **deux verrous du serveur**, visibles et expliqués : `RADAR_AUTO_ENABLED` (Radar Auto n'évalue rien sans lui, comptes de l'équipe seulement sur l'adresse partagée) et `RADAR_REAL_PURCHASE` (sans lui, arrêt avant le bouton de paiement, achat « simulé »). Puis les verrous de l'organisation (réglage, compte Achat dans le Cloud, accord). Verrous serveur fermés, Selio Bot dit : « L'achat automatique s'ouvrira après validation juridique ; en attendant, l'achat rapide vous propose chaque affaire à valider en 1 clic. »
+- **Achat automatique (anciennement Radar Auto)** : note minimale, budget max par jour, prix max par article, porte-monnaie Vinted, 3-D Secure validé par le client. Derrière **deux verrous du serveur**, visibles et expliqués : `RADAR_AUTO_ENABLED` (Radar Auto n'évalue rien sans lui, comptes de l'équipe seulement sur l'adresse partagée) et `RADAR_REAL_PURCHASE` (sans lui, arrêt avant le bouton de paiement, achat « simulé »). Puis les verrous de l'organisation (réglage, compte Achat dans le Cloud, accord). Verrou serveur fermé, Selio Bot dit (`BOT_AUTO_BUY_LOCKED_TEXT`) : « L'achat automatique est en cours d'ouverture, progressivement ; en attendant, l'achat rapide vous propose chaque affaire à valider en 1 clic. » Verrou ouvert, seuls les verrous de l'organisation et les garde-fous réels (limites de dépenses, porte-monnaie, 3-D Secure, essai à blanc tant que `RADAR_REAL_PURCHASE=false`) sont affichés.
 
 Les réglages sont ceux de Radar Auto (`AutoBuyBody`, repris tels quels), modifiables par le titulaire seulement quand le verrou serveur est ouvert. Détail : [RADAR.md §6](RADAR.md).
 
@@ -68,5 +68,5 @@ Contourner un CAPTCHA ou une protection anti-robot (arrêt au premier signal, ri
 
 - Messages aux favoris (Selio Manager) : lire les mises en favori (connecteur à construire et à valider).
 - Exécution automatique des tâches « navigateur » par l'extension (aujourd'hui : brouillons et insertion à la main).
-- Ouverture de Selio Cloud et de l'achat automatique : décisions d'Ibrahim après l'avis de l'avocat.
+- Ouverture de Selio Cloud et de l'achat automatique : avis de l'avocat favorable (26 novembre 2026) ; ouverture progressive sur le PC de production selon TUTORIELS.md §17 à §19.
 - Textes encore marqués « Radar Auto » côté serveur (notifications de `packages/core/src/services/alerts.ts`, messages d'erreur et verrous de `packages/core/src/services/radar.ts`) : à renommer « achat automatique » / « Selio Bot » avec leurs tests d'API.

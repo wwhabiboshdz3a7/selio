@@ -95,9 +95,9 @@ export const LANDINGS: readonly LandingDef[] = [
     title: "Estimer le prix de revente sur Vinted, avant d'acheter ou de vendre",
     lead: "Selio Track compare les annonces et les ventes proches pour donner une fourchette de prix, trois stratégies et un délai de vente estimé. Il analyse ; il n'achète pas.",
     proofs: ["Estimation des prix de revente", "Produits similaires", "Analyse des niches"],
-    limits: ["Ne présente jamais une annonce disparue comme une vente certaine : on parle de ventes estimées.", "Ne lit pas encore le site réel : simulateur par défaut, en attendant l'avis de l'avocat."],
+    limits: ["Ne présente jamais une annonce disparue comme une vente certaine : on parle de ventes estimées.", "Ne lit que les pages publiques du catalogue, sans compte ni contournement : lecture ouverte progressivement, marché simulé et signalé à l'écran d'ici là."],
     faq: [
-      { id: "source-prix", question: "D'où viennent les prix ?", answer: "D'annonces et de ventes comparables. Une annonce disparue compte comme une vente estimée, jamais comme une vente certaine. Aujourd'hui, Selio Track fonctionne sur un marché simulé, signalé à l'écran." },
+      { id: "source-prix", question: "D'où viennent les prix ?", answer: "D'annonces et de ventes comparables. Une annonce disparue compte comme une vente estimée, jamais comme une vente certaine. Tant que la lecture des pages publiques n'est pas ouverte, Selio Track fonctionne sur un marché simulé, signalé à l'écran." },
       { id: "track-achete", question: "Selio Track achète-t-il des articles ?", answer: "Non. Track analyse et identifie ; la recherche et l'achat, c'est Selio Bot." },
       { id: "track-offre", question: "Dans quelle offre ?", answer: `Compris à partir de l'offre ${P.pro} (et pendant l'essai), avec des quotas de scans de niche et de recherches par photo.` },
     ],

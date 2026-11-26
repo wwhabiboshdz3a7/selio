@@ -11,7 +11,7 @@ import { BotStateBadge } from "../automation/status";
  * Selio Bot (recherche et achat d'articles) : les deux modes d'achat, côte à côte, et les deux verrous du
  * serveur de l'achat automatique. L'achat rapide (achat assisté : vous validez chaque affaire en 1 clic) est
  * toujours là ; l'achat automatique (anciennement « Radar Auto ») reste derrière ses deux verrous du serveur,
- * visibles et expliqués, fermés tant que la validation juridique manque.
+ * visibles et expliqués : fermés par défaut, ouverts progressivement par la configuration du serveur.
  */
 export function PurchaseModes({ summary }: { summary: BotSummary }) {
   const client = useClient();
@@ -61,7 +61,7 @@ export function ServerLocks({ summary, className }: { summary: BotSummary; class
   return (
     <Card className={className} aria-labelledby="server-locks">
       <h3 id="server-locks" className="text-md font-semibold">Les deux verrous du serveur</h3>
-      <p className="mt-1 mb-3 text-sm text-text-muted">Fermés par défaut, tant que la validation juridique manque. Seule l'équipe Selio peut les ouvrir, sur ses propres comptes de test ; aucun réglage de l'application ne les contourne.</p>
+      <p className="mt-1 mb-3 text-sm text-text-muted">Fermés par défaut et ouverts progressivement par l'équipe Selio, sur le serveur : d'abord en essai à blanc, pour les seules organisations qu'elle a autorisées, puis l'achat réel après test. Aucun réglage de l'application ne les contourne.</p>
       <ul className="grid gap-3 md:grid-cols-2">
         <ServerLock ok={a.serverEnabled} name="1. Achat automatique (RADAR_AUTO_ENABLED)" text={a.serverEnabled ? "Ouvert pour les comptes de l'équipe : Selio Bot peut choisir et lancer un achat, si vos propres verrous sont levés." : "Fermé : Selio Bot n'évalue rien pour l'achat automatique et n'ouvre aucun navigateur. Réservé aux comptes de l'équipe sur l'adresse partagée."} />
         <ServerLock ok={a.realPurchase} name="2. Achat réel (RADAR_REAL_PURCHASE)" text={a.realPurchase ? "Ouvert : le bouton « Payer » peut être cliqué." : "Fermé : même verrou 1 ouvert, le parcours s'arrête avant le bouton de paiement ; l'achat est enregistré « simulé », sans paiement ni commande."} />

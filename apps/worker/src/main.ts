@@ -144,7 +144,7 @@ async function main() {
   // tourne (mêmes créneaux de navigateurs) ; sinon le simulateur (données de démonstration).
   if (env.TRACK_LIVE_ENABLED && runner) {
     services.track = { reader: new CloudTrackReader(new RadarReader({ fetcher: runner, pageBudgetMs: env.RADAR_PAGE_BUDGET_MS, ...(cloudLog ? { logger: cloudLog } : {}) }), log) };
-    log.warn({ maxPagesPerMinute: env.TRACK_MAX_PAGES_PER_MINUTE, intervalMinutes: env.TRACK_READ_INTERVAL_MINUTES }, "Track : lecture en direct des pages publiques OUVERTE (TRACK_LIVE_ENABLED=true) — usage des données de Vinted à valider juridiquement");
+    log.warn({ maxPagesPerMinute: env.TRACK_MAX_PAGES_PER_MINUTE, intervalMinutes: env.TRACK_READ_INTERVAL_MINUTES }, "Track : lecture en direct des pages publiques OUVERTE (TRACK_LIVE_ENABLED=true) — ouverture progressive : pause, puis paliers de pages par minute");
   } else if (env.TRACK_LIVE_ENABLED) {
     log.warn({}, "Track : TRACK_LIVE_ENABLED=true mais Selio Cloud est désactivé — le simulateur reste la source (données de démonstration)");
   } else {

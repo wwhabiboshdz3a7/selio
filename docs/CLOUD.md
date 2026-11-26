@@ -2,7 +2,7 @@
 
 Selio Cloud agit sur un compte Vinted depuis notre machine de Marseille quand l'ordinateur du client est éteint : répondre à un message, relancer un acheteur après 24 h. Ce document décrit ce que fait le code (pas ce qu'il devrait faire), ce qui est interdit et pourquoi, la capacité, les offres, les limites et l'exploitation.
 
-> **État au 29 octobre 2026.** Le socle (`packages/cloud`), les contrats, la base (migration 0011), le service du cœur (`packages/core/src/services/cloud.ts`), les routes de l'API, les tâches du worker et l'espace `/cloud` sont construits et testés, sur des pages locales et sur PostgreSQL local. Une revue de sécurité a été corrigée le même jour (bac à sable de Chromium, environnement minimal, domaines Vinted en liste fermée, redirections de la fenêtre de connexion, CAPTCHA pendant la connexion, ticket à usage unique, relectures sous verrou, coupe-circuit de la machine, restauration). **Rien n'a jamais été exécuté contre Vinted.** Le Cloud est **désactivé par défaut** (`CLOUD_ENABLED=false`). Aucune activation pour un client avant l'avis de l'avocat (voir PRODUCTION-CHECKLIST.md). État détaillé : [BUILD_STATUS.md](BUILD_STATUS.md).
+> **État au 29 octobre 2026.** Le socle (`packages/cloud`), les contrats, la base (migration 0011), le service du cœur (`packages/core/src/services/cloud.ts`), les routes de l'API, les tâches du worker et l'espace `/cloud` sont construits et testés, sur des pages locales et sur PostgreSQL local. Une revue de sécurité a été corrigée le même jour (bac à sable de Chromium, environnement minimal, domaines Vinted en liste fermée, redirections de la fenêtre de connexion, CAPTCHA pendant la connexion, ticket à usage unique, relectures sous verrou, coupe-circuit de la machine, restauration). **Rien n'a jamais été exécuté contre Vinted.** Le Cloud est **désactivé par défaut** (`CLOUD_ENABLED=false`). **Avis de l'avocat favorable le 26 novembre 2026** ([DECISIONS.md](DECISIONS.md) D62) : ouverture progressive par la configuration du PC de production, d'abord sur un compte Vinted de test de l'équipe ([TUTORIELS.md](TUTORIELS.md) §17), garde-fous inchangés. État détaillé : [BUILD_STATUS.md](BUILD_STATUS.md).
 
 ## En bref
 
@@ -199,15 +199,24 @@ Le prompt (§5.2) cite une option à 9,99 € pour Starter et Pro. Le code suit 
 - La liste `VINTED_DOMAINS` est à revoir à chaque ouverture de pays par Vinted (un domaine absent n'est simplement pas utilisable).
 - La garde de navigation repère une redirection hors liste **après** que Chromium a envoyé la requête redirigée (elle ferme la fenêtre aussitôt, sans rien afficher) : une règle de pare-feu de la machine reste conseillée (§7).
 - Le Chromium du conteneur de développement (141) ne correspond pas exactement à `playwright-core` 1.64. En production, installer la version attendue par `playwright-core`.
-- L'image Docker du worker (`deploy/Dockerfile.worker`) n'embarque pas encore Chromium (voir DEPLOYMENT.md).
+- L'image Docker du worker (`deploy/Dockerfile.worker`) embarque Chromium (§7, « En Docker ») ; le bac à sable reste à vérifier sur le PC de production (journal « Cloud activé … sandbox: true »).
 - **Pas de « Selio Box »** (petit agent chez le client qui agirait avec sa propre connexion) : à concevoir plus tard.
-- Avis de l'avocat sur le Cloud en attente : aucune activation client avant.
+- Avis de l'avocat favorable (26 novembre 2026) : ouverture progressive, compte de test de l'équipe d'abord, puis les clients (TUTORIELS.md §17).
 
 ## 7. Exploitation
 
-### Installer Chromium et des polices sur la machine
+### En Docker (PC de production) : déjà dans l'image du worker
 
-Le Cloud ne télécharge jamais de navigateur : il utilise l'exécutable indiqué par `CLOUD_CHROMIUM_PATH`.
+Le Cloud ne télécharge jamais de navigateur : il utilise l'exécutable indiqué par `CLOUD_CHROMIUM_PATH`. Avec Docker Compose, tout est dans le dépôt :
+
+- **Image** `deploy/Dockerfile.worker` (Debian `node:22-bookworm-slim`) : Chromium de la version attendue par `playwright-core` et ses dépendances (`playwright-core install --with-deps chromium`), polices (`fonts-liberation`, `fonts-dejavu-core`, `fonts-noto-color-emoji`), lien stable **`/usr/local/bin/selio-chromium`**, worker lancé sous l'utilisateur `node` (jamais root).
+- **Bac à sable** : profil seccomp **`deploy/chromium-seccomp.json`** déclaré dans `deploy/docker-compose.prod.yml` (`security_opt: seccomp=./chromium-seccomp.json`) : le profil par défaut de Docker, plus `clone`, `clone3`, `unshare` et `setns` pour les espaces de noms utilisateur de Chromium, sans privilège ajouté au conteneur.
+- **Dossier de travail en mémoire vive** : `/var/lib/selio-cloud` monté en **tmpfs** par `docker-compose.prod.yml` (2 Go, uid/gid 1000, 0700), plus `shm_size: 1gb`.
+- Dans `deploy/.env` : `CLOUD_CHROMIUM_PATH=/usr/local/bin/selio-chromium` et `CLOUD_PROFILE_DIR=/var/lib/selio-cloud`.
+
+Vérification après `docker compose -f docker-compose.prod.yml up -d --build worker` : journal du worker « Cloud activé … sandbox: true » (avec `CLOUD_ENABLED=true`), jamais « Cloud désactivé : … bac à sable ».
+
+### Installer Chromium et des polices sur la machine (sans Docker)
 
 ```bash
 # Chromium de la version attendue par playwright-core (téléchargement gratuit, une fois, par l'opérateur),
@@ -229,7 +238,7 @@ Chromium est toujours lancé avec son bac à sable. Au démarrage, le worker le 
 
 - le worker ne tourne **pas** en root (`User=selio` dans `selio-worker.service`) : Chromium refuse son bac à sable en root ;
 - les espaces de noms utilisateur sont permis : `sysctl kernel.unprivileged_userns_clone` à 1 (Debian) ; sur Ubuntu 23.10 et suivants, un profil AppArmor pour l'exécutable de Chromium (ou `kernel.apparmor_restrict_unprivileged_userns=0`) ; pas de `RestrictNamespaces=` dans le service ;
-- en Docker, le profil seccomp par défaut interdit ces espaces de noms : fournir un profil adapté à Chromium (jamais `seccomp=unconfined`, jamais `CLOUD_CHROMIUM_SANDBOX=false`).
+- en Docker, le profil seccomp par défaut interdit ces espaces de noms : le profil adapté `deploy/chromium-seccomp.json` est déclaré dans `docker-compose.prod.yml` (jamais `seccomp=unconfined`, jamais `CLOUD_CHROMIUM_SANDBOX=false`).
 
 Vérification à la main : `sudo -u selio "$CLOUD_CHROMIUM_PATH" --headless --dump-dom about:blank` doit afficher une page vide sans erreur « No usable sandbox ».
 

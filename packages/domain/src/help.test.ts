@@ -104,8 +104,10 @@ describe("aide : tutoriels pas à pas", () => {
     expect(helpEntryById("tuto-inviter-agent")!.answer).toContain(`jusqu'à ${PLAN_QUOTAS.agence.members} avec Agence`);
     expect(helpEntryById("tuto-regler-bot")!.answer).toContain(`à partir de ${REVIEW_THRESHOLD}/100`);
     expect(helpEntryById("tuto-code-promo-abonnement")!.answer).toContain(`L'essai dure ${TRIAL_DAYS} jours`);
-    // Jamais présentés comme ouverts : achat automatique, publication automatique sur Vinted, mot de passe Vinted.
-    expect(helpEntryById("tuto-regler-bot")!.answer).toMatch(/achat automatique reste fermé/);
+    // Jamais présentés comme ouverts sans réserve : achat automatique (ouverture progressive, sans « validation
+    // juridique attendue »), publication automatique sur Vinted, mot de passe Vinted.
+    expect(helpEntryById("tuto-regler-bot")!.answer).toMatch(/achat automatique s'ouvre progressivement/);
+    expect(helpEntryById("tuto-regler-bot")!.answer).not.toMatch(/juridique|avocat/);
     expect(helpEntryById("tuto-annonce-studio")!.answer).toMatch(/mise en ligne sur Vinted reste un geste de votre part/);
     expect(helpEntryById("tuto-relier-vinted")!.answer).toMatch(/jamais votre mot de passe Vinted/);
   });
