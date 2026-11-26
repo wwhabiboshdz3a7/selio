@@ -42,7 +42,7 @@ describe("aide : contenu de la FAQ", () => {
     expect(helpEntryById("achat-auto")!.answer).toContain(`${auto.cancelWindowMinutes} minutes`);
     expect(helpEntryById("cout-reel-achat")!.answer).toContain("0,70 € + 5 %");
     expect(helpEntryById("essai-decouverte")!.answer).toContain(`essai gratuit de ${TRIAL_DAYS} jours, un seul choix de durée`);
-    expect(helpEntryById("essai-decouverte")!.answer).toMatch(/carte bancaire est enregistrée dès l'inscription et rien n'est débité avant la fin/);
+    expect(helpEntryById("essai-decouverte")!.answer).toMatch(/Aucune carte bancaire n'est demandée à l'inscription et rien n'est débité pendant l'essai/);
     expect(TRIAL_DAYS).toBe(14);
   });
 
