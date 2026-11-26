@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Alert, Button, Field, Input, Segmented } from "@selio/ui";
 import { usePageMeta } from "../../lib/seo";
@@ -24,8 +24,12 @@ export default function Login() {
   useEffect(() => {
     if (!demoOffered && mode === "demo") setMode("connected");
   }, [demoOffered, mode, setMode]);
+  const submitting = useRef(false);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Double clic ou Entrée répétée : une seule connexion envoyée.
+    if (submitting.current) return;
+    submitting.current = true;
     setError(null);
     setLoading(true);
     try {
@@ -37,6 +41,7 @@ export default function Login() {
     } catch (err) {
       setError(errorMessage(err));
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
   };

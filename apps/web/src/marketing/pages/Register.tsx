@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
-import { PLAN_LABELS, TRIAL_DAYS, registerInput } from "@selio/contracts";
+import { DISPLAY_NAME_MAX, ORG_NAME_MAX, PLAN_LABELS, TRIAL_DAYS, registerInput } from "@selio/contracts";
 import { Alert, Button, Field, Input, Segmented } from "@selio/ui";
 import { TRIAL_OFFER } from "@selio/demo-data";
 import { usePageMeta } from "../../lib/seo";
@@ -34,19 +34,24 @@ export default function Register() {
   useEffect(() => {
     if (!demoOffered && mode === "demo") setMode("connected");
   }, [demoOffered, mode, setMode]);
+  const submitting = useRef(false);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Double clic, double tap ou Entrée répétée : une seule inscription envoyée (le serveur refuse aussi le doublon).
+    if (submitting.current) return;
     // Une seule durée d'essai : 14 jours (l'ancien choix 7 / 30 jours n'existe plus).
     const parsed = registerInput.safeParse({ ...form, trialDays: TRIAL_DAYS });
     if (!parsed.success) {
       const errs: Record<string, string> = {};
-      for (const i of parsed.error.issues) errs[String(i.path[0])] = i.path[0] === "password" ? "Dix caractères minimum." : i.path[0] === "email" ? "Adresse email invalide." : "Champ requis.";
+      // Nom et organisation : le motif exact du contrat (« 80 caractères au plus », espaces seuls, caractère de contrôle).
+      for (const i of parsed.error.issues) errs[String(i.path[0])] ??= i.path[0] === "password" ? "Dix caractères minimum." : i.path[0] === "email" ? "Adresse email invalide." : i.message.startsWith("Required") || i.message.startsWith("Expected") ? "Champ requis." : i.message;
       setErrors(errs);
       return;
     }
     setErrors({});
     setError(null);
     setLoading(true);
+    submitting.current = true;
     try {
       const session = await client.register({ ...parsed.data, referralCode: referralCodeForSignup(referral), promoCode: promoCodeForSignup(promo) });
       // Conversion publicitaire : seulement un vrai compte (jamais la démonstration), et seulement
@@ -58,6 +63,7 @@ export default function Register() {
     } catch (err) {
       setError(errorMessage(err));
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
   };
@@ -76,8 +82,8 @@ export default function Register() {
         {mode === "connected" && !connectedModeAvailable ? <Alert tone="warning" title="Aucune API configurée" className="mt-4">Le mode connecté nécessite une API déployée (VITE_API_BASE_URL). Vous pouvez créer un compte de démonstration.</Alert> : null}
         {mode === "demo" && demoOffered ? <Alert tone="info" className="mt-4">En démonstration, le compte est créé localement dans votre navigateur avec des données fictives.</Alert> : null}
         <form onSubmit={submit} className="card mt-4 flex flex-col gap-4 p-5" noValidate>
-          <Field label="Votre nom" required error={errors.displayName}>{(p) => <Input id={p.id} invalid={p.invalid} value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} autoComplete="name" />}</Field>
-          <Field label="Nom de l'organisation" required error={errors.orgName} hint="Votre boutique, votre atelier, votre nom de vendeur.">{(p) => <Input id={p.id} invalid={p.invalid} aria-describedby={p.describedBy} value={form.orgName} onChange={(e) => setForm({ ...form, orgName: e.target.value })} autoComplete="organization" />}</Field>
+          <Field label="Votre nom" required error={errors.displayName}>{(p) => <Input id={p.id} invalid={p.invalid} value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} autoComplete="name" maxLength={DISPLAY_NAME_MAX} />}</Field>
+          <Field label="Nom de l'organisation" required error={errors.orgName} hint="Votre boutique, votre atelier, votre nom de vendeur.">{(p) => <Input id={p.id} invalid={p.invalid} aria-describedby={p.describedBy} value={form.orgName} onChange={(e) => setForm({ ...form, orgName: e.target.value })} autoComplete="organization" maxLength={ORG_NAME_MAX} />}</Field>
           <Field label="Email" required error={errors.email}>{(p) => <Input id={p.id} type="email" invalid={p.invalid} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" />}</Field>
           <Field label="Mot de passe" required error={errors.password} hint="Dix caractères minimum.">{(p) => <Input id={p.id} type="password" invalid={p.invalid} aria-describedby={p.describedBy} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="new-password" />}</Field>
           <ReferralCodeField value={referral} onChange={setReferral} />

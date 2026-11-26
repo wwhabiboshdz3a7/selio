@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ImagePlus, Trash2, ArrowLeft } from "lucide-react";
-import { ITEM_CATEGORIES, ITEM_CATEGORY_LABELS, ITEM_CONDITIONS, ITEM_CONDITION_LABELS, ITEM_STATUSES, ITEM_STATUS_LABELS, inventoryItemCreate, type InventoryItemCreate, type Photo } from "@selio/contracts";
+import { FLOOR_ABOVE_LISTED_MESSAGE, ITEM_CATEGORIES, ITEM_CATEGORY_LABELS, ITEM_CONDITIONS, floorAboveListed, ITEM_CONDITION_LABELS, ITEM_STATUSES, ITEM_STATUS_LABELS, inventoryItemCreate, type InventoryItemCreate, type Photo } from "@selio/contracts";
 import { PRICE_CHECK_LABELS, checkPrice, newId, projectedMargin, suggestFloorPrice } from "@selio/domain";
-import { Button, Card, Field, IconButton, Input, Money, PageHeader, Select, Textarea, formatPercent } from "@selio/ui";
+import { Alert, Button, Card, Field, IconButton, Input, Money, PageHeader, Select, Textarea, formatPercent } from "@selio/ui";
 import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { dateInputToIso } from "../../lib/dates";
-import { fieldErrorMessage } from "../../lib/errors";
+import { errorMessage, fieldErrorMessage } from "../../lib/errors";
+import { photoFileProblem, readAsDataUrl } from "../../lib/photo-files";
 import { MoneyInput, QueryBoundary } from "../components/common";
 import { useSeesFinances } from "../components/finance";
 import { useAppMutation } from "../components/hooks";
@@ -16,6 +17,12 @@ import { ListingChecks, useBlurScores } from "../components/selling";
 
 const MAX_PHOTO_BYTES = 1_500_000;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+/** Aujourd'hui au format du champ date (borne du sélecteur : pas de date d'achat dans le futur). */
+function todayInput(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 type FormState = Omit<InventoryItemCreate, "photos"> & { photos: Photo[]; tagsText: string };
 
@@ -58,12 +65,21 @@ export default function ItemForm() {
       first?.scrollIntoView({ block: "center", behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     });
   };
+  // Version de l'article ouverte dans ce formulaire : envoyée à l'enregistrement (`expectedUpdatedAt`) pour qu'une
+  // modification faite entre-temps ailleurs (autre onglet, autre membre) soit signalée au lieu d'être écrasée.
+  const [openedAt, setOpenedAt] = useState<string | null>(null);
+  const loadedFor = useRef<string | null>(null);
+  const loadItem = (it: NonNullable<typeof existing.data>) => {
+    loadedFor.current = it.id;
+    setOpenedAt(it.updatedAt);
+    setForm({ title: it.title, description: it.description, brand: it.brand ?? "", size: it.size ?? "", category: it.category, condition: it.condition, purchasePriceCents: it.purchasePriceCents, purchaseFeesCents: it.purchaseFeesCents, listedPriceCents: it.listedPriceCents, floorPriceCents: it.floorPriceCents, status: it.status, sku: it.sku ?? "", tags: it.tags, tagsText: it.tags.join(", "), photos: it.photos, purchasedAt: it.purchasedAt, externalUrl: it.externalUrl });
+  };
+  // Le formulaire n'est rempli qu'une fois par article : une relecture (autre onglet, autre écran) n'efface jamais la saisie en cours.
   useEffect(() => {
-    if (existing.data) {
-      const it = existing.data;
-      setForm({ title: it.title, description: it.description, brand: it.brand ?? "", size: it.size ?? "", category: it.category, condition: it.condition, purchasePriceCents: it.purchasePriceCents, purchaseFeesCents: it.purchaseFeesCents, listedPriceCents: it.listedPriceCents, floorPriceCents: it.floorPriceCents, status: it.status, sku: it.sku ?? "", tags: it.tags, tagsText: it.tags.join(", "), photos: it.photos, purchasedAt: it.purchasedAt, externalUrl: it.externalUrl });
-    }
+    if (existing.data && loadedFor.current !== existing.data.id) loadItem(existing.data);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existing.data]);
+  const changedElsewhere = editing && !!existing.data && !!openedAt && new Date(existing.data.updatedAt).getTime() !== new Date(openedAt).getTime();
   const rules = session.org.settings.margin;
   const suggestedFloor = useMemo(() => suggestFloorPrice({ purchasePriceCents: form.purchasePriceCents ?? 0, purchaseFeesCents: form.purchaseFeesCents ?? 0 }, rules), [form.purchasePriceCents, form.purchaseFeesCents, rules]);
   const pricing = { purchasePriceCents: form.purchasePriceCents ?? 0, purchaseFeesCents: form.purchaseFeesCents ?? 0, listedPriceCents: form.listedPriceCents ?? null, floorPriceCents: form.floorPriceCents ?? null };
@@ -78,9 +94,9 @@ export default function ItemForm() {
         // Le serveur masque ces montants pour ce rôle : les renvoyer remettrait le prix d'achat à zéro.
         const { purchasePriceCents: _p, purchaseFeesCents: _f, ...rest } = payload;
         void _p; void _f;
-        return editing ? client.updateItem(id!, rest) : client.createItem(rest as InventoryItemCreate);
+        return editing ? client.updateItem(id!, { ...rest, ...(openedAt ? { expectedUpdatedAt: openedAt } : {}) }) : client.createItem(rest as InventoryItemCreate);
       }
-      return editing ? client.updateItem(id!, payload) : client.createItem(payload);
+      return editing ? client.updateItem(id!, { ...payload, ...(openedAt ? { expectedUpdatedAt: openedAt } : {}) }) : client.createItem(payload);
     },
     { invalidate: ["items", "item", "overview"], success: editing ? "Article enregistré" : "Article créé", onSuccess: (it) => navigate(`/app/items/${it.id}`) },
   );
@@ -101,22 +117,27 @@ export default function ItemForm() {
     }
     const errs: Record<string, string> = {};
     if (payload.status !== "in_stock" && payload.listedPriceCents === null) errs.listedPriceCents = "Un prix affiché est requis pour mettre en vente.";
-    if (payload.floorPriceCents != null && payload.listedPriceCents != null && payload.floorPriceCents > payload.listedPriceCents) errs.floorPriceCents = "Le plancher ne peut pas dépasser le prix affiché.";
+    if (floorAboveListed(payload)) errs.floorPriceCents = FLOOR_ABOVE_LISTED_MESSAGE;
     showErrors(errs);
     if (Object.keys(errs).length > 0) return;
     save.mutate(payload);
   };
 
-  const addPhotos = (files: FileList | null) => {
+  const addPhotos = async (files: FileList | null) => {
     if (!files) return;
     setPhotoError(null);
     const list = Array.from(files).slice(0, 12 - form.photos.length);
     for (const f of list) {
-      if (!ALLOWED_TYPES.includes(f.type)) { setPhotoError(`Format refusé : ${f.name} (JPEG, PNG ou WebP uniquement).`); continue; }
-      if (f.size > MAX_PHOTO_BYTES) { setPhotoError(`Fichier trop lourd : ${f.name} (1,5 Mo max).`); continue; }
-      const reader = new FileReader();
-      reader.onload = () => setForm((s) => ({ ...s, photos: [...s.photos, { id: newId(), url: String(reader.result), alt: f.name, position: s.photos.length }] }));
-      reader.readAsDataURL(f);
+      // Taille et type RÉEL (premiers octets) contrôlés AVANT de lire le fichier : un fichier de plusieurs Go, un PDF
+      // renommé, une photo HEIC ou un fichier vide sont refusés avec un message clair, jamais affichés cassés.
+      const problem = await photoFileProblem(f, { maxBytes: MAX_PHOTO_BYTES });
+      if (problem) { setPhotoError(problem); continue; }
+      try {
+        const url = await readAsDataUrl(f);
+        setForm((s) => ({ ...s, photos: [...s.photos, { id: newId(), url, alt: f.name, position: s.photos.length }] }));
+      } catch (e) {
+        setPhotoError(errorMessage(e));
+      }
     }
   };
 
@@ -150,7 +171,7 @@ export default function ItemForm() {
               <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border-strong text-xs text-text-muted hover:bg-surface-muted">
                 <ImagePlus className="size-5" aria-hidden />
                 Ajouter
-                <input type="file" accept={ALLOWED_TYPES.join(",")} multiple className="sr-only" onChange={(e) => addPhotos(e.target.files)} />
+                <input type="file" accept={ALLOWED_TYPES.join(",")} multiple className="sr-only" aria-label="Ajouter des photos" onChange={(e) => { void addPhotos(e.target.files); e.target.value = ""; }} />
               </label>
             ) : null}
           </div>
@@ -165,8 +186,8 @@ export default function ItemForm() {
           <h2 className="mb-4 text-md font-semibold">{finances ? "Prix et marge" : "Prix"}</h2>
           {!finances ? <p className="mb-4 text-xs text-text-muted">Prix d'achat, frais et marge sont masqués pour votre rôle : un administrateur les renseigne.</p> : null}
           <div className="flex flex-col gap-4">
-            {finances ? <Field label="Prix d'achat" required>{(p) => <MoneyInput id={p.id} value={form.purchasePriceCents ?? 0} onChange={(v) => setForm({ ...form, purchasePriceCents: v ?? 0 })} allowEmpty={false} />}</Field> : null}
-            {finances ? <Field label="Frais d'acquisition" hint="Port entrant, nettoyage, retouche…">{(p) => <MoneyInput id={p.id} aria-describedby={p.describedBy} value={form.purchaseFeesCents ?? 0} onChange={(v) => setForm({ ...form, purchaseFeesCents: v ?? 0 })} allowEmpty={false} />}</Field> : null}
+            {finances ? <Field label="Prix d'achat" required error={errors.purchasePriceCents}>{(p) => <MoneyInput id={p.id} invalid={p.invalid} value={form.purchasePriceCents ?? 0} onChange={(v) => setForm({ ...form, purchasePriceCents: v ?? 0 })} allowEmpty={false} />}</Field> : null}
+            {finances ? <Field label="Frais d'acquisition" hint="Port entrant, nettoyage, retouche…" error={errors.purchaseFeesCents}>{(p) => <MoneyInput id={p.id} invalid={p.invalid} aria-describedby={p.describedBy} value={form.purchaseFeesCents ?? 0} onChange={(v) => setForm({ ...form, purchaseFeesCents: v ?? 0 })} allowEmpty={false} />}</Field> : null}
             <Field label="Prix affiché" error={errors.listedPriceCents}>{(p) => <MoneyInput id={p.id} invalid={p.invalid} value={form.listedPriceCents ?? null} onChange={(v) => setForm({ ...form, listedPriceCents: v })} />}</Field>
             {/* Prix conseillé (§5.10) à la saisie de la marque, de la catégorie et de l'état : l'utilisateur choisit. */}
             <PriceSuggestion
@@ -177,7 +198,7 @@ export default function ItemForm() {
             />
             <Field label="Prix plancher" error={errors.floorPriceCents} hint={!finances ? undefined : <>Suggéré par vos règles : <button type="button" className="font-medium text-text underline underline-offset-2" onClick={() => setForm({ ...form, floorPriceCents: suggestedFloor })}><Money cents={suggestedFloor} /></button> (marge min. {formatPercent(rules.minMarginRate)} et <Money cents={rules.minMarginCents} />).</>}>{(p) => <MoneyInput id={p.id} invalid={p.invalid} aria-describedby={p.describedBy} value={form.floorPriceCents ?? null} onChange={(v) => setForm({ ...form, floorPriceCents: v })} />}</Field>
             <Field label="Statut">{(p) => <Select id={p.id} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as FormState["status"] })}>{ITEM_STATUSES.map((s) => <option key={s} value={s}>{ITEM_STATUS_LABELS[s]}</option>)}</Select>}</Field>
-            <Field label="Date d'achat">{(p) => <Input id={p.id} type="date" value={form.purchasedAt ? form.purchasedAt.slice(0, 10) : ""} onChange={(e) => { const iso = dateInputToIso(e.target.value); if (e.target.value && !iso) return; setForm({ ...form, purchasedAt: iso }); }} />}</Field>
+            <Field label="Date d'achat" error={errors.purchasedAt}>{(p) => <Input id={p.id} type="date" invalid={p.invalid} max={todayInput()} value={form.purchasedAt ? form.purchasedAt.slice(0, 10) : ""} onChange={(e) => { const iso = dateInputToIso(e.target.value); if (e.target.value && !iso) return; setForm({ ...form, purchasedAt: iso }); }} />}</Field>
           </div>
           {finances ? <div className="mt-4 rounded-md bg-surface-muted p-3 text-sm">
             <p className="flex justify-between"><span className="text-text-muted">Coût d'acquisition</span><Money cents={(form.purchasePriceCents ?? 0) + (form.purchaseFeesCents ?? 0)} /></p>
@@ -196,6 +217,11 @@ export default function ItemForm() {
   return (
     <>
       <PageHeader title={editing ? "Modifier l'article" : "Nouvel article"} eyebrow={<Link to="/app/items" className="inline-flex items-center gap-1 hover:text-text"><ArrowLeft className="size-3.5" aria-hidden />Articles et stock</Link>} />
+      {changedElsewhere ? (
+        <Alert tone="warning" title="Article modifié entre-temps" className="mb-4" action={<Button size="sm" variant="secondary" onClick={() => existing.data && loadItem(existing.data)}>Charger la version actuelle</Button>}>
+          Cet article a été modifié ailleurs (autre onglet ou membre de l'équipe) depuis que vous l'avez ouvert. Chargez sa version actuelle avant d'enregistrer : vos changements non enregistrés seront remplacés.
+        </Alert>
+      ) : null}
       {editing ? <QueryBoundary query={existing} skeleton="spinner">{() => body}</QueryBoundary> : body}
     </>
   );

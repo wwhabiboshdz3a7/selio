@@ -35,8 +35,10 @@ export function fieldErrorMessage(issue: ValidationIssue): string {
   if (issue.code === "custom") return issue.message;
   if (issue.code === "too_small") {
     if (issue.type === "string") return Number(issue.minimum) <= 1 ? "Champ obligatoire." : `Au moins ${issue.minimum} caractères.`;
+    if (issue.type === "number" && Number(issue.minimum) === 0) return "La valeur ne peut pas être négative.";
     return `Valeur trop petite (minimum ${issue.minimum}).`;
   }
+  if (issue.code === "invalid_type" && issue.message !== "Required" && !issue.message.startsWith("Expected")) return issue.message;
   if (issue.code === "too_big") {
     if (issue.type === "string") return `${issue.maximum} caractères maximum.`;
     if (issue.type === "array") return `${issue.maximum} éléments maximum.`;
