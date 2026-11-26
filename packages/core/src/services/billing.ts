@@ -12,6 +12,7 @@ import type { UsageSummary } from "../types-data";
 import { markWornOverageBilled, wornOverageLines } from "./worn-photos";
 import { qualify as qualifyReferral } from "./referral";
 import { consumeForInvoice as consumeOfferForInvoice, discountLineFor as offerDiscountLineFor, type InstallmentDiscount } from "./offers";
+import { betaBlockedSince, clearBetaBlock, endBetaIfUnpaid, sendBetaReminders } from "./beta";
 
 export { USAGE_WARNING_RATE, buildUsageCounter, usagePercent } from "@selio/contracts";
 
@@ -272,10 +273,12 @@ export async function previewCheckout(ctx: OrgContext, plan: Plan | string, opts
   const simulated = isPaymentSimulated(ctx.services);
   const inTrial = sub.status === "trialing" && !!sub.currentPeriodEnd && new Date(sub.currentPeriodEnd) > now;
   const startsTrial = simulated && sub.status === "none";
+  // Mois de bêta terminé sans moyen de paiement : la page de paiement enregistre le moyen et débloque.
+  const afterBeta = (await betaBlockedSince(ctx.services, ctx.orgId)) !== null;
   let blockedReason: string | null = null;
   if (sub.grantedUntil && new Date(sub.grantedUntil) > now) blockedReason = `Votre offre ${PLAN_LABELS[sub.plan]} vous est offerte par l'équipe Selio : aucun paiement n'est nécessaire.`;
   else if (sub.status === "active" && sub.provider === "revolut" && sub.currentPeriodEnd && new Date(sub.currentPeriodEnd) > now) blockedReason = `Votre offre ${PLAN_LABELS[sub.plan]} est déjà payée jusqu'au ${formatDateFr(new Date(sub.currentPeriodEnd))}.`;
-  else if (simulated && !inTrial && !startsTrial) blockedReason = TRIAL_OVER_SIMULATED_MESSAGE;
+  else if (simulated && !inTrial && !startsTrial && !afterBeta) blockedReason = TRIAL_OVER_SIMULATED_MESSAGE;
   const trialEndsAt = inTrial ? sub.currentPeriodEnd : startsTrial ? new Date(now.getTime() + TRIAL_DAYS * 86_400_000).toISOString() : null;
   return {
     plan,
@@ -289,6 +292,7 @@ export async function previewCheckout(ctx: OrgContext, plan: Plan | string, opts
     paymentMode: simulated ? "simulated" : "revolut",
     noCardRequired: simulated,
     blockedReason,
+    ...(afterBeta ? { afterBeta: true } : {}),
   };
 }
 
@@ -303,6 +307,7 @@ async function startSimulatedCheckout(ctx: OrgContext, plan: PaidPlan, cycle: Bi
   const preview = await previewCheckout(ctx, plan, { cycle });
   if (preview.blockedReason) throw new AppError("conflict", preview.blockedReason, 409);
   const now = ctx.services.now().toISOString();
+  if (preview.afterBeta) return recordPaymentMethodAfterBeta(ctx, plan, cycle, preview);
   await withOrg(ctx, async (tx) => {
     const base = { pendingPlan: plan, cycle, simulatedCheckoutAt: now, awaitingPaymentSince: null, cancelAtPeriodEnd: false };
     await repos.subscriptions.upsert(tx, preview.startsTrial
@@ -321,6 +326,30 @@ async function startSimulatedCheckout(ctx: OrgContext, plan: PaidPlan, cycle: Bi
     simulated: true,
     trialEndsAt: preview.trialEndsAt,
     message: `Offre ${PLAN_LABELS[plan]} (${cycleLabel(cycle)}, ${formatEuros(preview.dueCents)}${discountNote}) retenue. ${preview.startsTrial ? "Votre essai de 14 jours démarre" : "Votre essai continue"}${end}, sans carte. ${SIMULATED_PAYMENT_NOTICE}`,
+  };
+}
+
+/**
+ * Page de paiement après la fin du mois de bêta (paiement simulé) : le forfait est retenu comme moyen de paiement
+ * (aucune carte, rien n'est débité), le blocage est levé ; le compte reste « en attente du paiement » (accès de
+ * base, données conservées) jusqu'à l'ouverture du paiement en ligne ou une décision de l'équipe Selio.
+ */
+async function recordPaymentMethodAfterBeta(ctx: OrgContext, plan: PaidPlan, cycle: BillingCycle, preview: CheckoutPreview): Promise<CheckoutResult> {
+  const now = ctx.services.now().toISOString();
+  await withOrg(ctx, async (tx) => {
+    await repos.subscriptions.upsert(tx, { pendingPlan: plan, cycle, simulatedCheckoutAt: now, cancelAtPeriodEnd: false });
+    await clearBetaBlock(tx, ctx.orgId);
+    await repos.audit.add(tx, { actorUserId: ctx.userId, action: "billing.simulated_checkout", targetType: "subscription", meta: { plan, cycle, planAmountCents: preview.priceCents, dueCents: preview.dueCents, afterBeta: true, simulated: true }, ip: ctx.ip });
+  });
+  return {
+    orderToken: null,
+    orderId: null,
+    mode: null,
+    amountCents: 0,
+    captureMode: null,
+    simulated: true,
+    trialEndsAt: null,
+    message: `Forfait ${PLAN_LABELS[plan]} (${cycleLabel(cycle)}, ${formatEuros(preview.dueCents)}) retenu, sans carte : rien n'est débité. Votre espace est rouvert en accès de base en attendant l'ouverture du paiement en ligne ; l'équipe Selio vous recontacte. ${SIMULATED_PAYMENT_NOTICE}`,
   };
 }
 
@@ -774,7 +803,13 @@ export async function processSubscriptionRenewal(services: Services, orgId: stri
     return { action: "ended", reason: "granted_ended" };
   }
   if (sub.status === "trialing") {
-    if (!sub.currentPeriodEnd || new Date(sub.currentPeriodEnd) > now) return { action: "skipped", reason: "trial_running" };
+    if (!sub.currentPeriodEnd || new Date(sub.currentPeriodEnd) > now) {
+      // Bêta : rappels J-7 et J-1 par email (seulement si l'envoi d'emails est configuré), au mieux.
+      await sendBetaReminders(services, orgId, sub).catch(() => 0);
+      return { action: "skipped", reason: "trial_running" };
+    }
+    // Bêta : fin du mois sans moyen de paiement → accès bêta terminé (blocage, données conservées).
+    if (isPaymentSimulated(services) && (await endBetaIfUnpaid(services, orgId, sub))) return { action: "trial_ended", reason: "beta_ended" };
     // Paiement simulé : jamais de débit ; le compte passe « en attente du paiement » (accès de base).
     if (isPaymentSimulated(services) && !sub.cancelAtPeriodEnd) return endTrialAwaitingPayment(services, orgId, sub);
     if (!sub.paymentMethodId && sub.revolutCustomerId && services.payments && !sub.cancelAtPeriodEnd) {
@@ -783,6 +818,7 @@ export async function processSubscriptionRenewal(services: Services, orgId: stri
       sub = recovered;
     }
     if (!sub.cardOnFile || !sub.paymentMethodId || sub.cancelAtPeriodEnd) {
+      if (await endBetaIfUnpaid(services, orgId, sub)) return { action: "trial_ended", reason: "beta_ended" };
       await endSubscription(services, orgId, sub, sub.cancelAtPeriodEnd ? "cancelled" : "trial_ended", false);
       return { action: "trial_ended" };
     }
