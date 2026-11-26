@@ -1,4 +1,4 @@
-import { Navigate, useLocation, useNavigate } from "react-router";
+import { Navigate, useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, CalendarCheck, HeartHandshake, Loader2, Wallet } from "lucide-react";
 import { PLAN_LABELS, betaDateLabel } from "@selio/contracts";
@@ -64,11 +64,11 @@ export default function BetaWelcome() {
   const client = useClient();
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const location = useLocation();
   const start = useAppMutation(async () => (client.markBetaWelcomeSeen ? client.markBetaWelcomeSeen() : null), {
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["session"] });
-      navigate(AFTER_WELCOME_PATH, { replace: true, state: location.state });
+      // Le message d'inscription (« Bienvenue dans la bêta… ») vient d'être dit ici : le démarrage ne le répète pas.
+      navigate(AFTER_WELCOME_PATH, { replace: true });
     },
   });
   const beta = s.beta;

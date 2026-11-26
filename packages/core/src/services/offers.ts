@@ -175,7 +175,7 @@ async function resolveCode(tx: Tx, rawCode: unknown, now: Date, plan: string | n
   const code = normalizeOfferCode(rawCode);
   if (!code) return { refusal: { valid: false, reason: "invalid_code", message: "Ce code promo n'a pas le bon format (3 à 24 lettres, chiffres ou tirets)." } };
   const offer = await findOfferByCode(tx, code);
-  if (!offer) return { refusal: { valid: false, reason: "unknown_code", message: "Code promo inconnu : vérifiez son orthographe." } };
+  if (!offer) return { refusal: { valid: false, reason: "unknown_code", message: "Code promo inconnu." } };
   const ok = offerAvailability(offer, { now, plan });
   if (!ok.ok) return { refusal: { valid: false, reason: ok.reason, message: ok.message } };
   return { offer };
