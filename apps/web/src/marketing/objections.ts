@@ -25,7 +25,7 @@ export const OBJECTIONS: readonly Objection[] = [
   {
     id: "carte-essai",
     question: "Faut-il une carte bancaire pour essayer ?",
-    answer: `Non, aucune carte n'est demandée à l'inscription, et rien n'est débité pendant les ${TRIAL_DAYS} jours d'essai. Pour continuer ensuite, vous enregistrez une carte dans le formulaire sécurisé de Revolut (le numéro ne transite jamais par Selio) ; sans carte, votre espace repasse à l'accès de base et vos données restent là.`,
+    answer: `Non, aucune carte n'est demandée à l'inscription, et rien n'est débité pendant les ${TRIAL_DAYS} jours d'essai. Pour continuer ensuite, vous enregistrez une carte dans le formulaire sécurisé de notre prestataire de paiement (le numéro ne transite jamais par Selio) ; sans carte, votre espace repasse à l'accès de base et vos données restent là.`,
   },
   {
     id: "resiliation",
