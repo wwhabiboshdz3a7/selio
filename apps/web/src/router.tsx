@@ -1,4 +1,6 @@
+import { Suspense, lazy as reactLazy } from "react";
 import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
+import { LoadingState } from "@selio/ui";
 import { MarketingLayout } from "./marketing/layout";
 import { AppLayout, RequireSession } from "./app/layout";
 import { RouteError } from "./components/RouteError";
@@ -8,6 +10,11 @@ const lazy = (loader: () => Promise<{ default: React.ComponentType }>) => async 
   const mod = await loader();
   return { Component: mod.default };
 };
+
+/** Bêta : pages plein écran chargées à la demande, rendues sous RequireSession (la session est vérifiée d'abord). */
+const BetaWelcomePage = reactLazy(() => import("./app/pages/BetaWelcome"));
+const PaymentPage = reactLazy(() => import("./app/pages/Payment"));
+const fullScreen = (page: React.ReactNode) => <RequireSession><Suspense fallback={<LoadingState variant="spinner" label="Chargement…" className="min-h-dvh" />}>{page}</Suspense></RequireSession>;
 
 /**
  * Chaque page a sa propre frontière d'erreur : une page en échec s'affiche dans
@@ -63,6 +70,9 @@ export const router = createBrowserRouter([
       { path: "*", lazy: lazy(() => import("./marketing/pages/NotFound")) },
     ]),
   },
+  // Bêta (code BETA2026SELIO) : écran « Bienvenue dans la bêta » et page de paiement, en plein écran (sans menu).
+  { path: "/app/bienvenue", errorElement: <RouteError />, element: fullScreen(<BetaWelcomePage />) },
+  { path: "/app/paiement", errorElement: <RouteError />, element: fullScreen(<PaymentPage />) },
   {
     path: "/app",
     element: (

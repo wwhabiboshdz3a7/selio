@@ -1,4 +1,4 @@
-import type { Membership, Organization, Role, User } from "@selio/contracts";
+import type { BetaStatus, Membership, Organization, Role, User } from "@selio/contracts";
 
 export interface Session {
   mode: "connected";
@@ -6,6 +6,8 @@ export interface Session {
   org: Organization;
   role: Role;
   memberships: (Membership & { orgName: string })[];
+  /** Accès bêta de l'organisation (badge, rappels, écran de bienvenue, blocage), null sans bêta. */
+  beta: BetaStatus | null;
 }
 
 /**

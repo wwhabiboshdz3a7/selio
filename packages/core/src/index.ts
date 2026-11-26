@@ -22,6 +22,7 @@ export * as billing from "./services/billing";
 export * as capabilities from "./services/capabilities";
 export * as referral from "./services/referral";
 export * as offers from "./services/offers";
+export * as beta from "./services/beta";
 export * as comptes from "./services/comptes";
 export { referralConfigFromEnv } from "./services/referral";
 export * as admin from "./services/admin";

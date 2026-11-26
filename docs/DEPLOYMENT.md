@@ -14,7 +14,7 @@ La configuration de production est **distincte** : `NODE_ENV=production` impose 
 
 ## 1. Vitrine et application (Netlify)
 
-`netlify.toml` à la racine : commande `pnpm install --frozen-lockfile && pnpm build:web`, publication `apps/web/dist`, redirection SPA, en-têtes de sécurité, cache immuable des assets, `sw.js` sans cache. La CSP (`netlify.toml` et `deploy/netlify/_headers`, à garder identiques) autorise le script (`script-src`) et les iframes (`frame-src`) du formulaire de paiement Revolut Checkout depuis `https://merchant.revolut.com` et `https://sandbox-merchant.revolut.com` ; tout le reste reste limité au site. Le service worker ne met jamais ce script en cache (il n'est ni pré-caché ni dans une règle d'exécution).
+`netlify.toml` à la racine, commun au site public et au site Selio Admin (variable `VITE_APP_TARGET` du projet Netlify : `public` par défaut, `admin` pour l'administration, voir TUTORIELS.md §21) : commande `pnpm install --frozen-lockfile && pnpm build:site` (site, plus l'extension zippée pour la cible « public »), publication `apps/web/dist`, redirection SPA, en-têtes de sécurité, cache immuable des assets, `sw.js` sans cache. La CSP (`netlify.toml` et `deploy/netlify/_headers`, à garder identiques) autorise le script (`script-src`) et les iframes (`frame-src`) du formulaire de paiement Revolut Checkout depuis `https://merchant.revolut.com` et `https://sandbox-merchant.revolut.com` ; tout le reste reste limité au site. Le service worker ne met jamais ce script en cache (il n'est ni pré-caché ni dans une règle d'exécution).
 
 Variables Netlify (publiques, préfixe `VITE_`) :
 - `VITE_API_BASE_URL` : URL publique de l'API (ex. `https://api.exemple.fr`). Vide → l'application ne propose que la démonstration.

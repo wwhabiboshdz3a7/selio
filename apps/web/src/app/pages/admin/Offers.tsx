@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Megaphone, Pencil, Plus, Trash2 } from "lucide-react";
 import {
-  OFFER_BANNER_MAX, PAID_PLANS, PLAN_LABELS, offerBannerText, offerDiscountLabel, offerInput, offerPlansLabel,
+  BETA_DAYS_MAX, BETA_PLAN, OFFER_BANNER_MAX, PAID_PLANS, PLAN_LABELS, offerBannerText, offerDiscountLabel, offerInput, offerPlansLabel,
   type CommercialOffer, type OfferInput, type PaidPlan,
 } from "@selio/contracts";
 import { Alert, Button, Card, Checkbox, ConfirmDialog, EmptyState, Field, Input, PageHeader, Segmented, StatusBadge, Table, TableWrap, Td, Th, Toggle, Tr, formatDate } from "@selio/ui";
@@ -135,6 +135,8 @@ export function AdminOffers() {
   const q = useQuery({ queryKey: ["admin-offers"], queryFn: () => client.adminListOffers() });
   const [editing, setEditing] = useState<{ id: string | null; form: OfferForm } | null>(null);
   const [toDelete, setToDelete] = useState<CommercialOffer | null>(null);
+  // Offre bêta (code BETA2026SELIO) : son propre formulaire (durée de l'accès, jamais une remise).
+  const [editingBeta, setEditingBeta] = useState<CommercialOffer | null>(null);
   const invalidate = ["admin-offers", "offer-banner"];
   const toggle = useAppMutation((o: CommercialOffer) => client.adminUpdateOffer(o.id, { active: !o.active }), { invalidate, success: (o) => (o.active ? "Offre activée" : "Offre désactivée") });
   const remove = useAppMutation((o: CommercialOffer) => client.adminDeleteOffer(o.id), {
@@ -152,6 +154,7 @@ export function AdminOffers() {
       />
       {mode === "demo" ? <Alert tone="info" className="mb-4">Démonstration : les offres sont enregistrées dans ce navigateur seulement ; le bandeau de la vitrine et de l'application de démonstration les affiche.</Alert> : null}
       {editing ? <OfferEditor key={editing.id ?? "new"} id={editing.id} initial={editing.form} onDone={() => setEditing(null)} /> : null}
+      {editingBeta ? <BetaOfferEditor key={editingBeta.id} offer={editingBeta} onDone={() => setEditingBeta(null)} /> : null}
       <QueryBoundary query={q} skeleton="spinner">
         {(offers) =>
           offers.length === 0 ? (
@@ -167,22 +170,23 @@ export function AdminOffers() {
                 <tbody>
                   {offers.map((o) => {
                     const st = statusOf(o);
+                    const beta = o.kind === "beta";
                     return (
                       <Tr key={o.id} data-testid={`offer-row-${o.code ?? o.id}`}>
-                        <Td className="font-medium text-text">{o.name}</Td>
+                        <Td className="font-medium text-text">{o.name}{beta ? <StatusBadge tone="accent" className="ml-2">Bêta</StatusBadge> : null}</Td>
                         <Td className="num">{o.code ?? <span className="text-text-muted">Sans code</span>}</Td>
-                        <Td className="num">{offerDiscountLabel(o)}</Td>
-                        <Td>{offerPlansLabel(o.plans)}</Td>
-                        <Td>{o.durationMonths === null ? "Tant que l'abonnement dure" : `${o.durationMonths} mois`}</Td>
+                        <Td className="num">{beta ? `Accès offert, sans carte` : offerDiscountLabel(o)}</Td>
+                        <Td>{beta ? PLAN_LABELS[BETA_PLAN] : offerPlansLabel(o.plans)}</Td>
+                        <Td>{beta ? `${o.betaDays ?? 30} jours` : o.durationMonths === null ? "Tant que l'abonnement dure" : `${o.durationMonths} mois`}</Td>
                         <Td>{periodLabel(o)}</Td>
                         <Td numeric>{o.redemptions}{o.maxRedemptions !== null ? ` / ${o.maxRedemptions}` : ""}</Td>
-                        <Td>{o.bannerEnabled ? "Oui" : "Non"}</Td>
+                        <Td>{beta ? "Jamais" : o.bannerEnabled ? "Oui" : "Non"}</Td>
                         <Td><StatusBadge tone={st.tone}>{st.label}</StatusBadge></Td>
                         <Td>
                           {o.archivedAt ? null : (
                             <span className="flex justify-end gap-1">
                               <Button size="sm" variant="secondary" onClick={() => toggle.mutate(o)} loading={toggle.isPending && toggle.variables?.id === o.id}>{o.active ? "Désactiver" : "Activer"}</Button>
-                              <Button size="sm" variant="ghost" aria-label={`Modifier l'offre ${o.name}`} onClick={() => setEditing({ id: o.id, form: formOf(o) })}><Pencil aria-hidden /></Button>
+                              <Button size="sm" variant="ghost" aria-label={`Modifier l'offre ${o.name}`} onClick={() => (beta ? (setEditing(null), setEditingBeta(o)) : (setEditingBeta(null), setEditing({ id: o.id, form: formOf(o) })))}><Pencil aria-hidden /></Button>
                               <Button size="sm" variant="ghost" aria-label={`Supprimer l'offre ${o.name}`} onClick={() => setToDelete(o)}><Trash2 aria-hidden /></Button>
                             </span>
                           )}
@@ -216,6 +220,60 @@ export function AdminOffers() {
 }
 
 export default AdminOffers;
+
+/**
+ * Offre bêta : nom, code, durée de l'accès offert (jours), période, maximum d'utilisations et activation. Pas de
+ * remise ni de bandeau : le code ouvre un accès Pro sans carte, avec une facture à 0 €.
+ */
+function BetaOfferEditor({ offer, onDone }: { offer: CommercialOffer; onDone: () => void }) {
+  const client = useClient();
+  const [f, setF] = useState({ name: offer.name, code: offer.code ?? "", days: String(offer.betaDays ?? 30), startsOn: dateInput(offer.startsAt), endsOn: dateInput(offer.endsAt), maxRedemptions: offer.maxRedemptions === null ? "" : String(offer.maxRedemptions), active: offer.active });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [serverError, setServerError] = useState<string | null>(null);
+  const save = useAppMutation((input: Parameters<typeof client.adminUpdateOffer>[1]) => client.adminUpdateOffer(offer.id, input), {
+    invalidate: ["admin-offers"],
+    success: "Offre bêta enregistrée",
+    onSuccess: onDone,
+    onError: (e: unknown) => setServerError(e instanceof Error ? e.message : "Enregistrement impossible."),
+  });
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const errs: Record<string, string> = {};
+    const days = intOrNaN(f.days);
+    if (!Number.isInteger(days) || days < 1 || days > BETA_DAYS_MAX) errs.days = `Nombre de jours entre 1 et ${BETA_DAYS_MAX}.`;
+    const max = f.maxRedemptions.trim() ? intOrNaN(f.maxRedemptions) : null;
+    if (max !== null && (!Number.isInteger(max) || max < 1)) errs.maxRedemptions = "Nombre entier, 1 au moins (vide : sans limite).";
+    if (max !== null && Number.isInteger(max) && max < offer.redemptions) errs.maxRedemptions = `Déjà ${offer.redemptions} utilisations : le maximum ne peut pas être plus bas.`;
+    if (f.name.trim().length < 2) errs.name = "Nom : 2 caractères au moins.";
+    const code = f.code.trim().toUpperCase();
+    if (!/^[A-Z0-9-]{3,24}$/.test(code)) errs.code = "Code : 3 à 24 caractères, lettres, chiffres et tirets.";
+    setErrors(errs);
+    setServerError(null);
+    if (Object.keys(errs).length > 0) return;
+    save.mutate({ name: f.name.trim(), code, betaDays: days, maxRedemptions: max, startsAt: f.startsOn ? new Date(`${f.startsOn}T00:00:00`).toISOString() : null, endsAt: f.endsOn ? new Date(`${f.endsOn}T23:59:59`).toISOString() : null, active: f.active });
+  };
+  const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
+  return (
+    <Card className="mb-6" data-testid="beta-offer-editor">
+      <h2 className="text-md font-semibold">Modifier l'offre bêta</h2>
+      <p className="mt-1 text-sm text-text-muted">Le code ouvre un accès {PLAN_LABELS[BETA_PLAN]} offert, sans carte, avec une facture à 0,00 €. À la fin, sans moyen de paiement, le compte est bloqué (données conservées) ; une prolongation depuis la fiche du compte le débloque. Une seule utilisation par compte.</p>
+      <form onSubmit={submit} noValidate className="mt-4 grid gap-4 md:grid-cols-2" aria-label="Modifier l'offre bêta">
+        <Field label="Nom affiché" required error={errors.name}>{(p) => <Input id={p.id} invalid={p.invalid} value={f.name} maxLength={80} onChange={(e) => set("name", e.target.value)} />}</Field>
+        <Field label="Code" required error={errors.code} hint="Saisi à l'inscription sans tenir compte des majuscules, espaces ni tirets.">{(p) => <Input id={p.id} invalid={p.invalid} aria-describedby={p.describedBy} value={f.code} maxLength={24} className="num tracking-[0.1em]" onChange={(e) => set("code", e.target.value.toUpperCase())} autoComplete="off" spellCheck={false} />}</Field>
+        <Field label="Durée de l'accès offert (jours)" required error={errors.days} hint={`Entre 1 et ${BETA_DAYS_MAX}. S'applique aux prochaines inscriptions.`}>{(p) => <Input id={p.id} invalid={p.invalid} aria-describedby={p.describedBy} value={f.days} inputMode="numeric" onChange={(e) => set("days", e.target.value)} />}</Field>
+        <Field label="Maximum d'utilisations" error={errors.maxRedemptions} hint={`Facultatif (vide : sans limite). Déjà utilisé ${offer.redemptions} fois.`}>{(p) => <Input id={p.id} invalid={p.invalid} aria-describedby={p.describedBy} value={f.maxRedemptions} inputMode="numeric" onChange={(e) => set("maxRedemptions", e.target.value)} />}</Field>
+        <Field label="Début" hint="Facultatif.">{(p) => <Input id={p.id} type="date" aria-describedby={p.describedBy} value={f.startsOn} onChange={(e) => set("startsOn", e.target.value)} />}</Field>
+        <Field label="Fin des inscriptions (incluse)" hint="Facultatif : après cette date, le code est refusé (l'inscription reste possible en essai normal).">{(p) => <Input id={p.id} type="date" aria-describedby={p.describedBy} value={f.endsOn} onChange={(e) => set("endsOn", e.target.value)} />}</Field>
+        <div className="md:col-span-2"><Toggle checked={f.active} onChange={(v) => set("active", v)} label="Code bêta actif" description="Désactivé : le code est refusé avec un message clair ; les comptes déjà en bêta gardent leur mois." /></div>
+        {serverError ? <Alert tone="danger" className="md:col-span-2">{serverError}</Alert> : null}
+        <div className="flex flex-wrap gap-2 md:col-span-2">
+          <Button type="submit" variant="accent" loading={save.isPending}>Enregistrer</Button>
+          <Button type="button" variant="ghost" onClick={onDone}>Annuler</Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
 
 function OfferEditor({ id, initial, onDone }: { id: string | null; initial: OfferForm; onDone: () => void }) {
   const client = useClient();

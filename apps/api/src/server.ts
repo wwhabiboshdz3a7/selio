@@ -16,6 +16,7 @@ import { errorHandler } from "./errors";
 import authPlugin from "./plugins/auth";
 import rolesPlugin from "./plugins/roles";
 import doubleSubmitPlugin from "./plugins/double-submit";
+import betaGatePlugin from "./plugins/beta-gate";
 import authRoutes from "./routes/auth";
 import orgRoutes from "./routes/org";
 import itemRoutes from "./routes/items";
@@ -43,6 +44,7 @@ import negotiationRoutes from "./routes/negotiation";
 import migrationRoutes from "./routes/migration";
 import referralRoutes from "./routes/referral";
 import offerRoutes from "./routes/offers";
+import betaRoutes from "./routes/beta";
 import comptesRoutes from "./routes/comptes";
 import adminAccountsRoutes from "./routes/admin-accounts";
 import activityRoutes from "./routes/activity";
@@ -149,6 +151,8 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(authPlugin, { services });
   // Rôles d'équipe : contributeur photos limité à sa liste de routes, finances masquées pour qui ne les voit pas.
   await app.register(rolesPlugin);
+  // Bêta : mois terminé sans moyen de paiement → actions métier refusées (402 beta_ended), lectures permises.
+  await app.register(betaGatePlugin, { services });
   // Anti double envoi des actions sensibles (paiement, achat, inscription, création) : `config.doubleSubmit` par route.
   await app.register(doubleSubmitPlugin, { services, windowMs: env.DOUBLE_SUBMIT_WINDOW_MS });
   app.setErrorHandler(errorHandler);
@@ -198,6 +202,8 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(referralRoutes);
   // Offres commerciales : bandeau public (sans session), code promo, administration par l'équipe Selio.
   await app.register(offerRoutes);
+  // Bêta (code BETA2026SELIO) : état de l'accès, écran de bienvenue vu, vérification d'un code à l'inscription.
+  await app.register(betaRoutes);
   await app.register(comptesRoutes);
   // Selio Admin : croissance, comptes, qualification, accès offert, prolongation d'essai (opérateurs business et tech).
   await app.register(adminAccountsRoutes);

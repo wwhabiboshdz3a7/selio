@@ -33,7 +33,7 @@ test.describe("installation guidée de l'extension", () => {
     }
     // Ce build de test n'a pas l'archive (construite au build Netlify) : le dire clairement plutôt qu'un lien cassé.
     await expect(page.getByTestId("extension-unavailable").or(page.getByTestId("extension-download"))).toBeVisible();
-    await expect(guide.getByText("chrome://extensions")).toBeVisible();
+    await expect(guide.getByRole("button", { name: "Copier l'adresse chrome://extensions" })).toBeVisible();
     await expect(page.getByTestId("schema-page-extensions")).toBeVisible();
     await expect(page.getByTestId("schema-epingler")).toBeVisible();
     // L'adresse de Selio, pré-remplie dans l'extension, est rappelée.

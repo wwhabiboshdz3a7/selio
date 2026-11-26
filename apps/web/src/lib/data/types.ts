@@ -1,4 +1,4 @@
-import type { AdminAddToMyOrgInput, CheckoutPreview, InviteOutcome, ServerCapabilities } from "@selio/contracts";
+import type { AdminAddToMyOrgInput, BetaStatus, CheckoutPreview, InviteOutcome, ServerCapabilities, SignupCodeCheck } from "@selio/contracts";
 import type {
   AiRequest, AiStatus, AuditLog, ListingDraft, ListingGenerationInput, AutomationRule, AutomationRuleCreate, BulkItemAction, ConnectionCreate, ConnectionTestResult, ConnectionUpdate, Conversation, ConversationQuery, Customer, CustomerCreate, CustomerQuery, CustomerUpdate, ExtensionToken, InventoryEvent, InventoryItem, InventoryItemCreate, InventoryItemUpdate, InventoryQuery, Job, JobQuery, MarketplaceConnection, Membership, Message, Opportunity, Order, OrderCreate, OrderQuery, OrderStatus, Organization, OrgSettings, Page, Plan, PurchaseRequest, RadarSearch, RadarSearchCreate, Role, Shipment, Subscription, UsageEvent, User,
 } from "@selio/contracts";
@@ -55,7 +55,9 @@ export interface Session {
   /** Inscription seulement : réponse du serveur sur le code de parrainage saisi (jamais bloquante). */
   referral?: { applied: boolean; reason?: string; message: string };
   /** Inscription seulement : réponse du serveur sur le code promo saisi (offre commerciale, jamais bloquante). */
-  promo?: { applied: boolean; reason?: string; message: string };
+  promo?: { applied: boolean; reason?: string; message: string; beta?: { days: number; plan: PaidPlan; endsAt?: string } };
+  /** Accès bêta (code BETA2026SELIO) : badge, rappels, écran de bienvenue et écran de blocage ; absent ou null sans bêta. */
+  beta?: BetaStatus | null;
 }
 
 export interface OverviewData {
@@ -796,6 +798,10 @@ export interface DataClient {
    * ce rôle s'appliquent alors aussi aux actions de la démo. Absent en mode connecté.
    */
   previewRole?(role: Role | null): Promise<Session>;
+  /** Bêta : écran « Bienvenue dans la bêta » vu (POST /api/beta/welcome). Absent en démonstration. */
+  markBetaWelcomeSeen?(): Promise<BetaStatus | null>;
+  /** Inscription : vérification d'un code sans session (POST /api/offers/check-signup). Absent en démonstration. */
+  checkSignupCode?(code: string): Promise<SignupCodeCheck>;
   // Parrainage (§5.15) : désactivé par défaut (REFERRAL_ENABLED), page masquée tant qu'il l'est
   getReferral(): Promise<ReferralView>;
   // Offres commerciales (promotions sur les forfaits, gérées par l'équipe Selio)

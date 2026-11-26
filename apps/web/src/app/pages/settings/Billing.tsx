@@ -21,6 +21,8 @@ import { isGrantWithoutEnd } from "@selio/contracts";
 import { Dialog, Field, Input } from "@selio/ui";
 import { SIMULATED_PAYMENT_NOTICE } from "@selio/contracts";
 import { usePaymentSimulated } from "../../../lib/capabilities";
+import { AddPaymentMethodButton } from "../../beta";
+import { BETA_ENDED_TITLE, betaDateLabel, type BetaStatus } from "@selio/contracts";
 
 const STATUS_TONE: Record<Subscription["status"], "success" | "accent" | "danger" | "muted"> = { none: "muted", trialing: "accent", active: "success", past_due: "danger", canceled: "muted", incomplete: "danger" };
 const PROVIDER_LABELS: Record<Subscription["provider"], string> = { none: "Aucun paiement enregistré", revolut: "Revolut (carte, Apple Pay, Google Pay, Revolut Pay)" };
@@ -164,6 +166,7 @@ export default function Billing() {
 
   return (
     <div className="flex flex-col gap-4">
+      {session.beta ? <BetaCard beta={session.beta} manage={manage} simulated={simulated} /> : null}
       <QueryBoundary query={sub} skeleton="spinner">
         {(sx) => <OfferCard s={sx} simulated={simulated} manage={manage} onCancel={() => setCancelOpen(true)} onReactivate={() => reactivate.mutate(undefined)} reactivating={reactivate.isPending} onCardUpdate={() => cardUpdate.mutate(undefined)} cardUpdating={cardUpdate.isPending} />}
       </QueryBoundary>
@@ -250,7 +253,7 @@ export default function Billing() {
       </Card>
 
       {simulated
-        ? <Alert tone="info" title="Paiement pas encore activé">{SIMULATED_PAYMENT_NOTICE} Le paiement en ligne (Revolut) sera ouvert prochainement : vous serez alors invité à enregistrer votre carte avant la fin de votre essai.</Alert>
+        ? <Alert tone="info" title="Paiement pas encore activé" action={manage ? <AddPaymentMethodButton /> : null}>{SIMULATED_PAYMENT_NOTICE} Le paiement en ligne sera ouvert prochainement : vous serez alors invité à enregistrer votre carte avant la fin de votre essai.</Alert>
         : <Alert tone="info">Paiement sécurisé par Revolut : le numéro de carte est saisi dans le formulaire Revolut et ne transite jamais par Selio. Les confirmations (webhooks) sont vérifiées et idempotentes ; les frais du prestataire ne vous sont pas refacturés.</Alert>}
 
       {recap ? <SimulatedCheckoutDialog plan={recap} cycle={cycle} onClose={() => setRecap(null)} onConfirm={() => checkout.mutate(recap)} confirming={checkout.isPending} /> : null}
@@ -395,6 +398,29 @@ function OfferCard({ s, simulated, manage, onCancel, onReactivate, reactivating,
         <Link to="/app/settings/invoices" className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline"><Receipt className="size-4" aria-hidden />Voir mes factures</Link>
         {manage && running && !s.cancelAtPeriodEnd && !s.grantedUntil ? <Button size="sm" variant="danger" onClick={onCancel}>Résilier</Button> : null}
       </div>
+    </Card>
+  );
+}
+
+/** Accès bêta (code BETA2026SELIO) : dates, facture à 0 €, et le moyen de paiement à ajouter. */
+function BetaCard({ beta, manage, simulated }: { beta: BetaStatus; manage: boolean; simulated: boolean }) {
+  const end = beta.endsAt ? betaDateLabel(beta.endsAt) : null;
+  const action = manage && simulated && (beta.blocked || (beta.state === "running" && !beta.paymentReady)) ? <AddPaymentMethodButton /> : null;
+  return (
+    <Card data-testid="beta-card" className={beta.blocked ? "border-danger" : undefined}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-md font-semibold">{beta.blocked ? BETA_ENDED_TITLE : "Accès bêta"}</h2>
+        <Tag accent>{beta.blocked ? "Bêta terminée" : beta.state === "running" ? "Bêta en cours" : "Bêta"}</Tag>
+      </div>
+      <p className="mt-2 text-sm text-text-muted">
+        {beta.blocked
+          ? "Ajoutez un moyen de paiement pour continuer : l'accès de toute l'équipe reprend aussitôt. Vos données sont conservées."
+          : beta.state === "running"
+            ? `Selio ${PLAN_LABELS[beta.plan]} offert${end ? ` jusqu'au ${end}` : ""}, sans carte.${beta.paymentReady ? " Votre forfait pour la suite est retenu : rien ne sera bloqué." : " Ajoutez un moyen de paiement avant la fin pour continuer sans interruption."}`
+            : `Bêta commencée le ${betaDateLabel(beta.startedAt)}. Merci d'avoir testé Selio !`}
+      </p>
+      <p className="mt-1 text-xs text-text-muted">Ouverte le <span className="num">{betaDateLabel(beta.startedAt)}</span>{beta.code ? <> avec le code <span className="num font-medium">{beta.code}</span></> : null}{beta.invoiceNumber ? <> · facture <span className="num">{beta.invoiceNumber}</span> à 0,00 €</> : null}.</p>
+      {action ? <div className="mt-3">{action}</div> : null}
     </Card>
   );
 }
