@@ -1,9 +1,8 @@
 import { PLAN_LABELS, PLAN_QUOTAS, TRIAL_PLAN } from "@selio/contracts";
 import { PRICING } from "@selio/demo-data";
-import { formatCents } from "@selio/ui";
-import { showIndicativePricing } from "../lib/env";
 import { PRODUCT_PAGES, type ProductDef, type ProductSlug } from "./products";
 import { objection, type Objection } from "./objections";
+import { SHOW_INDICATIVE_PRICING } from "./seo";
 
 /**
  * Pages d'atterrissage pour la publicité (Google Ads) : une page par intention de recherche,
@@ -41,7 +40,8 @@ export interface LandingDef {
 const P = PLAN_LABELS;
 const Q = PLAN_QUOTAS;
 
-const botPrice = showIndicativePricing ? `${formatCents(PRICING.subsidiaries.bot)} par mois (montant indicatif)` : "son propre prix au mois";
+const euros = new Intl.NumberFormat("fr-FR", { style: "currency", currency: PRICING.currency });
+const botPrice = SHOW_INDICATIVE_PRICING ? `${euros.format(PRICING.subsidiaries.bot / 100)} par mois (montant indicatif)` : "son propre prix au mois";
 
 export const LANDINGS: readonly LandingDef[] = [
   {

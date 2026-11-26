@@ -222,6 +222,7 @@ export function CtaBand({ title, lead, seed = 7 }: { title: string; lead: string
               <Eyebrow>Essai gratuit de {TRIAL_DAYS} jours</Eyebrow>
               <h2 className="mk-night-title mt-3 text-xl text-balance font-semibold tracking-[-0.02em] md:text-[28px] md:leading-[34px]">{title}</h2>
               <p className="mk-night-text mt-3 text-base">{lead}</p>
+              <TrustRow tone="night" className="mt-5" only={["carte", "essai", "resiliable"]} />
             </div>
             <div className="flex flex-wrap gap-2.5">
               <Link to="/inscription" className={buttonClass({ variant: "accent", size: "lg", className: "mk-cta-link" })}>
@@ -230,7 +231,6 @@ export function CtaBand({ title, lead, seed = 7 }: { title: string; lead: string
               <Link to="/connexion" className="mk-ghost">Se connecter</Link>
             </div>
           </div>
-          <TrustRow tone="night" className="mt-7" />
         </div>
       </Container>
     </section>

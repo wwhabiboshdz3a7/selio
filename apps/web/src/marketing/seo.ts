@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { PLAN_OFFERS, PRICING, TRIAL_OFFER } from "@selio/demo-data";
 import { usePageMeta } from "../lib/seo";
-import { showIndicativePricing } from "../lib/env";
 
 /**
  * Référencement de la vitrine : une seule liste des pages publiques (titre,
@@ -185,11 +184,17 @@ export function organizationJsonLd(): Record<string, unknown> {
 const euros = (cents: number) => (cents / 100).toFixed(2);
 
 /**
+ * Prix affichés ou masqués (VITE_SHOW_INDICATIVE_PRICING, même règle que lib/env.ts) : lu ici sans
+ * importer lib/env.ts, pour que ce module reste utilisable hors de Vite (tests de bout en bout).
+ */
+export const SHOW_INDICATIVE_PRICING: boolean = (import.meta.env as Record<string, unknown> | undefined)?.VITE_SHOW_INDICATIVE_PRICING !== "false";
+
+/**
  * Les offres réelles de Selio (essai, Starter, Pro, Agence), lues dans PRICING
  * (@selio/demo-data) : jamais un montant en dur ici. Vide quand l'affichage des prix est
  * masqué (VITE_SHOW_INDICATIVE_PRICING=false), comme sur la page Tarifs.
  */
-export function selioOffersJsonLd(show: boolean = showIndicativePricing): Record<string, unknown>[] {
+export function selioOffersJsonLd(show: boolean = SHOW_INDICATIVE_PRICING): Record<string, unknown>[] {
   if (!show) return [];
   const url = `${SITE_ORIGIN}/tarifs`;
   return [

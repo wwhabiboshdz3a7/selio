@@ -83,7 +83,7 @@ export function ShortcutTiles({ ids, hints = {}, onEdit }: { ids: readonly Short
             const s = SHORTCUTS[id];
             return (
               <li key={id} className="flex min-w-0">
-                <Link to={s.to} className="press group flex min-w-0 flex-1 items-center gap-2.5 bg-surface p-3 hover:bg-surface-muted/60 sm:items-start sm:gap-3 md:p-4">
+                <Link to={s.to} className="press focus-inset group flex min-w-0 flex-1 items-center gap-2.5 bg-surface p-3 hover:bg-surface-muted/60 sm:items-start sm:gap-3 md:p-4">
                   <span className={cn("inline-flex size-9 shrink-0 items-center justify-center rounded-lg [&>svg]:size-[18px]", i === 0 || id === "studio" ? "bg-accent-soft text-accent" : "bg-surface-muted text-text-muted group-hover:text-accent")} aria-hidden>{s.icon}</span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1 text-sm font-semibold text-text"><span className="line-clamp-2 sm:truncate">{s.label}</span><ArrowRight className="size-3 shrink-0 text-accent opacity-0 transition-opacity group-hover:opacity-100" aria-hidden /></span>

@@ -1,6 +1,6 @@
 # Vitrine
 
-_Version du 17 novembre 2026_
+_Version du 20 novembre 2026_
 
 La vitrine est la partie publique de `apps/web` (`src/marketing/`), servie en statique par Netlify avec l'application. Ce document dit quelles pages existent, comment elles sont référencées, où figure la mention d'indépendance, et ce qui attend Elias (textes) et l'avocat (pages légales, comparatifs).
 
@@ -47,7 +47,12 @@ La vitrine ne renvoie jamais vers la démonstration : chaque appel mène à l'in
 | `/alternative-bleam` | « Alternative à Bleam » | **non, idem** | `pages/AlternativeBleam.tsx` |
 | `/extension` | Extension navigateur (fiche) | oui | `pages/Extension.tsx` |
 | `/extension/confidentialite` | Politique de confidentialité de l'extension (adresse à donner au Chrome Web Store) | non (version provisoire) | `pages/ExtensionPrivacy.tsx`, `extensionPrivacy.ts` |
-| `/assistant-ia`, `/tarifs`, `/faq`, `/contact` | inchangées | oui | |
+| `/assistant-ia`, `/tarifs`, `/faq`, `/contact` | inchangées (la FAQ et les tarifs gagnent les objections et la réassurance, voir plus bas) | oui | |
+| `/logiciel-vinted` | Atterrissage publicitaire : logiciel Vinted multi-comptes (Selio Manager) | oui | `pages/Landing.tsx`, `landings.ts` |
+| `/negociation-automatique-vinted` | Atterrissage : négociation automatique (Selio Manager) | oui | idem |
+| `/annonce-vinted-ia` | Atterrissage : annonces rédigées par l'IA (Selio Studio) | non (`noindex, follow` : doublon de `/produits/studio`) | idem |
+| `/prix-revente-vinted` | Atterrissage : prix de revente (Selio Track, en développement) | non (doublon de `/produits/track`) | idem |
+| `/bot-achat-vinted` | Atterrissage : bot d'achat (Selio Bot, aperçu, achat réel désactivé) | non (doublon de `/produits/bot`) | idem |
 | `/mentions-legales`, `/confidentialite`, `/conditions` | pages légales, **version provisoire, définitive après l'avocat** | non | `pages/Legal.tsx` |
 
 Les pages produit vivent sous `/produits/…` : `/studio`, `/track`, `/bot`, `/cloud`, `/agents` et `/comptes` sont les adresses de l'application (`app/spaces/paths.ts`), un test vérifie qu'aucune page produit ne les recouvre. `/produits` et un produit inconnu renvoient à `/plateforme`.
@@ -69,6 +74,40 @@ Les captures (`src/marketing/assets/produit-<produit>-clair.webp` et `-sombre.we
 
 **Pas refaites pour la nouvelle organisation** (l'application change en parallèle) : les fichiers gardent leur ancien nom et leurs légendes le disent. `produit-radar-*` illustre Selio Bot (la page y porte encore le nom « Radar »), `produit-agents-*` illustre Selio Agent (« Selio Agents » dans la capture). `produit-comptes-*` (l'ancienne checklist, qui dit « Selio ne crée aucun compte à votre place ») n'est plus affichée : elle contredirait les services de Selio Compte. **À refaire** une fois l'application stabilisée : `/bot`, `/agents`, `/comptes`, et le Manager si son menu change.
 
+## Pages d'atterrissage publicitaires (Google Ads)
+
+Une page par intention de recherche, un seul message, sans constellation (rapide) : `src/marketing/landings.ts` (contenu), `pages/Landing.tsx` (gabarit), une route par adresse dans `src/router.tsx`, titre et description dans `SEO_PAGES`.
+
+1. **Titre = le mot-clé** (« Le logiciel Vinted pour gérer tous vos comptes au même endroit »), **sous-titre = le bénéfice**.
+2. **État réel** de la filiale (badge et, si une partie est simulée, la note de `products.ts`) juste sous le titre : une annonce ne doit jamais faire croire qu'une fonction simulée est en service (Selio Bot : achat réel désactivé ; Selio Track : marché simulé).
+3. Appel « Commencer l'essai gratuit de 14 jours » (et « Voir les tarifs »), puis la réassurance.
+4. **Capture** (AVIF/WebP, celle du thème affiché seulement, chargée en priorité).
+5. **Trois preuves** : des fonctions réelles, dont le titre est repris **tel quel** de `does` dans `products.ts` (test) ; les limites sont reprises mot pour mot de `doesNot`.
+6. **FAQ courte** (questions propres, puis objections communes de `objections.ts`), décrite en `FAQPage`.
+7. Mention d'indépendance, appel final, pied de page avec les pages légales (exigence Google Ads).
+
+Indexation : indexées quand l'intention n'a pas déjà sa page (`/logiciel-vinted`, `/negociation-automatique-vinted`, au sitemap) ; sinon `noindex, follow` (`noindexFollow` dans `SEO_PAGES`), hors sitemap, mais utilisables en publicité. Adresse canonique propre, sans paramètres de campagne (`gclid`, `utm_*`). Chaque page a son image de partage.
+
+Pour ajouter une page : une entrée dans `LANDINGS`, une dans `SEO_PAGES` (avec `ogImage`), une route, une image de partage (voir « Images de partage »), et le sitemap si elle est indexable ; les tests vérifient le reste.
+
+## Réassurance et objections
+
+- `TRUST_POINTS` / `TrustRow` (`components.tsx`) : « Aucune carte bancaire à l'inscription », « Rien n'est débité pendant les 14 jours », « Sans engagement, résiliable à tout moment », « Données stockées en France », « Aucun mot de passe Vinted demandé ». Chaque phrase est vérifiée dans le code (inscription sans carte, `BillingBanner`, `Billing.tsx`, `docs/STOCKAGE.md`, `products.ts`). Affichée sous les appels à l'essai (pages produit, atterrissage, inscription, tarifs, bandeau final).
+- `OBJECTIONS` (`objections.ts`) : carte, résiliation, mot de passe Vinted, risque pour le compte (sans jamais promettre l'absence de risque), données, nombre de comptes, lien avec Vinted. En tête de `/faq` (« Avant de commencer »), en bas de l'accueil, dans les FAQ des pages d'atterrissage.
+- **À corriger ailleurs** (hors vitrine) : la réponse `essai-decouverte` de `packages/domain/src/help.ts` et la ligne « Carte bancaire : Enregistrée à l'inscription » de `PLAN_COMPARISON` (`packages/demo-data/src/plans.ts`) disent que la carte est enregistrée dès l'inscription, alors que l'inscription n'en demande pas (`pages/Register.tsx`) et qu'un essai sans carte repasse à l'accès de base.
+
+## Publicité et cookies
+
+Rien n'est actif par défaut. Deux conditions pour charger Google tag (Analytics 4, Google Ads) ou le pixel Meta : un **identifiant public** fourni au build (`VITE_GA4_ID`, `VITE_GOOGLE_ADS_ID`, `VITE_META_PIXEL_ID`, plus les étiquettes de conversion `VITE_GOOGLE_ADS_SIGNUP_LABEL` et `VITE_GOOGLE_ADS_TRIAL_LABEL` ; voir `docs/CLES-ET-CONFIGURATION.md`, section 18) **et l'accord du visiteur** pour la catégorie concernée.
+
+- `src/marketing/consent.ts` : lecture des identifiants (format vérifié : une valeur mal formée est ignorée), catégories « Mesure d'audience » (GA4) et « Publicité » (Google Ads, Meta), choix gardé six mois sous `selio.consentement` (lecture et écriture dans `try/catch` ; stockage bloqué : le choix vaut pour la visite).
+- `src/marketing/ConsentBanner.tsx` : bandeau non bloquant, « Tout refuser » et « Tout accepter » côte à côte et du même style, « Personnaliser » (chaque catégorie désactivée par défaut). **Sans identifiant, pas de bandeau** (rien à accepter). Le lien « Cookies » du pied de page rouvre les préférences (et dit, sans identifiant, qu'aucun outil n'est actif).
+- `src/marketing/tracking.ts` : files `gtag` et `fbq` créées sans script en ligne (CSP), scripts officiels chargés seulement après accord ; mode de consentement Google (refusé par défaut, accordé par catégorie) ; retrait de l'accord : consentement repassé à « refusé », Meta révoqué, cookies `_ga`, `_gcl_*`, `_fbp`, `_fbc` effacés.
+- Événements : page vue de la vitrine (application monopage, jamais l'application), **clic sur l'essai** (tout lien vers `/inscription` : GA4 `clic_essai`, conversion Google Ads, Meta `ClicEssai`) et **inscription réussie** (compte réel uniquement, jamais la démonstration : GA4 `sign_up`, conversion Google Ads, Meta `CompleteRegistration`).
+- **CSP** : `netlify.toml` n'autorise aucun hôte de Google ni de Meta tant qu'aucun identifiant n'est fourni ; la ligne complète est prête en commentaire, à mettre en service (aussi dans `deploy/netlify/_headers`) avec le premier identifiant. Le build avertit si un identifiant est fourni sans la CSP correspondante.
+- La politique de confidentialité (`/confidentialite#cookies`) décrit ce qui est réellement configuré, avec un bouton « Gérer mes préférences de cookies ». Transferts hors UE et durées des cookies : à compléter par l'avocat.
+- Tests : `consent.test.tsx` (rien sans identifiant, rien sans accord, mesure seule, tout accepté, retrait), `e2e/marketing.spec.ts` (aucune requête vers Google ni Meta sur la vitrine construite sans identifiant).
+
 ## Tarifs
 
 - Configuration unique : `PRICING` dans `packages/demo-data/src/plans.ts` (montants indicatifs). `PRICING.subsidiaries` : `studio` (packs), `bot` (14,99 €/mois, l'ancien prix de Radar), `botAutoBuy` (29,99 €/mois, option d'achat automatique de Selio Bot, l'ancien « Radar Auto », désactivée), `cloudOption` (9,99 €/mois, Selio Cloud en option pour Starter et Pro), `compte` (`prestations` payées une fois : configuration personnalisée de Selio Manager 19 €, configuration + optimisation des messages et de la négociation 49 €, accompagnement 30 jours 89 € ; `onQuote` : création de comptes, comptes préparés ou non, commandes en volume, restriction, sur devis).
@@ -80,7 +119,8 @@ Les captures (`src/marketing/assets/produit-<produit>-clair.webp` et `-sombre.we
 - **Une liste** : `SEO_PAGES` dans `src/marketing/seo.ts` (titre, description de 160 caractères au plus, indexation, priorité). Chaque page l'utilise par `useMarketingMeta(chemin)`. Les tests (`seo.test.ts`) vérifient que chaque page a sa route, que les titres sont uniques et que les descriptions tiennent dans la limite.
 - **Sitemap** : `public/sitemap.xml`, exactement les pages indexables (test). Une page ajoutée à la liste sans être ajoutée au sitemap, ou l'inverse, fait échouer les tests.
 - **robots.txt** : l'application et les espaces sont exclus (le test accepte qu'une adresse soit couverte par un préfixe, par exemple `/app/radar` par `/app`) (`/app`, `/studio`, `/track`, `/bot`, `/cloud`, `/agents`, `/comptes`, `/generateur`, `/admin`, `/demo`, `/api/`), le sitemap est déclaré. Les pages de connexion, d'inscription, de démonstration et les pages légales portent `noindex`.
-- **Données structurées** (schema.org, JSON-LD) : `Organization` et `WebSite` dans `index.html` (lus même sans JavaScript) ; `SoftwareApplication` et `BreadcrumbList` sur chaque page de filiale et sur la page Extension ; `BreadcrumbList` sur les comparatifs. **Aucun prix, aucune note, aucun avis** dans ces données : les montants sont indicatifs et aucun avis client n'est publié.
+- **Données structurées** (schema.org, JSON-LD) : `Organization` et `WebSite` dans `index.html` (lus même sans JavaScript) ; `SoftwareApplication` et `BreadcrumbList` sur chaque page de filiale et sur la page Extension ; `BreadcrumbList` sur les comparatifs ; `FAQPage` sur `/faq` (objections et FAQ affichées), l'accueil (objections) et les pages d'atterrissage. **Prix** : seulement sur l'accueil, `/tarifs` et les deux pages d'atterrissage de Selio Manager, en `offers` du `SoftwareApplication` « Selio Manager » (essai à 0 €, Starter, Pro, Agence au mois), **lus dans `PRICING`** (`selioOffersJsonLd`, `seo.ts`) et absents si `VITE_SHOW_INDICATIVE_PRICING=false`. **Aucune note ni aucun avis** : aucun avis client n'est publié.
+- **Adresse canonique et partage** : `useMarketingMeta` pose l'adresse canonique sur `SITE_ORIGIN` (sans paramètres de campagne), Open Graph (`og:url`, `og:image` 1200 × 630) et la grande carte Twitter (`summary_large_image`) ; `index.html` porte les mêmes balises pour les robots sans JavaScript.
 - **Domaine** : `SITE_ORIGIN = "https://selio.fr"` dans `seo.ts`, repris dans `sitemap.xml`, `robots.txt` et `index.html` (un test vérifie qu'ils concordent). **Le domaine n'est pas confirmé** : à changer aux quatre endroits avant la mise en ligne.
 - La vitrine est une application monopage : le titre, la description et les données structurées des pages sont posés par JavaScript. Google l'exécute ; d'autres moteurs et les aperçus de liens ne voient que ce que dit `index.html`. Un rendu statique des pages publiques (pré-rendu au build) améliorerait cela ; non fait, à décider.
 
@@ -89,6 +129,17 @@ Les captures (`src/marketing/assets/produit-<produit>-clair.webp` et `-sombre.we
 « alternative à Bleam », « alternative à V-Tools », « alternative à Clemz », « outil revendeur Vinted », « automatisation Vinted », « logiciel Vinted », « gestion Vinted » (`TARGET_KEYWORDS`, test de présence dans les titres et descriptions). Ils sont placés dans les titres, les descriptions et les intertitres, sans bourrage. **Aucune position n'est promise** : ni « première position », ni « top » sur un moteur, et aucun texte n'en parle.
 
 Les mots-clés « alternative à … » ne portent aujourd'hui que sur les deux comparatifs, non indexés tant que les textes d'Elias manquent : ils ne travailleront qu'une fois `COMPARISON_READY` passé à vrai.
+
+### Images de partage
+
+`public/og/*.jpg`, 1200 × 630 (JPEG, 55 à 80 Ko) : `selio.jpg` (par défaut) et une par page d'atterrissage. Générées avec Chromium (police Inter, ciel nocturne, étoile d'or, logo blanc, vraie capture sur données d'exemple, pastille « Essai gratuit 14 jours », « Indépendant de Vinted ») ; exclues du pré-cache de l'application (`globIgnores` dans `vite.config.ts`). À refaire si le logo, les captures ou les titres changent ; un test vérifie qu'elles existent et mesurent 1200 × 630.
+
+## Performances
+
+- Captures en **AVIF et WebP, 800 et 1600 px** (`<picture>` + `srcset`, `ShotPicture`) ; chargement différé hors écran ; sur les pages d'atterrissage, une seule capture (celle du thème affiché) chargée en priorité. Pour une nouvelle capture `x.webp` (1600 × 1000) : produire `x.avif` (qualité 55), `x-800.webp` (qualité 78) et `x-800.avif` (qualité 55), puis l'ajouter à `productShots.ts`.
+- Police Inter 400 et 600 **préchargée** (`preloadFonts`, `vite.config.ts`) ; logos PNG recompressés sans perte visible (palette) ; `react-dom/client` rangé avec React (morceau stable d'un déploiement à l'autre) ; contraste de la légende de la capture corrigé.
+- Mesures (Lighthouse 12, mobile simulé, build de production servi en local, 20 novembre 2026) : images de `/produits/studio` 117 → 41 Ko, poids total 615 → 540 Ko ; accueil, images 46 → 25 Ko, poids 565 → 546 Ko ; accessibilité de l'accueil sur ordinateur 95 → 100. Le score de performance mobile reste entre 65 et 75 (LCP vers 4,5 s, très variable sur la machine de mesure) : il dépend du **JavaScript d'entrée** (environ 350 Ko compressés), hors vitrine.
+- **Le gain suivant n'est pas dans la vitrine** : le fournisseur de données (`src/lib/data/provider.tsx`) importe la démonstration complète (`src/lib/demo`, environ 200 Ko non compressés, plus le jeu de données et `@selio/ai`), et `src/router.tsx` importe statiquement les mises en page de l'application et de Selio Admin. Les charger à la demande allégerait chaque page de la vitrine d'environ un quart de son JavaScript (mesure par carte des sources : environ 330 Ko sur 1 140 Ko non compressés).
 
 ## Mention d'indépendance
 
@@ -131,7 +182,7 @@ Tant que `COMPARISON_READY` vaut `false` : bandeau « Page en préparation », `
 
 ```bash
 pnpm --filter @selio/web typecheck
-pnpm --filter @selio/web test            # seo.test.ts, pages/vitrine-pages.test.tsx
+pnpm --filter @selio/web test            # seo.test.ts, pages/vitrine-pages.test.tsx, pages/landing-pages.test.tsx, consent.test.tsx
 pnpm build:web
 cd apps/web && PLAYWRIGHT_CHROMIUM_PATH=/opt/pw-browsers/chromium npx playwright test e2e/marketing.spec.ts --reporter=line
 ```
