@@ -50,6 +50,13 @@ services:
     # seccomp adapté (voir docs/CLOUD.md §7) : sans lui, le worker désactive le Cloud au démarrage.
     stop_grace_period: 150s
     init: true
+    # Bac à sable de Chromium : profil seccomp de Docker + espaces de noms utilisateur, aucun privilège ajouté.
+    security_opt:
+      - seccomp=./chromium-seccomp.json
+    # Mémoire partagée de Chromium, et dossier de travail des navigateurs en mémoire vive (rien sur le disque).
+    shm_size: "1gb"
+    tmpfs:
+      - /var/lib/selio-cloud:size=2g,uid=1000,gid=1000,mode=0700
     env_file: [.env]
     environment:
       DATABASE_URL: postgres://selio_app:${APP_DB_PASSWORD}@postgres:5432/selio
