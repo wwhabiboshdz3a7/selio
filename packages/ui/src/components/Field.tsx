@@ -110,7 +110,8 @@ export interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement
 export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Checkbox({ label, className, ...rest }, ref) {
   return (
     <label className={cn("tap-target inline-flex cursor-pointer items-center gap-2 text-base text-text", className)}>
-      <input ref={ref} type="checkbox" className="size-4 shrink-0 cursor-pointer rounded-sm border border-border-strong accent-[var(--accent-vivid)]" {...rest} />
+      {/* Au-dessus de la zone tactile élargie (tap-target) des cases voisines : le clic arrive à la case elle-même. */}
+      <input ref={ref} type="checkbox" className="relative z-[1] size-4 shrink-0 cursor-pointer rounded-sm border border-border-strong accent-[var(--accent-vivid)]" {...rest} />
       {label}
     </label>
   );

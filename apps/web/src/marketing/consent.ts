@@ -66,7 +66,7 @@ export function trackingConfig(env: Record<string, unknown>): TrackingConfig {
 }
 
 /** Configuration du site, figée au build. */
-export const TRACKING: TrackingConfig = trackingConfig(import.meta.env as Record<string, unknown>);
+export const TRACKING: TrackingConfig = trackingConfig((import.meta.env ?? {}) as Record<string, unknown>);
 
 /** Les catégories réellement utilisées par la configuration (vide : aucun bandeau). */
 export function categoriesInUse(cfg: TrackingConfig): ConsentCategory[] {

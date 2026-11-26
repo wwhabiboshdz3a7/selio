@@ -14,7 +14,12 @@ export function ConsentBanner({ config = TRACKING }: { config?: TrackingConfig }
   const consent = useSyncExternalStore(subscribeConsent, getConsent, () => null);
   const categories = categoriesInUse(config);
   const [prefsOpen, setPrefsOpen] = useState(false);
-  useEffect(() => onOpenConsentPreferences(() => setPrefsOpen(true)), []);
+  useEffect(() => {
+    const unsubscribe = onOpenConsentPreferences(() => setPrefsOpen(true));
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const all = (value: boolean) => saveConsent({ mesure: value && categories.includes("mesure"), publicite: value && categories.includes("publicite") });
   const showBanner = categories.length > 0 && consent === null && !prefsOpen;
@@ -23,14 +28,16 @@ export function ConsentBanner({ config = TRACKING }: { config?: TrackingConfig }
     <>
       {showBanner ? (
         <section role="region" aria-labelledby="consentement-titre" data-testid="consent-banner" className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-6 md:pb-6">
-          <div className="mx-auto max-w-3xl rounded-xl border border-border bg-surface p-4 shadow-lg md:p-5">
-            <h2 id="consentement-titre" className="text-base font-semibold text-text">Cookies : à vous de choisir</h2>
-            <p className="mt-1 text-sm text-text-muted">
+          <div className="mx-auto max-w-3xl rounded-xl border border-border bg-surface p-3.5 shadow-lg md:p-5">
+            <div className="flex items-center justify-between gap-3">
+              <h2 id="consentement-titre" className="text-sm font-semibold text-text md:text-base">Cookies : à vous de choisir</h2>
+              <Button variant="ghost" size="sm" className="-my-1 shrink-0 px-2" onClick={() => setPrefsOpen(true)}>Personnaliser</Button>
+            </div>
+            <p className="mt-1 text-xs text-text-muted md:text-sm">
               Avec votre accord, nous mesurons la fréquentation et l'efficacité de nos publicités ({categories.map((c) => CATEGORY_LABELS[c].title.toLowerCase()).join(", ")}). Sans accord, rien n'est chargé et le site fonctionne de la même façon.{" "}
               <Link to="/confidentialite#cookies" className="font-medium text-accent underline-offset-2 hover:underline">En savoir plus</Link>
             </p>
-            <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
-              <Button variant="ghost" size="sm" className="col-span-2 sm:order-first sm:mr-auto" onClick={() => setPrefsOpen(true)}>Personnaliser</Button>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:justify-end">
               <Button variant="secondary" size="sm" onClick={() => all(false)}>Tout refuser</Button>
               <Button variant="secondary" size="sm" onClick={() => all(true)}>Tout accepter</Button>
             </div>

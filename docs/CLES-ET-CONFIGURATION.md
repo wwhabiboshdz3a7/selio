@@ -12,6 +12,7 @@ _Version du 8 novembre 2026_
 - **Parrainage** : fermé par défaut (`REFERRAL_ENABLED=false`, section 15), à ouvrir sur décision d'Ibrahim.
 - **Supervision** : alertes sur le téléphone des opérateurs quand l'API ou l'IA ne répondent plus (section 16), avec les clés VAPID de la section 11.
 - **Extension sur le Chrome Web Store** : aucune clé ; deux variables au moment de construire le paquet (section 17). Compte développeur (5 $) à valider par Ibrahim.
+- **Publicité (Google Ads, Google Analytics, Meta)** : rien n'est chargé tant qu'aucun identifiant n'est saisi (section 18), et jamais sans l'accord du visiteur.
 - Ce dont vous n'avez **pas** besoin : voir la section « Inutile ».
 - **Activer une fonction en production, pas à pas** (emails, paiement, parrainage, notifications, opérateurs, offres, photos, sauvegardes, mise à jour, domaine, interrupteurs fermés) : [TUTORIELS.md](TUTORIELS.md).
 
@@ -298,6 +299,20 @@ Rien à mettre sur un serveur : deux variables **au moment de construire le paqu
 | `VITE_DEFAULT_API_BASE_URL` | Recommandé pour la publication | `https://api.votre-domaine.fr` | Adresse d'API proposée par défaut dans les options de l'extension (sinon `http://127.0.0.1:8787`, signalé par le paquet). |
 | `EXTENSION_API_ORIGIN` | Recommandé pour la publication | `https://api.votre-domaine.fr` (origine HTTPS, sans chemin) | Réduit l'autorisation facultative de la version publiée à cette seule origine (sinon `https://*/*`, examen approfondi probable). |
 | `EXTENSION_ALLOW_LOCAL_API` | Tests seulement | `true` | Garde les origines `http://` locales dans le paquet ; le contrôle le refuse alors : jamais pour une publication. |
+
+## 18. Publicité (Google Ads, Google Analytics 4, pixel Meta)
+
+Identifiants **publics**, à saisir dans Netlify (comme la section 1), **vides par défaut** : sans eux, aucun bandeau de cookies, aucun script de Google ni de Meta, aucun appel réseau. Avec eux, les scripts ne se chargent qu'**après l'accord du visiteur** (bandeau « Tout refuser / Personnaliser / Tout accepter », choix gardé six mois). Détails : [VITRINE.md](VITRINE.md), « Publicité ».
+
+| Variable | Statut | Exemple / format | À quoi elle sert |
+|---|---|---|---|
+| `VITE_GOOGLE_ADS_ID` | Facultatif | `AW-123456789` | Google Ads : conversions des campagnes (catégorie « Publicité »). |
+| `VITE_GOOGLE_ADS_SIGNUP_LABEL` | Facultatif | étiquette de conversion, ex. `AbCdEf123` | Conversion « inscription réussie » (compte réel, jamais la démonstration). |
+| `VITE_GOOGLE_ADS_TRIAL_LABEL` | Facultatif | étiquette de conversion | Conversion « clic sur l'essai » (tout lien vers `/inscription`). |
+| `VITE_GA4_ID` | Facultatif | `G-XXXXXXXXXX` | Google Analytics 4 : pages vues de la vitrine (catégorie « Mesure d'audience »). |
+| `VITE_META_PIXEL_ID` | Facultatif | `123456789012345` | Pixel Meta : `PageView`, `CompleteRegistration`, `ClicEssai` (catégorie « Publicité »). |
+
+Une valeur mal formée est ignorée (rien n'est chargé). **En même temps** que le premier identifiant : remplacer la ligne `Content-Security-Policy` de `netlify.toml` (et de `deploy/netlify/_headers`) par celle, prête, qui est en commentaire juste en dessous ; le build prévient si elle manque. Dans Google Analytics, désactiver « Pages vues selon l'historique du navigateur » (mesure améliorée) : la vitrine envoie elle-même ses pages vues, et l'application ne doit pas être mesurée.
 
 ## Réglages faits dans l'application (pas des clés)
 

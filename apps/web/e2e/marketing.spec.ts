@@ -2,7 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 import { isMobile } from "./helpers";
 import { MANAGER_FEATURES, PRODUCTS, PRODUCT_PAGES } from "../src/marketing/products";
 import { ELIAS_PLACEHOLDER } from "../src/marketing/comparison";
-import { COMPARISON_READY, INDEPENDENCE_NOTICE, SEO_PAGES, findForbiddenClaims } from "../src/marketing/seo";
+import { COMPARISON_READY, INDEPENDENCE_NOTICE, SEO_PAGES, SITE_ORIGIN, findForbiddenClaims } from "../src/marketing/seo";
+import { LANDINGS, landingFaq, landingProduct } from "../src/marketing/landings";
 
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1);
 
@@ -119,7 +120,8 @@ test.describe("vitrine", () => {
 
     await page.getByLabel("Rechercher dans l'aide").fill("supprimer mes données");
     await expect(page.getByText(/réponses? pour « supprimer mes données »/)).toBeVisible();
-    await expect(page.locator("details").first()).toHaveAttribute("id", "supprimer-organisation");
+    // Les objections (« Avant de commencer », .mk-faq) restent en tête ; la recherche filtre la FAQ complète.
+    await expect(page.locator("details:not(.mk-faq)").first()).toHaveAttribute("id", "supprimer-organisation");
 
     await page.getByLabel("Votre question").fill("Combien de temps dure l'essai gratuit ?");
     await page.getByRole("button", { name: "Demander" }).click();
@@ -244,6 +246,57 @@ test.describe("vitrine", () => {
       const text = await page.locator("body").innerText();
       expect(findForbiddenClaims(text), p.path).toEqual([]);
     }
+  });
+
+  test("pages d'atterrissage publicitaires : mot-clé, état réel, essai, preuves, FAQ, référencement, pages légales", async ({ page }) => {
+    for (const landing of LANDINGS) {
+      const product = landingProduct(landing);
+      const seo = SEO_PAGES.find((p) => p.path === landing.path)!;
+      await page.goto(`${landing.path}?gclid=test&utm_source=google`);
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText(landing.title);
+      await expect(page.getByTestId("landing-state")).toContainText(product.state.label);
+      const cta = page.getByRole("main").getByRole("link", { name: "Commencer l'essai gratuit de 14 jours" });
+      await expect(cta).toHaveAttribute("href", "/inscription");
+      await expect(cta).toBeInViewport();
+      await expect(page.getByTestId("landing-proofs").getByRole("heading", { level: 3 })).toHaveText(landing.proofs);
+      for (const q of landingFaq(landing)) await expect(page.getByText(q.question, { exact: true })).toBeVisible();
+      await expect(page.locator('a[href^="/demo"]')).toHaveCount(0);
+      // Adresse canonique propre (sans paramètres de campagne), indexation selon la page, aperçu de partage.
+      expect(await page.locator('link[rel="canonical"]').getAttribute("href")).toBe(`${SITE_ORIGIN}${landing.path}`);
+      expect(await page.locator('meta[name="robots"]').getAttribute("content")).toBe(seo.indexable ? "index, follow" : "noindex, follow");
+      expect(await page.locator('meta[property="og:image"]').getAttribute("content")).toBe(`${SITE_ORIGIN}${seo.ogImage}`);
+      const types = (await page.locator('script[type="application/ld+json"][data-selio-jsonld]').allTextContents()).flatMap((t) => [JSON.parse(t)].flat()).map((d: { "@type": string }) => d["@type"]);
+      expect(types).toEqual(["SoftwareApplication", "BreadcrumbList", "FAQPage"]);
+      // Exigence Google Ads : les pages légales sont accessibles depuis la page.
+      const footer = page.getByRole("contentinfo");
+      for (const [href, name] of [["/mentions-legales", "Mentions légales"], ["/confidentialite", "Confidentialité"], ["/conditions", "Conditions d'utilisation"]] as const) await expect(footer.getByRole("link", { name, exact: true })).toHaveAttribute("href", href);
+      expect(findForbiddenClaims(await page.locator("body").innerText()), landing.path).toEqual([]);
+      expect(await noOverflow(page)).toBe(true);
+    }
+    // Les pages indexables sont au sitemap ; les doublons n'y sont pas.
+    const sitemap = await (await page.request.get("/sitemap.xml")).text();
+    for (const landing of LANDINGS) {
+      const indexable = SEO_PAGES.find((p) => p.path === landing.path)!.indexable;
+      expect(sitemap.includes(`${landing.path}</loc>`), landing.path).toBe(indexable);
+    }
+  });
+
+  test("cookies : sans identifiant configuré, aucun bandeau et aucun appel à Google ni à Meta ; préférences accessibles", async ({ page }) => {
+    const trackers: string[] = [];
+    page.on("request", (r) => {
+      if (/googletagmanager|google-analytics|doubleclick|googleadservices|facebook\.(net|com)/.test(r.url())) trackers.push(r.url());
+    });
+    for (const path of ["/", "/logiciel-vinted", "/tarifs", "/inscription"]) {
+      await page.goto(path);
+      await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+      await expect(page.getByTestId("consent-banner")).toHaveCount(0);
+    }
+    expect(trackers).toEqual([]);
+    expect(await page.evaluate(() => typeof (window as { gtag?: unknown }).gtag + typeof (window as { fbq?: unknown }).fbq)).toBe("undefinedundefined");
+    await page.goto("/confidentialite");
+    await expect(page.locator("#cookies")).toContainText("Aucun outil de mesure d'audience ni de publicité n'est activé");
+    await page.getByRole("contentinfo").getByRole("button", { name: "Cookies" }).click();
+    await expect(page.getByTestId("consent-none")).toBeVisible();
   });
 
   test("mode sombre et mobile : bascule sans débordement", async ({ page }) => {
