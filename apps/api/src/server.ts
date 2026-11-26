@@ -11,7 +11,7 @@ import { createPaymentProvider, loadPaymentConfig } from "@selio/connectors";
 import { effectivePaymentMode } from "@selio/contracts";
 import { createEmailProvider, loadEmailConfig, type EmailLogger } from "@selio/email";
 import { createStorageClient, loadStorageConfig } from "@selio/storage";
-import { cloudServicesConfig, operatorsConfig, radarServicesConfig, referralServicesConfig, startupNotices, studioServicesConfig, trackServicesConfig, type ApiEnv } from "./config";
+import { allowedOrigins, cloudServicesConfig, operatorsConfig, radarServicesConfig, referralServicesConfig, startupNotices, studioServicesConfig, trackServicesConfig, type ApiEnv } from "./config";
 import { errorHandler } from "./errors";
 import authPlugin from "./plugins/auth";
 import rolesPlugin from "./plugins/roles";
@@ -136,7 +136,8 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   const storage = createStorageClient(loadStorageConfig(env), services.now);
   // Studio : photos envoyées par clé de stockage (`org/<org>/studio-photo/…`) lues par l'API avec une URL signée courte.
   if (storage && !services.studio?.photos) services.studio = { ...services.studio, photos: new StoragePhotoStore(storage) };
-  const origins = env.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean);
+  // CORS_ORIGINS, plus le site Selio Admin (ADMIN_WEB_URL) : même API pour les deux sites.
+  const origins = allowedOrigins(env);
 
   await app.register(helmet, { contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: "same-site" } });
   await app.register(cors, { origin: origins, credentials: true, methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"] });

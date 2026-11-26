@@ -54,7 +54,7 @@ const PAGES: Record<string, { title: string; sections: { id?: string; h: string;
   "/conditions": {
     title: "Conditions d'utilisation",
     sections: [
-      { h: "Objet", p: ["[À compléter : description du service, conditions d'accès, modes démonstration et connecté.]"] },
+      { h: "Objet", p: ["[À compléter : description du service, conditions d'accès, essai gratuit et abonnement.]"] },
       { h: "Indépendance", p: [INDEPENDENCE_NOTICE] },
       { h: "Responsabilités", p: ["L'utilisateur reste responsable de son compte Vinted et du respect des conditions d'utilisation des places de marché sur lesquelles il vend. Selio ne contourne aucune protection technique, ne demande aucun mot de passe Vinted et fait valider les actions importantes (prix, achat).", "Selio ne peut pas garantir qu'un compte ne sera jamais limité ou bloqué par Vinted. [À rédiger avec l'avocat : responsabilité de Selio en cas de blocage, sans clause abusive.]"] },
       { h: "Abonnement", p: ["[À compléter : plans, prix définitifs, facturation, résiliation. Les montants affichés sur la vitrine sont indicatifs.]"] },

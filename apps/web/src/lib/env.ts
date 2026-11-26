@@ -4,6 +4,8 @@ const optionalText = z.string().optional().default("");
 
 const schema = z.object({
   VITE_API_BASE_URL: optionalText,
+  /** Site Selio Admin seulement : adresse du site public (lien « Ouvrir le site Selio », mot de passe oublié). Facultatif. */
+  VITE_PUBLIC_SITE_URL: optionalText,
   VITE_SHOW_INDICATIVE_PRICING: z.enum(["true", "false"]).optional().default("true"),
   VITE_INVOICE_ISSUER_NAME: optionalText,
   VITE_INVOICE_ISSUER_ADDRESS: optionalText,
@@ -15,6 +17,7 @@ const schema = z.object({
 /** Configuration publique validée au démarrage (jamais de secret ici). */
 export const env = schema.parse({
   VITE_API_BASE_URL: import.meta.env.VITE_API_BASE_URL,
+  VITE_PUBLIC_SITE_URL: import.meta.env.VITE_PUBLIC_SITE_URL,
   VITE_SHOW_INDICATIVE_PRICING: import.meta.env.VITE_SHOW_INDICATIVE_PRICING,
   VITE_INVOICE_ISSUER_NAME: import.meta.env.VITE_INVOICE_ISSUER_NAME,
   VITE_INVOICE_ISSUER_ADDRESS: import.meta.env.VITE_INVOICE_ISSUER_ADDRESS,
@@ -24,6 +27,8 @@ export const env = schema.parse({
 });
 
 export const apiBaseUrl = env.VITE_API_BASE_URL.replace(/\/+$/, "");
+/** Adresse du site public, vue du site Selio Admin (vide : aucun lien vers lui). */
+export const publicSiteUrl = /^https?:\/\//.test(env.VITE_PUBLIC_SITE_URL.trim()) ? env.VITE_PUBLIC_SITE_URL.trim().replace(/\/+$/, "") : "";
 /** Mode connecté disponible seulement si une API est configurée. */
 export const connectedModeAvailable = apiBaseUrl !== "" || import.meta.env.DEV;
 export const showIndicativePricing = env.VITE_SHOW_INDICATIVE_PRICING === "true";

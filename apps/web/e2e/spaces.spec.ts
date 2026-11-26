@@ -214,7 +214,7 @@ test.describe("Selio et ses filiales", () => {
     await noHorizontalOverflow(page);
   });
 
-  test("Selio Agent : marque blanche en aperçu direct, enregistrée dans la démo ; comptes et accès dans l'administration", async ({ page }) => {
+  test("Selio Agent : marque blanche en aperçu direct, enregistrée dans la démo ; comptes et accès dans les paramètres", async ({ page }) => {
     await openDemo(page, "/agents/marque-blanche");
     await expect(page.getByText("Selio Agent est en aperçu")).toBeVisible();
     await page.getByLabel("Nom de l'agence").fill("Dépôt Lumière");
@@ -233,11 +233,8 @@ test.describe("Selio et ses filiales", () => {
     await expect(page.getByText("Non facturé · aperçu").filter({ visible: true })).toHaveCount(5);
     await gotoApp(page, "/agents");
     await expect(page.getByRole("link", { name: /Gérer dans Paramètres/ })).toHaveAttribute("href", "/app/settings/access");
-    // Comptes et accès : dans Paramètres et dans Opérateur › Administration.
-    await gotoApp(page, "/admin/acces");
-    // Sur téléphone, le menu de Selio Admin est derrière le bouton « Ouvrir le menu ».
-    if (isMobile(page)) await page.getByRole("button", { name: "Ouvrir le menu" }).click();
-    await expect(page.getByRole("navigation", { name: "Sections de l'administration" })).toBeVisible();
+    // Comptes et accès : dans Paramètres (Selio Admin, sur son propre site, a aussi sa page « Accès de l'équipe »).
+    await gotoApp(page, "/app/settings/access");
     await expect(page.getByRole("heading", { name: "Qui peut faire quoi" })).toBeVisible();
   });
 

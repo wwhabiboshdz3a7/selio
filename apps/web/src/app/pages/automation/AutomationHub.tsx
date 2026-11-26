@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { ArrowRight, BellRing, Bot, HandCoins, Heart, MessagesSquare, Package, Printer, Radar, RefreshCw, Sparkles, TrendingUp } from "lucide-react";
 import { PageHeader, StatusBadge, buttonClass, cn } from "@selio/ui";
-import { useRequiredSession } from "../../../lib/data/provider";
+import { useDataMode, useRequiredSession } from "../../../lib/data/provider";
 import { useNavCounts } from "../../layout";
 import { useAutoBuyStatus } from "../../components/radar";
 import { QueryBoundary } from "../../components/common";
@@ -24,6 +24,7 @@ interface Stage {
  * d'articles relèvent de Selio Bot : le parcours y renvoie.
  */
 export default function AutomationHub() {
+  const mode = useDataMode();
   const session = useRequiredSession();
   const s = session.org.settings;
   const a = s.automation;
@@ -103,7 +104,7 @@ export default function AutomationHub() {
           </li>
         ))}
       </ol>
-      <p className="mt-2 flex items-start gap-2 text-xs text-text-muted"><Radar className="mt-0.5 size-3.5 shrink-0" aria-hidden />En démonstration, rien n'est envoyé ni acheté. Avec un compte Vinted, les actions passent par l'extension, navigateur ouvert ; Selio Cloud, intégré à Selio Manager, les fera tourner ordinateur éteint. Les comptes Perso ne sont jamais automatisés.</p>
+      <p className="mt-2 flex items-start gap-2 text-xs text-text-muted"><Radar className="mt-0.5 size-3.5 shrink-0" aria-hidden />{mode === "demo" ? "En démonstration, rien n'est envoyé ni acheté. " : ""}Avec un compte Vinted, les actions passent par l'extension, navigateur ouvert ; Selio Cloud, intégré à Selio Manager, les fera tourner ordinateur éteint. Les comptes Perso ne sont jamais automatisés.</p>
     </>
   );
 }

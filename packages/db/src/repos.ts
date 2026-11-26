@@ -287,6 +287,20 @@ export const offers = {
     const r = await tx.maybeOne("select * from commercial_offers where upper(code) = upper($1)", [code]);
     return r ? toOffer(r) : null;
   },
+  /**
+   * Recherche par forme compacte (lettres et chiffres seulement : « BETA-2026-SELIO » → « BETA2026SELIO »), quand
+   * la recherche exacte échoue. Rend l'offre seulement si UN SEUL code correspond (jamais de choix arbitraire).
+   */
+  async byCompactCode(tx: Tx, compact: string): Promise<CommercialOffer | null> {
+    if (!compact) return null;
+    const rows = await tx.query("select * from commercial_offers where code is not null and regexp_replace(upper(code), '[^A-Z0-9]', '', 'g') = $1 limit 2", [compact]);
+    return rows.length === 1 ? toOffer(rows[0]) : null;
+  },
+  /** Offre « beta » : durée de l'accès (jours). */
+  async setBetaDays(tx: Tx, id: string, days: number, at: string): Promise<CommercialOffer | null> {
+    const r = await tx.maybeOne("update commercial_offers set beta_days = $2, updated_at = $3 where id = $1 and kind = 'beta' returning *", [id, days, at]);
+    return r ? toOffer(r) : null;
+  },
   async create(tx: Tx, input: OfferInput & { createdBy: string | null }): Promise<CommercialOffer> {
     const cols = [...OFFER_COLUMNS.map((k) => OFFER_SQL_COLUMN[k]), "created_by"];
     const values = [...OFFER_COLUMNS.map((k) => input[k]), input.createdBy];
@@ -327,6 +341,77 @@ export const offers = {
       const o = { ...r, plans: r.plans ?? [] };
       return { id: o.id, name: o.name, bannerText: offerBannerText(o), code: o.code, discountPercent: o.discountPercent, discountCents: o.discountCents, plans: o.plans, durationMonths: o.durationMonths, endsAt: o.endsAt };
     });
+  },
+};
+
+/** Accès bêta d'une organisation (migration 0024, RLS : app.org_id doit valoir l'organisation). */
+export interface BetaAccessRecord {
+  orgId: string;
+  offerId: string | null;
+  code: string | null;
+  plan: string;
+  days: number;
+  startedAt: string;
+  invoiceId: string | null;
+  welcomeSeenAt: string | null;
+  reminder7For: string | null;
+  reminder1For: string | null;
+  endedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const toBetaAccess = (r: Record<string, unknown>): BetaAccessRecord => ({
+  orgId: String(r.orgId),
+  offerId: (r.offerId as string | null) ?? null,
+  code: (r.code as string | null) ?? null,
+  plan: String(r.plan ?? "pro"),
+  days: Number(r.days),
+  startedAt: new Date(r.startedAt as string).toISOString(),
+  invoiceId: (r.invoiceId as string | null) ?? null,
+  welcomeSeenAt: r.welcomeSeenAt ? new Date(r.welcomeSeenAt as string).toISOString() : null,
+  reminder7For: r.reminder7For ? new Date(r.reminder7For as string).toISOString() : null,
+  reminder1For: r.reminder1For ? new Date(r.reminder1For as string).toISOString() : null,
+  endedAt: r.endedAt ? new Date(r.endedAt as string).toISOString() : null,
+  createdAt: new Date(r.createdAt as string).toISOString(),
+  updatedAt: new Date(r.updatedAt as string).toISOString(),
+});
+
+/**
+ * Accès bêta (une ligne par organisation au plus : « une seule fois par compte »). `blockedSince` est la règle du
+ * blocage, la même pour l'API (402 `beta_ended`), la session et Selio Admin : mois de bêta terminé (`ended_at`)
+ * ET abonnement toujours en attente d'un paiement (ni essai, ni actif, ni en relance). Une prolongation d'essai,
+ * un accès offert ou un paiement effacent l'attente et débloquent sans toucher à cette table.
+ */
+export const betaAccesses = {
+  async get(tx: Tx, orgId: string): Promise<BetaAccessRecord | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>("select * from beta_accesses where org_id = $1", [orgId]);
+    return r ? toBetaAccess(r) : null;
+  },
+  /** Ouverture : null si l'organisation a déjà eu un accès bêta (rien n'est remplacé). */
+  async create(tx: Tx, input: { orgId: string; offerId: string; code: string | null; plan: string; days: number; startedAt: string }): Promise<BetaAccessRecord | null> {
+    const r = await tx.maybeOne<Record<string, unknown>>(
+      "insert into beta_accesses (org_id, offer_id, code, plan, days, started_at) values ($1, $2, $3, $4, $5, $6) on conflict (org_id) do nothing returning *",
+      [input.orgId, input.offerId, input.code, input.plan, input.days, input.startedAt],
+    );
+    return r ? toBetaAccess(r) : null;
+  },
+  async update(tx: Tx, orgId: string, patch: Partial<Pick<BetaAccessRecord, "invoiceId" | "welcomeSeenAt" | "reminder7For" | "reminder1For" | "endedAt">>): Promise<BetaAccessRecord | null> {
+    const cols: Record<string, string> = { invoiceId: "invoice_id", welcomeSeenAt: "welcome_seen_at", reminder7For: "reminder7_for", reminder1For: "reminder1_for", endedAt: "ended_at" };
+    const keys = Object.keys(patch).filter((k) => k in cols && (patch as Record<string, unknown>)[k] !== undefined);
+    const sets = keys.map((k, i) => `${cols[k]} = $${i + 2}`);
+    sets.push("updated_at = now()");
+    const r = await tx.maybeOne<Record<string, unknown>>(`update beta_accesses set ${sets.join(", ")} where org_id = $1 returning *`, [orgId, ...keys.map((k) => (patch as Record<string, unknown>)[k])]);
+    return r ? toBetaAccess(r) : null;
+  },
+  /** Bloqué depuis (fin du mois de bêta sans moyen de paiement), ou null : une seule requête, utilisée par l'API à chaque action. */
+  async blockedSince(tx: Tx, orgId: string): Promise<string | null> {
+    const r = await tx.maybeOne<{ endedAt: string }>(
+      `select b.ended_at from beta_accesses b join subscriptions s on s.org_id = b.org_id
+       where b.org_id = $1 and b.ended_at is not null and s.awaiting_payment_since is not null and s.status not in ('trialing', 'active', 'past_due')`,
+      [orgId],
+    );
+    return r ? new Date(r.endedAt).toISOString() : null;
   },
 };
 
@@ -2313,6 +2398,11 @@ export interface AdminAccountRecord {
   ownerEmail: string | null;
   /** Essai terminé en paiement simulé : accès de base « en attente du paiement » depuis cette date (0023). */
   awaitingPaymentSince: string | null;
+  /** Forfait retenu sans carte sur la page de paiement (paiement simulé), 0024. */
+  simulatedCheckoutAt?: string | null;
+  /** Accès bêta : ouverture et fin du mois sans moyen de paiement (0024). */
+  betaStartedAt?: string | null;
+  betaEndedAt?: string | null;
 }
 
 /**
@@ -2323,7 +2413,7 @@ export interface AdminAccountRecord {
 export const adminAccounts = {
   async list(tx: Tx): Promise<AdminAccountRecord[]> {
     const rows = await tx.query<AdminAccountRecord>("select * from app_admin_accounts()");
-    return rows.map((r) => ({ ...r, members: Number(r.members ?? 0), cardOnFile: r.cardOnFile === true, cancelAtPeriodEnd: r.cancelAtPeriodEnd === true, awaitingPaymentSince: r.awaitingPaymentSince ?? null }));
+    return rows.map((r) => ({ ...r, members: Number(r.members ?? 0), cardOnFile: r.cardOnFile === true, cancelAtPeriodEnd: r.cancelAtPeriodEnd === true, awaitingPaymentSince: r.awaitingPaymentSince ?? null, simulatedCheckoutAt: r.simulatedCheckoutAt ?? null, betaStartedAt: r.betaStartedAt ?? null, betaEndedAt: r.betaEndedAt ?? null }));
   },
   /** Email, ancien drapeau d'opérateur et qualification du compte : une seule requête par requête HTTP. */
   async accessInfo(tx: Tx, userId: string, orgId: string): Promise<{ email: string; isOperator: boolean; qualification: string } | null> {

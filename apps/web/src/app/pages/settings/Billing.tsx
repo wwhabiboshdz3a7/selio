@@ -6,7 +6,7 @@ import { CHARGE_RETRY_DELAYS_DAYS, DATA_RETENTION_DAYS_AFTER_END, PLAN_LABELS, S
 import { can } from "@selio/domain";
 import { Alert, Button, Card, ConfirmDialog, DescriptionList, Segmented, StatusBadge, Tag, buttonClass, formatCents, formatDate } from "@selio/ui";
 import { PLAN_OFFERS, TRIAL_OFFER, planOffer } from "@selio/demo-data";
-import { useClient, useData, useRequiredSession } from "../../../lib/data/provider";
+import { useClient, useData, useDataMode, useRequiredSession } from "../../../lib/data/provider";
 import type { CheckoutOutcome, UsageSummary } from "../../../lib/data/types";
 import { showIndicativePricing } from "../../../lib/env";
 import { CYCLE_LABELS, FREE_MONTHS, daysLeft, inTrial, isRunning, planPriceCents } from "../../../lib/billing";
@@ -470,6 +470,7 @@ function PromoCard({ redemption, loading, manage }: { redemption: OfferRedemptio
 
 /** Ce que l'offre donne (comptes, équipe, stock) ; les compteurs du mois ont leur page « Utilisation ». */
 function CapacityCard({ u }: { u: UsageSummary }) {
+  const mode = useDataMode();
   return (
     <Card>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -478,7 +479,7 @@ function CapacityCard({ u }: { u: UsageSummary }) {
       </div>
       <p className="text-sm text-text-muted">La part de votre offre déjà prise. À 100 %, l'action concernée est refusée proprement, sans facturation.</p>
       <div className="mt-5 grid gap-x-8 gap-y-5 sm:grid-cols-3">
-        <UsageMeter label="Comptes Vinted" counter={u.counters.connections} hint="Le simulateur de démonstration n'est pas compté." />
+        <UsageMeter label="Comptes Vinted" counter={u.counters.connections} hint={mode === "demo" ? "Le simulateur de démonstration n'est pas compté." : undefined} />
         <UsageMeter label="Équipe" counter={u.counters.members} hint="Personnes ayant accès à l'organisation." />
         <UsageMeter label="Stock actif" counter={u.counters.items} hint="Les articles archivés ne comptent pas." />
       </div>

@@ -5,7 +5,7 @@ import { ImagePlus, Trash2, ArrowLeft } from "lucide-react";
 import { FLOOR_ABOVE_LISTED_MESSAGE, ITEM_CATEGORIES, ITEM_CATEGORY_LABELS, ITEM_CONDITIONS, floorAboveListed, ITEM_CONDITION_LABELS, ITEM_STATUSES, ITEM_STATUS_LABELS, inventoryItemCreate, type InventoryItemCreate, type Photo } from "@selio/contracts";
 import { PRICE_CHECK_LABELS, checkPrice, newId, projectedMargin, suggestFloorPrice } from "@selio/domain";
 import { Alert, Button, Card, Field, IconButton, Input, Money, PageHeader, Select, Textarea, formatPercent } from "@selio/ui";
-import { useClient, useRequiredSession } from "../../lib/data/provider";
+import { useClient, useDataMode, useRequiredSession } from "../../lib/data/provider";
 import { dateInputToIso } from "../../lib/dates";
 import { errorMessage, fieldErrorMessage } from "../../lib/errors";
 import { photoFileProblem, readAsDataUrl } from "../../lib/photo-files";
@@ -31,6 +31,7 @@ function emptyForm(): FormState {
 }
 
 export default function ItemForm() {
+  const dataMode = useDataMode();
   const { id } = useParams();
   const client = useClient();
   const session = useRequiredSession();
@@ -77,7 +78,6 @@ export default function ItemForm() {
   // Le formulaire n'est rempli qu'une fois par article : une relecture (autre onglet, autre écran) n'efface jamais la saisie en cours.
   useEffect(() => {
     if (existing.data && loadedFor.current !== existing.data.id) loadItem(existing.data);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existing.data]);
   const changedElsewhere = editing && !!existing.data && !!openedAt && new Date(existing.data.updatedAt).getTime() !== new Date(openedAt).getTime();
   const rules = session.org.settings.margin;
@@ -159,7 +159,7 @@ export default function ItemForm() {
         </Card>
         <Card>
           <h2 className="mb-1 text-md font-semibold">Photos</h2>
-          <p className="mb-4 text-sm text-text-muted">JPEG, PNG ou WebP, 1,5 Mo maximum, 12 photos au plus. En démonstration, les photos restent dans votre navigateur.</p>
+          <p className="mb-4 text-sm text-text-muted">JPEG, PNG ou WebP, 1,5 Mo maximum, 12 photos au plus.{dataMode === "demo" ? " En démonstration, les photos restent dans votre navigateur." : ""}</p>
           <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
             {form.photos.map((ph, i) => (
               <div key={ph.id} className="group relative aspect-square overflow-hidden rounded-md bg-surface-muted">

@@ -91,7 +91,8 @@ export const adminAccountsQuery = z.object({
   q: z.string().trim().max(120).optional(),
   qualification: orgQualification.optional(),
   plan: z.enum(["free", "starter", "pro", "agence"]).optional(),
-  status: z.enum(["none", "trialing", "active", "past_due", "canceled", "incomplete", "granted"]).optional(),
+  /** « beta » : accès bêta en cours ; « beta_blocked » : mois de bêta terminé sans moyen de paiement. */
+  status: z.enum(["none", "trialing", "active", "past_due", "canceled", "incomplete", "granted", "beta", "beta_blocked"]).optional(),
 });
 export type AdminAccountsQuery = z.infer<typeof adminAccountsQuery>;
 
@@ -114,6 +115,12 @@ export interface AdminAccountRow {
   ownerEmail: string | null;
   /** Essai terminé alors que le paiement n'était pas encore activé (paiement simulé) : depuis cette date. */
   awaitingPaymentSince?: string | null;
+  /** Accès bêta (code BETA2026SELIO) ouvert à cette date ; null : jamais en bêta. */
+  betaStartedAt?: string | null;
+  /** Fin du mois de bêta en cours (essai bêta, prolongé ou accès offert compris) ; null hors bêta en cours. */
+  betaEndsAt?: string | null;
+  /** Mois de bêta terminé sans moyen de paiement : compte bloqué (écran de blocage, actions refusées). */
+  betaBlocked?: boolean;
 }
 
 export interface AdminAccountMember {
@@ -169,4 +176,6 @@ export interface AdminGrowth {
   mrrCents: number;
   payingByPlan: Record<PaidPlan, number>;
   referrals: { pending: number; qualified: number; credited: number; refused: number };
+  /** Bêta : comptes inscrits avec le code, en cours, fin dans 7 jours ou moins, bloqués (absent : ancien serveur). */
+  beta?: { total: number; running: number; endingSoon: number; blocked: number };
 }

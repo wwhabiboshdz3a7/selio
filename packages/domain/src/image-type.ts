@@ -57,7 +57,7 @@ export function photoContentProblem(bytes: Uint8Array, opts: { name?: string } =
 export function dataUrlHead(url: string, maxBytes = FILE_TYPE_SNIFF_BYTES): { declared: string; bytes: Uint8Array } | null {
   const m = /^data:([^;,]+);base64,/.exec(url);
   if (!m) return null;
-  const b64 = url.slice(m[0].length, m[0].length + Math.ceil((maxBytes * 4) / 3) + 4).replace(/[^A-Za-z0-9+/]/g, "");
+  const b64 = url.slice(m[0].length, m[0].length + Math.ceil((maxBytes * 4) / 3) + 4).replace(/[^A-Za-z0-9+/=]/g, "");
   const usable = b64.slice(0, b64.length - (b64.length % 4));
   let bin = "";
   try {

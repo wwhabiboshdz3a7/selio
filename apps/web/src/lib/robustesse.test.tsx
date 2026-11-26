@@ -116,7 +116,7 @@ describe("photo choisie : contrôlée avant toute lecture complète", () => {
     const max = 1_500_000;
     expect(await photoFileProblem(file([], "vide.jpg"), { maxBytes: max })).toMatch(/vide \(0 octet\)/);
     // Fichier de plusieurs Go : refusé sur sa taille, jamais lu (seule la taille est consultée).
-    const huge = { size: 3 * 1024 ** 3, name: "film.jpg", slice: () => { throw new Error("ne doit pas être lu"); } } as unknown as File;
+    const huge = { size: 3_000_000_000, name: "film.jpg", slice: () => { throw new Error("ne doit pas être lu"); } } as unknown as File;
     expect(await photoFileProblem(huge, { maxBytes: max })).toBe(`« film.jpg » est trop lourde (3 Go) : ${formatBytes(max)} au maximum.`);
     expect(await photoFileProblem(file("%PDF-1.7 facture", "facture.jpg"), { maxBytes: max })).toMatch(/document PDF/);
     expect(await photoFileProblem(file([0, 0, 0, 0x18, ...Array.from("ftypheic").map((c) => c.charCodeAt(0)), 0, 0, 0, 0], "IMG_0001.jpg", "image/heic"), { maxBytes: max })).toMatch(/HEIC/);

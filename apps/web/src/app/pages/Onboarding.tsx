@@ -2,16 +2,16 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Check, ChevronRight } from "lucide-react";
 import { Alert, Button, Card, Field, Input, PageHeader, ProgressBar, Select, Toggle, cn, formatNumber } from "@selio/ui";
-import { useClient, useData, useRequiredSession } from "../../lib/data/provider";
+import { useClient, useRequiredSession } from "../../lib/data/provider";
 import { MoneyInput } from "../components/common";
+import { ExtensionInstallGuide } from "../components/extension-setup";
 import { useAppMutation } from "../components/hooks";
 
 const STEPS = [
   { key: "account", title: "Compte et organisation", description: "Nom de l'organisation et de l'utilisateur." },
   { key: "preferences", title: "Préférences", description: "Devise, fuseau horaire, langue." },
-  { key: "mode", title: "Démonstration ou connexion", description: "Choisir le mode de travail." },
   { key: "migration", title: "Vous venez d'un autre outil ?", description: "Reprendre vos réglages (Bleam, Clemz…)." },
-  { key: "extension", title: "Extension navigateur", description: "Créer un jeton et associer l'extension." },
+  { key: "extension", title: "Extension et comptes Vinted", description: "Télécharger, installer, relier, ajouter vos comptes." },
   { key: "ai", title: "Règles IA et marge", description: "Plancher, marge minimale, validation." },
   { key: "checklist", title: "Checklist d'installation", description: "Vérifier que tout est prêt." },
 ] as const;
@@ -19,7 +19,6 @@ const STEPS = [
 export default function Onboarding() {
   const client = useClient();
   const session = useRequiredSession();
-  const { mode } = useData();
   const navigate = useNavigate();
   // Message du serveur sur le code de parrainage saisi à l'inscription (enregistré, ignoré ou refusé).
   const referralMessage = (useLocation().state as { referralMessage?: unknown } | null)?.referralMessage;
@@ -68,12 +67,6 @@ export default function Onboarding() {
               <div><Button onClick={() => saveOrg.mutate()} loading={saveOrg.isPending} iconRight={<ChevronRight />}>Continuer</Button></div>
             </div>
           ) : null}
-          {step.key === "mode" ? (
-            <div className="mt-4 flex flex-col gap-3">
-              <Alert tone={mode === "demo" ? "info" : "success"} title={mode === "demo" ? "Vous êtes en démonstration" : "Vous êtes en mode connecté"}>{mode === "demo" ? "Données fictives persistantes dans votre navigateur, actions externes simulées. Pour passer en mode connecté, déconnectez-vous et choisissez « Compte connecté » (nécessite une API déployée)." : "Vos données sont stockées sur le serveur Selio, isolées par organisation."}</Alert>
-              <div><Button onClick={() => complete.mutate(step.key)} loading={complete.isPending} iconRight={<ChevronRight />}>Continuer</Button></div>
-            </div>
-          ) : null}
           {step.key === "migration" ? (
             <div className="mt-4 flex flex-col gap-3 text-sm">
               <p className="text-text-muted">Vous utilisiez Bleam, Clemz ou un autre outil ? Collez vos réglages, ajoutez des captures d'écran ou importez le fichier obtenu au titre de la portabilité RGPD : mon IA perso propose la correspondance, vous validez champ par champ.</p>
@@ -85,14 +78,10 @@ export default function Onboarding() {
             </div>
           ) : null}
           {step.key === "extension" ? (
-            <div className="mt-4 flex flex-col gap-3 text-sm">
-              <ol className="list-decimal pl-5 text-text-muted">
-                <li>Installez l'extension (installation non empaquetée, voir docs/EXTENSION-INSTALL.md).</li>
-                <li>Créez un jeton d'extension dans <Link to="/app/accounts" className="text-text underline underline-offset-2">Comptes Vinted › Avancé</Link>.</li>
-                <li>Collez le jeton dans la page Options de l'extension, puis lancez le diagnostic.</li>
-              </ol>
-              <p className="text-xs text-text-muted">Le jeton est limité, révocable et renouvelable. Aucun mot de passe Vinted n'est demandé.</p>
-              <div className="flex gap-2"><Link to="/app/accounts"><Button variant="secondary">Ouvrir les comptes Vinted</Button></Link><Button onClick={() => complete.mutate(step.key)} loading={complete.isPending} iconRight={<ChevronRight />}>Continuer</Button></div>
+            <div className="mt-4 flex flex-col gap-4">
+              <p className="text-sm text-text-muted">L'extension relie Selio à Vinted, dans votre navigateur, sans jamais vous demander votre mot de passe Vinted. Comptez cinq minutes.</p>
+              <ExtensionInstallGuide />
+              <div className="flex flex-wrap gap-2 border-t border-border pt-4"><Button onClick={() => complete.mutate(step.key)} loading={complete.isPending} iconRight={<ChevronRight />}>{completed.has(step.key) ? "Continuer" : "C'est fait, continuer"}</Button></div>
             </div>
           ) : null}
           {step.key === "ai" ? (

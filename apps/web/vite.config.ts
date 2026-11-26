@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv, type Plugin } from "vite";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
@@ -69,16 +70,75 @@ function checkTrackingCsp(mode: string): Plugin {
   };
 }
 
+type AppTarget = "public" | "admin";
+
+/**
+ * Cible du build (VITE_APP_TARGET, variable du projet Netlify) : « public » par défaut (vitrine et application
+ * des clients, sans Selio Admin) ou « admin » (Selio Admin seul, sur son propre site non indexé). Les deux sites
+ * parlent à la même API ; le code de l'autre cible n'entre pas dans le bundle (constante __SELIO_TARGET__).
+ */
+function appTarget(mode: string): AppTarget {
+  // « vite build --mode admin » (tests de bout en bout du site Selio Admin) vaut VITE_APP_TARGET=admin.
+  const raw = (loadEnv(mode, process.cwd(), "VITE_").VITE_APP_TARGET ?? "").trim() || (mode === "admin" ? "admin" : "public");
+  if (raw !== "public" && raw !== "admin") throw new Error(`VITE_APP_TARGET inconnu : « ${raw} » (valeurs possibles : public, admin).`);
+  return raw;
+}
+
+/** Démonstration seulement sans API (développement, tests, vidéos) : en production, son code n'est pas livré. */
+function demoBuild(mode: string): boolean {
+  return (loadEnv(mode, process.cwd(), "VITE_").VITE_API_BASE_URL ?? "").trim() === "";
+}
+
+const ADMIN_ROBOTS = "# Selio Admin : site interne, rien à indexer.\nUser-agent: *\nDisallow: /\n";
+const ADMIN_HEADERS = "# Selio Admin : en-têtes ajoutés à ceux de netlify.toml (jamais indexé).\n/*\n  X-Robots-Tag: noindex, nofollow\n";
+
+/**
+ * Site Selio Admin (VITE_APP_TARGET=admin) : page d'entrée propre (src/admin-site/main.tsx), titre « Selio Admin »,
+ * `noindex, nofollow`, aucune balise de partage ni donnée structurée ; au build, robots.txt « Disallow: / »,
+ * fichier _headers (X-Robots-Tag) pour Netlify, et ni sitemap, ni images de partage, ni manifeste PWA.
+ */
+function adminSite(demo: boolean): Plugin {
+  let outDir = "";
+  return {
+    name: "selio-admin-site",
+    configResolved(config) {
+      outDir = resolve(config.root, config.build.outDir);
+    },
+    transformIndexHtml: {
+      order: "pre",
+      handler(html) {
+        return html
+          .replace(/<title>[^<]*<\/title>/, "<title>Selio Admin</title>")
+          .replace(/\s*<!--[\s\S]*?-->/g, "")
+          .replace(/\s*<script type="application\/ld\+json">[\s\S]*?<\/script>/g, "")
+          .replace(/\s*<meta (?:property="og:[^"]*"|name="(?:twitter:[^"]*|description|application-name|apple-mobile-web-app-title|mobile-web-app-capable|apple-mobile-web-app-status-bar-style)")[^>]*>/g, "")
+          .replace("</head>", '  <meta name="robots" content="noindex, nofollow" />\n  </head>')
+          .replace('src="/src/main.tsx"', 'src="/src/admin-site/main.tsx"');
+      },
+    },
+    writeBundle() {
+      writeFileSync(join(outDir, "robots.txt"), ADMIN_ROBOTS);
+      writeFileSync(join(outDir, "_headers"), ADMIN_HEADERS);
+      const drop = ["sitemap.xml", "og", "push-handler.js", ...(demo ? [] : ["demo"])];
+      for (const f of drop) if (existsSync(join(outDir, f))) rmSync(join(outDir, f), { recursive: true, force: true });
+    },
+  };
+}
+
 // Vitrine + application Selio : SPA Vite, déployée en statique (Netlify).
 // Aucun secret ici : seules les variables VITE_* publiques sont exposées.
-export default defineConfig(({ mode }) => ({
-  define: { __SELIO_BUILD__: JSON.stringify(buildId()) },
+export default defineConfig(({ mode }) => {
+  const target = appTarget(mode);
+  const demo = demoBuild(mode);
+  return {
+  define: { __SELIO_BUILD__: JSON.stringify(buildId()), __SELIO_TARGET__: JSON.stringify(target), __SELIO_DEMO__: JSON.stringify(demo) },
   plugins: [
     react(),
     tailwindcss(),
     preloadFonts(),
     checkTrackingCsp(mode),
-    VitePWA({
+    // Site Selio Admin : aucune application installable (ni manifeste ni service worker), en-têtes et robots propres.
+    ...(target === "admin" ? [adminSite(demo)] : [VitePWA({
       // Mise à jour automatique : une nouvelle version publiée remplace immédiatement l'ancienne
       // (avec « prompt » sans interface, un navigateur pouvait rester bloqué sur une version périmée).
       registerType: "autoUpdate",
@@ -124,7 +184,7 @@ export default defineConfig(({ mode }) => ({
           },
         ],
       },
-    }),
+    })]),
   ],
   resolve: {
     alias: {
@@ -150,4 +210,5 @@ export default defineConfig(({ mode }) => ({
   server: {
     proxy: { "/api": { target: process.env.VITE_DEV_API_PROXY ?? "http://127.0.0.1:8787", changeOrigin: true } },
   },
-}));
+  };
+});

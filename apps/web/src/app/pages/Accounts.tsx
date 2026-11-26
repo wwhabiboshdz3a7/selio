@@ -1,13 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Copy, Ellipsis, KeyRound, Pencil, Plus, RefreshCw, ShieldCheck, ShoppingBag, Store, Trash2, Unplug, UserRound } from "lucide-react";
+import { ChevronDown, Copy, Ellipsis, KeyRound, Pencil, Plus, Puzzle, RefreshCw, ShieldCheck, ShoppingBag, Store, Trash2, Unplug, UserRound } from "lucide-react";
 import { CAPABILITY_LABELS, CONNECTION_USAGE_DESCRIPTIONS, CONNECTION_USAGE_LABELS, CONNECTION_USAGES, type Capability, type ConnectionUsage, type ExtensionToken, type MarketplaceConnection } from "@selio/contracts";
 import { can, countByUsage, resolvePurchaseAccount, type AccountStats } from "@selio/domain";
 import { Alert, Avatar, Button, ConfirmDialog, Dialog, EmptyState, Field, IconButton, Input, Menu, PageHeader, Segmented, StatusBadge, Table, TableWrap, Tabs, Tag, Td, Th, Tr, cn, formatCents, formatDateTime, formatRelative, useToast } from "@selio/ui";
 import { useClient, useData, useRequiredSession } from "../../lib/data/provider";
 import { ConnectorStatusBadge, QueryBoundary } from "../components/common";
 import { useAppMutation } from "../components/hooks";
+import { ExtensionInstallGuide } from "../components/extension-setup";
 
 type Filter = ConnectionUsage | "all";
 
@@ -28,6 +29,7 @@ const handleOf = (c: MarketplaceConnection): string | null => (typeof c.config.d
 
 export default function Accounts() {
   const client = useClient();
+  const { mode } = useData();
   const session = useRequiredSession();
   const [params, setParams] = useSearchParams();
   const filter = fromSlug(params.get("categorie"));
@@ -70,6 +72,8 @@ export default function Accounts() {
         <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
         <span>Vinted ne propose pas de connexion officielle pour les outils tiers : Selio passe par son extension, dans le navigateur où vous êtes déjà connecté à Vinted, sans jamais demander ni stocker votre mot de passe.</span>
       </p>
+
+      {connections.data ? <InstallGuideSection firstTime={!connections.data.some((c) => c.provider === "vinted" && c.status === "connected")} /> : null}
 
       <Tabs
         ariaLabel="Catégories de comptes"
@@ -117,7 +121,7 @@ export default function Accounts() {
         )}
       </QueryBoundary>
 
-      {quota ? <p className="num mt-6 text-xs text-text-muted">{quota.used} compte{quota.used > 1 ? "s" : ""} Vinted sur {quota.max} inclus dans votre abonnement · <Link to="/app/settings/billing" className="underline-offset-2 hover:text-text hover:underline">voir l'abonnement</Link>. Le simulateur de démonstration n'est pas compté.</p> : null}
+      {quota ? <p className="num mt-6 text-xs text-text-muted">{quota.used} compte{quota.used > 1 ? "s" : ""} Vinted sur {quota.max} inclus dans votre abonnement · <Link to="/app/settings/billing" className="underline-offset-2 hover:text-text hover:underline">voir l'abonnement</Link>.{mode === "demo" ? " Le simulateur de démonstration n'est pas compté." : ""}</p> : null}
       {manage && connections.data && !connections.data.some((c) => c.provider === "demo") ? <SimulatorShortcut /> : null}
 
       <ExtensionLink />
@@ -184,7 +188,7 @@ function AccountCard({ account: c, stats, manage, usedByAutoBuy }: { account: Ma
 
       <div className="flex flex-col gap-1 text-xs text-text-muted">
         <p className="num">Dernière synchro : {c.lastSyncAt ? formatRelative(c.lastSyncAt) : "jamais"} · dernier test : {c.lastTestAt ? formatRelative(c.lastTestAt) : "jamais"}</p>
-        {c.status === "ready" ? <p>En attente de l'extension : ouvrez Vinted dans le navigateur où l'extension Selio est reliée (voir « Avancé » plus bas).</p> : null}
+        {c.status === "ready" ? <p>En attente de l'extension : ouvrez Vinted dans le navigateur où l'extension Selio est reliée (voir « Installer l'extension Selio, pas à pas » plus haut).</p> : null}
         {c.status === "disconnected" ? <p>Accès révoqué : supprimez ce compte ou ajoutez-le à nouveau pour le reconnecter.</p> : null}
         {c.lastError ? <p className="text-danger">{c.lastError}</p> : null}
       </div>
@@ -373,6 +377,27 @@ function SimulatorShortcut() {
       <button type="button" className="font-medium text-accent underline-offset-2 hover:underline disabled:opacity-60" onClick={() => add.mutate(undefined)} disabled={add.isPending}>ajouter le simulateur de démonstration</button>
       {" "}(toutes ses actions sont simulées).
     </p>
+  );
+}
+
+/**
+ * Installation guidée de l'extension (télécharger, installer, relier, ajouter ses comptes, configuration de départ) :
+ * ouverte d'emblée tant qu'aucun compte Vinted n'est connecté, repliée ensuite.
+ */
+function InstallGuideSection({ firstTime }: { firstTime: boolean }) {
+  const [open, setOpen] = useState(firstTime);
+  return (
+    <details className="card group mb-6" open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)} data-testid="extension-install-section">
+      <summary className="flex cursor-pointer list-none items-center gap-3 p-4 md:p-5 [&::-webkit-details-marker]:hidden">
+        <Puzzle className="size-4 shrink-0 text-accent" aria-hidden />
+        <span className="min-w-0 flex-1">
+          <span className="block text-base font-semibold text-text">Installer l'extension Selio, pas à pas</span>
+          <span className="block text-xs text-text-muted">Télécharger, installer dans Chrome, Edge ou Brave, relier à votre compte, puis ajouter vos comptes Vinted. Environ cinq minutes.</span>
+        </span>
+        <ChevronDown className="size-4 shrink-0 text-text-muted transition-transform group-open:rotate-180" aria-hidden />
+      </summary>
+      <div className="border-t border-border p-4 md:p-5">{open ? <ExtensionInstallGuide showSetup /> : null}</div>
+    </details>
   );
 }
 

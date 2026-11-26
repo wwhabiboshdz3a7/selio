@@ -482,7 +482,7 @@ export class ApiClient implements DataClient {
   }
   async saveWhiteLabel(input: WhiteLabelInput): Promise<WhiteLabel> {
     void input;
-    throw new DataError("preview_only", "Selio Agent est en aperçu : la marque blanche n'est pas encore enregistrée sur votre compte. Essayez-la dans la démonstration.", 501);
+    throw new DataError("preview_only", "Selio Agent est en aperçu : la marque blanche n'est pas encore enregistrée sur votre compte.", 501);
   }
 
   // Selio Cloud (/api/cloud/*). La session Vinted ne transite jamais ici : seulement « une session existe » et sa date.

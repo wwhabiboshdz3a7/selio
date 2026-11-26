@@ -4,7 +4,7 @@ import type { AutomationSettings } from "@selio/contracts";
 import { can, fillTemplate } from "@selio/domain";
 import { REAL_CATALOG } from "@selio/demo-data";
 import { Button, Input, Textarea, cn, formatCents } from "@selio/ui";
-import { useClient, useRequiredSession } from "../../../lib/data/provider";
+import { useClient, useDataMode, useRequiredSession } from "../../../lib/data/provider";
 import { MoneyInput } from "../../components/common";
 import { useAppMutation } from "../../components/hooks";
 
@@ -279,5 +279,6 @@ export function PhoneCard({ title, children, caption }: { title: string; childre
 
 /** En-tête de page d'automatisation : interrupteur général et rappel honnête sur l'exécution. */
 export function HonestNote() {
-  return <p className="mt-2 text-xs text-text-muted">En démonstration, rien n'est envoyé : les conversations à droite sont des exemples. Avec un compte Vinted, les actions passent par l'extension, navigateur ouvert (Selio Cloud, en développement, les fera tourner sans ordinateur allumé).</p>;
+  const mode = useDataMode();
+  return <p className="mt-2 text-xs text-text-muted">{mode === "demo" ? "En démonstration, rien n'est envoyé : les conversations à droite sont des exemples. " : ""}Avec un compte Vinted, les actions passent par l'extension, navigateur ouvert (Selio Cloud, en développement, les fera tourner sans ordinateur allumé).</p>;
 }

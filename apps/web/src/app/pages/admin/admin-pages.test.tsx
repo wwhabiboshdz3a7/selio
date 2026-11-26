@@ -5,7 +5,8 @@ import { ToastProvider } from "@selio/ui";
 import { GRANT_NO_END } from "@selio/contracts";
 import { DataProvider, getDemoClient, queryClient } from "../../../lib/data/provider";
 import { HUB_PATH } from "../../spaces/paths";
-import { adminSectionsFor, landingPath } from "../../../lib/admin";
+import { adminLandingPath, adminSectionsFor, landingPath } from "../../../lib/admin";
+import { appLandingPath } from "../../../lib/landing";
 import type { Session } from "../../../lib/data/types";
 import { RequireSession } from "../../layout";
 import AdminLayout, { RequireAdminCapability, RequireOperator } from "./AdminLayout";
@@ -68,12 +69,25 @@ describe("Selio Admin : arrivée et accès", () => {
     expect(landingPath(session("tech"), "https://ailleurs.exemple/admin")).toBe("/admin");
   });
 
-  it("un non-opérateur qui ouvre /admin est renvoyé vers l'espace client", async () => {
+  it("deux sites : le site public mène tout le monde à l'espace client (jamais /admin), le site Selio Admin à l'administration", () => {
+    expect(appLandingPath()).toBe(HUB_PATH);
+    expect(appLandingPath("/app/items")).toBe("/app/items");
+    expect(appLandingPath("/admin/comptes")).toBe(HUB_PATH);
+    expect(appLandingPath("https://ailleurs.exemple/app")).toBe(HUB_PATH);
+    expect(adminLandingPath()).toBe("/admin");
+    expect(adminLandingPath("/admin/comptes?q=elias")).toBe("/admin/comptes?q=elias");
+    expect(adminLandingPath("/app/items")).toBe("/admin");
+    expect(adminLandingPath("//ailleurs.exemple/admin")).toBe("/admin");
+  });
+
+  it("un non-opérateur qui ouvre /admin voit un refus clair (le site Selio Admin n'a pas d'espace client)", async () => {
     const client = getDemoClient();
     const real = (await client.getSession())!;
     vi.spyOn(client, "getSession").mockResolvedValue({ ...real, user: { ...real.user, isOperator: false, operatorRole: null } });
     renderAdmin(ADMIN_ROUTES, "/admin");
-    expect(await screen.findByText("Espace client")).toBeTruthy();
+    expect(await screen.findByTestId("admin-not-operator")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Accès réservé à l'équipe Selio" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Se déconnecter" })).toBeTruthy();
   });
 
   it("menus selon le rôle : « tech » voit tout, « business » le pilotage seulement (même matrice que l'API)", () => {
@@ -86,13 +100,14 @@ describe("Selio Admin : arrivée et accès", () => {
 });
 
 describe("Selio Admin : mise en page", () => {
-  it("opératrice technique (Marie) : titre, badge « Technique », sections techniques, lien vers l'espace client, aucun bandeau d'essai", async () => {
+  it("opératrice technique (Marie) : titre, badge « Technique », sections techniques, aucun lien vers l'espace client, aucun bandeau d'essai", async () => {
     renderAdmin(ADMIN_ROUTES, "/admin");
     expect(await screen.findByRole("heading", { name: "Tableau de bord" })).toBeTruthy();
     const nav = screen.getByRole("navigation", { name: "Sections de l'administration" });
     expect(within(nav).getByRole("link", { name: "Santé et plans" })).toBeTruthy();
     expect(within(nav).getByRole("link", { name: "Supervision" })).toBeTruthy();
-    expect(within(nav).getByRole("link", { name: "Ouvrir l'espace client" }).getAttribute("href")).toBe("/app");
+    // Site séparé : sans VITE_PUBLIC_SITE_URL, aucun lien vers le site public ni vers /app.
+    expect(within(nav).queryByRole("link", { name: /espace client|site Selio/ })).toBeNull();
     expect(screen.getAllByTestId("operator-role-badge")[0]!.textContent).toContain("Technique");
     expect(screen.queryByTestId("trial-card-banner")).toBeNull();
     // Chiffres du tableau de bord : compte de la démo + six comptes d'exemple.
