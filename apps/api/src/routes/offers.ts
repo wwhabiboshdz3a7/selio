@@ -50,7 +50,7 @@ export default async function offerRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/admin/offers", async (req) => offers.adminListOffers(app.requireCtx(req)));
-  app.post("/api/admin/offers", { config: perUser("admin-offers", 60, "10 minutes") }, async (req, reply) => {
+  app.post("/api/admin/offers", { config: { ...perUser("admin-offers", 60, "10 minutes"), doubleSubmit: true } }, async (req, reply) => {
     const created = await offers.adminCreateOffer(app.requireCtx(req), req.body);
     reply.status(201);
     return created;

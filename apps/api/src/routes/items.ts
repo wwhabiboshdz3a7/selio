@@ -19,7 +19,7 @@ export default async function itemRoutes(app: FastifyInstance) {
     return csv;
   });
   // Enregistrement avec contrôle de l'annonce : avertissements NON bloquants (photos, floue, mesures manquantes) dans `listingCheck`.
-  app.post("/api/items", async (req, reply) => { reply.status(201); return items.createItemChecked(app.requireCtx(req), req.body); });
+  app.post("/api/items", { config: { doubleSubmit: true } }, async (req, reply) => { reply.status(201); return items.createItemChecked(app.requireCtx(req), req.body); });
   app.post("/api/items/bulk", async (req) => items.bulkItems(app.requireCtx(req), req.body));
   app.post("/api/items/import", { bodyLimit: 8 * 1024 * 1024 }, async (req) => items.importItems(app.requireCtx(req), req.body));
   app.get<{ Params: { id: string } }>("/api/items/:id", async (req) => items.getItem(app.requireCtx(req), req.params.id));
@@ -29,6 +29,6 @@ export default async function itemRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>("/api/items/:id/checks", async (req) => items.checkItem(app.requireCtx(req), req.params.id, ((req.body ?? {}) as { photoScores?: unknown }).photoScores));
   /** Ajout de photos seulement (« items.photos.write ») : seule écriture permise au contributeur photos. 12 photos réduites au plus. */
   app.post<{ Params: { id: string } }>("/api/items/:id/photos", { bodyLimit: 20 * 1024 * 1024 }, async (req) => items.addItemPhotos(app.requireCtx(req), req.params.id, req.body ?? {}));
-  app.post<{ Params: { id: string } }>("/api/items/:id/status", async (req) => items.setItemStatus(app.requireCtx(req), req.params.id, (req.body as { status: ItemStatus }).status));
+  app.post<{ Params: { id: string } }>("/api/items/:id/status", async (req) => items.setItemStatus(app.requireCtx(req), req.params.id, ((req.body ?? {}) as { status: ItemStatus }).status));
   app.delete<{ Params: { id: string } }>("/api/items/:id", async (req, reply) => { await items.deleteItem(app.requireCtx(req), req.params.id); reply.status(204); });
 }

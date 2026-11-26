@@ -35,3 +35,4 @@ export * from "./migration";
 export * from "./operator-permissions";
 export * from "./bot";
 export * from "./activity";
+export * from "./image-type";

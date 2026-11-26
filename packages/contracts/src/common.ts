@@ -1,12 +1,44 @@
 import { z } from "zod";
 
 export const id = z.string().min(1).max(64);
-export const isoDate = z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}T/));
+/**
+ * Date ISO 8601 réelle : « 2026-13-45T… », « 2026-02-30T… » ou « 2026-01-01Tn'importe quoi » sont refusés ici
+ * (message clair), jamais transmis à la base (qui répondait par une erreur interne).
+ */
+export function isRealIsoDate(s: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T/.exec(s);
+  if (!m || Number.isNaN(Date.parse(s))) return false;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  return mo >= 1 && mo <= 12 && d >= 1 && d <= new Date(Date.UTC(y, mo, 0)).getUTCDate();
+}
+export const isoDate = z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}T/)).refine(isRealIsoDate, "Date invalide.");
 export const cents = z.number().int().min(-1_000_000_000).max(1_000_000_000);
 export const nonNegCents = z.number().int().min(0).max(1_000_000_000);
 export const rate = z.number().min(0).max(1);
 export const shortText = z.string().trim().min(1).max(200);
 export const longText = z.string().trim().max(8000);
+
+/** Caractères invisibles (espaces de toutes sortes, espaces de largeur nulle, trait d'union conditionnel). */
+const INVISIBLE_CHARS = /[\s\u00AD\u200B-\u200D\u2060\uFEFF]/gu;
+/** Caractères de contrôle : retours à la ligne, tabulations, caractère nul… (jamais dans un nom). */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
+
+/**
+ * Nom saisi (personne, organisation, titre d'article) : espaces retirés aux extrémités, au moins un caractère
+ * visible (des espaces seuls ou des espaces de largeur nulle sont refusés), aucun caractère de contrôle, longueur
+ * bornée. Messages en français, affichés tels quels sous le champ. Emojis, accents, apostrophes, chevrons sont
+ * acceptés : ils sont affichés comme du texte, jamais interprétés (ni HTML, ni script).
+ */
+export function nameText(max: number) {
+  return z
+    .string()
+    .trim()
+    .min(1, "Champ requis.")
+    .max(max, `${max} caractères au plus.`)
+    .refine((s) => s.replace(INVISIBLE_CHARS, "").length > 0, "Champ requis : des espaces seuls ne suffisent pas.")
+    .refine((s) => !CONTROL_CHARS.test(s), "Caractère non accepté (retour à la ligne, tabulation ou caractère de contrôle).");
+}
 export const tags = z.array(z.string().trim().min(1).max(40)).max(30).default([]);
 export const email = z.string().trim().toLowerCase().email().max(255);
 export const slug = z

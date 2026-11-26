@@ -21,6 +21,21 @@ export class AppError extends Error {
   }
 }
 
+/** Messages par défaut de zod (en anglais) : jamais montrés tels quels à l'utilisateur. */
+const ZOD_DEFAULT_MESSAGE = /^(String must|Number must|Array must|BigInt must|Date must|Set must|Expected|Required|Invalid|Too (small|big)|Unrecognized|Value should)/;
+
+/**
+ * Erreur de validation lisible : le titre (« Inscription invalide »), suivi du premier motif écrit en français par
+ * nos schémas (« 80 caractères au plus », « La date d'achat ne peut pas être dans le futur »…), précédé du nom du
+ * champ quand `labels` le connaît. Le détail par champ reste dans `details` pour les formulaires.
+ */
+export function validationError(title: string, error: { issues: { path: (string | number)[]; message: string }[]; flatten: () => unknown }, labels: Record<string, string> = {}): AppError {
+  const issue = error.issues.find((i) => !ZOD_DEFAULT_MESSAGE.test(i.message));
+  const label = issue ? labels[String(issue.path[0])] : undefined;
+  const reason = issue ? (label ? `${label} : ${issue.message.charAt(0).toLowerCase()}${issue.message.slice(1)}` : issue.message) : null;
+  return new AppError("validation", reason ? `${title} — ${reason}` : title, 400, error.flatten());
+}
+
 export interface Services {
   db: Db;
   ai: AIService;

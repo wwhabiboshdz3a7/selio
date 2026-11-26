@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { cents, id, isoDate, longText, nonNegCents, shortText, tags } from "./common";
+import { cents, id, isoDate, longText, nameText, nonNegCents, shortText, tags } from "./common";
 
 export const ITEM_STATUSES = ["in_stock", "listed", "reserved", "sold", "archived"] as const;
 export const itemStatus = z.enum(ITEM_STATUSES);
@@ -102,14 +102,52 @@ export const inventoryItem = z.object({
 });
 export type InventoryItem = z.infer<typeof inventoryItem>;
 
+/**
+ * Bornes de saisie d'un article (création, modification, import) : un prix affiché de 1 € au moins (minimum de
+ * Vinted) et de 100 000 € au plus, des montants d'achat sans valeur absurde, une date d'achat ni dans le futur
+ * ni avant 1950. Appliquées à la SAISIE seulement : une ligne déjà en base reste lisible telle quelle.
+ */
+export const ITEM_MIN_LISTED_PRICE_CENTS = 100;
+export const ITEM_MAX_PRICE_CENTS = 10_000_000;
+export const ITEM_TITLE_MAX = 200;
+/** Tolérance sur « date d'achat dans le futur » (fuseaux horaires : la journée de demain ailleurs dans le monde). */
+const PURCHASE_DATE_TOLERANCE_MS = 36 * 3_600_000;
+const PURCHASE_DATE_MIN = Date.UTC(1950, 0, 1);
+
+const maxPriceMessage = "Montant trop élevé : 100 000 € au plus.";
+const itemAmount = nonNegCents.refine((v) => v <= ITEM_MAX_PRICE_CENTS, maxPriceMessage);
+const itemListedPrice = z.number().int().refine((v) => v >= ITEM_MIN_LISTED_PRICE_CENTS, "Le prix affiché doit être d'au moins 1 €.").refine((v) => v <= ITEM_MAX_PRICE_CENTS, maxPriceMessage);
+const itemFloorPrice = nonNegCents.refine((v) => v <= ITEM_MAX_PRICE_CENTS, maxPriceMessage);
+export const purchaseDate = isoDate
+  .refine((s) => Date.parse(s) <= Date.now() + PURCHASE_DATE_TOLERANCE_MS, "La date d'achat ne peut pas être dans le futur.")
+  .refine((s) => Date.parse(s) >= PURCHASE_DATE_MIN, "Date d'achat improbable : 1950 au plus tôt.");
+
 /** Les champs munis d'une valeur par défaut sont optionnels à la saisie (pas de `.partial()`, qui annulerait les défauts). */
 export const inventoryItemCreate = inventoryItem.omit({
   id: true, orgId: true, createdAt: true, updatedAt: true, soldAt: true, archivedAt: true, listedAt: true,
+}).extend({
+  title: nameText(ITEM_TITLE_MAX),
+  purchasePriceCents: itemAmount.default(0),
+  purchaseFeesCents: itemAmount.default(0),
+  listedPriceCents: itemListedPrice.nullable().default(null),
+  floorPriceCents: itemFloorPrice.nullable().default(null),
+  purchasedAt: purchaseDate.nullable().default(null),
 });
 export type InventoryItemCreate = z.input<typeof inventoryItemCreate>;
 
-export const inventoryItemUpdate = inventoryItemCreate.partial();
+/**
+ * Modification : champs facultatifs, plus `expectedUpdatedAt` (date de mise à jour de l'article tel qu'il a été
+ * ouvert) : si l'article a changé depuis (autre onglet, autre membre de l'équipe), le serveur refuse (409) au lieu
+ * d'écraser en silence les modifications de l'autre.
+ */
+export const inventoryItemUpdate = inventoryItemCreate.partial().extend({ expectedUpdatedAt: isoDate.optional() });
 export type InventoryItemUpdate = z.input<typeof inventoryItemUpdate>;
+
+/** Le prix plancher ne dépasse jamais le prix affiché (contrôle commun au formulaire et au serveur). */
+export function floorAboveListed(p: { listedPriceCents?: number | null; floorPriceCents?: number | null }): boolean {
+  return p.floorPriceCents != null && p.listedPriceCents != null && p.floorPriceCents > p.listedPriceCents;
+}
+export const FLOOR_ABOVE_LISTED_MESSAGE = "Le plancher ne peut pas dépasser le prix affiché.";
 
 export const inventoryEvent = z.object({
   id,

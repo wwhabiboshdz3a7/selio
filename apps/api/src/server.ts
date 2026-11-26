@@ -15,6 +15,7 @@ import { cloudServicesConfig, operatorsConfig, radarServicesConfig, referralServ
 import { errorHandler } from "./errors";
 import authPlugin from "./plugins/auth";
 import rolesPlugin from "./plugins/roles";
+import doubleSubmitPlugin from "./plugins/double-submit";
 import authRoutes from "./routes/auth";
 import orgRoutes from "./routes/org";
 import itemRoutes from "./routes/items";
@@ -147,6 +148,8 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(authPlugin, { services });
   // Rôles d'équipe : contributeur photos limité à sa liste de routes, finances masquées pour qui ne les voit pas.
   await app.register(rolesPlugin);
+  // Anti double envoi des actions sensibles (paiement, achat, inscription, création) : `config.doubleSubmit` par route.
+  await app.register(doubleSubmitPlugin, { services, windowMs: env.DOUBLE_SUBMIT_WINDOW_MS });
   app.setErrorHandler(errorHandler);
   app.setNotFoundHandler((req, reply) => reply.status(404).send({ error: { code: "not_found", message: `Route inconnue : ${req.method} ${req.url}` } }));
 

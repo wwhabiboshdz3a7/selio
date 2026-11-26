@@ -7,16 +7,16 @@ export default async function authRoutes(app: FastifyInstance, opts: { cookieSec
   const cookieOpts = { path: "/", httpOnly: true, sameSite: "lax" as const, secure: opts.cookieSecure, maxAge: 30 * 86_400 };
   const sessionOf = async (req: Parameters<typeof app.requireCtx>[0]) => orgService.getSession(app.requireCtx(req));
 
-  app.post("/api/auth/register", { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } }, async (req, reply) => {
+  app.post("/api/auth/register", { config: { rateLimit: { max: 10, timeWindow: "15 minutes" }, doubleSubmit: true } }, async (req, reply) => {
     const s = await auth.register(app.services, req.body, { ip: req.ip, userAgent: req.headers["user-agent"]?.slice(0, 200) ?? null, operatorEmails: opts.operatorEmails });
     reply.setCookie(SESSION_COOKIE, s.sessionId, cookieOpts);
     reply.status(201);
     // Code de parrainage facultatif (`referralCode`), appliqué une fois l'organisation créée : JAMAIS bloquant
     // (code vide, mal formé, inconnu, le sien, parrainage fermé : ignoré avec un message ; incident : idem).
-    const referralOutcome = await applyReferralCode(app, s.orgId!, (req.body as { referralCode?: unknown } | null)?.referralCode, req);
+    const referralOutcome = await applyReferralCode(app, s.orgId!, ((req.body ?? {}) as { referralCode?: unknown } | null)?.referralCode, req);
     // Code promo facultatif (`promoCode`, offre commerciale) : JAMAIS bloquant non plus (inconnu, expiré, plein :
     // ignoré avec un message). La remise s'appliquera au premier paiement (fin de l'essai comprise).
-    const promoOutcome = await offers.applyCodeAtSignup(app.services, s.orgId!, (req.body as { promoCode?: unknown } | null)?.promoCode, { actorUserId: s.userId, ip: req.ip });
+    const promoOutcome = await offers.applyCodeAtSignup(app.services, s.orgId!, ((req.body ?? {}) as { promoCode?: unknown } | null)?.promoCode, { actorUserId: s.userId, ip: req.ip });
     const session = await bootstrapSession(app, req, s.orgId!, s);
     return { ...session, ...(referralOutcome ? { referral: referralOutcome } : {}), ...(promoOutcome ? { promo: promoOutcome } : {}) };
   });

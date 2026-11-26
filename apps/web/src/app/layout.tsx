@@ -11,6 +11,7 @@ import { REVIEW_THRESHOLD } from "@selio/domain";
 import { queryClient, useClient, useData, useRequiredSession, useSession } from "../lib/data/provider";
 import { useTheme } from "../lib/theme";
 import { unsubscribeOnLogout } from "../lib/push";
+import { announceSession } from "../lib/session-sync";
 import { Logo } from "../components/Logo";
 import { ROLE_LABELS } from "@selio/contracts";
 import { HandCoins, History } from "lucide-react";
@@ -25,12 +26,14 @@ import { prefetchProps } from "./prefetch";
 export function RequireSession({ children }: { children: ReactNode }) {
   const session = useSession();
   const location = useLocation();
+  // Page demandée (lien reçu, notification, lien profond) gardée en entier, paramètres compris : la connexion y ramène.
+  const from = `${location.pathname}${location.search}${location.hash}`;
   if (session.isPending) return <LoadingState variant="spinner" label="Ouverture de la session…" className="min-h-dvh" />;
   // Serveur momentanément injoignable (redémarrage, tunnel) : on attend et on se reconnecte seul, sans déconnecter.
   if (session.isError && session.error instanceof DataError && session.error.code === "unavailable") return <ServerUnavailable onRetry={() => void session.refetch()} />;
   // Compte bloqué par l'équipe Selio : le message du serveur est affiché tel quel sur la page de connexion.
-  if (session.isError) return <Navigate to="/connexion" replace state={{ from: location.pathname, error: session.error instanceof DataError && session.error.code === "account_blocked" ? session.error.message : "La session n'a pas pu être vérifiée." }} />;
-  if (!session.data) return <Navigate to="/connexion" replace state={{ from: location.pathname }} />;
+  if (session.isError) return <Navigate to="/connexion" replace state={{ from, error: session.error instanceof DataError && session.error.code === "account_blocked" ? session.error.message : "La session n'a pas pu être vérifiée." }} />;
+  if (!session.data) return <Navigate to="/connexion" replace state={{ from }} />;
   return <>{children}</>;
 }
 
@@ -315,9 +318,9 @@ export function AppLayout({ admin = false }: { admin?: boolean }) {
           items={[
             { label: resolved === "dark" ? "Mode clair" : "Mode sombre", icon: resolved === "dark" ? <Sun /> : <Moon />, onSelect: () => setPreference(resolved === "dark" ? "light" : "dark") },
             { label: "Paramètres", icon: <Settings />, onSelect: () => navigate("/app/settings") },
-            ...otherOrgs.map((m) => ({ label: `Passer à « ${m.orgName} »`, icon: <ArrowLeftRight />, onSelect: async () => { await client.switchOrg(m.orgId); await queryClient.invalidateQueries(); navigate(HUB_PATH); } })),
+            ...otherOrgs.map((m) => ({ label: `Passer à « ${m.orgName} »`, icon: <ArrowLeftRight />, onSelect: async () => { await client.switchOrg(m.orgId); announceSession("switch-org"); await queryClient.invalidateQueries(); navigate(HUB_PATH); } })),
             // Les alertes Radar de cet appareil sont retirées avant la déconnexion (best effort, jamais bloquant).
-            { label: "Se déconnecter", icon: <LogOut />, onSelect: async () => { await unsubscribeOnLogout(client); await client.logout(); navigate("/connexion"); } },
+            { label: "Se déconnecter", icon: <LogOut />, onSelect: async () => { await unsubscribeOnLogout(client); await client.logout(); announceSession("logout"); navigate("/connexion"); } },
           ]}
         />
       </div>

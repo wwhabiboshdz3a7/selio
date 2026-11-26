@@ -34,9 +34,51 @@ export function errorHandler(err: FastifyError | Error, req: FastifyRequest, rep
     return;
   }
   if (fe.statusCode && fe.statusCode < 500) {
-    reply.status(fe.statusCode).send({ error: { code: fe.code === "FST_ERR_VALIDATION" ? "validation" : fe.statusCode === 429 ? "rate_limited" : "http", message: fe.message } });
+    // Les messages de Fastify et de ses extensions sont en anglais (« Body cannot be empty… », « Rate limit
+    // exceeded… ») : jamais affichés tels quels, chaque cas a son message en français.
+    reply.status(fe.statusCode).send({ error: { code: fe.code === "FST_ERR_VALIDATION" ? "validation" : fe.statusCode === 429 ? "rate_limited" : "http", message: frenchHttpMessage(fe) } });
     return;
   }
   req.log.error({ err }, "erreur interne");
   reply.status(500).send({ error: { code: "internal", message: "Erreur interne du serveur." } });
+}
+
+/** Message en français d'une erreur HTTP de Fastify (corps illisible, type de contenu, débit, taille…). */
+export function frenchHttpMessage(fe: Pick<FastifyError, "code" | "statusCode">): string {
+  switch (fe.code) {
+    case "FST_ERR_CTP_EMPTY_JSON_BODY":
+      return "Requête vide : des données étaient attendues.";
+    case "FST_ERR_CTP_INVALID_JSON_BODY":
+      return "Requête illisible : les données envoyées ne sont pas valides.";
+    case "FST_ERR_CTP_INVALID_MEDIA_TYPE":
+      return "Format de requête non pris en charge.";
+    case "FST_ERR_CTP_INVALID_CONTENT_LENGTH":
+      return "Requête incomplète : la taille annoncée ne correspond pas aux données reçues. Réessayez.";
+    case "FST_ERR_CTP_INVALID_TYPE":
+      return "Type de contenu invalide.";
+    case "FST_ERR_VALIDATION":
+      return "Requête invalide.";
+  }
+  switch (fe.statusCode) {
+    case 400:
+      return "Requête invalide.";
+    case 401:
+      return "Authentification requise : reconnectez-vous.";
+    case 403:
+      return "Action non autorisée.";
+    case 404:
+      return "Élément introuvable.";
+    case 405:
+      return "Action non prise en charge.";
+    case 408:
+      return "La requête a pris trop de temps : réessayez.";
+    case 413:
+      return "Envoi trop lourd.";
+    case 415:
+      return "Format de requête non pris en charge.";
+    case 429:
+      return "Trop de requêtes en peu de temps : patientez une minute avant de réessayer.";
+    default:
+      return "Requête refusée par le serveur.";
+  }
 }

@@ -1,9 +1,9 @@
-import { adjustedPrice, bulkItemAction, inventoryItemCreate, inventoryItemUpdate, inventoryQuery, namedMeasurementField, photoRole, type InventoryEvent, type InventoryItem, type ItemSummary, type NamedMeasurementField, type Page, type PhotoRole } from "@selio/contracts";
+import { FLOOR_ABOVE_LISTED_MESSAGE, adjustedPrice, bulkItemAction, floorAboveListed, inventoryItemCreate, inventoryItemUpdate, inventoryQuery, namedMeasurementField, photoRole, type InventoryEvent, type InventoryItem, type ItemSummary, type NamedMeasurementField, type Page, type PhotoRole } from "@selio/contracts";
 import { repos } from "@selio/db";
 import { z } from "zod";
-import { ITEM_TRANSITIONS, applyVariant, canChangeItemStatus, checkListing, diffItem, newId, nextSku, recordRepublication, republicationPlan, toCsv, EXPORT_HEADERS, inventoryToCsvRow, type ListingCheck } from "@selio/domain";
+import { ITEM_TRANSITIONS, applyVariant, dataUrlHead, photoContentProblem, canChangeItemStatus, checkListing, diffItem, newId, nextSku, recordRepublication, republicationPlan, toCsv, EXPORT_HEADERS, inventoryToCsvRow, type ListingCheck } from "@selio/domain";
 import { PLAN_QUOTAS } from "@selio/demo-data";
-import { AppError, nowIso, requireAction, seesFinances, withOrg, type OrgContext } from "../context";
+import { AppError, nowIso, requireAction, seesFinances, validationError, withOrg, type OrgContext } from "../context";
 import type { Tx } from "@selio/db";
 
 export function listItems(ctx: OrgContext, raw: unknown): Promise<Page<InventoryItem>> {
@@ -36,7 +36,9 @@ export const itemHistory = (ctx: OrgContext, id: string): Promise<InventoryEvent
 
 export async function createItemTx(ctx: OrgContext, tx: Tx, raw: unknown, note = "Création"): Promise<InventoryItem> {
   const parsed = inventoryItemCreate.safeParse(raw);
-  if (!parsed.success) throw new AppError("validation", "Article invalide", 400, parsed.error.flatten());
+  if (!parsed.success) throw invalidItem("Article invalide", parsed.error);
+  if (floorAboveListed(parsed.data)) throw new AppError("validation", FLOOR_ABOVE_LISTED_MESSAGE, 400, { fieldErrors: { floorPriceCents: [FLOOR_ABOVE_LISTED_MESSAGE] } });
+  assertReadablePhotos(parsed.data.photos);
   const quotas = (await repos.subscriptions.get(tx))?.quotas ?? PLAN_QUOTAS.free;
   if ((await repos.items.countActive(tx)) >= quotas.items) throw new AppError("quota_exceeded", `Quota d'articles atteint (${quotas.items}).`, 402);
   const sku = parsed.data.sku || nextSku(parsed.data.category, await repos.items.skus(tx));
@@ -54,9 +56,18 @@ export function createItem(ctx: OrgContext, raw: unknown): Promise<InventoryItem
 
 export async function updateItemTx(ctx: OrgContext, tx: Tx, id: string, raw: unknown): Promise<InventoryItem> {
   const parsed = inventoryItemUpdate.safeParse(raw);
-  if (!parsed.success) throw new AppError("validation", "Modification invalide", 400, parsed.error.flatten());
+  if (!parsed.success) throw invalidItem("Modification invalide", parsed.error);
+  const { expectedUpdatedAt, ...fields } = parsed.data;
+  if (fields.photos) assertReadablePhotos(fields.photos);
   const before = await repos.items.byId(tx, id);
-  const patch = Object.fromEntries(Object.entries(parsed.data).filter(([, v]) => v !== undefined)) as Partial<InventoryItem>;
+  // Modification concurrente (autre onglet, autre membre) : refus explicite plutôt qu'un écrasement silencieux.
+  if (expectedUpdatedAt && new Date(expectedUpdatedAt).getTime() !== new Date(before.updatedAt).getTime()) {
+    throw new AppError("item_conflict", "Cet article a été modifié entre-temps (dans un autre onglet ou par un membre de l'équipe). Rechargez la page pour voir sa version actuelle, puis refaites vos changements.", 409, { updatedAt: before.updatedAt });
+  }
+  const patch = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)) as Partial<InventoryItem>;
+  if (("listedPriceCents" in patch || "floorPriceCents" in patch) && floorAboveListed({ listedPriceCents: patch.listedPriceCents !== undefined ? patch.listedPriceCents : before.listedPriceCents, floorPriceCents: patch.floorPriceCents !== undefined ? patch.floorPriceCents : before.floorPriceCents })) {
+    throw new AppError("validation", FLOOR_ABOVE_LISTED_MESSAGE, 400, { fieldErrors: { floorPriceCents: [FLOOR_ABOVE_LISTED_MESSAGE] } });
+  }
   if (patch.status && patch.status !== before.status && !canChangeItemStatus(before.status, patch.status)) throw new AppError("validation", `Transition de statut interdite : ${before.status} → ${patch.status}`, 400);
   const now = nowIso(ctx);
   if (patch.status === "listed" && !before.listedAt) patch.listedAt = now;
@@ -85,8 +96,34 @@ const addedPhoto = z.object({
 });
 const addPhotosInput = z.object({ photos: z.array(addedPhoto).min(1).max(12) });
 
+/**
+ * Saisie d'article refusée : le message général, suivi du premier motif écrit en français (date d'achat dans le
+ * futur, prix hors bornes…) et du nom du champ, pour que l'écran l'affiche tel quel.
+ */
+function invalidItem(title: string, error: z.ZodError): AppError {
+  return validationError(title, error, { title: "Titre", listedPriceCents: "Prix affiché", floorPriceCents: "Prix plancher", purchasePriceCents: "Prix d'achat", purchaseFeesCents: "Frais d'acquisition", purchasedAt: "Date d'achat" });
+}
+
+/**
+ * Photos envoyées en data URL : le CONTENU doit être une image JPEG, PNG ou WebP (octets magiques), quel que
+ * soit le type annoncé. Un PDF renommé, un fichier vide, un SVG ou une photo HEIC sont refusés avec un message
+ * clair au lieu d'être enregistrés puis affichés comme une image cassée.
+ */
+export function dataUrlPhotoProblem(url: string, name?: string): string | null {
+  const head = dataUrlHead(url);
+  if (!head) return null;
+  return photoContentProblem(head.bytes, name ? { name } : {});
+}
+
+function assertReadablePhotos(photos: readonly { url: string; alt?: string }[]): void {
+  for (const p of photos) {
+    const problem = dataUrlPhotoProblem(p.url, p.alt || undefined);
+    if (problem) throw new AppError("photo_rejected", problem, 400, { reason: "unreadable" });
+  }
+}
+
 function acceptablePhotoUrl(url: string, orgId: string): boolean {
-  if (/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(url)) return true;
+  if (/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(url)) return dataUrlPhotoProblem(url) === null;
   if (/^https:\/\/[^\s"'<>]+$/.test(url)) return true;
   return url.startsWith(`org/${orgId}/item-photo/`) && /^[A-Za-z0-9/._-]+$/.test(url);
 }
@@ -116,6 +153,7 @@ export function createStudioDraft(ctx: OrgContext, raw: unknown): Promise<Invent
   const parsed = studioDraftInput.safeParse(raw);
   if (!parsed.success) throw new AppError("validation", "Brouillon invalide", 400, parsed.error.flatten());
   const d = parsed.data;
+  assertReadablePhotos(d.photos);
   const bad = d.photos.filter((p) => !acceptablePhotoUrl(p.url, ctx.orgId));
   if (bad.length) throw new AppError("validation", "Photo refusée : image JPEG, PNG ou WebP, adresse HTTPS ou photo téléversée de l'organisation.", 400);
   return withOrg(ctx, (tx) => createItemTx(ctx, tx, {
@@ -138,6 +176,7 @@ export function addItemPhotos(ctx: OrgContext, id: string, raw: unknown): Promis
   requireAction(ctx, "items.photos.write");
   const parsed = addPhotosInput.safeParse(raw);
   if (!parsed.success) throw new AppError("validation", parsed.error.issues[0]?.message ?? "Photos invalides", 400, parsed.error.flatten());
+  assertReadablePhotos(parsed.data.photos);
   const bad = parsed.data.photos.find((p) => !acceptablePhotoUrl(p.url, ctx.orgId));
   if (bad) throw new AppError("validation", "Photo refusée : image JPEG, PNG ou WebP, adresse HTTPS ou photo envoyée par Selio pour votre organisation.", 400);
   return withOrg(ctx, async (tx) => {

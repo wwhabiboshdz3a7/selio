@@ -304,7 +304,8 @@ describe("rôles d'équipe et finances (API, base réelle)", () => {
     expect((await call("GET", "/api/items/brands", undefined, "photo")).status).toBe(200);
 
     // Ajout de photos : seule écriture permise ; rien d'autre ne change.
-    const jpeg = `data:image/jpeg;base64,${Buffer.from("photo-veste-dos").toString("base64")}`;
+    // Vrai en-tête JPEG (octets magiques) : le serveur vérifie le type réel des photos reçues.
+    const jpeg = `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("photo-veste-dos")]).toString("base64")}`;
     const added = await call("POST", `/api/items/${itemId}/photos`, { photos: [{ url: jpeg, alt: "Dos de la veste" }, { url: "https://cdn.exemple.test/etiquette.jpg", alt: "Étiquette" }] }, "photo");
     expect(added.status).toBe(200);
     expect(added.json.photos.map((p: { alt: string }) => p.alt)).toEqual(["Dos de la veste", "Étiquette"]);
@@ -330,7 +331,7 @@ describe("rôles d'équipe et finances (API, base réelle)", () => {
     expect((await call("GET", "/api/org/plan", undefined, "photo")).status).toBe(200);
 
     // Garder l'annonce générée : brouillon « en stock », sans prix d'achat, sans plancher, sans compte, jamais publié.
-    const photoUrl = `data:image/jpeg;base64,${Buffer.from("photo-brouillon").toString("base64")}`;
+    const photoUrl = `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("photo-brouillon")]).toString("base64")}`;
     const draftRes = await call("POST", "/api/studio/drafts", { title: "Pull Ralph Lauren bleu marine M", description: "Pull en laine.", brand: "Ralph Lauren", size: "M", listedPriceCents: 2500, photos: [{ url: photoUrl, alt: "face" }], status: "listed", purchasePriceCents: 900, connectionId: "pas-un-compte" }, "photo");
     expect(draftRes.status, draftRes.text).toBe(201);
     expect(draftRes.json).toMatchObject({ title: "Pull Ralph Lauren bleu marine M", status: "in_stock", listedPriceCents: 2500, floorPriceCents: null, connectionId: null, purchasePriceCents: null });

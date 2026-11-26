@@ -40,9 +40,9 @@ export default async function radarRoutes(app: FastifyInstance, opts: RadarRoute
   app.get("/api/radar/opportunities", async (req) => radar.listOpportunities(app.requireCtx(req), req.query as { searchId?: string; status?: string }));
   // Détail pour la page « 1 clic » : coût total, recherche, demande d'achat en cours, lien de l'annonce.
   app.get<{ Params: { id: string } }>("/api/radar/opportunities/:id", async (req) => radar.getOpportunity(app.requireCtx(req), req.params.id));
-  app.post<{ Params: { id: string } }>("/api/radar/opportunities/:id/status", async (req) => radar.setOpportunityStatus(app.requireCtx(req), req.params.id, (req.body as { status: Opportunity["status"] }).status));
+  app.post<{ Params: { id: string } }>("/api/radar/opportunities/:id/status", async (req) => radar.setOpportunityStatus(app.requireCtx(req), req.params.id, ((req.body ?? {}) as { status: Opportunity["status"] }).status));
   // « Je l'ai achetée » : report d'un achat fait par le client sur Vinted ; `paidCents` (facultatif) = prix réellement payé, port compris.
-  app.post<{ Params: { id: string } }>("/api/radar/opportunities/:id/buy", async (req) => radar.quickBuy(app.requireCtx(req), req.params.id, { paidCents: (req.body as { paidCents?: unknown } | null)?.paidCents }));
+  app.post<{ Params: { id: string } }>("/api/radar/opportunities/:id/buy", { config: { doubleSubmit: true } }, async (req) => radar.quickBuy(app.requireCtx(req), req.params.id, { paidCents: ((req.body ?? {}) as { paidCents?: unknown } | null)?.paidCents }));
 
   // ---------------------------------------------------------------- mesures, alertes, réglages, Radar Auto
   // Statistiques honnêtes : « à mesurer » tant qu'aucune lecture en direct n'existe.
@@ -56,8 +56,8 @@ export default async function radarRoutes(app: FastifyInstance, opts: RadarRoute
   // ---------------------------------------------------------------- achats
   app.post("/api/purchases/auto-run", { config: perUser("radar-auto", 10, "1 minute") }, async (req) => radar.runAutoBuy(app.requireCtx(req)));
   app.get("/api/purchases", async (req) => radar.listPurchases(app.requireCtx(req)));
-  app.post("/api/purchases", async (req, reply) => { reply.status(201); return radar.createPurchase(app.requireCtx(req), (req.body ?? {}) as { opportunityId?: string; maxPriceCents?: number; budgetCents?: number }); });
-  app.post<{ Params: { id: string } }>("/api/purchases/:id/confirm", async (req) => radar.confirmPurchase(app.requireCtx(req), req.params.id, { paidCents: (req.body as { paidCents?: unknown } | null)?.paidCents }));
+  app.post("/api/purchases", { config: { doubleSubmit: true } }, async (req, reply) => { reply.status(201); return radar.createPurchase(app.requireCtx(req), (req.body ?? {}) as { opportunityId?: string; maxPriceCents?: number; budgetCents?: number }); });
+  app.post<{ Params: { id: string } }>("/api/purchases/:id/confirm", { config: { doubleSubmit: true } }, async (req) => radar.confirmPurchase(app.requireCtx(req), req.params.id, { paidCents: ((req.body ?? {}) as { paidCents?: unknown } | null)?.paidCents }));
   app.post<{ Params: { id: string } }>("/api/purchases/:id/cancel", async (req) => radar.cancelPurchase(app.requireCtx(req), req.params.id));
 
   /**

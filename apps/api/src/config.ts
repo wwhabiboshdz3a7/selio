@@ -149,6 +149,12 @@ export const apiEnvSchema = z
      */
     PRICING_MIN_REFERENCES: z.coerce.number().int().min(500).max(1_000_000).default(500),
     /**
+     * Anti double envoi (paiement, achat, inscription, création) : durée pendant laquelle la même requête réussie
+     * est refusée comme doublon (ms). Une requête identique reçue PENDANT le traitement est toujours refusée ;
+     * 0 = protection pendant le traitement seulement (tests qui rejouent volontairement la même requête).
+     */
+    DOUBLE_SUBMIT_WINDOW_MS: z.coerce.number().int().min(0).max(60_000).default(4_000),
+    /**
      * Photos portées (Studio, §5.11) : AUCUN modèle ni service choisi (décision d'Ibrahim, partie 7). « noop »
      * (défaut) refuse chaque demande proprement (« aucun fournisseur configuré : décision à prendre », quota
      * rendu) ; « mock » sert aux tests et à la démonstration (aucune image produite), refusé en production.

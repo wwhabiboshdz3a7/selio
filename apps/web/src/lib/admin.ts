@@ -52,8 +52,24 @@ export const ADMIN_PATH_PATTERN = /^\/admin(\/[a-z0-9-]+)*$/;
  */
 export function landingPath(session: Pick<Session, "user" | "mode">, from?: string | null): string {
   const operator = operatorRoleOfSession(session) !== null;
-  if (from && (APP_PATH_PATTERN.test(from) || (operator && ADMIN_PATH_PATTERN.test(from)))) return from;
+  const back = splitReturnPath(from);
+  if (back && (APP_PATH_PATTERN.test(back.path) || (operator && ADMIN_PATH_PATTERN.test(back.path)))) return back.path + back.rest;
   return operator && session.mode === "connected" ? ADMIN_HOME : HUB_PATH;
+}
+
+/**
+ * Adresse de retour après connexion : le chemin (contrôlé par les motifs ci-dessus : jamais une adresse externe)
+ * et ses paramètres et ancre (`?onglet=…#section`), gardés s'ils ne contiennent ni espace, ni barre oblique
+ * inverse, ni caractère de contrôle.
+ */
+export function splitReturnPath(from: string | null | undefined): { path: string; rest: string } | null {
+  if (!from || from.length > 2000) return null;
+  const cut = from.search(/[?#]/);
+  const path = cut === -1 ? from : from.slice(0, cut);
+  const rest = cut === -1 ? "" : from.slice(cut);
+  // eslint-disable-next-line no-control-regex
+  if (rest && /[\s\\\u0000-\u001F\u007F]/.test(rest)) return { path, rest: "" };
+  return { path, rest };
 }
 
 export const QUALIFICATION_TONES: Record<OrgQualification, "neutral" | "success" | "warning" | "danger" | "accent" | "ink" | "muted"> = {
