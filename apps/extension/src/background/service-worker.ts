@@ -1,6 +1,7 @@
-import { toBackground, isSupportedUrl, type BackgroundResponse, type ExtensionStatus } from "../shared/messages";
+import { toBackground, type BackgroundResponse, type ExtensionStatus } from "../shared/messages";
 import { clearConfig, readConfig, writeConfig } from "../shared/storage";
 import { apiRequest, ExtApiError } from "../shared/api";
+import { senderAllowed } from "./sender";
 import { comparablesFailure, fetchComparables, isQuietComparablesError } from "./comparables";
 
 /**
@@ -8,13 +9,6 @@ import { comparablesFailure, fetchComparables, isQuietComparablesError } from ".
  * contenu de chaque message, puis parle à l'API Selio. Les content scripts
  * ne reçoivent que des données d'affichage, jamais le jeton.
  */
-function senderAllowed(sender: chrome.runtime.MessageSender, requireSupportedTab: boolean): boolean {
-  if (sender.id !== chrome.runtime.id) return false;
-  if (requireSupportedTab) return Boolean(sender.tab && isSupportedUrl(sender.tab.url ?? sender.url));
-  // Pages de l'extension (popup/options) : pas d'onglet associé, URL chrome-extension://
-  return !sender.tab && (sender.url?.startsWith(`chrome-extension://${chrome.runtime.id}/`) ?? false);
-}
-
 async function status(): Promise<ExtensionStatus> {
   const c = await readConfig();
   return { paired: Boolean(c.token && c.apiBaseUrl), apiBaseUrl: c.apiBaseUrl, orgName: c.orgName, scopes: c.scopes, lastPingAt: c.lastPingAt, lastError: c.lastError };
@@ -39,7 +33,7 @@ async function handle(msg: unknown, sender: chrome.runtime.MessageSender): Promi
   if (!parsed.success) return { ok: false, code: "invalid_message", message: "Message invalide" };
   const m = parsed.data;
   const fromContent = ["capture", "rules", "draft", "diagnostic", "comparables"].includes(m.type);
-  if (!senderAllowed(sender, fromContent)) return { ok: false, code: "forbidden", message: "Expéditeur non autorisé" };
+  if (!senderAllowed(sender, fromContent, { id: chrome.runtime.id, baseUrl: chrome.runtime.getURL("") })) return { ok: false, code: "forbidden", message: "Expéditeur non autorisé" };
   try {
     switch (m.type) {
       case "status":
