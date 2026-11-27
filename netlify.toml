@@ -36,7 +36,7 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self' https://merchant.revolut.com https://sandbox-merchant.revolut.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https://desktop-optltih.tailf78008.ts.net:8443; connect-src 'self' https: wss:; frame-src https://merchant.revolut.com https://sandbox-merchant.revolut.com; worker-src 'self'; manifest-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://merchant.revolut.com https://sandbox-merchant.revolut.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https: wss:; frame-src https://merchant.revolut.com https://sandbox-merchant.revolut.com; worker-src 'self'; manifest-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
     # Publicité et mesure (docs/VITRINE.md, « Publicité ») : AUCUN hôte de Google ni de Meta n'est autorisé
     # tant qu'aucun identifiant n'est fourni (VITE_GA4_ID, VITE_GOOGLE_ADS_ID, VITE_META_PIXEL_ID vides par défaut).
     # Le jour où un identifiant est renseigné dans Netlify, remplacer la ligne ci-dessus par celle-ci
