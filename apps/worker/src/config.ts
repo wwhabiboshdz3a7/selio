@@ -213,6 +213,13 @@ export const workerEnvSchema = z
     CLOUD_ACTIVE_HOURS: activeHoursSchema,
     /** Expiration de la fenêtre de connexion. */
     CLOUD_LOGIN_TIMEOUT_MS: z.coerce.number().int().min(60_000).max(30 * 60_000).default(300_000),
+    /**
+     * Lecture de la messagerie Vinted par le Cloud (D63) : minutes entre deux lectures d'un compte (10 par
+     * défaut, 5 au moins ; 0 coupe la lecture) et conversations ouvertes au plus par lecture (5). Même
+     * valeur que l'API. N'agit que si le Cloud est activé (CLOUD_ENABLED=true et Chromium).
+     */
+    CLOUD_INBOX_SYNC_MINUTES: z.coerce.number().int().min(0).max(1440).default(10).transform((n) => (n === 0 ? 0 : Math.max(5, n))),
+    CLOUD_INBOX_MAX_CONVERSATIONS: z.coerce.number().int().min(1).max(20).default(5),
     /** Durée maximale d'une action, navigateur compris. */
     CLOUD_ACTION_TIMEOUT_MS: z.coerce.number().int().min(10_000).max(600_000).default(90_000),
     /** Cadence du planificateur du Cloud (UTC) : une action au plus par compte et par passage. */
@@ -283,7 +290,7 @@ export const workerEnvSchema = z
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;
 
 /** Réglages Cloud transmis au cœur (`services.config`) : tout ce qui ouvre davantage est faux par défaut. */
-export function cloudServicesConfig(cfg: Pick<WorkerEnv, "CLOUD_HEAVY_ACTIONS" | "CLOUD_MAX_ACCOUNTS_PER_ORG" | "CLOUD_MAX_BROWSERS" | "CLOUD_PRO_OPTION" | "CLOUD_ACTIVE_HOURS" | "CLOUD_LOGIN_TIMEOUT_MS">) {
+export function cloudServicesConfig(cfg: Pick<WorkerEnv, "CLOUD_HEAVY_ACTIONS" | "CLOUD_MAX_ACCOUNTS_PER_ORG" | "CLOUD_MAX_BROWSERS" | "CLOUD_PRO_OPTION" | "CLOUD_ACTIVE_HOURS" | "CLOUD_LOGIN_TIMEOUT_MS"> & Partial<Pick<WorkerEnv, "CLOUD_INBOX_SYNC_MINUTES" | "CLOUD_INBOX_MAX_CONVERSATIONS">>) {
   return {
     cloudHeavyActions: cfg.CLOUD_HEAVY_ACTIONS,
     cloudMaxAccountsPerOrg: cfg.CLOUD_MAX_ACCOUNTS_PER_ORG,
@@ -291,6 +298,8 @@ export function cloudServicesConfig(cfg: Pick<WorkerEnv, "CLOUD_HEAVY_ACTIONS" |
     cloudProOption: cfg.CLOUD_PRO_OPTION,
     cloudActiveHours: cfg.CLOUD_ACTIVE_HOURS,
     cloudLoginTimeoutMs: cfg.CLOUD_LOGIN_TIMEOUT_MS,
+    ...(cfg.CLOUD_INBOX_SYNC_MINUTES !== undefined ? { cloudInboxSyncMinutes: cfg.CLOUD_INBOX_SYNC_MINUTES } : {}),
+    ...(cfg.CLOUD_INBOX_MAX_CONVERSATIONS !== undefined ? { cloudInboxMaxConversations: cfg.CLOUD_INBOX_MAX_CONVERSATIONS } : {}),
   };
 }
 

@@ -162,6 +162,8 @@ Les photos ne transitent jamais par l'API : le navigateur reçoit des URLs sign�
 | `CLOUD_PRO_OPTION` | API et worker | Facultatif | `false` | Cloud activable en option avec l'offre Pro (**prix à décider, rien n'est facturé**). `false` : compris dans Agence seulement. |
 | `CLOUD_ACTIVE_HOURS` | API et worker | Facultatif | `8-23` | Heures actives « début-fin », dans le fuseau de chaque organisation. Aucune action la nuit. |
 | `CLOUD_LOGIN_TIMEOUT_MS` | API et worker | Facultatif | `300000` | Validité de la fenêtre de connexion et de son ticket (5 minutes). |
+| `CLOUD_INBOX_SYNC_MINUTES` | API et worker | Facultatif | `10` | Lecture de la messagerie Vinted de chaque compte Cloud actif, toutes les N minutes aux heures actives (5 au moins ; `0` coupe la lecture). Les nouveaux messages déclenchent les réponses et la négociation automatiques (docs/CLOUD.md §1.8, D63). |
+| `CLOUD_INBOX_MAX_CONVERSATIONS` | API et worker | Facultatif | `5` | Conversations ouvertes au plus par lecture (non lues d'abord ; statut inconnu : les 3 plus récentes). |
 | `CLOUD_ACTION_TIMEOUT_MS` | Worker | Facultatif | `90000` | Durée maximale d'une action, navigateur compris. |
 | `CLOUD_PROFILE_DIR` | Worker | Recommandé | `/var/lib/selio-cloud` (tmpfs) | Dossiers de travail temporaires de Chromium (HOME, TMPDIR), un par action ou fenêtre, supprimés à la fin ; les cookies restent en mémoire. **Réservé à un seul worker** : tout `selio-cloud-*` restant est supprimé au démarrage, puis les dossiers abandonnés à chaque passage. Vide = `<dossier temporaire>/selio-cloud`. En mémoire vive conseillé (docs/DEPLOYMENT.md). |
 | `CRON_CLOUD` | Worker | Facultatif | `* * * * *` | Passage du planificateur du Cloud (UTC) : une action au plus par compte et par passage. |

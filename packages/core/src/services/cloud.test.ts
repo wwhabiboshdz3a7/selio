@@ -7,6 +7,7 @@ import type { OrgContext, Services } from "../context";
 import * as automation from "./automation";
 import * as cloud from "./cloud";
 import * as connections from "./connections";
+import * as items from "./items";
 
 /**
  * Selio Cloud de bout en bout sur PostgreSQL (base dédiée selio_test_core, créée si besoin) avec un
@@ -14,6 +15,12 @@ import * as connections from "./connections";
  */
 const OWNER_URL = process.env.TEST_CORE_DATABASE_URL ?? "postgres://selio:selio@127.0.0.1:5432/selio_test_core";
 const APP_URL = process.env.TEST_CORE_DATABASE_URL_APP ?? "postgres://selio_app:selio_app@127.0.0.1:5432/selio_test_core";
+
+/**
+ * Les tests historiques portent sur les réponses et relances : la lecture de la messagerie (une tâche par
+ * compte actif toutes les 10 min par défaut) y est coupée ; elle a ses propres tests plus bas.
+ */
+const NO_SYNC = { cloudInboxSyncMinutes: 0 } as const;
 
 const SECRET_COOKIE = "SESSION-SECRET-VALEUR-123";
 const MESSAGE_TEXT = "Bonjour, il est toujours disponible, je peux l'envoyer demain.";
@@ -58,7 +65,7 @@ beforeAll(async () => {
     version: "test",
     email: { send: async (m) => { sent.push(m); return { id: `mail-${sent.length}` }; } },
     publicWebUrl: "https://selio.example",
-    config: {},
+    config: { ...NO_SYNC },
   };
 });
 
@@ -70,7 +77,7 @@ afterAll(async () => {
 beforeEach(async () => {
   clock = new Date(T0);
   sent = [];
-  if (services) services.config = {};
+  if (services) services.config = { ...NO_SYNC };
   // Le coupe-circuit est global à la machine (table cloud_runtime) : remis à zéro entre deux tests.
   if (available && services) await cloud.clearCircuit(services);
 });
@@ -207,7 +214,7 @@ describe("Selio Cloud : planification (fonction pure)", () => {
 
   it("disponibilité selon l'offre : Agence compris, Pro en option (prix à décider), Starter et accès de base indisponibles", () => {
     const off = cloud.cloudSettings({ config: {} });
-    expect(off).toEqual({ heavyActions: false, maxAccountsPerOrg: 10, maxBrowsers: 5, proOption: false });
+    expect(off).toEqual({ heavyActions: false, inboxSyncMinutes: 10, inboxMaxConversations: 5, maxAccountsPerOrg: 10, maxBrowsers: 5, proOption: false });
     const agence = cloud.cloudAvailabilityFor("agence", PLAN_QUOTAS.agence, off);
     expect(agence).toMatchObject({ included: true, optional: false, available: true, maxAccounts: 10, actionsPerDay: 2000, heavyActionsEnabled: false, maxBrowsers: 5 });
     expect(agence.capacityNote).toMatch(/hypothèse à mesurer/);
@@ -216,7 +223,11 @@ describe("Selio Cloud : planification (fonction pure)", () => {
     expect(pro.reason).toMatch(/option.*prix à décider/);
     expect(cloud.cloudAvailabilityFor("pro", PLAN_QUOTAS.pro, { ...off, proOption: true })).toMatchObject({ available: true, maxAccounts: 3 });
     for (const plan of ["starter", "free"] as const) expect(cloud.cloudAvailabilityFor(plan, PLAN_QUOTAS[plan], { ...off, proOption: true })).toMatchObject({ available: false, optional: false });
-    expect(cloud.cloudConfigFromEnv({ CLOUD_HEAVY_ACTIONS: "true", CLOUD_MAX_ACCOUNTS_PER_ORG: "4", CLOUD_MAX_BROWSERS: "abc" })).toEqual({ cloudHeavyActions: true, cloudMaxAccountsPerOrg: 4, cloudMaxBrowsers: 5, cloudProOption: false });
+    expect(cloud.cloudConfigFromEnv({ CLOUD_HEAVY_ACTIONS: "true", CLOUD_MAX_ACCOUNTS_PER_ORG: "4", CLOUD_MAX_BROWSERS: "abc" })).toEqual({ cloudHeavyActions: true, cloudMaxAccountsPerOrg: 4, cloudMaxBrowsers: 5, cloudProOption: false, cloudInboxSyncMinutes: 10, cloudInboxMaxConversations: 5 });
+    // Lecture de la messagerie : 5 min au moins, 0 la coupe, valeur illisible → 10.
+    expect(cloud.cloudConfigFromEnv({ CLOUD_INBOX_SYNC_MINUTES: "2" }).cloudInboxSyncMinutes).toBe(5);
+    expect(cloud.cloudConfigFromEnv({ CLOUD_INBOX_SYNC_MINUTES: "0" }).cloudInboxSyncMinutes).toBe(0);
+    expect(cloud.cloudConfigFromEnv({ CLOUD_INBOX_SYNC_MINUTES: "x", CLOUD_INBOX_MAX_CONVERSATIONS: "50" })).toMatchObject({ cloudInboxSyncMinutes: 10, cloudInboxMaxConversations: 20 });
   });
 
   it("URL de conversation : référence numérique, hôte vinted.* seulement", () => {
@@ -271,7 +282,7 @@ describe("Selio Cloud : accord, comptes et session (PostgreSQL)", () => {
     const err = await cloud.enableAccount(pro, conn).catch((e: Error) => e);
     expect(err).toMatchObject({ code: "cloud_unavailable" });
     expect((err as Error).message).toMatch(/prix à décider/);
-    services.config = { cloudProOption: true };
+    services.config = { ...NO_SYNC, cloudProOption: true };
     expect((await cloud.enableAccount(pro, conn)).status).toBe("needs_login");
     expect((await cloud.availability(pro)).reason).toMatch(/rien n'est facturé/);
   });
@@ -347,7 +358,7 @@ describe("Selio Cloud : accord, comptes et session (PostgreSQL)", () => {
     expect(exec.calls).toHaveLength(0);
     expect(r.skipped).toEqual([{ reason: "heavy_disabled", count: 1 }]);
     expect((await jobOf(ctx, jobId)).status).toBe("skipped");
-    services.config = { cloudHeavyActions: true };
+    services.config = { ...NO_SYNC, cloudHeavyActions: true };
     expect((await cloud.updateSettings(ctx, account.id, { levels: ["light", "heavy"] })).settings.levels).toEqual(["light", "heavy"]);
   });
 
@@ -826,7 +837,7 @@ describe("Selio Cloud : arrêts, horloge, sessions, créneaux et coupe-circuit",
     const newest = accounts[3]!;
     const jobId = await addCloudJob(ctx, newest, await addConversation(ctx, newest.connectionId));
     // Agence → Pro avec l'option ouverte : 3 comptes au plus.
-    services.config = { cloudProOption: true };
+    services.config = { ...NO_SYNC, cloudProOption: true };
     await services.db.withOrg(ctx.orgId, (tx) => repos.subscriptions.upsert(tx, { plan: "pro", status: "active", quotas: quotasForPlan("pro") }));
     const exec = new cloud.FakeCloudExecutor();
     expect((await run(ctx.orgId, exec)).skipped).toEqual([{ reason: "over_account_limit", count: 1 }]);
@@ -837,7 +848,7 @@ describe("Selio Cloud : arrêts, horloge, sessions, créneaux et coupe-circuit",
     expect(await accountOf(ctx, newest.id)).toMatchObject({ status: "stopped", hasSession: false });
     expect(await accountOf(ctx, accounts[0]!.id)).toMatchObject({ status: "active", hasSession: true });
     // Option Pro refermée : plus rien ne peut tourner, rien n'est gardé.
-    services.config = {};
+    services.config = { ...NO_SYNC };
     await cloud.cloudMaintenance(services);
     for (const acc of accounts) expect(await accountOf(ctx, acc.id)).toMatchObject({ status: "stopped", hasSession: false });
   });
@@ -928,5 +939,180 @@ describe("Selio Cloud : règles d'automatisation", () => {
     expect((await run(ctx.orgId, exec)).done).toBe(1);
     expect(exec.calls[0]!.action).toMatchObject({ kind: "reply", text: "Bien reçu Léa", conversationUrl: "https://www.vinted.fr/inbox/555" });
     expect((await jobOf(ctx, cloudJob.id)).status).toBe("succeeded");
+  });
+});
+
+// ---------------------------------------------------------------- lecture de la messagerie (D63)
+
+describe("Selio Cloud : lecture de la messagerie et réponses automatiques", () => {
+  const ALL_DAY = { days: [0, 1, 2, 3, 4, 5, 6], startHour: 0, endHour: 24, timezone: "UTC" };
+  const LIMITS = { maxPerDay: 10, maxPerCustomerPerDay: 2, minMinutesBetweenActions: 0 };
+  const BUYER_TEXT = "Bonjour, toujours dispo pour le pull rayé ?";
+
+  async function enableSync(ctx: OrgContext, aiApproval = false) {
+    services.config = { cloudInboxSyncMinutes: 10 };
+    await services.db.withOrg(ctx.orgId, async (tx) => {
+      const o = await repos.orgs.byId(tx, ctx.orgId);
+      await repos.orgs.update(tx, ctx.orgId, { settings: { ...o.settings, ai: { ...o.settings.ai, requireApproval: aiApproval } } });
+    });
+  }
+  const addRule = (ctx: OrgContext, kind: "reply_on_new_message" | "auto_negotiate" | "keyword_situation", requiresApproval = false) =>
+    services.db.withOrg(ctx.orgId, (tx) => repos.rules.create(tx, { name: `Règle ${kind}`, kind, enabled: true, requiresApproval, runsIn: "browser", schedule: ALL_DAY, limits: LIMITS, config: { template: "Bien reçu {{prenom}}, je reviens vers vous." } }));
+  const messagesOf = (ctx: OrgContext, ref: string) =>
+    services.db.withOrg(ctx.orgId, async (tx) => {
+      const conv = await repos.conversations.byExternalRef(tx, "vinted", ref);
+      return conv ? { conv, messages: await repos.messages.forConversation(tx, conv.id) } : null;
+    });
+
+  it("lit la messagerie, enregistre les messages sans doublon, répond par l'IA via le Cloud, sans rien journaliser du contenu", async () => {
+    if (!available) return;
+    const ctx = await setupOrg();
+    await enableSync(ctx);
+    const account = await activeAccount(ctx);
+    await addRule(ctx, "reply_on_new_message");
+    const exec = new cloud.FakeCloudExecutor();
+    exec.inbox = {
+      listSource: "api",
+      listed: 2,
+      conversations: [
+        { ref: "7001", buyerHandle: "lea_test", itemExternalRef: null, messages: [{ direction: "inbound", body: BUYER_TEXT, at: "2026-10-29T08:50:00.000Z" }] },
+        // Le vendeur a déjà répondu depuis son téléphone : aucune réponse automatique.
+        { ref: "7002", buyerHandle: "paul_test", itemExternalRef: null, messages: [{ direction: "inbound", body: "Bonjour", at: "2026-10-29T08:40:00.000Z" }, { direction: "outbound", body: "Oui, toujours là.", at: "2026-10-29T08:45:00.000Z" }] },
+      ],
+    };
+    const first = await run(ctx.orgId, exec);
+    expect(first).toMatchObject({ syncScheduled: 1, inboxSyncs: 1, messagesIn: 2, messagesOut: 1, jobsCreated: 1, aiReplies: 1, done: 1 });
+    expect(exec.calls[0]!.action).toMatchObject({ kind: "sync_inbox", level: "light", inboxUrl: "https://www.vinted.fr/inbox", maxConversations: 5 });
+    expect(exec.calls[0]!.action.text).toBeUndefined();
+    // 7002 : dernier message du vendeur, plus rien de non lu, aucune tâche.
+    const c2 = (await messagesOf(ctx, "7002"))!;
+    expect(c2.conv.unreadCount).toBe(0);
+    expect(c2.messages.map((m) => [m.direction, m.status])).toEqual([["inbound", "received"], ["outbound", "sent"]]);
+    // 7001 : réponse rédigée par l'IA (brouillon validé rattaché), en file pour le Cloud, sans validation.
+    const jobs = (await services.db.withOrg(ctx.orgId, (tx) => repos.jobs.list(tx, {}))).items;
+    const reply = jobs.find((j) => j.kind === "automation.send_message")!;
+    expect(reply).toMatchObject({ runsIn: "cloud", status: "queued", payload: { cloudAccountId: account.id, cloudKind: "reply", aiReply: true } });
+    // Journal : des comptes seulement ; ni texte, ni pseudo. La lecture ne compte pas dans « cloud.action ».
+    const sync = (await actionsOf(ctx)).find((a) => a.kind === "sync_inbox")!;
+    expect(sync).toMatchObject({ status: "done", level: "light", detail: { code: "ok", listSource: "api", conversationsListed: 2, conversationsRead: 2, messagesIn: 2, messagesOut: 1, jobsCreated: 1, aiReplies: 1 } });
+    const journal = JSON.stringify(await actionsOf(ctx));
+    for (const secret of [BUYER_TEXT, "lea_test", "paul_test", "toujours là"]) expect(journal).not.toContain(secret);
+    const usage = await services.db.withOrg(ctx.orgId, (tx) => repos.usage.sumSince(tx, "2000-01-01T00:00:00.000Z"));
+    expect(usage["cloud.action"] ?? 0).toBe(0);
+    expect((await cloud.overview(ctx)).accounts[0]).toMatchObject({ actionsToday: 0, lastInboxSyncAt: expect.any(String) });
+
+    // Même passage relancé : ni nouvelle lecture (moins de 10 min), ni réponse (délai humain).
+    expect((await run(ctx.orgId, exec)).executed).toBe(0);
+    // 8 min plus tard : la réponse part (texte de l'IA, pas le gabarit), avant toute nouvelle lecture.
+    advance(8);
+    const second = await run(ctx.orgId, exec);
+    expect(second).toMatchObject({ done: 1, syncScheduled: 0 });
+    const sent = exec.calls[1]!.action;
+    expect(sent).toMatchObject({ kind: "reply", conversationUrl: "https://www.vinted.fr/inbox/7001" });
+    expect(sent.text).toBeTruthy();
+    expect(sent.text).not.toContain("Bien reçu");
+    expect((await jobOf(ctx, reply.id)).status).toBe("succeeded");
+
+    // Lecture suivante : Vinted montre la même conversation avec la réponse envoyée par Selio. Rien n'est doublé.
+    advance(8);
+    exec.inbox = {
+      listSource: "api",
+      // Lue cette fois dans le HTML (sans date) : même message de l'acheteuse, jamais doublé.
+      conversations: [{ ref: "7001", buyerHandle: "lea_test", itemExternalRef: null, messages: [{ direction: "inbound", body: BUYER_TEXT, at: null }, { direction: "outbound", body: sent.text!, at: null }] }],
+    };
+    const third = await run(ctx.orgId, exec);
+    expect(third).toMatchObject({ syncScheduled: 1, inboxSyncs: 1, messagesIn: 0, messagesOut: 0, jobsCreated: 0 });
+    const c1 = (await messagesOf(ctx, "7001"))!;
+    expect(c1.messages.map((m) => [m.direction, m.status])).toEqual([["inbound", "received"], ["outbound", "sent"]]);
+    expect(c1.messages[1]!.externalRef).toMatch(/^7001:/);
+  });
+
+  it("une réponse et une négociation dues passent avant la lecture du même compte ; la lecture respecte arrêt global, heures actives et coupe-circuit", async () => {
+    if (!available) return;
+    const ctx = await setupOrg();
+    await enableSync(ctx);
+    const account = await activeAccount(ctx);
+    const conv = await addConversation(ctx, account.connectionId, "8001");
+    await addCloudJob(ctx, account, conv);
+    const exec = new cloud.FakeCloudExecutor();
+    const r = await run(ctx.orgId, exec);
+    expect(r.syncScheduled).toBe(1);
+    expect(exec.calls.map((c) => c.action.kind)).toEqual(["reply"]);
+    advance(8);
+    await run(ctx.orgId, exec);
+    expect(exec.calls.map((c) => c.action.kind)).toEqual(["reply", "sync_inbox"]);
+
+    // Arrêt global : aucune lecture mise en file.
+    const other = await setupOrg();
+    await enableSync(other);
+    await activeAccount(other);
+    await automation.setGlobalPause(other, true);
+    expect((await run(other.orgId, exec)).syncScheduled).toBe(0);
+    await automation.setGlobalPause(other, false);
+    // Coupe-circuit de la machine : rien.
+    await cloud.tripCircuit(services, "rate_limited", clock);
+    expect((await run(other.orgId, exec)).syncScheduled).toBe(0);
+    await cloud.clearCircuit(services);
+    // Nuit (hors heures actives) : rien.
+    clock = new Date("2026-10-30T02:00:00.000Z");
+    expect((await run(other.orgId, exec)).syncScheduled).toBe(0);
+    // Lecture coupée par la configuration (CLOUD_INBOX_SYNC_MINUTES=0).
+    clock = new Date("2026-10-30T09:00:00.000Z");
+    services.config = { cloudInboxSyncMinutes: 0 };
+    expect((await run(other.orgId, exec)).syncScheduled).toBe(0);
+  });
+
+  it("CAPTCHA pendant la lecture : compte en pause, rien d'enregistré, rien de retenté", async () => {
+    if (!available) return;
+    const ctx = await setupOrg();
+    await enableSync(ctx);
+    const account = await activeAccount(ctx);
+    await addRule(ctx, "reply_on_new_message");
+    const exec = new cloud.FakeCloudExecutor().enqueue({ ok: false, code: "captcha", message: "CAPTCHA", sideEffects: "none" });
+    const r = await run(ctx.orgId, exec);
+    expect(r).toMatchObject({ paused: [account.id], inboxSyncs: 0 });
+    expect(await accountOf(ctx, account.id)).toMatchObject({ status: "paused", pausedReason: "captcha" });
+    advance(30);
+    expect((await run(ctx.orgId, exec)).executed).toBe(0);
+    expect(exec.calls).toHaveLength(1);
+    expect(await messagesOf(ctx, "7001")).toBeNull();
+  });
+
+  it("réponse revérifiée au moment d'envoyer : dernier message du vendeur → rien envoyé (« already_answered »)", async () => {
+    if (!available) return;
+    const ctx = await setupOrg();
+    const account = await activeAccount(ctx);
+    const conv = await addConversation(ctx, account.connectionId, "8101");
+    const jobId = await addCloudJob(ctx, account, conv);
+    await services.db.withOrg(ctx.orgId, (tx) => repos.messages.create(tx, { conversationId: conv.conversationId, direction: "outbound", source: "user", status: "sent", body: "Oui, il est dispo.", sentAt: clock.toISOString() }));
+    advance(1);
+    const exec = new cloud.FakeCloudExecutor();
+    const r = await run(ctx.orgId, exec);
+    expect(exec.calls).toHaveLength(0);
+    expect(r.skipped).toEqual([{ reason: "already_answered", count: 1 }]);
+    expect((await jobOf(ctx, jobId)).status).toBe("skipped");
+  });
+
+  it("offre lue dans la messagerie : la négociation (politique, marges) répond par le Cloud ; la réponse générique s'efface ; réglage IA « validation » respecté (gabarit)", async () => {
+    if (!available) return;
+    const ctx = await setupOrg();
+    await enableSync(ctx, true);
+    const account = await activeAccount(ctx);
+    const item = await items.createItem(ctx, { title: "Pull marin", purchasePriceCents: 1000, listedPriceCents: 3000, floorPriceCents: 2200, status: "listed" });
+    await services.db.withOrg(ctx.orgId, (tx) => repos.items.update(tx, item.id, { externalRef: "9100" }));
+    await addRule(ctx, "reply_on_new_message");
+    await addRule(ctx, "auto_negotiate");
+    const exec = new cloud.FakeCloudExecutor();
+    exec.inbox = { listSource: "api", conversations: [{ ref: "9001", buyerHandle: "offre_test", itemExternalRef: "9100", messages: [{ direction: "inbound", body: "Offre : 25,00 €", at: "2026-10-29T08:55:00.000Z", offerCents: 2500 }] }] };
+    const r = await run(ctx.orgId, exec);
+    expect(r).toMatchObject({ messagesIn: 1, jobsCreated: 1, aiReplies: 0 });
+    const jobs = (await services.db.withOrg(ctx.orgId, (tx) => repos.jobs.list(tx, {}))).items.filter((j) => j.kind === "automation.send_message");
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ runsIn: "cloud", status: "queued", payload: { cloudAccountId: account.id, cloudKind: "reply" } });
+    expect(["accept", "counter"]).toContain(jobs[0]!.payload.decision);
+    expect((await messagesOf(ctx, "9001"))!.messages[0]).toMatchObject({ offerCents: 2500 });
+    advance(8);
+    await run(ctx.orgId, exec);
+    expect(exec.calls[1]!.action).toMatchObject({ kind: "reply", conversationUrl: "https://www.vinted.fr/inbox/9001", text: expect.stringMatching(/€/) });
   });
 });

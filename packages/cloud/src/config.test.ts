@@ -10,7 +10,7 @@ import { ACTION_LEVELS, PAUSE_CODES, actionLevel, cloudActionSchema, isPauseCode
 
 describe("types", () => {
   it("répondre et relancer sont légères, republier est lourde", () => {
-    expect(ACTION_LEVELS).toEqual({ reply: "light", follow_up: "light", republish: "heavy" });
+    expect(ACTION_LEVELS).toEqual({ reply: "light", follow_up: "light", republish: "heavy", sync_inbox: "light" });
     expect(actionLevel("republish")).toBe("heavy");
   });
 

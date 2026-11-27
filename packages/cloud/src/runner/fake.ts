@@ -3,6 +3,7 @@ import { filterStorageState } from "../session";
 import type {
   BrowserRunner,
   CloudAction,
+  InboxSnapshot,
   LoginBlockSignal,
   LoginWindowApi,
   LoginWindowStatus,
@@ -61,9 +62,13 @@ const FAKE_MESSAGES: Record<Exclude<FakeScenarioName, "ok">, string> = {
 };
 
 /** Issue type d'un scénario nommé (exportée pour les assertions des tests). */
-export function fakeOutcome(name: FakeScenarioName, input: RunInput): RunOutcome {
+export function fakeOutcome(name: FakeScenarioName, input: RunInput, inbox?: InboxSnapshot): RunOutcome {
   const session = filterStorageState(input.session ?? { cookies: [], origins: [] });
-  if (name === "ok") return { ok: true, detail: "Action simulée (FakeRunner).", session, durationMs: 0 };
+  if (name === "ok") {
+    // Lecture de la messagerie : la messagerie programmée (`inbox`), sinon une messagerie vide.
+    if (input.action.kind === "sync_inbox") return { ok: true, detail: "Lecture simulée (FakeRunner).", session, durationMs: 0, inbox: inbox ?? { conversations: [], listSource: "none", listed: 0 } };
+    return { ok: true, detail: "Action simulée (FakeRunner).", session, durationMs: 0 };
+  }
   if (name === "unavailable") return { ok: false, code: name, message: FAKE_MESSAGES[name], sideEffects: "none", launched: false, durationMs: 0 };
   return { ok: false, code: name, message: FAKE_MESSAGES[name], sideEffects: name === "timeout" ? "unknown" : "none", durationMs: 0 };
 }
@@ -83,6 +88,8 @@ export interface FakeRunnerOptions {
   pageHtml?: string | ((url: string) => string);
   /** Radar Auto : navigations d'achat, consommées dans l'ordre par `openBrowsing`. */
   browsingScenarios?: FakeBrowsingScenario[];
+  /** Lecture de la messagerie : contenu rendu par le scénario « ok » d'une action `sync_inbox`. */
+  inbox?: InboxSnapshot;
 }
 
 export class FakeRunner implements BrowserRunner, PageFetcher, PageOpener {
@@ -97,6 +104,7 @@ export class FakeRunner implements BrowserRunner, PageFetcher, PageOpener {
   private fetchFallback: FakeFetchScenario;
   private pageHtml: (url: string) => string;
   private readonly browsingQueue: FakeBrowsingScenario[];
+  private inbox: InboxSnapshot | undefined;
 
   constructor(options: FakeRunnerOptions = {}) {
     this.queue = [...(options.scenarios ?? [])];
@@ -106,6 +114,13 @@ export class FakeRunner implements BrowserRunner, PageFetcher, PageOpener {
     this.fetchFallback = options.fetchFallback ?? "ok";
     this.pageHtml = toPageHtml(options.pageHtml);
     this.browsingQueue = [...(options.browsingScenarios ?? [])];
+    this.inbox = options.inbox;
+  }
+
+  /** Lecture de la messagerie : contenu rendu par les prochaines actions `sync_inbox` réussies. */
+  setInbox(inbox: InboxSnapshot | undefined): this {
+    this.inbox = inbox;
+    return this;
   }
 
   /** Radar : ajoute des scénarios de lecture. */
@@ -183,7 +198,7 @@ export class FakeRunner implements BrowserRunner, PageFetcher, PageOpener {
     this.calls.push({ action: input.action, hadSession: Boolean(input.session && (input.session.cookies.length || input.session.origins.length)), profileDir: input.profileDir });
     const scenario = this.queue.length > 0 ? this.queue.shift()! : this.fallback;
     if (typeof scenario === "function") return scenario(input);
-    if (typeof scenario === "string") return fakeOutcome(scenario, input);
+    if (typeof scenario === "string") return fakeOutcome(scenario, input, this.inbox);
     return scenario;
   }
 

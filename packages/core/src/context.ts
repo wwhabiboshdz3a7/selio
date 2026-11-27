@@ -125,6 +125,13 @@ export interface ServicesConfig {
   /** CLOUD_LOGIN_TIMEOUT_MS : durée de validité d'une fenêtre de connexion (ticket). Absent : 15 min (contrats). */
   cloudLoginTimeoutMs?: number;
   /**
+   * CLOUD_INBOX_SYNC_MINUTES : intervalle entre deux lectures de la messagerie d'un compte Cloud (10 par
+   * défaut, 5 au moins ; 0 coupe la lecture). N'agit que si le Cloud lui-même est activé (CLOUD_ENABLED).
+   */
+  cloudInboxSyncMinutes?: number;
+  /** CLOUD_INBOX_MAX_CONVERSATIONS : conversations ouvertes au plus par lecture (5 par défaut). */
+  cloudInboxMaxConversations?: number;
+  /**
    * RADAR_AUTO_ENABLED : Radar Auto (achat automatique). Faux par défaut, réservé aux comptes de l'équipe
    * pour les tests ; pas ouvert aux clients sur l'adresse partagée tant qu'Ibrahim n'a pas tranché.
    */

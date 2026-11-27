@@ -1,17 +1,19 @@
 # Selio Cloud
 
-Selio Cloud agit sur un compte Vinted depuis notre machine de Marseille quand l'ordinateur du client est éteint : répondre à un message, relancer un acheteur après 24 h. Ce document décrit ce que fait le code (pas ce qu'il devrait faire), ce qui est interdit et pourquoi, la capacité, les offres, les limites et l'exploitation.
+Selio Cloud agit sur un compte Vinted depuis notre machine de Marseille quand l'ordinateur du client est éteint : lire la messagerie, répondre aux messages, négocier par message, relancer un acheteur après 24 h. Ce document décrit ce que fait le code (pas ce qu'il devrait faire), ce qui est interdit et pourquoi, la capacité, les offres, les limites et l'exploitation.
 
 > **État au 29 octobre 2026.** Le socle (`packages/cloud`), les contrats, la base (migration 0011), le service du cœur (`packages/core/src/services/cloud.ts`), les routes de l'API, les tâches du worker et l'espace `/cloud` sont construits et testés, sur des pages locales et sur PostgreSQL local. Une revue de sécurité a été corrigée le même jour (bac à sable de Chromium, environnement minimal, domaines Vinted en liste fermée, redirections de la fenêtre de connexion, CAPTCHA pendant la connexion, ticket à usage unique, relectures sous verrou, coupe-circuit de la machine, restauration). **Rien n'a jamais été exécuté contre Vinted.** Le Cloud est **désactivé par défaut** (`CLOUD_ENABLED=false`). **Avis de l'avocat favorable le 26 novembre 2026** ([DECISIONS.md](DECISIONS.md) D62) : ouverture progressive par la configuration du PC de production, d'abord sur un compte Vinted de test de l'équipe ([TUTORIELS.md](TUTORIELS.md) §17), garde-fous inchangés. État détaillé : [BUILD_STATUS.md](BUILD_STATUS.md).
 
 ## En bref
+
+- **Plein automatique (D63, 27 novembre 2026)** : à intervalles réguliers (`CLOUD_INBOX_SYNC_MINUTES`, 10 min), aux heures actives, le Cloud **lit la messagerie Vinted** du compte (sans rien y cliquer) ; les nouveaux messages déclenchent les **réponses rédigées par l'IA** et la **négociation dans les marges du vendeur**, envoyées par le Cloud **sans validation préalable**, sauf sur les règles réglées « Validation avant envoi ». Le client l'a accepté dans le texte d'accord (`2026-11-27.1`). Voir §1.8.
 
 - Le client donne son **accord écrit** (écran d'accord versionné), puis **se connecte lui-même** à Vinted dans une fenêtre sécurisée. Selio ne voit, ne garde et ne journalise **jamais** son mot de passe.
 - Seule la **session** du compte (cookies et stockage local des domaines vinted.\*) est gardée, **chiffrée**, une par compte, supprimable en un clic.
 - Un navigateur Chromium **s'ouvre seulement pour agir**, avec son **bac à sable** et un environnement minimal, dans un contexte **sans enregistrement sur le disque**, au **rythme humain** et dans les **plafonds de l'offre**, puis se referme.
 - Au **premier** CAPTCHA, avertissement, blocage ou « trop de requêtes » (pendant une action **ou pendant la connexion**), le compte **se met en pause**, le client est prévenu, **rien n'est retenté**. Après un « trop de requêtes » ou un blocage, **tout le Cloud de la machine** s'arrête une heure (adresse partagée).
 - Chaque action est inscrite dans un **journal** visible par le client, gardé **90 jours**.
-- Au lancement, tous les comptes partagent l'adresse IP de la machine : **actions légères seulement** (répondre, relancer). Les actions lourdes attendent une décision d'Ibrahim.
+- Au lancement, tous les comptes partagent l'adresse IP de la machine : **actions légères seulement** (lire la messagerie, répondre, négocier par message, relancer). Les actions lourdes attendent une décision d'Ibrahim.
 
 ## 1. Architecture
 
@@ -83,7 +85,7 @@ Côté API : origine vérifiée avant la mise à niveau WebSocket, ticket consom
 
 ### 1.4 Planificateur au rythme humain
 
-- Les règles d'automatisation « répondre à un nouveau message » et « relancer sans réponse » créent des tâches `jobs` avec `runs_in = 'cloud'` quand le compte de la conversation est actif dans le Cloud (`decideRunsIn` dans `automation.ts`). Les autres tâches restent sur le serveur ou l'extension. Un compte **Perso** n'est jamais utilisé.
+- Les règles d'automatisation « répondre à un nouveau message », « négociation automatique », « situation par mots-clés » (réponse par gabarit seulement ; une transmission au vendeur n'est jamais confiée au Cloud), « relancer sans réponse » et « relance après 24 h » créent des tâches `jobs` avec `runs_in = 'cloud'` quand le compte de la conversation est actif dans le Cloud (`decideRunsIn` dans `automation.ts`, `CLOUD_RULE_ACTIONS` des contrats). Le statut (en file ou à valider) reste celui de la règle (« Validation avant envoi »). Les autres tâches restent sur le serveur ou l'extension. Un compte **Perso** n'est jamais utilisé.
 - Le worker fait un passage chaque minute (`CRON_CLOUD`) : `runCloudTick` parcourt les organisations qui ont des comptes Cloud, en parallèle jusqu'à `CLOUD_MAX_BROWSERS`.
 - **Au plus une action par compte et par passage.** Avant d'ouvrir le navigateur, `planAccountRun` vérifie dans cet ordre : arrêt global des automatisations, coupe-circuit de la machine, accord valide pour la version courante, offre compatible, compte dans le nombre de comptes de l'offre (les plus anciens d'abord), compte actif, session présente, niveau d'action autorisé, heures actives, plafond du jour, plafond horaire, délai depuis la dernière action.
 - **Relu sous verrou juste avant chaque action**, dans la transaction qui prend la tâche : arrêt global, coupe-circuit, accord, offre et plafond de comptes. Un arrêt d'urgence déclenché pendant un passage arrête donc aussi les comptes suivants de ce passage.
@@ -122,10 +124,36 @@ Aucune de ces valeurs n'est mesurée : ce sont des valeurs prudentes, à revoir 
 
 ### 1.7 Écran d'accord versionné
 
-- Texte dans `CLOUD_CONSENT_TEXT`, version dans `CLOUD_CONSENT_VERSION` (`2026-10-29.1`) : règles de Vinted contre les outils automatisés, adresse IP partagée (un compte sanctionné peut faire bloquer l'adresse pour tous), pause au premier avertissement, aucun mot de passe gardé, session seule gardée, chiffrée et supprimable, journal de 90 jours, responsabilité du titulaire du compte, indépendance vis-à-vis de Vinted. Jamais « zéro risque ».
+- Texte dans `CLOUD_CONSENT_TEXT`, version dans `CLOUD_CONSENT_VERSION` (`2026-11-27.1`, D63 : lecture de la messagerie à intervalles réguliers, réponses de l'IA et réponses de négociation dans les marges envoyées sans validation préalable, validation exigeable règle par règle, pause et arrêt à tout moment) : règles de Vinted contre les outils automatisés, adresse IP partagée (un compte sanctionné peut faire bloquer l'adresse pour tous), pause au premier avertissement, aucun mot de passe gardé, session seule gardée, chiffrée et supprimable, journal de 90 jours, responsabilité du titulaire du compte, indépendance vis-à-vis de Vinted. Jamais « zéro risque ».
 - L'accord exige une case cochée (`accepted: true`) et la version affichée. Sont enregistrés (`cloud_consents`) : version, **empreinte SHA-256 du texte**, date, utilisateur, adresse IP.
 - **Sans accord valide pour la version courante (version et empreinte), aucune activation ni aucune action Cloud** (`no_consent`). Changer le texte oblige à changer la version : tout le monde doit relire et accepter à nouveau.
 - Permissions : `cloud.read` pour tous les rôles ; `cloud.manage` (accepter l'accord, activer, mettre en pause, arrêter, effacer une session, ouvrir la fenêtre de connexion) pour propriétaire et administrateur.
+
+### 1.8 Lecture de la messagerie et réponses automatiques
+
+Décision d'Ibrahim du 27 novembre 2026 ([DECISIONS.md](DECISIONS.md) D63) : le Cloud fonctionne **en plein automatique**, sans « dernier clic » du vendeur, avec le texte d'accord `2026-11-27.1` accepté par le client.
+
+**Planification.** À chaque passage (`cloud.tick`), pour chaque compte Cloud actif avec session (accord courant, offre compatible, dans le nombre de comptes de l'offre, pas d'arrêt global, aux heures actives, hors coupe-circuit, connexion Vinted non Perso), une tâche « lecture de la messagerie » (`jobs.kind = 'connector.sync'`, `payload.cloudKind = 'sync_inbox'`, `runs_in = 'cloud'`) est mise en file **si aucune n'est déjà en file ou en cours et si la précédente date d'au moins `CLOUD_INBOX_SYNC_MINUTES`** (10 par défaut, 5 au moins, `0` coupe la lecture). Elle passe ensuite par `planAccountRun` comme toute action : une action par compte et par passage, plafond horaire, délai humain, heures actives, coupe-circuit, relecture sous verrou. **Les réponses et négociations dues du même compte passent avant elle.**
+
+**Quota.** La lecture compte dans le **journal**, le **plafond horaire** (12 par compte) et le **délai humain** entre deux actions ; elle **ne compte pas** dans le plafond journalier de l'offre (`automationActionsPerDay`) ni dans le compteur d'usage « cloud.action » : elle n'envoie rien, et la compter épuiserait le quota des réponses (6 lectures par heure). Une fois le plafond journalier atteint par les envois, la lecture attend aussi le lendemain (`daily_limit`).
+
+**Dans le navigateur (`PlaywrightRunner.syncInbox`, lecture seule).**
+1. `https://<domaine Vinted du compte>/inbox` (domaine pris dans la liste fermée, mêmes contrôles que `resolveTarget` ; ni conversation, ni paramètre) ; `detectBlock` sur la page.
+2. Liste des conversations : d'abord le **JSON que la page charge elle-même** (`/api/v2/inbox…`, même origine, réponses lues au passage, au plus 20 réponses de 4 Mo, aucune requête ajoutée), sinon **lecture souple du HTML** (liens `/inbox/<id>` du même site, indices « non lu » par ligne). Adaptateur `packages/connectors/src/vinted/adapters/v1-inbox.ts`.
+3. Conversations ouvertes : les **non lues**, au plus `CLOUD_INBOX_MAX_CONVERSATIONS` (5) ; si rien ne dit lesquelles sont non lues, les **3 plus récentes**. Chaque conversation est ouverte par **navigation** (`page.goto`), **jamais par un clic** ; `detectBlock` sur chaque page : au **premier** signal, arrêt avec ce code (`sideEffects: "none"`), compte en pause, rien n'est retenté. Messages : JSON de la conversation (`/api/v2/conversations/<id>`) d'abord, sinon `parseConversationPage` (adaptateur v1). Une direction de message impossible à établir fait écarter le message ; une offre n'est gardée qu'en euros.
+4. Rien de reconnu et aucun signal : succès avec une liste vide, et un **diagnostic de structure** dans le journal du worker (`cloud.inbox.unrecognised` : comptes, préfixes de `data-testid` sans numéros, jamais de texte, de pseudo ni d'adresse).
+5. Durée bornée par `CLOUD_ACTION_TIMEOUT_MS` (90 s) : moins de 12 s restantes, on n'ouvre plus de conversation. Mêmes créneaux de navigateurs que les autres actions.
+
+Ouvrir une conversation peut la **marquer comme lue sur Vinted**, comme une lecture à la main (dit dans l'accord). Aucun clic, aucune saisie, aucune requête de notre part autre que ces navigations (test sur vrai Chromium : `packages/cloud/src/runner/inbox.int.test.ts`).
+
+**Enregistrement (`packages/core/src/services/cloud-inbox.ts`).** Le contenu rendu est revalidé et borné (`cloudInboxSnapshot`, contrats). Conversation d'un autre compte Vinted : ignorée. Messages de l'acheteur : `ingestInboundTx`, dédoublonnés par `<conversation>:<date ou 40 premiers caractères>` (même clé que l'extension). Messages du vendeur vus sur Vinted (réponse depuis le téléphone, ou message envoyé par Selio) : enregistrés « envoyés », **sans doublon** (même clé, ou même texte déjà envoyé par Selio, qui reçoit alors la clé) ; si le dernier message sur Vinted est celui du vendeur, plus rien de « non lu ». Ligne de journal `sync_inbox` à clés fermées : `listSource`, `conversationsListed`, `conversationsRead`, `messagesIn`, `messagesOut`, `jobsCreated`, `aiReplies`.
+
+**Réponses automatiques.** Dès qu'un message d'acheteur est nouveau, les règles de conversation actives sont lancées aussitôt (contexte système), dans l'ordre **négociation → situation → réponse générique** ; la réponse générique s'efface si une négociation ou une situation (réponse ou transmission au vendeur) a déjà pris le message. Une réponse par message de l'acheteur, dans les limites de la règle (par client et par jour). Les tâches partent par le Cloud (`runsIn = "cloud"`), **en file** sauf si la règle exige une validation.
+- **Réponse générique** : rédigée par l'IA par le chemin des suggestions (`suggestReply` : quota mensuel, décision de la politique imposée, sortie validée — aucun prix hors décision, ni lien, ni HTML, ni « dernier prix » abusif), **sans repli simulé**. IA coupée, réglage IA « Validation humaine avant envoi » actif (un brouillon IA ne part jamais seul), message de l'acheteur suspect (tentative d'injection), IA indisponible ou sortie refusée : **gabarit de la règle**. Jamais un texte vide ou refusé.
+- **Négociation** : décision **déterministe** de la politique (accepter, contre-proposer, refuser, dans les marges et les limites du vendeur ; plancher jamais franchi ; nombre de contre-offres borné), texte `autoNegotiateBody` (ou message de lot). L'IA ne fixe aucun prix.
+- **Au moment d'envoyer**, la conversation est relue : si le dernier message échangé est déjà celui du vendeur, rien ne part (`already_answered`).
+
+**Limites.** L'adaptateur de la messagerie (`v1-inbox`) est construit sur des **fixtures synthétiques** : ni le JSON ni le HTML de la messagerie de Vinted n'ont été observés. Il est à vérifier sur le compte de test de l'équipe (diagnostic `cloud.inbox.unrecognised`). **Accepter une offre par le bouton de la carte d'offre de Vinted n'est pas fait** : la négociation se fait **par message** (« faites l'offre sur l'annonce et je l'accepte »).
 
 ## 2. Ce qui est interdit, et pourquoi
 
@@ -143,7 +171,7 @@ Aucune de ces valeurs n'est mesurée : ce sont des valeurs prudentes, à revoir 
 
 ## 3. Adresse IP partagée : actions légères seulement
 
-- **Légères** (autorisées) : `reply` (répondre), `follow_up` (relancer après 24 h). **Lourdes** (fermées) : `republish` (republier), `bulk_edit` (modifier en masse).
+- **Légères** (autorisées) : `sync_inbox` (lire la messagerie, lecture seule), `reply` (répondre, négocier par message), `follow_up` (relancer après 24 h). **Lourdes** (fermées) : `republish` (republier), `bulk_edit` (modifier en masse).
 - Les actions lourdes sont refusées à trois endroits tant que `CLOUD_HEAVY_ACTIONS=false` : réglage du compte, planificateur et exécuteur. `bulk_edit` n'a aucune implémentation navigateur. La republication est écrite mais **non vérifiée**.
 - **10 comptes Cloud au plus par organisation** (`CLOUD_MAX_ACCOUNTS_PER_ORG`), et jamais plus que les comptes Vinted de l'offre. Le plafond est revérifié à chaque action (pas seulement à l'activation).
 - **Coupe-circuit** : après un « trop de requêtes » ou un blocage sur un compte, plus aucune action sur la machine pendant 60 min (§1.5).
@@ -191,6 +219,7 @@ Le prompt (§5.2) cite une option à 9,99 € pour Starter et Pro. Le code suit 
 
 ## 6. Limites connues
 
+- **Messagerie : adaptateur non vérifié en réel** (`v1-inbox`, fixtures synthétiques) ; le diagnostic `cloud.inbox.unrecognised` dit quoi corriger. L'acceptation d'une offre par le bouton de la carte d'offre de Vinted n'est **pas implémentée** : la négociation se fait par message.
 - **Jamais testé contre Vinted.** Les éléments propres au Cloud dans `packages/cloud/src/vinted.ts` ne sont pas vérifiés sur le vrai site : bouton d'envoi, menu du membre, noms des cookies de session (`access_token_web`, `refresh_token_web`), URL de connexion, bouton de republication. Ils sont à valider dans un navigateur réel, puis à déplacer dans un adaptateur `v2` du connecteur (`packages/connectors`, jamais en modifiant `v1`).
 - Les motifs de `detectBlock` sont construits sans page réelle de blocage. Aucun taux de blocage n'est mesuré.
 - Connexion par Google, Facebook ou Apple non prise en charge (fenêtres surgissantes fermées). La fenêtre de connexion désactive aussi le cache HTTP.
@@ -294,7 +323,7 @@ Environment=CLOUD_PROFILE_DIR=/var/lib/selio-cloud
 
 **Qu'est-ce que Selio garde ?** Seulement la session de ce compte : les cookies et le stockage local de Vinted. Elle est chiffrée sur notre machine, en France, et vous pouvez la supprimer à tout moment en un clic.
 
-**Que fait le Cloud, exactement ?** Pour l'instant, il répond aux messages et relance les acheteurs après 24 h, selon vos règles d'automatisation, aux heures de journée, au rythme d'une personne, dans les plafonds de votre offre. Chaque action est dans votre journal.
+**Que fait le Cloud, exactement ?** Il lit votre messagerie Vinted à intervalles réguliers, répond aux nouveaux messages (texte rédigé par l'IA, ou votre gabarit), négocie les offres dans vos marges et relance les acheteurs après 24 h, selon vos règles d'automatisation, aux heures de journée, au rythme d'une personne, dans les plafonds de votre offre. Les réponses partent sans votre validation, sauf sur les règles où vous avez gardé « Validation avant envoi ». Chaque action, lecture comprise, est dans votre journal (sans le texte des messages).
 
 **Mon compte peut-il être sanctionné ?** C'est possible. Les conditions de Vinted interdisent les outils automatisés, et nous ne promettons jamais « zéro risque ». Pour limiter ce risque, le Cloud agit rarement, à visage découvert, et s'arrête au premier signal.
 

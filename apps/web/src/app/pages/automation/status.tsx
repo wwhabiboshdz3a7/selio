@@ -143,7 +143,7 @@ export function StoppedAlert({ summary, children }: { summary: BotSummary; child
 /** État de Selio Cloud vu des automatisations, avec le lien vers les comptes connectés dans le Cloud. */
 export function CloudLine({ cloud, className, stacked = false }: { cloud: BotSummary["cloud"]; className?: string; /** Colonne étroite : bouton sous le texte. */ stacked?: boolean }) {
   const status = cloud.ready
-    ? { tone: "success" as const, label: "Prêt", text: `${cloud.activeAccounts} compte${cloud.activeAccounts > 1 ? "s" : ""} actif${cloud.activeAccounts > 1 ? "s" : ""} sur ${cloud.accounts} : les automatisations compatibles tournent ordinateur éteint, de ${cloud.activeHours.startHour} h à ${cloud.activeHours.endHour} h.` }
+    ? { tone: "success" as const, label: "Prêt", text: `${cloud.activeAccounts} compte${cloud.activeAccounts > 1 ? "s" : ""} actif${cloud.activeAccounts > 1 ? "s" : ""} sur ${cloud.accounts} : Selio lit la messagerie Vinted et les réponses et la négociation partent automatiquement, ordinateur éteint, de ${cloud.activeHours.startHour} h à ${cloud.activeHours.endHour} h (sauf règles réglées « Validation avant envoi »).` }
     : !cloud.available
       ? { tone: "muted" as const, label: "Pas sur ce forfait", text: cloud.reason }
       : cloud.serverEnabled === false

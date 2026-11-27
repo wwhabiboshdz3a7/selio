@@ -34,7 +34,8 @@ export type ScreenMessage =
 // ---------------------------------------------------------------- exécuteur
 
 /**
- * Traduit une action du cœur en action du navigateur. `bulk_edit` (lourde) n'a pas d'implémentation
+ * Traduit une action du cœur en action du navigateur (réponse, relance, lecture de la messagerie,
+ * republication). `bulk_edit` (lourde) n'a pas d'implémentation
  * navigateur : refusée sans rien ouvrir.
  */
 export function toRunnerAction(action: CloudExecutorAction): RunnerAction | null {
@@ -43,6 +44,8 @@ export function toRunnerAction(action: CloudExecutorAction): RunnerAction | null
     return { kind: action.kind, conversationUrl: action.conversationUrl, text: action.text, id: action.id };
   }
   if (action.kind === "republish") return action.itemUrl ? { kind: "republish", itemUrl: action.itemUrl, id: action.id } : null;
+  // Lecture de la messagerie : aucune saisie, aucun clic (le navigateur ne fait qu'ouvrir des pages).
+  if (action.kind === "sync_inbox") return action.inboxUrl ? { kind: "sync_inbox", inboxUrl: action.inboxUrl, id: action.id, ...(action.maxConversations ? { maxConversations: action.maxConversations } : {}) } : null;
   return null;
 }
 
@@ -106,6 +109,10 @@ export interface CloudTickSummary {
   swept: number;
   /** Coupe-circuit de la machine en cours (fin), ou déclenché pendant ce passage. */
   machinePausedUntil: string | null;
+  /** Lectures de la messagerie faites, messages nouveaux, réponses créées (comptes seulement). */
+  inboxSyncs: number;
+  messagesIn: number;
+  jobsCreated: number;
 }
 
 /**
@@ -114,7 +121,7 @@ export interface CloudTickSummary {
  * Vinted, rien n'est retenté). Cloud désactivé : rien n'est fait.
  */
 export async function cloudTick(services: Services, log: TaskLogger, deps: CloudTickDeps): Promise<CloudTickSummary> {
-  const summary: CloudTickSummary = { enabled: !!deps.executor, orgs: 0, executed: 0, done: 0, failed: 0, paused: 0, needsLogin: 0, requeued: 0, recovered: 0, errors: 0, swept: 0, machinePausedUntil: null };
+  const summary: CloudTickSummary = { enabled: !!deps.executor, orgs: 0, executed: 0, done: 0, failed: 0, paused: 0, needsLogin: 0, requeued: 0, recovered: 0, errors: 0, swept: 0, machinePausedUntil: null, inboxSyncs: 0, messagesIn: 0, jobsCreated: 0 };
   if (!deps.executor) {
     log.info({}, "Cloud désactivé : aucune action (CLOUD_ENABLED=true et CLOUD_CHROMIUM_PATH requis)");
     return summary;
@@ -138,6 +145,13 @@ export async function cloudTick(services: Services, log: TaskLogger, deps: Cloud
     summary.needsLogin += s.needsLogin.length;
     summary.requeued += s.requeued;
     summary.recovered += s.recovered;
+    summary.inboxSyncs += s.inboxSyncs;
+    summary.messagesIn += s.messagesIn;
+    summary.jobsCreated += s.jobsCreated;
+    // Lecture de la messagerie : des comptes, jamais un texte ni un pseudo.
+    if (s.inboxSyncs || s.syncScheduled) log.info({ orgId: s.orgId, scheduled: s.syncScheduled, syncs: s.inboxSyncs, messagesIn: s.messagesIn, messagesOut: s.messagesOut, jobsCreated: s.jobsCreated, aiReplies: s.aiReplies }, "cloud : lecture de la messagerie");
+    if (s.inboxUnrecognised) log.warn({ orgId: s.orgId, count: s.inboxUnrecognised }, "cloud : messagerie non reconnue — voir « cloud.inbox.unrecognised » (diagnostic de structure) et l'adaptateur v1-inbox");
+    if (s.inboxErrors) log.error({ orgId: s.orgId, count: s.inboxErrors }, "cloud : lecture de la messagerie non enregistrée");
     if (s.paused.length) log.warn({ orgId: s.orgId, accounts: s.paused }, "cloud : compte en pause après un signal de Vinted (aucune nouvelle tentative)");
     if (s.circuitUntil) {
       summary.machinePausedUntil = s.circuitUntil;

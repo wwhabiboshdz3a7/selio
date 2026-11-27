@@ -190,6 +190,18 @@ describe("journal des actions", () => {
     fireEvent.change(screen.getByLabelText("Statut"), { target: { value: "running" } });
     expect(await screen.findByText("Aucune action ne correspond à ces filtres")).toBeTruthy();
   });
+
+  it("la lecture de la messagerie a son libellé dans le filtre ; le tableau de bord annonce les réponses automatiques", async () => {
+    await demo({ plan: "agence" });
+    mount("/cloud/journal", <CloudJournal />);
+    await screen.findByRole("table", { name: "Journal des actions Cloud" });
+    const kinds = within(screen.getByLabelText("Type")).getAllByRole("option").map((o) => o.textContent);
+    expect(kinds).toContain("Lecture de la messagerie");
+    cleanup();
+    mount("/cloud", <CloudDashboard />);
+    expect(await screen.findByText("Lecture et réponses automatiques")).toBeTruthy();
+    expect(screen.getByText(/partent automatiquement, sans validation, sauf sur les règles réglées « Validation avant envoi »/)).toBeTruthy();
+  });
 });
 
 describe("pause globale", () => {

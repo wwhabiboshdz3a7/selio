@@ -1,7 +1,20 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium, errors as pwErrors, type Browser, type BrowserContext, type ElementHandle, type JSHandle, type Locator, type Page } from "playwright-core";
-import type { CapturedConversation } from "@selio/connectors/vinted-adapter";
+import {
+  CONVERSATION_WAIT_SELECTORS,
+  INBOX_WAIT_SELECTORS,
+  conversationApiRef,
+  inboxPageDiagnostic,
+  isInboxApiPath,
+  parseConversationApiPayload,
+  parseHtmlDocument,
+  parseInboxApiPayload,
+  parseInboxDocumentLoose,
+  selectConversationsToOpen,
+  type CapturedConversation,
+  type InboxListResult,
+} from "@selio/connectors/vinted-adapter";
 import { CLOUD_DEFAULTS } from "../config";
 import { detectBlock, type BlockSignal, type DetectOptions } from "../guard";
 import { launchLoginWindow } from "../login-window";
@@ -29,6 +42,8 @@ import {
   type BrowserRunner,
   type CloudAction,
   type CloudLogger,
+  type InboxSnapshot,
+  type InboxSnapshotConversation,
   type LoginWindowApi,
   type OpenLoginWindowInput,
   type RunFailureCode,
@@ -56,6 +71,18 @@ const CATALOG_PAYLOADS_MAX = 3;
 const CATALOG_PAYLOAD_MAX_CHARS = 4_000_000;
 const CATALOG_WAIT_MS = 12_000;
 const CATALOG_SETTLE_MS = 1_500;
+
+/**
+ * Lecture de la messagerie : réponses JSON gardées au plus (liste et conversations confondues), taille
+ * maximale de chacune, attentes, et temps minimal restant avant d'ouvrir une conversation de plus.
+ */
+const INBOX_PAYLOADS_MAX = 20;
+const INBOX_PAYLOAD_MAX_CHARS = 4_000_000;
+const INBOX_WAIT_MS = 12_000;
+const INBOX_CONVERSATION_WAIT_MS = 8_000;
+const INBOX_SETTLE_MS = 1_000;
+const INBOX_MIN_REMAINING_MS = 12_000;
+const INBOX_MAX_CONVERSATIONS_DEFAULT = 5;
 
 /**
  * Exécuteur Playwright du Cloud.
@@ -191,7 +218,7 @@ export function countSentCopies(conversation: CapturedConversation | null, text:
 
 type Step = { clicked: boolean };
 type Failure = { ok: false; code: RunFailureCode; message: string; sideEffects: "none" | "unknown"; launched?: boolean };
-type Success = { ok: true; detail: string };
+type Success = { ok: true; detail: string; inbox?: InboxSnapshot };
 
 function failure(code: RunFailureCode, message: string, sideEffects: "none" | "unknown" = "none"): Failure {
   return { ok: false, code, message, sideEffects };
@@ -409,7 +436,7 @@ export class PlaywrightRunner implements BrowserRunner, PageFetcher, PageOpener 
    * ou d'un article (republication), selon `detectPage` de l'adaptateur.
    */
   resolveTarget(action: CloudAction): URL | null {
-    const raw = action.kind === "republish" ? action.itemUrl : action.conversationUrl;
+    const raw = action.kind === "republish" ? action.itemUrl : action.kind === "sync_inbox" ? action.inboxUrl : action.conversationUrl;
     let u: URL;
     try {
       u = new URL(raw, this.baseUrl);
@@ -419,6 +446,9 @@ export class PlaywrightRunner implements BrowserRunner, PageFetcher, PageOpener 
     const sameBase = u.origin === this.baseUrl.origin;
     const vinted = u.protocol === "https:" && isVintedDomain(u.hostname);
     if (!sameBase && !vinted) return null;
+    if (u.username || u.password) return null;
+    // Lecture de la messagerie : la page de la liste des conversations seulement, sans paramètre.
+    if (action.kind === "sync_inbox") return /^\/inbox\/?$/.test(u.pathname) && u.search === "" && u.hash === "" ? u : null;
     const kind = detectPage(`https://www.vinted.fr${u.pathname}`);
     if (action.kind === "republish" ? kind !== "item" : kind !== "conversation") return null;
     return u;
@@ -444,7 +474,7 @@ export class PlaywrightRunner implements BrowserRunner, PageFetcher, PageOpener 
       return refuse(notLaunched("error", "Action lourde désactivée (CLOUD_HEAVY_ACTIONS=false, à décider par Ibrahim)."));
     }
     const target = this.resolveTarget(action);
-    if (!target) return refuse(notLaunched("error", "Adresse refusée : seules les pages de conversation ou d'article Vinted sont acceptées."));
+    if (!target) return refuse(notLaunched("error", "Adresse refusée : seules la messagerie, les pages de conversation ou d'article Vinted sont acceptées."));
     const session = input.session ? filterStorageState(input.session) : null;
     if (!session || isSessionEmpty(session)) return refuse(notLaunched("not_logged_in", "Aucune session enregistrée : le client doit se connecter dans la fenêtre sécurisée."));
 
@@ -457,7 +487,12 @@ export class PlaywrightRunner implements BrowserRunner, PageFetcher, PageOpener 
     try {
       const { context, page } = await this.openPage(lease, session);
 
-      const result = action.kind === "republish" ? await this.republish(page, target, step) : await this.sendMessage(page, target, action.text, step);
+      const result =
+        action.kind === "republish"
+          ? await this.republish(page, target, step)
+          : action.kind === "sync_inbox"
+            ? await this.syncInbox(page, target, action.maxConversations ?? INBOX_MAX_CONVERSATIONS_DEFAULT, lease)
+            : await this.sendMessage(page, target, action.text, step);
 
       const after = await readSession(context);
       if (result.ok) return finish({ ...result, session: after ?? session });
@@ -544,6 +579,153 @@ export class PlaywrightRunner implements BrowserRunner, PageFetcher, PageOpener 
       await page.waitForTimeout(400);
     }
     return failure("timeout", "Envoi non confirmé : le message n'est pas apparu dans la conversation. Ne pas renvoyer automatiquement.", "unknown");
+  }
+
+  /**
+   * Lecture de la messagerie — LECTURE SEULE : aucune méthode de clic, de saisie ni d'envoi n'est appelée,
+   * aucune requête n'est émise par nous en dehors des navigations (`page.goto`) vers la liste puis vers
+   * chaque conversation retenue. Les réponses JSON que la page charge ELLE-MÊME (même origine, liste et
+   * conversations) sont lues au passage, bornées en nombre et en taille.
+   *
+   * 1. Liste : JSON d'abord, sinon lecture souple du HTML (adaptateur `v1-inbox` du connecteur).
+   * 2. Conversations à ouvrir : non lues (au plus `max`) ; statut inconnu partout : les 3 plus récentes.
+   * 3. Chaque page est vérifiée (`detectBlock`) : au premier signal de Vinted, arrêt avec ce code (rien n'a
+   *    été fait sur le compte : `sideEffects: "none"`). Messages : JSON d'abord, sinon `parseConversationPage`.
+   * 4. Rien de reconnu : succès avec une liste vide et un diagnostic de structure (`cloud.inbox.unrecognised`).
+   * Ouvrir une conversation peut la marquer comme lue sur Vinted, comme une lecture à la main.
+   */
+  private async syncInbox(page: Page, target: URL, max: number, lease: BrowserLease): Promise<Failure | Success> {
+    const listPayloads: string[] = [];
+    const convPayloads = new Map<string, string[]>();
+    let kept = 0;
+    const wakers = new Set<() => void>();
+    page.on("response", (res) => {
+      void (async () => {
+        try {
+          if (kept >= INBOX_PAYLOADS_MAX || res.status() !== 200) return;
+          const u = new URL(res.url());
+          if (u.origin !== target.origin) return;
+          const type = res.request().resourceType();
+          if (type !== "xhr" && type !== "fetch") return;
+          const ref = conversationApiRef(u.pathname);
+          const isList = isInboxApiPath(u.pathname);
+          if (!ref && !isList) return;
+          const body = await res.text();
+          if (body.length === 0 || body.length > INBOX_PAYLOAD_MAX_CHARS) return;
+          kept++;
+          if (isList) {
+            if (listPayloads.length < 3) listPayloads.push(body);
+          } else if (ref) {
+            const list = convPayloads.get(ref) ?? [];
+            if (list.length < 2) convPayloads.set(ref, [...list, body]);
+          }
+          for (const wake of wakers) wake();
+        } catch {
+          // réponse illisible ou page fermée : ignorée
+        }
+      })();
+    });
+    const budget = (ms: number) => Math.max(0, Math.min(ms, lease.remaining() - 2_000));
+    /** Attend un élément de la page OU une réponse JSON utile, au plus `ms` (jamais au-delà du délai de l'action). */
+    const settle = async (selectors: readonly string[], ready: () => boolean, ms: number) => {
+      if (ready()) return;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let wake: () => void = () => {};
+      const payload = new Promise<void>((resolve) => {
+        wake = () => {
+          if (ready()) resolve();
+        };
+      });
+      wakers.add(wake);
+      try {
+        await Promise.race([
+          page.locator(selectors.join(", ")).first().waitFor({ state: "attached", timeout: Math.max(1, ms) }).catch(() => {}),
+          payload,
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, ms);
+          }),
+        ]);
+      } finally {
+        wakers.delete(wake);
+        if (timer) clearTimeout(timer);
+      }
+    };
+
+    const blocked = await this.open(page, target);
+    if (blocked) return blocked;
+    await settle(INBOX_WAIT_SELECTORS, () => listPayloads.length > 0, budget(INBOX_WAIT_MS));
+    await page.waitForTimeout(budget(INBOX_SETTLE_MS));
+    const html = await page.content();
+    const listBlock = detectBlock(html, page.url());
+    if (listBlock) return failure(listBlock.code, listBlock.message);
+
+    let list: InboxListResult | null = null;
+    for (const p of listPayloads) {
+      const parsed = parseInboxApiPayload(p);
+      if (parsed && parsed.entries.length > 0) {
+        list = parsed;
+        break;
+      }
+    }
+    if (!list) {
+      try {
+        list = parseInboxDocumentLoose(parseHtmlDocument(html), page.url());
+      } catch {
+        list = null;
+      }
+    }
+    if (!list || list.entries.length === 0) {
+      const diagnostic = inboxPageDiagnostic(html, listPayloads.length);
+      this.logger.warn("cloud.inbox.unrecognised", diagnostic);
+      return { ok: true, detail: "Messagerie non reconnue : rien n'a été lu (diagnostic de structure journalisé).", inbox: { conversations: [], listSource: "none", listed: 0, diagnostic } };
+    }
+
+    const chosen = selectConversationsToOpen(list.entries, max);
+    const conversations: InboxSnapshotConversation[] = [];
+    let unreadable = 0;
+    let opened = 0;
+    for (const entry of chosen) {
+      if (lease.remaining() < INBOX_MIN_REMAINING_MS) {
+        this.logger.info("cloud.inbox.truncated", { chosen: chosen.length, opened });
+        break;
+      }
+      const url = new URL(`/inbox/${entry.ref}`, target);
+      const response = await page.goto(url.toString(), { waitUntil: "domcontentloaded" });
+      opened++;
+      const status = response?.status() ?? null;
+      const first = detectBlock(await page.content(), page.url(), { status });
+      if (first) return failure(first.code, first.message);
+      if (status !== null && status >= 400) {
+        unreadable++;
+        continue;
+      }
+      await settle(CONVERSATION_WAIT_SELECTORS, () => (convPayloads.get(entry.ref)?.length ?? 0) > 0, budget(INBOX_CONVERSATION_WAIT_MS));
+      const again = detectBlock(await page.content(), page.url());
+      if (again) return failure(again.code, again.message);
+      let read: InboxSnapshotConversation | null = null;
+      for (const p of convPayloads.get(entry.ref) ?? []) {
+        const data = parseConversationApiPayload(p, entry.ref);
+        if (data && data.messages.length > 0) {
+          read = { ref: entry.ref, buyerHandle: data.buyerHandle ?? entry.buyerHandle, itemExternalRef: data.itemExternalRef ?? entry.itemExternalRef, messages: data.messages };
+          break;
+        }
+      }
+      if (!read) {
+        const dom = await readConversation(page);
+        if (dom.ok && dom.data) {
+          read = {
+            ref: entry.ref,
+            buyerHandle: dom.data.buyerHandle ?? entry.buyerHandle,
+            itemExternalRef: entry.itemExternalRef,
+            messages: dom.data.messages.map((m) => ({ direction: m.direction, body: m.body, at: m.at, offerCents: null })),
+          };
+        }
+      }
+      if (read) conversations.push(read);
+      else unreadable++;
+    }
+    this.logger.info("cloud.inbox.read", { listSource: list.source, listed: list.entries.length, chosen: chosen.length, opened, read: conversations.length, unreadable });
+    return { ok: true, detail: `Messagerie lue : ${conversations.length} conversation(s).`, inbox: { conversations, listSource: list.source, listed: list.entries.length } };
   }
 
   /**

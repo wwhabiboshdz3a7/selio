@@ -13,7 +13,7 @@ import { z } from "zod";
  */
 
 /** Sortes d'actions que le Cloud sait exécuter. */
-export const CLOUD_ACTION_KINDS = ["reply", "follow_up", "republish"] as const;
+export const CLOUD_ACTION_KINDS = ["reply", "follow_up", "republish", "sync_inbox"] as const;
 export type CloudActionKind = (typeof CLOUD_ACTION_KINDS)[number];
 
 /**
@@ -28,6 +28,8 @@ export const ACTION_LEVELS: Readonly<Record<CloudActionKind, CloudActionLevel>> 
   reply: "light",
   follow_up: "light",
   republish: "heavy",
+  /** Lecture seule de la messagerie : aucun clic, aucune saisie. */
+  sync_inbox: "light",
 });
 
 export function actionLevel(kind: CloudActionKind): CloudActionLevel {
@@ -38,7 +40,9 @@ export function actionLevel(kind: CloudActionKind): CloudActionLevel {
 export type CloudAction =
   | { kind: "reply"; conversationUrl: string; text: string; id?: string }
   | { kind: "follow_up"; conversationUrl: string; text: string; id?: string }
-  | { kind: "republish"; itemUrl: string; id?: string };
+  | { kind: "republish"; itemUrl: string; id?: string }
+  /** Lecture de la messagerie (`https://<domaine Vinted>/inbox`) : au plus `maxConversations` conversations ouvertes. */
+  | { kind: "sync_inbox"; inboxUrl: string; maxConversations?: number; id?: string };
 
 const httpUrl = z.string().url().max(2048);
 const messageText = z.string().trim().min(1).max(2000);
@@ -48,7 +52,36 @@ export const cloudActionSchema: z.ZodType<CloudAction> = z.discriminatedUnion("k
   z.object({ kind: z.literal("reply"), conversationUrl: httpUrl, text: messageText, id: z.string().max(64).optional() }),
   z.object({ kind: z.literal("follow_up"), conversationUrl: httpUrl, text: messageText, id: z.string().max(64).optional() }),
   z.object({ kind: z.literal("republish"), itemUrl: httpUrl, id: z.string().max(64).optional() }),
+  z.object({ kind: z.literal("sync_inbox"), inboxUrl: httpUrl, maxConversations: z.number().int().min(1).max(20).optional(), id: z.string().max(64).optional() }),
 ]);
+
+/** Message lu dans une conversation (donnée de Vinted, non fiable : revalidée par l'appelant). */
+export interface InboxSnapshotMessage {
+  direction: "inbound" | "outbound";
+  body: string;
+  at: string | null;
+  offerCents: number | null;
+}
+
+/** Conversation lue pendant une lecture de la messagerie. */
+export interface InboxSnapshotConversation {
+  ref: string;
+  buyerHandle: string | null;
+  itemExternalRef: string | null;
+  messages: InboxSnapshotMessage[];
+}
+
+/**
+ * Résultat d'une lecture de la messagerie : conversations ouvertes et leurs messages, source de la liste,
+ * et, quand rien n'est reconnu, un diagnostic de STRUCTURE (comptes, préfixes de `data-testid`), jamais
+ * de texte de la page. Jamais journalisé tel quel.
+ */
+export interface InboxSnapshot {
+  conversations: InboxSnapshotConversation[];
+  listSource: "api" | "dom" | "none";
+  listed?: number;
+  diagnostic?: Record<string, string | number>;
+}
 
 /** Cookie tel que renvoyé par `context.storageState()` de Playwright. */
 export interface SessionCookie {
@@ -109,7 +142,7 @@ export function isPauseCode(code: RunFailureCode): boolean {
 }
 
 export type RunOutcome =
-  | { ok: true; detail: string; session: StorageState; durationMs?: number }
+  | { ok: true; detail: string; session: StorageState; durationMs?: number; inbox?: InboxSnapshot }
   | {
       ok: false;
       code: RunFailureCode;

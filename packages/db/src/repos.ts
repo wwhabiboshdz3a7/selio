@@ -867,6 +867,33 @@ export const jobs = {
   async staleCloudRunning(tx: Tx, before: string): Promise<Job[]> {
     return (await tx.query("select * from jobs where org_id = $1 and runs_in = 'cloud' and status = 'running' and coalesce(started_at, updated_at) < $2 order by started_at limit 100", [tx.orgId, before])).map((r) => parse(jobSchema, r));
   },
+  /**
+   * Lecture de la messagerie d'un compte Cloud : une tâche est-elle encore en file ou en cours, et quand la
+   * dernière s'est-elle terminée (ou a-t-elle été créée) ? Base de l'intervalle CLOUD_INBOX_SYNC_MINUTES.
+   */
+  async cloudSyncState(tx: Tx, cloudAccountId: string): Promise<{ pending: boolean; lastAt: string | null }> {
+    const pending = await tx.count("select count(*) from jobs where org_id = $1 and runs_in = 'cloud' and status in ('queued', 'running') and payload->>'cloudKind' = 'sync_inbox' and payload->>'cloudAccountId' = $2", [tx.orgId, cloudAccountId]);
+    const last = await tx.maybeOne<{ at: string | Date | null }>("select coalesce(finished_at, started_at, created_at) as at from jobs where org_id = $1 and runs_in = 'cloud' and payload->>'cloudKind' = 'sync_inbox' and payload->>'cloudAccountId' = $2 order by created_at desc limit 1", [tx.orgId, cloudAccountId]);
+    const at = last?.at ? (last.at instanceof Date ? last.at.toISOString() : new Date(last.at).toISOString()) : null;
+    return { pending: pending > 0, lastAt: at };
+  },
+  /**
+   * Réponses Cloud en file d'un compte, créées par ces règles, sans texte ni brouillon préparé et pas encore
+   * proposées à la rédaction par l'IA (`payload.aiTried` absent).
+   */
+  async cloudRepliesWithoutText(tx: Tx, cloudAccountId: string, ruleIds: readonly string[]): Promise<Job[]> {
+    if (ruleIds.length === 0) return [];
+    return (await tx.query("select * from jobs where org_id = $1 and runs_in = 'cloud' and status = 'queued' and payload->>'cloudAccountId' = $2 and rule_id = any($3::text[]) and payload->>'body' is null and payload->>'draftMessageId' is null and payload->>'aiTried' is null and coalesce(payload->>'handoff', 'false') <> 'true' order by created_at limit 20", [tx.orgId, cloudAccountId, [...ruleIds]])).map((r) => parse(jobSchema, r));
+  },
+  /** Attache le brouillon rédigé par l'IA à une réponse encore en file et sans texte (UPDATE conditionnel). */
+  async attachCloudDraft(tx: Tx, id: string, draftMessageId: string): Promise<boolean> {
+    const r = await tx.maybeOne("update jobs set payload = payload || jsonb_build_object('draftMessageId', $3::text, 'aiTried', true, 'aiReply', true), updated_at = now() where org_id = $1 and id = $2 and status = 'queued' and payload->>'body' is null and payload->>'draftMessageId' is null returning id", [tx.orgId, id, draftMessageId]);
+    return r !== null;
+  },
+  /** Marque une réponse comme déjà proposée à l'IA (repli sur le gabarit de la règle). */
+  async markAiTried(tx: Tx, id: string, reason: string): Promise<void> {
+    await tx.query("update jobs set payload = payload || jsonb_build_object('aiTried', true, 'aiSkipped', $3::text), updated_at = now() where org_id = $1 and id = $2 and status = 'queued'", [tx.orgId, id, reason.slice(0, 60)]);
+  },
   /** Annule les tâches Cloud pas encore exécutées d'un compte (arrêt du Cloud). */
   async cancelCloudForAccount(tx: Tx, cloudAccountId: string): Promise<number> {
     return (await tx.query("update jobs set status = 'cancelled', updated_at = now() where org_id = $1 and runs_in = 'cloud' and status in ('queued','awaiting_approval') and payload->>'cloudAccountId' = $2 returning id", [tx.orgId, cloudAccountId])).length;
@@ -1499,9 +1526,16 @@ export const cloudActions = {
    * Actions qui ont ouvert le navigateur depuis `since` (horloge des services), pour un compte ou
    * pour toute l'organisation : base des plafonds horaire et journalier.
    */
-  async countSince(tx: Tx, since: string, accountId?: string): Promise<number> {
-    if (accountId) return tx.count("select count(*) from cloud_actions where org_id = $1 and account_id = $2 and started_at >= $3 and status = any($4)", [tx.orgId, accountId, since, CLOUD_STARTED_STATUSES]);
-    return tx.count("select count(*) from cloud_actions where org_id = $1 and started_at >= $2 and status = any($3)", [tx.orgId, since, CLOUD_STARTED_STATUSES]);
+  async countSince(tx: Tx, since: string, accountId?: string, opts: { excludeKinds?: readonly CloudAction["kind"][] } = {}): Promise<number> {
+    const exclude = [...(opts.excludeKinds ?? [])];
+    if (accountId) return tx.count("select count(*) from cloud_actions where org_id = $1 and account_id = $2 and started_at >= $3 and status = any($4) and not (kind = any($5::text[]))", [tx.orgId, accountId, since, CLOUD_STARTED_STATUSES, exclude]);
+    return tx.count("select count(*) from cloud_actions where org_id = $1 and started_at >= $2 and status = any($3) and not (kind = any($4::text[]))", [tx.orgId, since, CLOUD_STARTED_STATUSES, exclude]);
+  },
+  /** Fin (ou début) de la dernière action réussie d'une sorte pour un compte (ex. dernière lecture de la messagerie). */
+  async lastDoneAt(tx: Tx, accountId: string, kind: CloudAction["kind"]): Promise<string | null> {
+    const r = await tx.maybeOne<{ at: string | Date | null }>("select coalesce(finished_at, started_at, created_at) as at from cloud_actions where org_id = $1 and account_id = $2 and kind = $3 and status = 'done' order by created_at desc limit 1", [tx.orgId, accountId, kind]);
+    if (!r?.at) return null;
+    return r.at instanceof Date ? r.at.toISOString() : new Date(r.at).toISOString();
   },
   /** Rétention : supprime les lignes créées avant `now - days` (90 jours pour le journal Cloud). */
   async purgeOlderThan(tx: Tx, days: number, now: Date = new Date()): Promise<number> {

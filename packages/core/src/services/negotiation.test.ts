@@ -62,7 +62,8 @@ beforeAll(async () => {
     now: () => new Date(clock),
     allowAiFallback: false,
     version: "test",
-    config: {},
+    // Lecture de la messagerie par le Cloud coupée : ces tests portent sur les relances et les réponses.
+    config: { cloudInboxSyncMinutes: 0 },
   };
 });
 

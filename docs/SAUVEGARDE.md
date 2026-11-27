@@ -26,7 +26,7 @@ Scripts : `scripts/sauvegarde/` (`backup.sh`, `restore-test.sh`, `common.sh`, `b
 | Modèles Ollama | Non | Retéléchargeables (`ollama pull`, voir OLLAMA-SETUP.md) |
 | Profils Chromium du Cloud | Non, jamais | Temporaires, supprimés après chaque action |
 
-**Sessions Cloud et rotation.** Les sessions chiffrées font partie de la base, donc des sauvegardes. Quand un client supprime sa session ou arrête le Cloud, elle disparaît de la base tout de suite, mais **reste dans les sauvegardes jusqu'à leur rotation (30 jours)**, toujours chiffrée et lisible seulement avec `SECRETS_ENCRYPTION_KEY`. Elle n'est **jamais réutilisée** : après une restauration, `app_cloud_after_restore()` efface toutes les sessions et met tous les comptes Cloud en pause. Le texte d'accord du Cloud (version `2026-10-29.2`) le dit au client.
+**Sessions Cloud et rotation.** Les sessions chiffrées font partie de la base, donc des sauvegardes. Quand un client supprime sa session ou arrête le Cloud, elle disparaît de la base tout de suite, mais **reste dans les sauvegardes jusqu'à leur rotation (30 jours)**, toujours chiffrée et lisible seulement avec `SECRETS_ENCRYPTION_KEY`. Elle n'est **jamais réutilisée** : après une restauration, `app_cloud_after_restore()` efface toutes les sessions et met tous les comptes Cloud en pause. Le texte d'accord du Cloud (version `2026-11-27.1`) le dit au client.
 | Code | Non | Il est sur GitHub |
 
 ### 1.1 Procédure manuelle pour les secrets

@@ -194,7 +194,7 @@ function AccountRow({ connection: c, account: a, canAct, canLogin, canManage, fu
           <fieldset className="flex flex-col gap-2 border-t border-border pt-3">
             <legend className="sr-only">Niveaux d'action pour {name}</legend>
             <p className="text-xs font-medium tracking-wide text-text-muted uppercase">Niveaux d'action</p>
-            <Checkbox checked readOnly disabled label={<span className="text-sm">Actions légères : répondre à un message, relancer après 24 h</span>} />
+            <Checkbox checked readOnly disabled label={<span className="text-sm">Actions légères : lire la messagerie, répondre à un message, négocier par message, relancer après 24 h</span>} />
             <div className="flex flex-wrap items-center gap-2">
               <Checkbox
                 checked={heavy}

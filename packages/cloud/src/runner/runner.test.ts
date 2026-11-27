@@ -102,6 +102,23 @@ describe("PlaywrightRunner — arrêts avant tout navigateur", () => {
     expect(local.resolveTarget(reply("http://127.0.0.1:4001/inbox/987"))).toBeNull();
   });
 
+  it("lecture de la messagerie : la page /inbox d'un domaine Vinted seulement (ni conversation, ni paramètre, ni autre site)", () => {
+    const sync = (inboxUrl: string) => ({ kind: "sync_inbox" as const, inboxUrl });
+    expect(runner.resolveTarget(sync("https://www.vinted.fr/inbox"))?.href).toBe("https://www.vinted.fr/inbox");
+    expect(runner.resolveTarget(sync("https://www.vinted.de/inbox/"))).not.toBeNull();
+    for (const bad of ["https://www.vinted.fr/inbox/12", "https://www.vinted.fr/inbox?page=2", "https://www.vinted.lol/inbox", "http://www.vinted.fr/inbox", "https://evil.example/inbox", "https://u:p@www.vinted.fr/inbox", "https://www.vinted.fr/items/1"]) {
+      expect(runner.resolveTarget(sync(bad)), bad).toBeNull();
+    }
+  });
+
+  it("FakeRunner : la lecture de la messagerie rend la messagerie programmée, ou une messagerie vide", async () => {
+    const fake = new FakeRunner();
+    const input: RunInput = { session, action: { kind: "sync_inbox", inboxUrl: "https://www.vinted.fr/inbox" }, profileDir: "/tmp/x" };
+    expect(await fake.run(input)).toMatchObject({ ok: true, inbox: { conversations: [], listSource: "none" } });
+    fake.setInbox({ conversations: [{ ref: "1", buyerHandle: "lea", itemExternalRef: null, messages: [{ direction: "inbound", body: "Bonjour", at: null, offerCents: null }] }], listSource: "api", listed: 1 });
+    expect(await fake.run(input)).toMatchObject({ ok: true, inbox: { listSource: "api", conversations: [{ ref: "1" }] } });
+  });
+
   it("refuse une action invalide, lourde (CLOUD_HEAVY_ACTIONS=false) ou hors Vinted, sans rien lancer", async () => {
     expect(await runner.run({ session, action: { kind: "reply", conversationUrl: "x", text: "" } as never, profileDir: await profile() })).toMatchObject({ ok: false, code: "error", sideEffects: "none", launched: false });
     expect(await runner.run({ session, action: { kind: "republish", itemUrl: "https://www.vinted.fr/items/1" }, profileDir: await profile() })).toMatchObject({ ok: false, code: "error", message: expect.stringMatching(/lourde/), launched: false });

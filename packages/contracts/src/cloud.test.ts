@@ -12,9 +12,14 @@ describe("Selio Cloud : contrats", () => {
   it("texte d'accord honnête : règles de Vinted, adresse partagée, pause, responsabilité, suppression, aucun mot de passe", () => {
     const lines = CLOUD_CONSENT_TEXT.split("\n");
     expect(lines.length).toBeGreaterThanOrEqual(8);
-    expect(lines.length).toBeLessThanOrEqual(12);
+    expect(lines.length).toBeLessThanOrEqual(14);
     expect(CLOUD_CONSENT_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
     for (const needle of [/conditions d'utilisation de Vinted/, /adresse IP/, /mis en pause/, /responsable/, /supprimer à tout moment/, /mot de passe Vinted n'est jamais enregistré/, /ni affilié, ni approuvé, ni sponsorisé/, /90 jours/]) {
+      expect(CLOUD_CONSENT_TEXT).toMatch(needle);
+    }
+    // Lecture de la messagerie et envoi automatique sans validation préalable, écrits noir sur blanc.
+    expect(CLOUD_CONSENT_VERSION).toBe("2026-11-27.1");
+    for (const needle of [/lit votre messagerie Vinted/, /intervalles réguliers/, /sans que vous les validiez avant/, /dans vos marges/, /Validation avant envoi/, /mettre en pause ou arrêter le Cloud à tout moment/]) {
       expect(CLOUD_CONSENT_TEXT).toMatch(needle);
     }
     // Jamais de promesse impossible.
@@ -27,11 +32,13 @@ describe("Selio Cloud : contrats", () => {
     expect(cloudAcceptConsentInput.safeParse({ version: CLOUD_CONSENT_VERSION }).success).toBe(false);
   });
 
-  it("niveaux : répondre et relancer sont légers, republier et modifier en masse sont lourds", () => {
-    expect(CLOUD_ACTION_KINDS.filter((k) => CLOUD_ACTION_LEVEL_BY_KIND[k] === "light")).toEqual(["reply", "follow_up"]);
+  it("niveaux : répondre, relancer et lire la messagerie sont légers, republier et modifier en masse sont lourds", () => {
+    expect(CLOUD_ACTION_KINDS.filter((k) => CLOUD_ACTION_LEVEL_BY_KIND[k] === "light")).toEqual(["reply", "follow_up", "sync_inbox"]);
     expect(CLOUD_ACTION_KINDS.filter((k) => CLOUD_ACTION_LEVEL_BY_KIND[k] === "heavy")).toEqual(["republish", "bulk_edit"]);
     // Les règles confiées au Cloud au lancement ne produisent que des actions légères.
     for (const kind of Object.values(CLOUD_RULE_ACTIONS)) expect(CLOUD_ACTION_LEVEL_BY_KIND[kind!]).toBe("light");
+    // Négociation et situations par mots-clés répondent par message (action « reply »).
+    expect(CLOUD_RULE_ACTIONS).toMatchObject({ reply_on_new_message: "reply", auto_negotiate: "reply", keyword_situation: "reply", follow_up_24h: "follow_up" });
     expect(cloudUpdateSettingsInput.safeParse({ levels: [] }).success).toBe(false);
     expect(cloudUpdateSettingsInput.safeParse({ levels: ["light", "heavy"] }).success).toBe(true);
   });
@@ -47,6 +54,9 @@ describe("Selio Cloud : contrats", () => {
     expect(cloudActionDetail.safeParse({ conversationRef: "123", messageLength: 42, code: "ok", durationMs: 1200 }).success).toBe(true);
     expect(cloudActionDetail.safeParse({ text: "Bonjour" }).success).toBe(false);
     expect(cloudActionDetail.safeParse({ cookies: [] }).success).toBe(false);
+    // Lecture de la messagerie : des comptes seulement.
+    expect(cloudActionDetail.safeParse({ listSource: "api", conversationsListed: 12, conversationsRead: 3, messagesIn: 4, messagesOut: 1, jobsCreated: 2, aiReplies: 1 }).success).toBe(true);
+    expect(cloudActionDetail.safeParse({ buyerHandle: "lea" }).success).toBe(false);
   });
 
   it("codes et raisons ont tous un libellé ; seules les pauses venues de Vinted exigent un acquittement", () => {

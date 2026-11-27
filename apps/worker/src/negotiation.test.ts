@@ -62,7 +62,8 @@ beforeAll(async () => {
     now: () => new Date(clock),
     allowAiFallback: false,
     version: "test",
-    config: { cloudActiveHours: { startHour: 8, endHour: 23 } },
+    // Lecture de la messagerie coupée : ce test porte sur la relance (la lecture a ses tests dans le cœur).
+    config: { cloudActiveHours: { startHour: 8, endHour: 23 }, cloudInboxSyncMinutes: 0 },
   };
   profileBase = await mkdtemp(join(tmpdir(), "selio-worker-nego-test-"));
 });

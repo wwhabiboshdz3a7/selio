@@ -170,7 +170,7 @@ function situationContext(org: Organization, detail: ConversationDetail): { name
   return { name: c.name, guidance: c.guidance };
 }
 
-export async function suggestReply(ctx: OrgContext, conversationId: string, signal?: AbortSignal): Promise<SuggestionResult> {
+export async function suggestReply(ctx: OrgContext, conversationId: string, signal?: AbortSignal, opts: { allowFallback?: boolean } = {}): Promise<SuggestionResult> {
   requireAction(ctx, "ai.use");
   const detail = await getConversation(ctx, conversationId);
   const org = await ctx.services.db.withGlobal((g) => repos.orgs.byId(g, ctx.orgId));
@@ -203,7 +203,7 @@ export async function suggestReply(ctx: OrgContext, conversationId: string, sign
       // Lot : la décision de lot est la décision imposée ; situation : nom et consigne du vendeur, bornés (données).
       bundle: detail.bundleOffer ? { count: detail.bundleOffer.evaluation.itemCount, totalListedCents: detail.bundleOffer.evaluation.listedTotalCents, decision: detail.bundleOffer.evaluation } : null,
       situation: situationContext(org, detail),
-    }, { signal, allowFallback: ctx.services.allowAiFallback });
+    }, { signal, allowFallback: opts.allowFallback ?? ctx.services.allowAiFallback });
   } catch (err) {
     const e = err instanceof AIError ? err : null;
     await withOrg(ctx, (tx) => repos.aiRequests.update(tx, req.id, { status: e?.code === "timeout" ? "timeout" : e?.code === "cancelled" ? "cancelled" : e?.code === "invalid_output" ? "rejected" : "failed", error: (err as Error).message.slice(0, 500), latencyMs: Date.now() - started, finishedAt: nowIso(ctx) }));
@@ -221,7 +221,7 @@ export async function suggestReply(ctx: OrgContext, conversationId: string, sign
 }
 
 /** Ingestion d'un message entrant (connecteur, extension ou simulateur). Idempotent par référence externe. */
-export async function ingestInboundTx(ctx: OrgContext, tx: Tx, input: { connectionId: string | null; provider: Provider; conversationRef: string | null; buyerHandle: string; buyerName?: string | null; itemId?: string | null; itemExternalRef?: string | null; body: string; externalRef?: string | null; at?: string }): Promise<Conversation> {
+export async function ingestInboundTx(ctx: OrgContext, tx: Tx, input: { connectionId: string | null; provider: Provider; conversationRef: string | null; buyerHandle: string; buyerName?: string | null; itemId?: string | null; itemExternalRef?: string | null; body: string; externalRef?: string | null; at?: string; offerCents?: number | null }): Promise<Conversation> {
   const now = input.at ?? nowIso(ctx);
   const text = sanitizeUntrustedText(input.body, 2000);
   let customer = await repos.customers.byHandle(tx, input.provider, input.buyerHandle);
@@ -237,7 +237,7 @@ export async function ingestInboundTx(ctx: OrgContext, tx: Tx, input: { connecti
     const dup = await tx.maybeOne("select id from messages where org_id = $1 and external_ref = $2", [ctx.orgId, input.externalRef]);
     if (dup) return conv;
   }
-  await repos.messages.create(tx, { conversationId: conv.id, direction: "inbound", source: "buyer", status: "received", body: text, offerCents: extractOfferCents(text), externalRef: input.externalRef ?? null, simulated: input.provider === "demo", createdAt: now });
+  await repos.messages.create(tx, { conversationId: conv.id, direction: "inbound", source: "buyer", status: "received", body: text, offerCents: input.offerCents ?? extractOfferCents(text), externalRef: input.externalRef ?? null, simulated: input.provider === "demo", createdAt: now });
   // L'acheteur a répondu : les relances encore à envoyer (en file pour le Cloud, ou brouillon à valider)
   // n'ont plus lieu d'être. Elles sont écartées et leur brouillon supprimé.
   for (const j of await repos.jobs.pendingFollowUps(tx, conv.id)) {

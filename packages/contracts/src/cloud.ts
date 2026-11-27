@@ -14,22 +14,24 @@ import { isAntiBotCookie, isVintedHost, isVintedOrigin } from "./vinted-domains"
 // ---------------------------------------------------------------- constantes et réglages
 
 /** Version du texte d'accord : à incrémenter dès que le texte change (un accord n'est valable que pour sa version). */
-export const CLOUD_CONSENT_VERSION = "2026-10-29.2";
+export const CLOUD_CONSENT_VERSION = "2026-11-27.1";
 
 /**
  * Texte d'accord affiché avant toute activation (≈ 10 lignes, honnête). L'empreinte SHA-256 de
  * ce texte est enregistrée avec l'accord : on peut prouver ce que le client a lu et accepté.
  */
 export const CLOUD_CONSENT_TEXT = [
-  "Selio Cloud agit sur votre compte Vinted depuis notre machine, quand votre ordinateur est éteint : répondre à un message, relancer un acheteur après 24 h.",
+  "Selio Cloud agit sur votre compte Vinted depuis notre machine, quand votre ordinateur est éteint : il lit votre messagerie Vinted, répond aux messages, négocie les offres et relance les acheteurs après 24 h.",
+  "Lecture de la messagerie : Selio ouvre à intervalles réguliers (toutes les 10 minutes par défaut, aux heures actives) la messagerie du compte connecté et les conversations qui ont de nouveaux messages, sans rien y cliquer. Les messages lus sont enregistrés dans Selio comme ceux que vous voyez dans Messages ; ouvrir une conversation peut la marquer comme lue sur Vinted, comme quand vous la lisez vous-même.",
+  "Envoi automatique, sans validation préalable : les réponses rédigées par l'IA de Selio (ou, à défaut, par vos gabarits) et les réponses de négociation décidées dans vos marges et vos limites sont envoyées automatiquement, sans que vous les validiez avant. Vous pouvez exiger une validation avant envoi règle par règle (« Validation avant envoi »), mettre en pause ou arrêter le Cloud à tout moment. Une situation que vous avez réglée « transmettre au vendeur » ne reçoit jamais de réponse automatique.",
   "Les conditions d'utilisation de Vinted interdisent l'accès au service par des robots ou d'autres moyens automatisés. En activant le Cloud, vous acceptez ce risque : votre compte peut recevoir un avertissement, être limité ou suspendu. Selio ne peut pas l'exclure et ne promet pas « zéro risque ».",
   "Au lancement, tous les comptes Cloud partagent l'adresse IP de notre machine. Si un compte est sanctionné, Vinted peut bloquer cette adresse, donc gêner les autres comptes qui l'utilisent.",
   "Vous vous connectez vous-même dans un navigateur isolé, réservé à ce compte. Votre mot de passe Vinted n'est jamais enregistré, jamais journalisé, jamais transmis à l'IA ni à quiconque.",
   "Seule la session de ce compte (cookies et stockage local des domaines vinted.*) est conservée, chiffrée sur notre machine et isolée des autres comptes. Vous pouvez la supprimer à tout moment en un clic ; elle est effacée dès que vous arrêtez le Cloud, déconnectez ou supprimez le compte.",
   "Le navigateur n'est ouvert que pour agir, au rythme humain, dans les plafonds de votre offre, puis refermé. Aucun contournement de CAPTCHA ni de protection anti-bot : au premier CAPTCHA, avertissement, blocage ou message « trop de requêtes », le compte est mis en pause et vous êtes prévenu. Rien n'est retenté sans votre accord.",
   "Les sauvegardes chiffrées de notre base sont gardées 30 jours : une session supprimée peut y rester jusqu'à leur rotation, toujours chiffrée. Après une restauration, aucune session n'est réutilisée : tous les comptes Cloud sont mis en pause et vous devez vous reconnecter.",
-  "Chaque action est inscrite dans un journal que vous pouvez consulter et exporter ; il est conservé 90 jours.",
-  "Vous restez seul titulaire et responsable de votre compte Vinted et de ce qui y est envoyé ou publié. Vous pouvez mettre en pause ou arrêter le Cloud à tout moment.",
+  "Chaque action (lectures de la messagerie comprises) est inscrite dans un journal que vous pouvez consulter et exporter ; il est conservé 90 jours. Il ne contient jamais le texte des messages.",
+  "Vous restez seul titulaire et responsable de votre compte Vinted et de ce qui y est envoyé ou publié, y compris des messages envoyés automatiquement. Vous pouvez mettre en pause ou arrêter le Cloud à tout moment.",
   "Selio est un outil indépendant de Vinted : ni affilié, ni approuvé, ni sponsorisé par Vinted.",
 ].join("\n");
 
@@ -69,6 +71,15 @@ export const CLOUD_LOCK_STALE_MINUTES = 15;
  * est ignorée plutôt qu'exécutée en retard : on ne répond pas à un message trois jours après.
  */
 export const CLOUD_JOB_MAX_AGE_HOURS = 24;
+
+/**
+ * Lecture de la messagerie Vinted par le Cloud : intervalle entre deux lectures d'un même compte
+ * (CLOUD_INBOX_SYNC_MINUTES, 10 min par défaut, 5 au moins ; 0 coupe la lecture) et conversations
+ * ouvertes au plus par lecture (CLOUD_INBOX_MAX_CONVERSATIONS, 5 par défaut).
+ */
+export const CLOUD_INBOX_SYNC_MINUTES_DEFAULT = 10;
+export const CLOUD_INBOX_SYNC_MINUTES_MIN = 5;
+export const CLOUD_INBOX_MAX_CONVERSATIONS_DEFAULT = 5;
 
 /**
  * Heures actives par défaut du Cloud (heure locale de l'organisation) : 8 h – 23 h, jamais la nuit.
@@ -126,7 +137,7 @@ export const CLOUD_ACTION_LEVEL_LABELS: Record<CloudActionLevel, string> = {
 };
 
 /** Sortes d'actions (mêmes noms que l'exécuteur de navigateur, paquet @selio/cloud). */
-export const CLOUD_ACTION_KINDS = ["reply", "follow_up", "republish", "bulk_edit"] as const;
+export const CLOUD_ACTION_KINDS = ["reply", "follow_up", "republish", "bulk_edit", "sync_inbox"] as const;
 export const cloudActionKind = z.enum(CLOUD_ACTION_KINDS);
 export type CloudActionKind = z.infer<typeof cloudActionKind>;
 
@@ -135,6 +146,8 @@ export const CLOUD_ACTION_LEVEL_BY_KIND: Record<CloudActionKind, CloudActionLeve
   follow_up: "light",
   republish: "heavy",
   bulk_edit: "heavy",
+  /** Lecture seule de la messagerie (aucun clic, aucune saisie). */
+  sync_inbox: "light",
 };
 
 export const CLOUD_ACTION_KIND_LABELS: Record<CloudActionKind, string> = {
@@ -142,6 +155,7 @@ export const CLOUD_ACTION_KIND_LABELS: Record<CloudActionKind, string> = {
   follow_up: "Relance après 24 h",
   republish: "Republication",
   bulk_edit: "Modification en masse",
+  sync_inbox: "Lecture de la messagerie",
 };
 
 /**
@@ -153,6 +167,13 @@ export const CLOUD_RULE_ACTIONS: Partial<Record<RuleKind, CloudActionKind>> = {
   follow_up_no_reply: "follow_up",
   /** Relance après 24 h en mode « auto » (offre Agence) : exécutée par le Cloud, action légère. */
   follow_up_24h: "follow_up",
+  /**
+   * Négociation automatique (décision déterministe de la politique, dans les marges et limites du
+   * vendeur) et situation par mots-clés avec gabarit : réponses par message, actions légères. Une
+   * situation « transmettre au vendeur » reste une tâche à valider, jamais envoyée.
+   */
+  auto_negotiate: "reply",
+  keyword_situation: "reply",
 };
 
 export const CLOUD_ACTION_STATUSES = ["queued", "running", "done", "failed", "skipped", "paused"] as const;
@@ -253,6 +274,14 @@ export const cloudActionDetail = z
     /** « unknown » : le clic a pu avoir lieu sans confirmation ; rien n'est renvoyé automatiquement. */
     sideEffects: z.enum(["none", "unknown"]).optional(),
     ruleName: z.string().max(120).optional(),
+    /** Lecture de la messagerie : comptes seulement (jamais un texte, jamais un pseudo). */
+    listSource: z.enum(["api", "dom", "none"]).optional(),
+    conversationsListed: z.number().int().min(0).optional(),
+    conversationsRead: z.number().int().min(0).optional(),
+    messagesIn: z.number().int().min(0).optional(),
+    messagesOut: z.number().int().min(0).optional(),
+    jobsCreated: z.number().int().min(0).optional(),
+    aiReplies: z.number().int().min(0).optional(),
   })
   .strict();
 export type CloudActionDetail = z.infer<typeof cloudActionDetail>;
@@ -344,6 +373,42 @@ export function isStorageStateEmpty(state: CloudStorageState | null | undefined)
   return !state || (state.cookies.length === 0 && state.origins.length === 0);
 }
 
+// ---------------------------------------------------------------- lecture de la messagerie
+
+/**
+ * Ce que l'exécuteur rend après une lecture de la messagerie (donnée lue sur Vinted, donc non fiable :
+ * revalidée et bornée par le cœur). Jamais journalisée telle quelle : seuls des comptes vont au journal.
+ */
+const vintedRef = z.string().regex(/^\d{1,20}$/);
+export const cloudInboxMessage = z.object({
+  direction: z.enum(["inbound", "outbound"]),
+  body: z.string().trim().min(1).max(2000),
+  /** Date ISO lue sur Vinted, absente si la page ne la donne pas. */
+  at: z.string().max(40).nullable().optional(),
+  /** Offre en euros (centimes), seulement si Vinted la donne en EUR. */
+  offerCents: z.number().int().min(1).max(100_000_000).nullable().optional(),
+});
+export type CloudInboxMessage = z.infer<typeof cloudInboxMessage>;
+
+export const cloudInboxConversation = z.object({
+  ref: vintedRef,
+  buyerHandle: z.string().trim().min(1).max(80).nullable(),
+  itemExternalRef: vintedRef.nullable().optional(),
+  messages: z.array(cloudInboxMessage).max(200),
+});
+export type CloudInboxConversation = z.infer<typeof cloudInboxConversation>;
+
+export const cloudInboxSnapshot = z.object({
+  conversations: z.array(cloudInboxConversation).max(50),
+  /** Source de la liste : réponse JSON chargée par la page, HTML, ou rien de reconnu. */
+  listSource: z.enum(["api", "dom", "none"]),
+  /** Conversations vues dans la liste. */
+  listed: z.number().int().min(0).max(10_000).optional(),
+  /** Diagnostic de structure (comptes, préfixes de `data-testid`), jamais de texte de la page. */
+  diagnostic: z.record(z.union([z.string().max(2000), z.number()])).optional(),
+});
+export type CloudInboxSnapshot = z.infer<typeof cloudInboxSnapshot>;
+
 // ---------------------------------------------------------------- disponibilité et planification
 
 /**
@@ -396,6 +461,7 @@ export const CLOUD_SKIP_REASONS = [
   "follow_up_obsolete",
   "plan_changed",
   "nothing_to_send",
+  "already_answered",
 ] as const;
 export type CloudSkipReason = (typeof CLOUD_SKIP_REASONS)[number];
 
@@ -425,6 +491,7 @@ export const CLOUD_SKIP_REASON_LABELS: Record<CloudSkipReason, string> = {
   follow_up_obsolete: "Brouillon de relance supprimé ou déjà envoyé : rien envoyé",
   plan_changed: "L'offre a changé : relance remise en brouillon à valider dans Messages",
   nothing_to_send: "Aucun texte préparé : situation transmise au vendeur, rien envoyé",
+  already_answered: "Le dernier message de la conversation est déjà le vôtre : rien envoyé",
 };
 
 // ---------------------------------------------------------------- entrées

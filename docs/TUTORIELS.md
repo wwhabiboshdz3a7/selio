@@ -523,6 +523,38 @@ Les trois modèles doivent être « présent » (la ligne OCR peut rester « non
 
 **Revenir en arrière** : `CLOUD_ENABLED=false` puis relancer le worker (les tâches restent en file, celles de plus de 24 h sont écartées). Un compte : bouton Pause ou Arrêter (arrêter efface la session). Coupe-circuit levé à la main, après vérification seulement : `update cloud_runtime set suspended_until = null, reason = null;`.
 
+### 17 bis. Plein automatique : lecture de la messagerie et réponses sans validation
+
+Décision d'Ibrahim du 27 novembre 2026 ([DECISIONS.md](DECISIONS.md) D63) : le Cloud lit la messagerie Vinted et répond seul, sans dernier clic. Le client l'accepte dans le texte d'accord `2026-11-27.1` (tout le monde doit l'accepter de nouveau). Détails : [CLOUD.md](CLOUD.md) §1.8.
+
+**Ouvrir (sur le PC de production)**
+1. Dans `deploy/.env` :
+   ```
+   CLOUD_ENABLED=true
+   CLOUD_PRO_OPTION=true          # les testeurs de la bêta sont en Pro (rien n'est facturé)
+   CLOUD_INBOX_SYNC_MINUTES=10    # lecture toutes les 10 min (5 au moins ; 0 coupe la lecture)
+   CLOUD_INBOX_MAX_CONVERSATIONS=5
+   CLOUD_CHROMIUM_PATH=/usr/local/bin/selio-chromium
+   CLOUD_PROFILE_DIR=/var/lib/selio-cloud
+   ```
+   Ne pas toucher à `RADAR_AUTO_ORG_IDS`.
+2. Reconstruire et relancer l'API et le worker (le code a changé) :
+   ```bash
+   cd ~/selio/deploy
+   docker compose -f docker-compose.prod.yml up -d --build api worker
+   docker compose -f docker-compose.prod.yml logs --tail=60 worker
+   ```
+   La migration `0025_cloud_messagerie.sql` s'applique au démarrage. Journal attendu : « Cloud activé … sandbox: true ».
+3. **D'abord sur le compte Vinted de test de l'équipe** : `/cloud` › accepter le nouvel accord › relier le compte › se connecter dans la fenêtre sécurisée. Dans Automatisations : activer « Répondre à un nouveau message » et « Négociation automatique », **« Validation avant envoi » désactivée** ; dans Réglages › IA, désactiver « Validation humaine avant envoi » pour que les réponses soient rédigées par l'IA (sinon le gabarit de la règle part).
+4. Depuis un autre compte, écrire au compte de test, attendre 10 à 20 min (heures actives) : journal `/cloud` › « Lecture de la messagerie » (faite, avec des comptes), puis « Réponse à un message » (faite) ; la réponse apparaît dans Vinted.
+
+**Où lire les diagnostics** : `docker compose -f docker-compose.prod.yml logs worker | grep -E "cloud.inbox|lecture de la messagerie"`.
+- `cloud.inbox.read` : source de la liste (`api` ou `dom`), conversations listées, ouvertes, lues.
+- `cloud.inbox.unrecognised` : la messagerie n'a pas été reconnue. La ligne ne contient que des comptes et des noms de structure (`testids`, `inboxLinks`, `payloads`…) : la copier telle quelle pour corriger l'adaptateur `packages/connectors/src/vinted/adapters/v1-inbox.ts`. Rien n'est envoyé tant que rien n'est lu.
+- « messagerie non reconnue » dans le journal `/cloud` : même cause.
+
+**Revenir en arrière** : `CLOUD_INBOX_SYNC_MINUTES=0` coupe la lecture (les réponses aux messages déjà connus continuent) ; `CLOUD_ENABLED=false` arrête tout le Cloud. Pour un client : « Validation avant envoi » sur la règle, ou Pause du compte.
+
 ---
 
 ## 18. Achat automatique (Selio Bot)

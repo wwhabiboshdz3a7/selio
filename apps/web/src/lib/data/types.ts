@@ -363,8 +363,10 @@ export type RadarSettingsResult = { radar: RadarSettings; autoBuy: AutoBuySettin
 export interface CloudAccountView extends CloudAccount {
   connectionLabel: string;
   displayHandle: string | null;
-  /** Actions du jour (UTC) ayant ouvert le navigateur pour ce compte. */
+  /** Actions du jour (UTC) ayant ouvert le navigateur pour ce compte (lectures de la messagerie non comprises). */
   actionsToday: number;
+  /** Dernière lecture réussie de la messagerie Vinted de ce compte par le Cloud. */
+  lastInboxSyncAt?: string | null;
 }
 
 /** Disponibilité du Cloud, plus ce que le serveur ajoute en mode connecté (apps/api/src/routes/cloud.ts). */

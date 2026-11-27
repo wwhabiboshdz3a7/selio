@@ -75,10 +75,11 @@ async function personalAccountIds(tx: Tx): Promise<Set<string>> {
 }
 
 /**
- * Transport d'une tâche (fonction pure) : une réponse ou une relance passe par Selio Cloud quand le
- * compte Vinted de la conversation y est actif (session enregistrée, ni en pause ni arrêté) ; sinon
- * la tâche garde l'emplacement déclaré par la règle (serveur ou extension). Les autres règles ne
- * passent jamais par le Cloud au lancement (actions légères seulement sur l'adresse partagée).
+ * Transport d'une tâche (fonction pure) : une réponse (message, négociation, situation avec gabarit) ou
+ * une relance passe par Selio Cloud quand le compte Vinted de la conversation y est actif (session
+ * enregistrée, ni en pause ni arrêté) ; sinon la tâche garde l'emplacement déclaré par la règle (serveur
+ * ou extension). Les autres règles ne passent jamais par le Cloud (actions légères seulement sur
+ * l'adresse partagée). Le statut (en file ou à valider) reste celui de la règle (« Validation avant envoi »).
  */
 export function decideRunsIn(input: { ruleKind: RuleKind; ruleRunsIn: RunLocation; cloudAccount: Pick<CloudAccount, "status" | "hasSession"> | null | undefined }): RunLocation {
   if (CLOUD_RULE_ACTIONS[input.ruleKind] && input.cloudAccount?.status === "active" && input.cloudAccount.hasSession) return "cloud";
@@ -244,6 +245,20 @@ const CONVERSATION_RULES: readonly RuleKind[] = ["reply_on_new_message", "follow
 
 const eur = (c: number) => (c / 100).toFixed(2).replace(".", ",") + " €";
 
+/**
+ * Règles qui répondent à un message précis de l'acheteur (négociation, situation) : passées AVANT la réponse
+ * générique, qui s'efface quand l'une d'elles a déjà pris le message en charge.
+ */
+const ANSWERING_RULES: readonly RuleKind[] = ["auto_negotiate", "keyword_situation"];
+
+/** Ordre des règles de conversation après une lecture de la messagerie : négociation, situation, puis réponse générique. */
+export const CONVERSATION_RULE_ORDER: readonly RuleKind[] = ["auto_negotiate", "keyword_situation", "reply_on_new_message"];
+
+function lastInboundAt(msgs: readonly Pick<Message, "direction" | "createdAt">[]): string | null {
+  for (let i = msgs.length - 1; i >= 0; i--) if (msgs[i]!.direction === "inbound") return msgs[i]!.createdAt;
+  return null;
+}
+
 /** Règles de relance : une seule relance par conversation sans réponse, quelle que soit la règle qui l'a faite. */
 const FOLLOW_UP_RULES: readonly RuleKind[] = ["follow_up_no_reply", "follow_up_24h"];
 
@@ -297,6 +312,7 @@ export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): 
     const quotas = rule.kind === "follow_up_24h" ? (await repos.subscriptions.get(tx))?.quotas ?? PLAN_QUOTAS.free : null;
     // Relances (ancienne règle et relance après 24 h) : jamais plus d'une par conversation sans réponse, toutes règles confondues.
     const followUpRuleIds = FOLLOW_UP_RULES.includes(rule.kind) ? new Set((await repos.rules.list(tx)).filter((r) => FOLLOW_UP_RULES.includes(r.kind)).map((r) => r.id)) : null;
+    const answeringRuleIds = rule.kind === "reply_on_new_message" ? (await repos.rules.list(tx)).filter((r) => r.id !== rule.id && ANSWERING_RULES.includes(r.kind)).map((r) => r.id) : null;
     for (const conv of await repos.conversations.open(tx)) {
       evaluated++;
       if (conv.connectionId && personal.has(conv.connectionId)) { skip(PERSONAL_ACCOUNT_SKIP); continue; }
@@ -306,6 +322,9 @@ export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): 
       const customer = await repos.customers.byId(tx, conv.customerId);
       const prenom = customer.displayName.split(" ")[0] ?? "";
       if (rule.kind === "reply_on_new_message" && !(last.direction === "inbound" && conv.unreadCount > 0)) { skip("Pas de nouveau message non lu"); continue; }
+      // Une négociation ou une situation (réponse ou transmission au vendeur) a déjà pris ce message en charge :
+      // jamais une seconde réponse générique par-dessus.
+      if (rule.kind === "reply_on_new_message" && answeringRuleIds && (await repos.jobs.countForConversationSince(tx, answeringRuleIds, conv.id, lastInboundAt(msgs))) > 0) { skip("Message déjà pris en charge par une autre règle"); continue; }
       if (rule.kind === "follow_up_no_reply" && !(last.direction === "outbound" && (now.getTime() - new Date(last.createdAt).getTime()) / 3_600_000 >= (rule.config.delayHours ?? 48))) { skip("Délai de relance non atteint"); continue; }
       if (followUpRuleIds && (await followedUpSinceReplyTx(tx, conv.id, msgs, followUpRuleIds))) { skip("Relance déjà faite depuis la dernière réponse de l'acheteur"); continue; }
       if (rule.kind === "follow_up_24h") {
@@ -356,7 +375,8 @@ export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): 
           // Transmission au vendeur, ou réponse à rédiger par mon IA perso : AUCUN texte envoyable. La tâche
           // signale la conversation au vendeur ; elle se ferme quand il répond dans Messages.
           targets.push({
-            targetId: conv.id, kind: "automation.send_message", connectionId: conv.connectionId, dedupeKey: `keyword_situation:handoff:${last.id}`, status: "awaiting_approval",
+            // Jamais confiée au Cloud : rien n'est envoyable, la conversation attend la réponse du vendeur.
+            targetId: conv.id, kind: "automation.send_message", connectionId: conv.connectionId, dedupeKey: `keyword_situation:handoff:${last.id}`, status: "awaiting_approval", runsIn: rule.runsIn === "cloud" ? "browser" : rule.runsIn,
             payload: { conversationId: conv.id, customerId: conv.customerId, handoff: true, situationId: match.situation.id, situationName: match.situation.name, matchedKeywords: match.matchedKeywords, decision: escalation ? "escalate" : "reply", responseKind: match.situation.response.kind, note: escalation ? "Situation transmise au vendeur : répondez dans Messages." : "Réponse à rédiger avec mon IA perso dans Messages.", ruleName: rule.name },
           });
           continue;
@@ -390,7 +410,8 @@ export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): 
           : autoNegotiateBody(ev, last.offerCents, prenom);
         const settled = ev.decision === "counter" ? ev.counterCents : ev.decision === "accept" ? offerCents : null;
         targets.push({
-          targetId: conv.id, kind: "automation.send_message",
+          // Compte Vinted de la conversation : la réponse de négociation peut partir par Selio Cloud.
+          targetId: conv.id, kind: "automation.send_message", connectionId: conv.connectionId,
           payload: {
             conversationId: conv.id, customerId: conv.customerId, body, offerCents: settled, decision: ev.decision, reasons: ev.reasons, ruleName: rule.name,
             ...(bundle ? { bundle: { itemIds: bundle.items.map((i) => i.id), itemCount: bundle.result.itemCount, listedTotalCents: bundle.result.listedTotalCents, floorCents: bundle.result.floorCents, perItemAllocationCents: bundle.result.perItemAllocationCents } } : {}),
@@ -402,7 +423,9 @@ export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): 
         const orders = conv.itemId ? await repos.orders.forItem(tx, conv.itemId) : [];
         if (!orders.some((o) => o.customerId === conv.customerId && (o.status === "paid" || o.status === "shipped"))) { skip("Pas de vente récente"); continue; }
       }
-      targets.push({ targetId: conv.id, kind: "automation.send_message", connectionId: conv.connectionId, payload: { conversationId: conv.id, customerId: conv.customerId, ruleName: rule.name } });
+      // Réponse à un nouveau message : une par message de l'acheteur (dans les limites de la règle par client et par jour).
+      const replyKey = rule.kind === "reply_on_new_message" ? `reply_on_new_message:${rule.id}:${last.id}` : undefined;
+      targets.push({ targetId: conv.id, kind: "automation.send_message", connectionId: conv.connectionId, ...(replyKey ? { dedupeKey: replyKey } : {}), payload: { conversationId: conv.id, customerId: conv.customerId, ruleName: rule.name } });
     }
   } else {
     for (const item of (await repos.items.all(tx)).filter((i) => i.status === "listed")) {

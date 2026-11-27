@@ -119,6 +119,13 @@ export const apiEnvSchema = z
     /** Validité d'une fenêtre de connexion (ticket et fenêtre du worker), en ms. */
     CLOUD_LOGIN_TIMEOUT_MS: z.coerce.number().int().min(60_000).max(30 * 60_000).default(300_000),
     /**
+     * Lecture de la messagerie Vinted par le Cloud (D63) : minutes entre deux lectures d'un compte (10 par
+     * défaut, 5 au moins ; 0 coupe la lecture) et conversations ouvertes par lecture (5). Même valeur que le
+     * worker (qui seul lit) ; l'API s'en sert pour l'affichage.
+     */
+    CLOUD_INBOX_SYNC_MINUTES: z.coerce.number().int().min(0).max(1440).default(10).transform((n) => (n === 0 ? 0 : Math.max(5, n))),
+    CLOUD_INBOX_MAX_CONVERSATIONS: z.coerce.number().int().min(1).max(20).default(5),
+    /**
      * Notifications Web Push de la PWA (alertes Radar) : clés VAPID du serveur (générer une fois avec
      * `npx web-push generate-vapid-keys`) et contact de l'émetteur (`mailto:`). Absentes : push désactivé,
      * GET /api/push/config répond `{ enabled: false }`. Mêmes valeurs dans le worker.
@@ -242,7 +249,7 @@ export function loadEnv(env: Record<string, string | undefined> = process.env): 
 }
 
 /** Réglages Cloud transmis au cœur (`services.config`) : tout ce qui ouvre davantage est faux par défaut. */
-export function cloudServicesConfig(cfg: Pick<ApiEnv, "CLOUD_HEAVY_ACTIONS" | "CLOUD_MAX_ACCOUNTS_PER_ORG" | "CLOUD_MAX_BROWSERS" | "CLOUD_PRO_OPTION" | "CLOUD_ACTIVE_HOURS" | "CLOUD_LOGIN_TIMEOUT_MS">) {
+export function cloudServicesConfig(cfg: Pick<ApiEnv, "CLOUD_HEAVY_ACTIONS" | "CLOUD_MAX_ACCOUNTS_PER_ORG" | "CLOUD_MAX_BROWSERS" | "CLOUD_PRO_OPTION" | "CLOUD_ACTIVE_HOURS" | "CLOUD_LOGIN_TIMEOUT_MS"> & Partial<Pick<ApiEnv, "CLOUD_INBOX_SYNC_MINUTES" | "CLOUD_INBOX_MAX_CONVERSATIONS">>) {
   return {
     cloudHeavyActions: cfg.CLOUD_HEAVY_ACTIONS,
     cloudMaxAccountsPerOrg: cfg.CLOUD_MAX_ACCOUNTS_PER_ORG,
@@ -250,6 +257,8 @@ export function cloudServicesConfig(cfg: Pick<ApiEnv, "CLOUD_HEAVY_ACTIONS" | "C
     cloudProOption: cfg.CLOUD_PRO_OPTION,
     cloudActiveHours: cfg.CLOUD_ACTIVE_HOURS,
     cloudLoginTimeoutMs: cfg.CLOUD_LOGIN_TIMEOUT_MS,
+    ...(cfg.CLOUD_INBOX_SYNC_MINUTES !== undefined ? { cloudInboxSyncMinutes: cfg.CLOUD_INBOX_SYNC_MINUTES } : {}),
+    ...(cfg.CLOUD_INBOX_MAX_CONVERSATIONS !== undefined ? { cloudInboxMaxConversations: cfg.CLOUD_INBOX_MAX_CONVERSATIONS } : {}),
   };
 }
 

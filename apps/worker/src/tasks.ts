@@ -24,7 +24,9 @@ export async function automationTick(services: Services, log: TaskLogger): Promi
     try {
       const state = await services.db.withOrg(orgId, (tx) => repos.automationState.get(tx));
       if (state.globalPaused) continue;
-      const list = (await services.db.withOrg(orgId, (tx) => repos.rules.list(tx))).filter((r) => r.enabled);
+      // Négociation et situations avant la réponse générique (qui s'efface quand un message est déjà pris en charge).
+      const order = (k: string) => { const i = automation.CONVERSATION_RULE_ORDER.indexOf(k as never); return i < 0 ? -1 : i; };
+      const list = (await services.db.withOrg(orgId, (tx) => repos.rules.list(tx))).filter((r) => r.enabled).sort((a, b) => order(a.kind) - order(b.kind));
       for (const rule of list) {
         const res = await services.db.withOrg(orgId, (tx) => automation.runRuleTx(ctx, tx, rule));
         rules++;

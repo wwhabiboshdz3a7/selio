@@ -126,7 +126,7 @@ function RuleDialog({ rule, onClose }: { rule: AutomationRule | null; onClose: (
         <Field label="Max par acheteur et par jour">{(p) => <Input id={p.id} type="number" min={0} max={50} value={limits.maxPerCustomerPerDay} onChange={(e) => setForm({ ...form, limits: { ...limits, maxPerCustomerPerDay: Number(e.target.value) } })} />}</Field>
         <Field label="Délai minimal entre deux actions (min)">{(p) => <Input id={p.id} type="number" min={0} max={1440} value={limits.minMinutesBetweenActions} onChange={(e) => setForm({ ...form, limits: { ...limits, minMinutesBetweenActions: Number(e.target.value) } })} />}</Field>
         <div className="flex flex-col gap-3 sm:col-span-2">
-          <Toggle label="Validation humaine avant exécution" description="Recommandé. Les tâches attendent votre accord dans la file." checked={form.requiresApproval ?? true} onChange={(v) => setForm({ ...form, requiresApproval: v })} />
+          <Toggle label="Validation humaine avant exécution" description="Recommandé. Les tâches attendent votre accord dans la file. Désactivée, avec Selio Cloud actif : réponses et négociation partent automatiquement, sans validation." checked={form.requiresApproval ?? true} onChange={(v) => setForm({ ...form, requiresApproval: v })} />
           <Toggle label="Règle activée" checked={form.enabled ?? false} onChange={(v) => setForm({ ...form, enabled: v })} />
         </div>
       </div>

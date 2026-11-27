@@ -55,7 +55,8 @@ describe("négociation avancée : réglages", () => {
     for (const kind of RULE_KINDS) expect(RULE_KIND_LABELS[kind]).toBeTruthy();
     expect(CLOUD_RULE_ACTIONS.follow_up_24h).toBe("follow_up");
     expect(CLOUD_ACTION_LEVEL_BY_KIND[CLOUD_RULE_ACTIONS.follow_up_24h!]).toBe("light");
-    expect(CLOUD_RULE_ACTIONS.keyword_situation).toBeUndefined();
+    // Situation avec gabarit : réponse légère (une transmission au vendeur n'est jamais envoyée).
+    expect(CLOUD_RULE_ACTIONS.keyword_situation).toBe("reply");
     expect(FOLLOW_UP_24H_DEFAULT_DELAY_HOURS).toBe(24);
     expect(FOLLOW_UP_24H_MAX_AGE_HOURS).toBe(168);
     expect(ruleConfig.parse({ situationId: "defaut", delayHours: 24 })).toEqual({ situationId: "defaut", delayHours: 24 });

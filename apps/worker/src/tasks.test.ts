@@ -539,6 +539,23 @@ describe("worker : Selio Cloud (FakeRunner, horloge injectée)", () => {
     expect(await svc.db.withOrg(ctx.orgId, (tx) => repos.cloudAccounts.byId(tx, accountId))).toMatchObject({ status: "stopped", hasSession: false });
   });
 
+  it("tick : lecture de la messagerie (FakeRunner) — messages enregistrés, réponse créée pour le Cloud, journaux sans texte ni pseudo", async () => {
+    if (!available) return;
+    clock = new Date(T0);
+    const { ctx, accountId } = await setupCloudOrg();
+    await svc.db.withOrg(ctx.orgId, (tx) => repos.rules.create(tx, { name: "Accusé", kind: "reply_on_new_message", enabled: true, requiresApproval: false, runsIn: "browser", schedule: { days: [0, 1, 2, 3, 4, 5, 6], startHour: 0, endHour: 24, timezone: "UTC" }, limits: { maxPerDay: 5, maxPerCustomerPerDay: 2, minMinutesBetweenActions: 0 }, config: { template: "Bien reçu {{prenom}}" } }));
+    const runner = new FakeRunner({ inbox: { listSource: "dom", listed: 1, conversations: [{ ref: "6100001", buyerHandle: "pseudo_secret_test", itemExternalRef: null, messages: [{ direction: "inbound", body: "Texte secret de l'acheteuse", at: "2026-10-29T08:00:00.000Z", offerCents: null }] }] } });
+    logs.length = 0;
+    const res = await cloudTick(svc, capture, deps(runner));
+    expect(res).toMatchObject({ executed: 1, done: 1, inboxSyncs: 1, messagesIn: 1, jobsCreated: 1 });
+    expect(runner.calls[0]!.action).toMatchObject({ kind: "sync_inbox", inboxUrl: "https://www.vinted.fr/inbox" });
+    const jobs = (await svc.db.withOrg(ctx.orgId, (tx) => repos.jobs.list(tx, {}))).items;
+    expect(jobs.find((j) => j.kind === "automation.send_message")).toMatchObject({ runsIn: "cloud", status: "queued", payload: { cloudAccountId: accountId } });
+    expect(logs.some((l) => l.msg === "cloud : lecture de la messagerie")).toBe(true);
+    expect(JSON.stringify(logs)).not.toMatch(/pseudo_secret_test|Texte secret/);
+    await cloud.stop(ctx, accountId);
+  });
+
   it("tick : CAPTCHA → compte en pause avec la raison, client prévenu, rien n'est retenté", async () => {
     if (!available) return;
     clock = new Date(T0);
@@ -577,6 +594,9 @@ describe("worker : Selio Cloud (FakeRunner, horloge injectée)", () => {
     expect(toRunnerAction({ id: "j1", kind: "bulk_edit", level: "heavy" })).toBeNull();
     expect(toRunnerAction({ id: "j2", kind: "reply", level: "light", conversationUrl: "https://www.vinted.fr/inbox/1" })).toBeNull();
     expect(toRunnerAction({ id: "j3", kind: "follow_up", level: "light", conversationUrl: "https://www.vinted.fr/inbox/1", text: "Bonjour" })).toEqual({ kind: "follow_up", conversationUrl: "https://www.vinted.fr/inbox/1", text: "Bonjour", id: "j3" });
+    // Lecture de la messagerie : aucun texte transmis au navigateur.
+    expect(toRunnerAction({ id: "j4", kind: "sync_inbox", level: "light", inboxUrl: "https://www.vinted.fr/inbox", maxConversations: 5, text: "jamais" })).toEqual({ kind: "sync_inbox", inboxUrl: "https://www.vinted.fr/inbox", maxConversations: 5, id: "j4" });
+    expect(toRunnerAction({ id: "j5", kind: "sync_inbox", level: "light" })).toBeNull();
     // Refus avant tout lancement : rien n'a touché Vinted, l'action ne compte pas dans les plafonds.
     expect(await executor.run({ accountId: "a", session: null, action: { id: "j1", kind: "bulk_edit", level: "heavy" } })).toMatchObject({ ok: false, code: "error", sideEffects: "none", launched: false });
     expect(runner.calls).toHaveLength(0);
@@ -585,7 +605,7 @@ describe("worker : Selio Cloud (FakeRunner, horloge injectée)", () => {
   it("un seul passage à la fois : le planning de la minute suivante ne relance pas un passage en cours", async () => {
     let release: () => void = () => {};
     let calls = 0;
-    const ticks = new CloudTickRunner(() => { calls++; return new Promise((r) => { release = () => r({ enabled: true, orgs: 0, executed: 0, done: 0, failed: 0, paused: 0, needsLogin: 0, requeued: 0, recovered: 0, errors: 0, swept: 0, machinePausedUntil: null }); }); }, silent);
+    const ticks = new CloudTickRunner(() => { calls++; return new Promise((r) => { release = () => r({ enabled: true, orgs: 0, executed: 0, done: 0, failed: 0, paused: 0, needsLogin: 0, requeued: 0, recovered: 0, errors: 0, swept: 0, machinePausedUntil: null, inboxSyncs: 0, messagesIn: 0, jobsCreated: 0 }); }); }, silent);
     expect(ticks.trigger()).toEqual({ started: true });
     expect(ticks.trigger()).toEqual({ started: false });
     release();
@@ -861,7 +881,11 @@ describe("worker : configuration du Cloud", () => {
     expect(loadEnv({ ...base, CLOUD_ACTIVE_HOURS: "9-18" }).CLOUD_ACTIVE_HOURS).toEqual({ startHour: 9, endHour: 18 });
     expect(() => loadEnv({ ...base, CLOUD_ACTIVE_HOURS: "23-8" })).toThrow(/CLOUD_ACTIVE_HOURS/);
     expect(() => loadEnv({ ...base, CLOUD_PROFILE_DIR: "profils" })).toThrow(/CLOUD_PROFILE_DIR/);
-    expect(cloudServicesConfig(env)).toEqual({ cloudHeavyActions: false, cloudMaxAccountsPerOrg: 10, cloudMaxBrowsers: 5, cloudProOption: false, cloudActiveHours: { startHour: 8, endHour: 23 }, cloudLoginTimeoutMs: 300_000 });
+    expect(cloudServicesConfig(env)).toEqual({ cloudHeavyActions: false, cloudMaxAccountsPerOrg: 10, cloudMaxBrowsers: 5, cloudProOption: false, cloudActiveHours: { startHour: 8, endHour: 23 }, cloudLoginTimeoutMs: 300_000, cloudInboxSyncMinutes: 10, cloudInboxMaxConversations: 5 });
+    // Lecture de la messagerie : 5 min au moins, 0 la coupe.
+    expect(loadEnv({ ...base, CLOUD_INBOX_SYNC_MINUTES: "2" }).CLOUD_INBOX_SYNC_MINUTES).toBe(5);
+    expect(loadEnv({ ...base, CLOUD_INBOX_SYNC_MINUTES: "0" }).CLOUD_INBOX_SYNC_MINUTES).toBe(0);
+    expect(loadEnv({ ...base, CLOUD_INBOX_SYNC_MINUTES: "15", CLOUD_INBOX_MAX_CONVERSATIONS: "3" })).toMatchObject({ CLOUD_INBOX_SYNC_MINUTES: 15, CLOUD_INBOX_MAX_CONVERSATIONS: 3 });
   });
 
   it("bac à sable de Chromium : actif par défaut, désactivation refusée en production", () => {

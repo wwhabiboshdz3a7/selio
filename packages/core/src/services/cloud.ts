@@ -3,7 +3,7 @@ import {
   CLOUD_ACTION_KINDS, CLOUD_ACTION_LEVEL_BY_KIND, CLOUD_ACTIVE_HOURS_DEFAULT, CLOUD_CIRCUIT_BREAKER_MINUTES, CLOUD_CONSENT_TEXT, CLOUD_CONSENT_VERSION, CLOUD_JITTER_MAX_MINUTES, CLOUD_JOB_MAX_AGE_HOURS,
   CLOUD_MAX_LOGIN_WINDOWS_PER_ORG,
   CLOUD_JOURNAL_RETENTION_DAYS, CLOUD_LOCK_STALE_MINUTES, CLOUD_LOGIN_TTL_MINUTES, CLOUD_MAX_ACCOUNTS_PER_ORG_DEFAULT, CLOUD_MAX_ACTIONS_PER_HOUR, CLOUD_MAX_BROWSERS_DEFAULT,
-  CLOUD_MIN_MINUTES_BETWEEN_ACTIONS, CLOUD_ACTION_KIND_LABELS, CLOUD_ACTION_LEVEL_LABELS, CLOUD_ACTION_STATUS_LABELS, CLOUD_PAUSE_REASON_LABELS, CLOUD_RUN_CODES, CLOUD_RUN_CODE_LABELS,
+  CLOUD_MIN_MINUTES_BETWEEN_ACTIONS, CLOUD_INBOX_MAX_CONVERSATIONS_DEFAULT, CLOUD_INBOX_SYNC_MINUTES_DEFAULT, CLOUD_INBOX_SYNC_MINUTES_MIN, CLOUD_ACTION_KIND_LABELS, CLOUD_ACTION_LEVEL_LABELS, CLOUD_ACTION_STATUS_LABELS, CLOUD_PAUSE_REASON_LABELS, CLOUD_RUN_CODES, CLOUD_RUN_CODE_LABELS,
   PLAN_LABELS, cloudAcceptConsentInput, cloudEnableAccountInput, cloudJournalQuery, cloudResumeInput, cloudUpdateSettingsInput, filterVintedStorageState, isPlan, isStorageStateEmpty,
   isVintedPauseReason, normalizeVintedHost, quotasForPlan,
   type CloudAccount, type CloudAction, type CloudActionDetail, type CloudActionKind, type CloudActionLevel, type CloudAvailability, type CloudConsent, type CloudConsentView,
@@ -13,6 +13,7 @@ import { hashSecret, newSecret, repos, type Tx } from "@selio/db";
 import { PERSONAL_ACCOUNT_SKIP, checkMessageDelay, followUpModeFor, isAutomatable, isWithinSchedule, recheckFollowUp, renderTemplate, toCsv } from "@selio/domain";
 import { PLAN_QUOTAS } from "@selio/demo-data";
 import { deliveredMessages, itemAvailableTx } from "./automation";
+import { processInboxSnapshot } from "./cloud-inbox";
 import { effectiveLimitsTx, limitsContextFor } from "./negotiation";
 import { alertEmail } from "@selio/email";
 import { AppError, requireAction, sendEmail, webLink, withOrg, type OrgContext, type Services, type ServicesConfig } from "../context";
@@ -53,6 +54,9 @@ export interface CloudExecutorAction {
   text?: string;
   /** Annonce visée (actions lourdes, derrière CLOUD_HEAVY_ACTIONS). */
   itemUrl?: string;
+  /** Lecture de la messagerie : https://…vinted.*\/inbox, et conversations ouvertes au plus. */
+  inboxUrl?: string;
+  maxConversations?: number;
 }
 
 export interface CloudExecutorInput {
@@ -67,7 +71,14 @@ export interface CloudExecutorInput {
  * est refiltrée (vinted.* seulement) puis rechiffrée avant d'être sauvegardée.
  */
 export type CloudRunOutcome =
-  | { ok: true; session?: unknown; durationMs?: number; detail?: string }
+  | {
+      ok: true;
+      session?: unknown;
+      durationMs?: number;
+      detail?: string;
+      /** Lecture de la messagerie : conversations lues (revalidées par `cloudInboxSnapshot` avant toute écriture). */
+      inbox?: unknown;
+    }
   | {
       ok: false;
       /** captcha, warning, blocked, rate_limited (→ pause), not_logged_in (→ connexion à refaire), selector_missing, timeout, error. */
@@ -99,6 +110,8 @@ type Responder = CloudRunOutcome | ((input: CloudExecutorInput) => CloudRunOutco
 export class FakeCloudExecutor implements CloudExecutor {
   readonly calls: CloudExecutorInput[] = [];
   private readonly queue: Responder[] = [];
+  /** Lecture de la messagerie : contenu rendu par défaut (messagerie vide sinon). */
+  inbox: unknown = { conversations: [], listSource: "none", listed: 0 };
 
   enqueue(...outcomes: Responder[]): this {
     this.queue.push(...outcomes);
@@ -111,7 +124,9 @@ export class FakeCloudExecutor implements CloudExecutor {
     if (next) return typeof next === "function" ? next(input) : next;
     const base = input.session ?? { cookies: [], origins: [] };
     const touch = { name: "selio_fake_touch", value: String(this.calls.length), domain: ".vinted.fr", path: "/", expires: -1, httpOnly: false, secure: true, sameSite: "Lax" as const };
-    return { ok: true, durationMs: 1200, detail: "fake", session: { cookies: [...base.cookies.filter((c) => c.name !== touch.name), touch], origins: base.origins } };
+    const session = { cookies: [...base.cookies.filter((c) => c.name !== touch.name), touch], origins: base.origins };
+    if (input.action.kind === "sync_inbox") return { ok: true, durationMs: 1500, detail: "fake", session, inbox: this.inbox };
+    return { ok: true, durationMs: 1200, detail: "fake", session };
   }
 }
 
@@ -122,6 +137,15 @@ export interface CloudSettings {
   maxAccountsPerOrg: number;
   maxBrowsers: number;
   proOption: boolean;
+  /** Minutes entre deux lectures de la messagerie d'un compte (0 : lecture coupée). */
+  inboxSyncMinutes: number;
+  inboxMaxConversations: number;
+}
+
+/** CLOUD_INBOX_SYNC_MINUTES : 0 coupe la lecture ; sinon 5 minutes au moins, un jour au plus. */
+function inboxSyncMinutesOf(v: unknown): number {
+  const n = intOr(v, CLOUD_INBOX_SYNC_MINUTES_DEFAULT, 0, 1440);
+  return n === 0 ? 0 : Math.max(CLOUD_INBOX_SYNC_MINUTES_MIN, n);
 }
 
 const intOr = (v: unknown, fallback: number, min: number, max: number): number => {
@@ -137,6 +161,8 @@ export function cloudConfigFromEnv(env: Record<string, string | undefined> = pro
     cloudMaxAccountsPerOrg: intOr(env.CLOUD_MAX_ACCOUNTS_PER_ORG, CLOUD_MAX_ACCOUNTS_PER_ORG_DEFAULT, 0, 1000),
     cloudMaxBrowsers: intOr(env.CLOUD_MAX_BROWSERS, CLOUD_MAX_BROWSERS_DEFAULT, 1, 200),
     cloudProOption: isTrue(env.CLOUD_PRO_OPTION),
+    cloudInboxSyncMinutes: inboxSyncMinutesOf(env.CLOUD_INBOX_SYNC_MINUTES),
+    cloudInboxMaxConversations: intOr(env.CLOUD_INBOX_MAX_CONVERSATIONS, CLOUD_INBOX_MAX_CONVERSATIONS_DEFAULT, 1, 20),
   };
 }
 
@@ -148,6 +174,8 @@ export function cloudSettings(services: Pick<Services, "config">): CloudSettings
     maxAccountsPerOrg: intOr(c.cloudMaxAccountsPerOrg, CLOUD_MAX_ACCOUNTS_PER_ORG_DEFAULT, 0, 1000),
     maxBrowsers: intOr(c.cloudMaxBrowsers, CLOUD_MAX_BROWSERS_DEFAULT, 1, 200),
     proOption: c.cloudProOption === true,
+    inboxSyncMinutes: inboxSyncMinutesOf(c.cloudInboxSyncMinutes),
+    inboxMaxConversations: intOr(c.cloudInboxMaxConversations, CLOUD_INBOX_MAX_CONVERSATIONS_DEFAULT, 1, 20),
   };
 }
 
@@ -238,8 +266,10 @@ export async function availability(ctx: OrgContext): Promise<CloudAvailability> 
 export interface CloudAccountView extends CloudAccount {
   connectionLabel: string;
   displayHandle: string | null;
-  /** Actions du jour (UTC) ayant ouvert le navigateur pour ce compte. */
+  /** Actions du jour (UTC) ayant ouvert le navigateur pour ce compte (lectures de la messagerie non comprises). */
   actionsToday: number;
+  /** Dernière lecture réussie de la messagerie de ce compte par le Cloud. */
+  lastInboxSyncAt: string | null;
 }
 
 export interface CloudOverview {
@@ -249,6 +279,13 @@ export interface CloudOverview {
   /** Actions Cloud du jour (UTC) pour l'organisation, face au plafond journalier de l'offre. */
   actionsToday: number;
 }
+
+/**
+ * Sortes d'actions hors du plafond journalier de l'offre (`automationActionsPerDay`) : la lecture de la
+ * messagerie ne fait qu'ouvrir des pages. Elle compte dans le journal, le plafond horaire par compte et le
+ * délai humain entre deux actions, mais pas dans le quota des actions d'automatisation (ni « cloud.action »).
+ */
+export const NOT_IN_DAILY_QUOTA: readonly CloudActionKind[] = ["sync_inbox"];
 
 /** Début du jour UTC (même remise à zéro que le compteur « cloud.action » de la page d'utilisation). */
 export function cloudDayStart(now: Date): string {
@@ -261,7 +298,11 @@ async function accountViews(tx: Tx, now: Date): Promise<CloudAccountView[]> {
   for (const a of await repos.cloudAccounts.list(tx)) {
     const c = connections.get(a.connectionId);
     const handle = c && typeof c.config.displayHandle === "string" ? c.config.displayHandle : null;
-    out.push({ ...a, connectionLabel: c?.label ?? "Compte supprimé", displayHandle: handle, actionsToday: await repos.cloudActions.countSince(tx, cloudDayStart(now), a.id) });
+    out.push({
+      ...a, connectionLabel: c?.label ?? "Compte supprimé", displayHandle: handle,
+      actionsToday: await repos.cloudActions.countSince(tx, cloudDayStart(now), a.id, { excludeKinds: NOT_IN_DAILY_QUOTA }),
+      lastInboxSyncAt: await repos.cloudActions.lastDoneAt(tx, a.id, "sync_inbox"),
+    });
   }
   return out;
 }
@@ -275,7 +316,7 @@ export async function overview(ctx: OrgContext): Promise<CloudOverview> {
       availability: await availabilityTx(tx, ctx.services),
       consent: consentView(await repos.cloudConsents.latest(tx)),
       accounts: await accountViews(tx, now),
-      actionsToday: await repos.cloudActions.countSince(tx, cloudDayStart(now)),
+      actionsToday: await repos.cloudActions.countSince(tx, cloudDayStart(now), undefined, { excludeKinds: NOT_IN_DAILY_QUOTA }),
     };
   });
 }
@@ -701,6 +742,11 @@ export function vintedConversationUrl(ref: string | null | undefined, host?: unk
   return `https://${h}/inbox/${ref}`;
 }
 
+/** URL https de la messagerie Vinted du compte. Hôte pris dans la liste fermée (vinted.fr par défaut). */
+export function vintedInboxUrl(host?: unknown): string {
+  return `https://${normalizeVintedHost(host) ?? "www.vinted.fr"}/inbox`;
+}
+
 const PAUSE_CODES: readonly CloudRunCode[] = ["captcha", "warning", "blocked", "rate_limited"];
 /** Signaux qui visent souvent l'adresse et non le compte : coupe-circuit de toute la machine. */
 const CIRCUIT_CODES: readonly CloudRunCode[] = ["rate_limited", "blocked"];
@@ -767,6 +813,18 @@ export interface CloudRunSummary {
   recovered: number;
   /** Coupe-circuit déclenché pendant ce passage (fin de la suspension), à signaler à l'opérateur. */
   circuitUntil: string | null;
+  /** Lectures de la messagerie mises en file pendant ce passage (une par compte au plus). */
+  syncScheduled: number;
+  /** Lectures de la messagerie réussies, et ce qu'elles ont apporté (comptes seulement). */
+  inboxSyncs: number;
+  messagesIn: number;
+  messagesOut: number;
+  jobsCreated: number;
+  aiReplies: number;
+  /** Lectures réussies dont l'enregistrement a échoué (rien de partiel n'est gardé). */
+  inboxErrors: number;
+  /** Messagerie non reconnue (adaptateur à mettre à jour, diagnostic dans le journal du worker). */
+  inboxUnrecognised: number;
 }
 
 interface PreparedRun {
@@ -854,6 +912,45 @@ async function notifyPaused(services: Services, orgId: string, label: string, co
   for (const to of await ownerEmails(services, orgId)) await sendEmail(services, { to, ...rendered });
 }
 
+const isSyncJob = (job: Job): boolean => job.payload.cloudKind === "sync_inbox";
+
+/**
+ * Met en file une lecture de la messagerie pour chaque compte Cloud qui peut agir (actif, session présente,
+ * dans le nombre de comptes de l'offre, connexion Vinted non Perso), quand l'organisation le permet (accord
+ * courant, offre, pas d'arrêt global), aux heures actives et hors coupe-circuit, si aucune lecture n'est
+ * déjà en file ou en cours et si la dernière date d'au moins CLOUD_INBOX_SYNC_MINUTES. La tâche passe
+ * ensuite par `planAccountRun` comme toute action (plafond horaire, délai humain, heures actives).
+ */
+async function scheduleInboxSyncs(
+  services: Services,
+  orgId: string,
+  ctx: { timezone: string; availability: CloudAvailability; consentOk: boolean; globalPaused: boolean; accounts: Map<string, CloudAccount>; withinLimit: Set<string> },
+  now: Date,
+): Promise<number> {
+  const minutes = cloudSettings(services).inboxSyncMinutes;
+  if (minutes === 0 || ctx.globalPaused || !ctx.consentOk || !ctx.availability.available) return 0;
+  if (!isWithinSchedule(cloudActiveHours(ctx.timezone, services.config?.cloudActiveHours), now)) return 0;
+  if (await machinePausedUntil(services, now)) return 0;
+  let created = 0;
+  for (const account of ctx.accounts.values()) {
+    if (account.status !== "active" || !account.hasSession || !ctx.withinLimit.has(account.id) || !account.settings.levels.includes("light")) continue;
+    await services.db.withOrg(orgId, async (tx) => {
+      const connection = await repos.connections.byId(tx, account.connectionId).catch(() => null);
+      if (!connection || connection.provider !== "vinted" || !isAutomatable(connection)) return;
+      const state = await repos.jobs.cloudSyncState(tx, account.id);
+      if (state.pending) return;
+      if (state.lastAt && now.getTime() - new Date(state.lastAt).getTime() < minutes * 60_000) return;
+      const nowIso = now.toISOString();
+      await repos.jobs.create(tx, {
+        kind: "connector.sync", status: "queued", dedupeKey: `cloud.sync_inbox:${account.id}:${nowIso}`, ruleId: null, runsIn: "cloud", maxAttempts: 1,
+        payload: { cloudAccountId: account.id, cloudKind: "sync_inbox", connectionId: account.connectionId }, scheduledFor: nowIso, createdAt: nowIso,
+      });
+      created++;
+    });
+  }
+  return created;
+}
+
 /**
  * Exécute les tâches Cloud échues d'une organisation : au plus une par compte et par passage,
  * après `planAccountRun`. La prise de la tâche (UPDATE conditionnel) et le verrou du compte
@@ -866,7 +963,7 @@ export async function runDueCloudJobs(services: Services, orgId: string, executo
   const clock = () => opts.now ?? services.now();
   const rng = opts.rng ?? Math.random;
   const settings = cloudSettings(services);
-  const summary: CloudRunSummary = { executed: 0, done: 0, failed: 0, paused: [], needsLogin: [], requeued: 0, skipped: [], recovered: 0, circuitUntil: null };
+  const summary: CloudRunSummary = { executed: 0, done: 0, failed: 0, paused: [], needsLogin: [], requeued: 0, skipped: [], recovered: 0, circuitUntil: null, syncScheduled: 0, inboxSyncs: 0, messagesIn: 0, messagesOut: 0, jobsCreated: 0, aiReplies: 0, inboxErrors: 0, inboxUnrecognised: 0 };
   const skipped = new Map<string, number>();
   const skip = (reason: string) => skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
   const finish = () => ({ ...summary, skipped: [...skipped.entries()].map(([reason, count]) => ({ reason, count })) });
@@ -884,14 +981,16 @@ export async function runDueCloudJobs(services: Services, orgId: string, executo
       globalPaused: (await repos.automationState.get(tx)).globalPaused,
       accounts: new Map(accounts.map((a) => [a.id, a])),
       withinLimit: accountsWithinLimit(accounts, availability.maxAccounts),
-      jobs: await repos.jobs.dueCloud(tx, startedAt.toISOString()),
     };
   });
-  if (ctxData.jobs.length === 0) return finish();
+  // Lecture de la messagerie : une tâche par compte actif quand la précédente est assez ancienne.
+  summary.syncScheduled = await scheduleInboxSyncs(services, orgId, ctxData, startedAt);
+  const dueJobs = await services.db.withOrg(orgId, (tx) => repos.jobs.dueCloud(tx, startedAt.toISOString()));
+  if (dueJobs.length === 0) return finish();
 
   // Regroupement par compte, dans l'ordre d'échéance.
   const byAccount = new Map<string, Job[]>();
-  for (const job of ctxData.jobs) {
+  for (const job of dueJobs) {
     const accountId = typeof job.payload.cloudAccountId === "string" ? job.payload.cloudAccountId : null;
     const account = accountId ? ctxData.accounts.get(accountId) : undefined;
     if (!account || account.status === "stopped") {
@@ -901,6 +1000,8 @@ export async function runDueCloudJobs(services: Services, orgId: string, executo
     }
     byAccount.set(account.id, [...(byAccount.get(account.id) ?? []), job]);
   }
+  // Les réponses et négociations dues passent AVANT une lecture de la messagerie du même compte.
+  for (const [accountId, list] of byAccount) byAccount.set(accountId, [...list.filter((j) => !isSyncJob(j)), ...list.filter(isSyncJob)]);
 
   for (const [accountId, jobs] of byAccount) {
     if (opts.shouldStop?.()) {
@@ -927,7 +1028,7 @@ export async function runDueCloudJobs(services: Services, orgId: string, executo
     const level = CLOUD_ACTION_LEVEL_BY_KIND[kind];
 
     const counts = await services.db.withOrg(orgId, async (tx) => ({
-      actionsToday: await repos.cloudActions.countSince(tx, cloudDayStart(now)),
+      actionsToday: await repos.cloudActions.countSince(tx, cloudDayStart(now), undefined, { excludeKinds: NOT_IN_DAILY_QUOTA }),
       actionsLastHour: await repos.cloudActions.countSince(tx, new Date(now.getTime() - 3_600_000).toISOString(), accountId),
     }));
     const decision = planAccountRun({
@@ -979,6 +1080,24 @@ export async function runDueCloudJobs(services: Services, orgId: string, executo
       await notifyPaused(services, orgId, run.connectionLabel, code);
     }
     await services.db.withOrg(orgId, (tx) => recordOutcomeTx(services, tx, run, outcome, code, elapsed, endedAt, pauseWritten));
+    if (kind === "sync_inbox" && code === "ok" && outcome.ok) {
+      summary.inboxSyncs++;
+      try {
+        const r = await processInboxSnapshot(services, orgId, { accountId, connectionId: account.connectionId, jobId: job.id }, outcome.inbox);
+        summary.messagesIn += r.messagesIn;
+        summary.messagesOut += r.messagesOut;
+        summary.jobsCreated += r.jobsCreated;
+        summary.aiReplies += r.aiReplies;
+        if (r.listSource === "none") summary.inboxUnrecognised++;
+      } catch (err) {
+        // Le contenu lu n'est jamais recopié dans une erreur : seul son type est gardé.
+        summary.inboxErrors++;
+        await services.db.withOrg(orgId, async (tx) => {
+          const action = await repos.cloudActions.byJob(tx, job.id);
+          if (action) await repos.cloudActions.update(tx, action.id, { detail: { ...action.detail, message: `lecture non enregistrée (${err instanceof Error ? err.name : "erreur"})`.slice(0, 200) } });
+        }).catch(() => {});
+      }
+    }
     if (code === "ok") summary.done++;
     else if (pauseWritten) {
       // déjà compté et notifié
@@ -990,6 +1109,34 @@ export async function runDueCloudJobs(services: Services, orgId: string, executo
 }
 
 type PrepareResult = { ok: true; run: PreparedRun } | { ok: false; reason: string };
+
+/**
+ * Lecture de la messagerie : prise de la tâche, connexion du compte (jamais un compte Perso), ligne de
+ * journal « en cours ». Aucune conversation ni aucun texte : l'exécuteur ne fait que lire.
+ */
+async function prepareSyncTx(
+  tx: Tx, job: Job, account: CloudAccount, level: CloudActionLevel, sessionSavedAt: string | null, session: CloudStorageState | null, nowIso: string,
+  refuse: (reason: string) => Promise<PrepareResult>, services: Services,
+): Promise<PrepareResult> {
+  const claimed = await repos.jobs.claimCloud(tx, job.id, nowIso);
+  if (!claimed) return refuse("already_claimed");
+  const connection = await repos.connections.byId(tx, account.connectionId).catch(() => null);
+  if (!connection || !isAutomatable(connection)) {
+    await repos.jobs.update(tx, job.id, { status: "skipped", error: PERSONAL_ACCOUNT_SKIP, result: { cloud: true, reason: "personal_account" }, finishedAt: nowIso });
+    await repos.cloudActions.add(tx, { accountId: account.id, kind: "sync_inbox", level, status: "skipped", jobId: job.id, detail: { reason: "personal_account" }, createdAt: nowIso });
+    return refuse("personal_account");
+  }
+  const detail: CloudActionDetail = {};
+  const action = await repos.cloudActions.add(tx, { accountId: account.id, kind: "sync_inbox", level, status: "running", jobId: job.id, detail, startedAt: nowIso, createdAt: nowIso });
+  await repos.jobs.update(tx, job.id, { result: { cloud: true, cloudActionId: action.id } });
+  return {
+    ok: true,
+    run: {
+      job: claimed, account, actionId: action.id, messageId: null, detail, connectionLabel: connection.label, sessionSavedAt,
+      input: { accountId: account.id, session, action: { id: job.id, kind: "sync_inbox", level, inboxUrl: vintedInboxUrl(connection.config.vintedHost), maxConversations: cloudSettings(services).inboxMaxConversations } },
+    },
+  };
+}
 
 /**
  * Verrou du compte, relecture des conditions qui ont pu changer pendant le passage (arrêt global,
@@ -1029,6 +1176,7 @@ async function prepareRunTx(services: Services, tx: Tx, job: Job, account: Cloud
     await repos.audit.add(tx, { actorUserId: null, action: "cloud.account.needs_login", targetType: "cloud_account", targetId: account.id, meta: { reason: "session_unreadable" } });
     return refuse("no_session");
   }
+  if (kind === "sync_inbox") return prepareSyncTx(tx, job, account, level, locked.sessionSavedAt, session, nowIso, refuse, services);
   // Délai minimal entre deux messages dans la conversation (limites de Vinted, prudentes tant que non
   // mesurées) : la tâche reste en file, reprise au prochain passage.
   const preConvId = typeof job.payload.conversationId === "string" ? job.payload.conversationId : null;
@@ -1088,6 +1236,12 @@ async function prepareRunTx(services: Services, tx: Tx, job: Job, account: Cloud
   }
   // Brouillon validé puis supprimé ou déjà envoyé depuis Messages : rien à envoyer.
   if (draftId && !prepared) return drop("follow_up_obsolete");
+  if (job.payload.followUp !== true) {
+    // Réponse (message, négociation, situation) : jamais si le dernier message échangé est déjà le nôtre
+    // (le vendeur a répondu depuis son téléphone, lu par la messagerie, ou une autre réponse est partie).
+    const delivered = deliveredMessages(msgs.filter((m) => m.id !== prepared?.id));
+    if (delivered[delivered.length - 1]?.direction === "outbound") return drop("already_answered");
+  }
   const hasBody = typeof job.payload.body === "string" && job.payload.body.trim().length > 0;
   const templateRule = rule !== null && (rule.kind === "reply_on_new_message" || rule.kind === "follow_up_no_reply" || rule.kind === "post_sale_message");
   // Jamais un remerciement générique à la place d'une réponse que le vendeur doit rédiger.
@@ -1132,7 +1286,9 @@ async function recordOutcomeTx(services: Services, tx: Tx, run: PreparedRun, out
     if (!isStorageStateEmpty(next)) await repos.cloudAccounts.replaceSessionIf(tx, account.id, services.secrets.encrypt(JSON.stringify(next), account.id), nowIso, run.sessionSavedAt);
   }
   // Seul un passage qui a lancé le navigateur compte (plafonds et compteur d'usage).
-  if (launched) await repos.usage.record(tx, "cloud.action", { accountId: account.id, jobId: job.id, kind: run.input.action.kind, code });
+  // La lecture de la messagerie n'entre ni dans « cloud.action » ni dans le quota d'automatisation (NOT_IN_DAILY_QUOTA).
+  const quotaCounted = !NOT_IN_DAILY_QUOTA.includes(run.input.action.kind);
+  if (launched && quotaCounted) await repos.usage.record(tx, "cloud.action", { accountId: account.id, jobId: job.id, kind: run.input.action.kind, code });
 
   // Message : envoyé, retiré (rien n'est parti) ou en échec (résultat incertain).
   const settleMessage = async (error: string) => {
@@ -1155,7 +1311,7 @@ async function recordOutcomeTx(services: Services, tx: Tx, run: PreparedRun, out
       await repos.conversations.update(tx, conv.id, { lastMessageAt: nowIso, lastMessagePreview: sent.body.slice(0, 120), negotiationRounds: sent.offerCents !== null ? conv.negotiationRounds + 1 : conv.negotiationRounds });
       await repos.customers.update(tx, conv.customerId, { lastContactAt: nowIso }).catch(() => null);
     }
-    await repos.usage.record(tx, "automation.action", { jobId: job.id, cloud: true });
+    if (quotaCounted) await repos.usage.record(tx, "automation.action", { jobId: job.id, cloud: true });
     await repos.jobs.update(tx, job.id, { status: "succeeded", error: null, result: { cloud: true, code, cloudActionId: run.actionId, messageId: run.messageId }, finishedAt: nowIso });
     await repos.cloudActions.update(tx, run.actionId, { status: "done", finishedAt: nowIso, detail });
     if (!stopped) await repos.cloudAccounts.update(tx, account.id, { lastActionAt: nowIso });

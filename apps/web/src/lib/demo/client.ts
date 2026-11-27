@@ -3276,7 +3276,8 @@ export class DemoClient implements DataClient {
         ...a,
         connectionLabel: c?.label ?? "Compte supprimé",
         displayHandle: c && typeof c.config.displayHandle === "string" ? c.config.displayHandle : null,
-        actionsToday: cloud.actions.filter((x) => x.accountId === a.id && x.status !== "skipped" && new Date(x.createdAt).getTime() >= since).length,
+        actionsToday: cloud.actions.filter((x) => x.accountId === a.id && x.kind !== "sync_inbox" && x.status !== "skipped" && new Date(x.createdAt).getTime() >= since).length,
+        lastInboxSyncAt: cloud.actions.filter((x) => x.accountId === a.id && x.kind === "sync_inbox" && x.status === "done").map((x) => x.finishedAt ?? x.createdAt).sort().pop() ?? null,
       };
     });
   }

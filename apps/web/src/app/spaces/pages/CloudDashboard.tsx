@@ -33,7 +33,7 @@ export default function CloudDashboard() {
       <PageHeader
         eyebrow="Selio Cloud"
         title="Tableau de bord"
-        description="Intégré à Selio Manager. Vos réponses et relances continuent quand votre ordinateur est éteint : un navigateur isolé par compte, ouvert seulement pour agir, au rythme humain."
+        description="Intégré à Selio Manager. Quand votre ordinateur est éteint, Selio lit votre messagerie Vinted, répond, négocie et relance : un navigateur isolé par compte, ouvert seulement pour agir, au rythme humain."
         actions={automation.data ? (paused
           ? <Button variant="secondary" icon={<Play />} onClick={() => pause.mutate(false)} loading={pause.isPending} disabled={!canManage}>Reprendre le Cloud</Button>
           : <Button variant="danger" icon={<Pause />} onClick={() => setConfirmPause(true)} disabled={!canManage}>Tout mettre en pause</Button>) : null}
@@ -89,6 +89,9 @@ export default function CloudDashboard() {
                     <p className="text-xs text-text-muted">
                       {a.status === "paused" ? pauseReasonText(a) : a.lastActionAt ? <>Dernière action {formatRelative(a.lastActionAt)}</> : "Aucune action pour l'instant"}
                     </p>
+                    {a.status === "active" ? (
+                      <p className="text-xs text-text-muted" data-testid="cloud-inbox-sync">{a.lastInboxSyncAt ? <>Messagerie lue {formatRelative(a.lastInboxSyncAt)}</> : "Messagerie pas encore lue"}</p>
+                    ) : null}
                   </div>
                   <span className="shrink-0"><CloudStatusBadge account={a} /></span>
                 </li>
@@ -125,8 +128,9 @@ export default function CloudDashboard() {
 
       <Card className="mt-4">
         <h2 className="text-md font-semibold text-text">Ce que fait Selio Cloud au lancement</h2>
-        <ul className="mt-3 grid gap-3 text-sm text-text-muted md:grid-cols-3">
-          <li><span className="block font-medium text-text">Actions légères seulement</span>Répondre à un message, relancer un acheteur après 24 h. Republier et modifier en masse restent fermés : à décider, l'adresse étant partagée.</li>
+        <ul className="mt-3 grid gap-3 text-sm text-text-muted md:grid-cols-2">
+          <li><span className="block font-medium text-text">Lecture et réponses automatiques</span>Selio lit votre messagerie Vinted à intervalles réguliers, sans rien y cliquer. Les réponses (rédigées par l'IA ou vos gabarits) et la négociation dans vos marges partent automatiquement, sans validation, sauf sur les règles réglées « Validation avant envoi ».</li>
+          <li><span className="block font-medium text-text">Actions légères seulement</span>Lire, répondre à un message, négocier par message, relancer un acheteur après 24 h. Republier et modifier en masse restent fermés : à décider, l'adresse étant partagée.</li>
           <li><span className="block font-medium text-text">Au rythme humain</span>Un navigateur ouvert seulement pour agir puis refermé, quelques minutes entre deux actions, jamais la nuit, dans les plafonds de votre offre.</li>
           <li><span className="block font-medium text-text">Arrêt au premier signal</span>CAPTCHA, avertissement, blocage ou « trop de requêtes » : le compte passe en pause, vous êtes prévenu, rien n'est retenté.</li>
         </ul>

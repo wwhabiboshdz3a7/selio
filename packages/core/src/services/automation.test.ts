@@ -48,8 +48,9 @@ describe("transport d'une tâche : serveur, extension ou Cloud (fonction pure)",
     }
   });
 
-  it("les autres règles ne passent jamais par le Cloud au lancement (actions légères seulement)", () => {
-    for (const ruleKind of ["auto_negotiate", "post_sale_message", "relist_stale", "price_drop_stale"] as const) {
+  it("négociation et situation par mots-clés passent par le Cloud ; les autres règles jamais (actions légères seulement)", () => {
+    for (const ruleKind of ["auto_negotiate", "keyword_situation"] as const) expect(decideRunsIn({ ruleKind, ruleRunsIn: "browser", cloudAccount: active })).toBe("cloud");
+    for (const ruleKind of ["post_sale_message", "relist_stale", "price_drop_stale"] as const) {
       expect(decideRunsIn({ ruleKind, ruleRunsIn: "browser", cloudAccount: active })).toBe("browser");
     }
     // Une règle enregistrée « cloud » sans compte actif part vers l'extension.
