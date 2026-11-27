@@ -10,6 +10,7 @@ import { AppError, requireAction, withOrg, type OrgContext } from "../context";
 import { deliveredMessages } from "./automation";
 import { NOT_IN_DAILY_QUOTA, cloudActiveHours, cloudDayStart, cloudSettings, hasValidConsent, machinePausedUntil, notifyPaused } from "./cloud";
 import { processInboxSnapshot, type InboxProcessResult } from "./cloud-inbox";
+import { ensureFullAutoTx } from "./full-auto";
 import { effectiveLimitsTx, limitsContextFor } from "./negotiation";
 
 /**
@@ -87,6 +88,8 @@ export async function setAuto(ctx: OrgContext, raw: unknown): Promise<ExtensionA
         }
       }
       await repos.extensionAutos.upsert(tx, connection.id, { enabled: true, enabledAt: nowIso, enabledBy: ctx.userId, lastSeenAt: nowIso });
+      // Plein automatique : règles de réponse et de négociation actives, sans dernier clic (D64).
+      await ensureFullAutoTx(ctx, tx, "extension");
     } else {
       await repos.extensionAutos.upsert(tx, connection.id, { enabled: false });
       await repos.jobs.browserAutoToApproval(tx, connection.id);

@@ -14,6 +14,7 @@ import { PERSONAL_ACCOUNT_SKIP, checkMessageDelay, followUpModeFor, isAutomatabl
 import { PLAN_QUOTAS } from "@selio/demo-data";
 import { deliveredMessages, itemAvailableTx } from "./automation";
 import { processInboxSnapshot } from "./cloud-inbox";
+import { ensureFullAutoTx } from "./full-auto";
 import { effectiveLimitsTx, limitsContextFor } from "./negotiation";
 import { alertEmail } from "@selio/email";
 import { AppError, requireAction, sendEmail, webLink, withOrg, type OrgContext, type Services, type ServicesConfig } from "../context";
@@ -366,6 +367,8 @@ export async function enableAccount(ctx: OrgContext, input: unknown): Promise<Cl
       ? await repos.cloudAccounts.update(tx, existing.id, { status: "needs_login", pausedReason: null, pausedAt: null })
       : await repos.cloudAccounts.create(tx, { connectionId: connection.id });
     await repos.audit.add(tx, { actorUserId: ctx.userId, action: "cloud.account.enabled", targetType: "cloud_account", targetId: account.id, meta: { connectionId: connection.id, reactivated: !!existing }, ip: ctx.ip });
+    // Plein automatique : règles de réponse et de négociation actives, sans dernier clic (D63).
+    await ensureFullAutoTx(ctx, tx, "cloud");
     return account;
   });
 }

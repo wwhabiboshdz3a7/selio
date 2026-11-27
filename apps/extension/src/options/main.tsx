@@ -87,7 +87,7 @@ function Options() {
       {status?.paired ? (
         <div className="card p-4 text-sm" aria-label="Automatisation complète dans ce navigateur">
           <h2 className="text-md font-semibold">Automatisation complète dans ce navigateur</h2>
-          <p className="mt-1 text-text-muted">Sans Selio Cloud : tant que ce Chrome est ouvert et connecté à Vinted, Selio lit votre messagerie et envoie les réponses et la négociation automatiques, sans validation (sauf règles réglées « Validation avant envoi »), dans un onglet en arrière-plan ouvert puis refermé. Le serveur décide du rythme (heures actives, quelques minutes entre deux actions, plafonds) ; au premier CAPTCHA ou avertissement de Vinted, tout s'arrête et vous êtes prévenu. Aucun cookie n'est lu.</p>
+          <p className="mt-1 text-text-muted">Sans Selio Cloud : tant que ce Chrome est ouvert et connecté à Vinted, Selio lit votre messagerie et envoie les réponses et la négociation automatiques, sans validation (l'activation crée les règles de réponse IA et de négociation et coupe la validation avant envoi), dans un onglet en arrière-plan ouvert puis refermé. Le serveur décide du rythme (heures actives, quelques minutes entre deux actions, plafonds) ; au premier CAPTCHA ou avertissement de Vinted, tout s'arrête et vous êtes prévenu. Aucun cookie n'est lu.</p>
           {auto === null ? <p className="mt-2 text-text-muted">Chargement…</p> : !auto.consentCurrent ? (
             <Alert tone="info" className="mt-3">Acceptez d'abord les conditions dans Selio (Selio Cloud › Accord, version {auto.consentVersion}) : elles couvrent aussi ce mode. Puis revenez ici.</Alert>
           ) : auto.connections.length === 0 ? (

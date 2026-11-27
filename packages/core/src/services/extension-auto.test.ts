@@ -89,8 +89,13 @@ async function setupOrg(): Promise<{ ctx: OrgContext; connectionId: string }> {
 }
 
 const ALL_DAY = { days: [0, 1, 2, 3, 4, 5, 6], startHour: 0, endHour: 24, timezone: "UTC" };
+// L'activation crée déjà la règle de réponse (plein automatique) : elle est réglée pour le test si elle existe.
 const addReplyRule = (ctx: OrgContext, requiresApproval = false) =>
-  services.db.withOrg(ctx.orgId, (tx) => repos.rules.create(tx, { name: "Réponse auto", kind: "reply_on_new_message", enabled: true, requiresApproval, runsIn: "browser", schedule: ALL_DAY, limits: { maxPerDay: 10, maxPerCustomerPerDay: 3, minMinutesBetweenActions: 0 }, config: { template: "Bien reçu {{prenom}}, je regarde." } }));
+  services.db.withOrg(ctx.orgId, async (tx) => {
+    const fields = { name: "Réponse auto", kind: "reply_on_new_message" as const, enabled: true, requiresApproval, runsIn: "browser" as const, schedule: ALL_DAY, limits: { maxPerDay: 10, maxPerCustomerPerDay: 3, minMinutesBetweenActions: 0 }, config: { template: "Bien reçu {{prenom}}, je regarde." } };
+    const existing = (await repos.rules.list(tx)).find((r) => r.kind === "reply_on_new_message");
+    return existing ? repos.rules.update(tx, existing.id, fields) : repos.rules.create(tx, fields);
+  });
 const jobOf = (ctx: OrgContext, id: string) => services.db.withOrg(ctx.orgId, (tx) => repos.jobs.byId(tx, id));
 const inbox = (ref: string, body: string, at: string) => ({ listSource: "dom" as const, listed: 1, conversations: [{ ref, buyerHandle: "acheteur_ext", itemExternalRef: null, messages: [{ direction: "inbound" as const, body, at }] }] });
 
@@ -142,7 +147,8 @@ describe("automatisation complète par l'extension (PostgreSQL)", () => {
     expect(await ext.nextAction(ctx)).toMatchObject({ action: "wait", reason: "too_soon" });
     advance(4);
     const send = await ext.nextAction(ctx);
-    expect(send).toMatchObject({ action: "send", jobId: reply.id, conversationUrl: "https://www.vinted.fr/inbox/8801", text: "Bien reçu acheteur_ext, je regarde." });
+    // Plein automatique : validation IA coupée à l'activation, la réponse est rédigée par l'IA (fournisseur de test).
+    expect(send).toMatchObject({ action: "send", jobId: reply.id, conversationUrl: "https://www.vinted.fr/inbox/8801", text: expect.stringMatching(/\S/) });
     if (send.action !== "send") return;
     await ext.reportAction(ctx, { jobId: send.jobId, code: "ok", sideEffects: "unknown", durationMs: 4200 }, { rng: rng0 });
     expect((await jobOf(ctx, reply.id)).status).toBe("succeeded");
@@ -182,7 +188,7 @@ describe("automatisation complète par l'extension (PostgreSQL)", () => {
       return c;
     });
     const rules = await services.db.withOrg(ctx.orgId, (tx) => repos.rules.list(tx));
-    await services.db.withOrg(ctx.orgId, (tx) => automation.runRuleTx(ctx, tx, rules[0]!));
+    await services.db.withOrg(ctx.orgId, (tx) => automation.runRuleTx(ctx, tx, rules.find((r) => r.kind === "reply_on_new_message")!));
     const job = (await services.db.withOrg(ctx.orgId, (tx) => repos.jobs.list(tx, {}))).items.find((j) => j.payload.conversationId === conv.id)!;
     expect(job).toMatchObject({ runsIn: "browser", status: "awaiting_approval" });
     expect(job.payload.extAuto).toBeUndefined();

@@ -956,8 +956,14 @@ describe("Selio Cloud : lecture de la messagerie et réponses automatiques", () 
       await repos.orgs.update(tx, ctx.orgId, { settings: { ...o.settings, ai: { ...o.settings.ai, requireApproval: aiApproval } } });
     });
   }
+  // L'activation du Cloud crée déjà les règles de réponse et de négociation (plein automatique) : la règle
+  // de la sorte demandée est réglée pour le test si elle existe, créée sinon.
   const addRule = (ctx: OrgContext, kind: "reply_on_new_message" | "auto_negotiate" | "keyword_situation", requiresApproval = false) =>
-    services.db.withOrg(ctx.orgId, (tx) => repos.rules.create(tx, { name: `Règle ${kind}`, kind, enabled: true, requiresApproval, runsIn: "browser", schedule: ALL_DAY, limits: LIMITS, config: { template: "Bien reçu {{prenom}}, je reviens vers vous." } }));
+    services.db.withOrg(ctx.orgId, async (tx) => {
+      const fields = { name: `Règle ${kind}`, kind, enabled: true, requiresApproval, runsIn: "browser" as const, schedule: ALL_DAY, limits: LIMITS, config: { template: "Bien reçu {{prenom}}, je reviens vers vous." } };
+      const existing = (await repos.rules.list(tx)).find((r) => r.kind === kind);
+      return existing ? repos.rules.update(tx, existing.id, fields) : repos.rules.create(tx, fields);
+    });
   const messagesOf = (ctx: OrgContext, ref: string) =>
     services.db.withOrg(ctx.orgId, async (tx) => {
       const conv = await repos.conversations.byExternalRef(tx, "vinted", ref);
@@ -1093,11 +1099,27 @@ describe("Selio Cloud : lecture de la messagerie et réponses automatiques", () 
     expect((await jobOf(ctx, jobId)).status).toBe("skipped");
   });
 
+  it("activer le Cloud met en place le plein automatique : règles de réponse (IA) et de négociation sans validation, validation IA coupée ; une règle déjà là est réglée, pas dupliquée", async () => {
+    if (!available) return;
+    const ctx = await setupOrg();
+    await services.db.withOrg(ctx.orgId, (tx) => repos.rules.create(tx, { name: "Ma négo", kind: "auto_negotiate", enabled: false, requiresApproval: true, runsIn: "server", schedule: ALL_DAY, limits: LIMITS, config: {} }));
+    await activeAccount(ctx);
+    const rules = await services.db.withOrg(ctx.orgId, (tx) => repos.rules.list(tx));
+    expect(rules.map((r) => [r.kind, r.enabled, r.requiresApproval]).sort()).toEqual([["auto_negotiate", true, false], ["reply_on_new_message", true, false]]);
+    expect(rules.find((r) => r.kind === "auto_negotiate")!.name).toBe("Ma négo");
+    expect(rules.find((r) => r.kind === "reply_on_new_message")!.config).toMatchObject({ useAi: true });
+    const org = await services.db.withGlobal((tx) => repos.orgs.byId(tx, ctx.orgId));
+    expect(org.settings.ai.requireApproval).toBe(false);
+    const audit = await owner.query("select meta from audit_logs where org_id = $1 and action = 'automation.full_auto.enabled'", [ctx.orgId]);
+    expect(audit.rows[0].meta).toMatchObject({ source: "cloud", created: ["reply_on_new_message"], updated: ["auto_negotiate"], aiApprovalTurnedOff: true });
+  });
+
   it("offre lue dans la messagerie : la négociation (politique, marges) répond par le Cloud ; la réponse générique s'efface ; réglage IA « validation » respecté (gabarit)", async () => {
     if (!available) return;
     const ctx = await setupOrg();
-    await enableSync(ctx, true);
     const account = await activeAccount(ctx);
+    // Validation IA remise par le client APRÈS l'activation : respectée (gabarit, pas de texte IA seul).
+    await enableSync(ctx, true);
     const item = await items.createItem(ctx, { title: "Pull marin", purchasePriceCents: 1000, listedPriceCents: 3000, floorPriceCents: 2200, status: "listed" });
     await services.db.withOrg(ctx.orgId, (tx) => repos.items.update(tx, item.id, { externalRef: "9100" }));
     await addRule(ctx, "reply_on_new_message");

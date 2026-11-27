@@ -156,6 +156,8 @@ Ouvrir une conversation peut la **marquer comme lue sur Vinted**, comme une lect
 
 **Limites.** L'adaptateur de la messagerie (`v1-inbox`) est construit sur des **fixtures synthétiques** : ni le JSON ni le HTML de la messagerie de Vinted n'ont été observés. Il est à vérifier sur le compte de test de l'équipe (diagnostic `cloud.inbox.unrecognised`). **Accepter une offre par le bouton de la carte d'offre de Vinted n'est pas fait** : la négociation se fait **par message** (« faites l'offre sur l'annonce et je l'accepte »).
 
+**Activation = plein automatique (D65).** Activer le Cloud sur un compte crée les règles « Réponse automatique (IA) » et « Négociation automatique » si elles manquent, les active sans « Validation avant envoi », et coupe la validation humaine des brouillons IA : aucune réponse n'attend un clic. Même chose à l'activation de l'automatisation complète par l'extension (§1.9).
+
 ### 1.9 Sans Cloud : automatisation complète par l'extension (D64)
 
 Le même plein automatique marche **sans Selio Cloud**, par l'extension, **tant que le Chrome du vendeur est ouvert** ([EXTENSION-INSTALL.md](EXTENSION-INSTALL.md), section « Automatisation complète dans ce navigateur »). Interrupteur dans les Options de l'extension, désactivé par défaut, activable seulement avec l'accord courant (`2026-11-27.2`, qui décrit ce mode), un seul compte Vinted par navigateur (`extension_autos`, migration 0026).

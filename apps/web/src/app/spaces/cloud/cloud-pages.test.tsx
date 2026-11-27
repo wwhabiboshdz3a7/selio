@@ -200,7 +200,7 @@ describe("journal des actions", () => {
     cleanup();
     mount("/cloud", <CloudDashboard />);
     expect(await screen.findByText("Lecture et réponses automatiques")).toBeTruthy();
-    expect(screen.getByText(/partent automatiquement, sans validation, sauf sur les règles réglées « Validation avant envoi »/)).toBeTruthy();
+    expect(screen.getByText(/partent automatiquement, sans validation : l'activation crée les règles/)).toBeTruthy();
   });
 });
 
