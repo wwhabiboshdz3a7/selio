@@ -582,7 +582,7 @@ describe("worker : Selio Cloud (FakeRunner, horloge injectée)", () => {
     const { ctx, accountId, connectionId } = await setupCloudOrg();
     const { jobId } = await addCloudJob(ctx, accountId, connectionId);
     logs.length = 0;
-    expect(await cloudTick(svc, capture, deps(null))).toEqual({ enabled: false, orgs: 0, executed: 0, done: 0, failed: 0, paused: 0, needsLogin: 0, requeued: 0, recovered: 0, errors: 0, swept: 0, machinePausedUntil: null });
+    expect(await cloudTick(svc, capture, deps(null))).toEqual({ enabled: false, orgs: 0, executed: 0, done: 0, failed: 0, paused: 0, needsLogin: 0, requeued: 0, recovered: 0, errors: 0, swept: 0, machinePausedUntil: null, inboxSyncs: 0, messagesIn: 0, jobsCreated: 0 });
     expect(logs.some((l) => /Cloud désactivé/.test(l.msg))).toBe(true);
     expect((await svc.db.withOrg(ctx.orgId, (tx) => repos.jobs.byId(tx, jobId))).status).toBe("queued");
     expect(await svc.db.withOrg(ctx.orgId, (tx) => repos.cloudActions.listAll(tx, {}))).toHaveLength(0);

@@ -267,7 +267,8 @@ const eur = (c: number) => (c / 100).toFixed(2).replace(".", ",") + " €";
  * Règles qui répondent à un message précis de l'acheteur (négociation, situation) : passées AVANT la réponse
  * générique, qui s'efface quand l'une d'elles a déjà pris le message en charge.
  */
-const ANSWERING_RULES: readonly RuleKind[] = ["auto_negotiate", "keyword_situation"];
+// Une autre règle de réponse générique compte aussi : jamais deux réponses au même message de l'acheteur.
+const ANSWERING_RULES: readonly RuleKind[] = ["auto_negotiate", "keyword_situation", "reply_on_new_message"];
 
 /** Ordre des règles de conversation après une lecture de la messagerie : négociation, situation, puis réponse générique. */
 export const CONVERSATION_RULE_ORDER: readonly RuleKind[] = ["auto_negotiate", "keyword_situation", "reply_on_new_message"];
