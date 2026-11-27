@@ -51,6 +51,12 @@ import {
 import { InvalidSelectorError, readLiveDom, type DomHandle } from "./dom-bridge";
 import { DEFAULT_VIEWPORT, contextOptions, launchOptions } from "./launch";
 
+/** Lecture du catalogue : réponses JSON gardées au plus, taille maximale de chacune, attentes. */
+const CATALOG_PAYLOADS_MAX = 3;
+const CATALOG_PAYLOAD_MAX_CHARS = 4_000_000;
+const CATALOG_WAIT_MS = 12_000;
+const CATALOG_SETTLE_MS = 1_500;
+
 /**
  * Exécuteur Playwright du Cloud.
  *
@@ -610,6 +616,32 @@ export class PlaywrightRunner implements BrowserRunner, PageFetcher, PageOpener 
     const done = (o: Omit<Extract<FetchPageOutcome, { ok: false }>, "durationMs" | "launched">): FetchPageOutcome => ({ ...o, launched: true, durationMs: Date.now() - started });
     try {
       const { context, page } = await this.openPage(lease, session);
+      // Liste d'annonces que la page de Vinted charge ELLE-MÊME pour s'afficher (même domaine) : on lit la
+      // réponse au passage, sans jamais émettre de requête supplémentaire. Bornée en nombre et en taille.
+      const catalogPayloads: string[] = [];
+      let payloadSeen: () => void = () => {};
+      const firstPayload = new Promise<void>((resolve) => {
+        payloadSeen = resolve;
+      });
+      if (target.pathname.startsWith("/catalog")) {
+        page.on("response", (res) => {
+          void (async () => {
+            try {
+              if (catalogPayloads.length >= CATALOG_PAYLOADS_MAX || res.status() !== 200) return;
+              const u = new URL(res.url());
+              if (u.hostname !== target.hostname || !u.pathname.startsWith("/api/v2/catalog/items")) return;
+              const type = res.request().resourceType();
+              if (type !== "xhr" && type !== "fetch") return;
+              const body = await res.text();
+              if (body.length === 0 || body.length > CATALOG_PAYLOAD_MAX_CHARS) return;
+              catalogPayloads.push(body);
+              payloadSeen();
+            } catch {
+              // réponse illisible ou page fermée : ignorée
+            }
+          })();
+        });
+      }
       const response = await page.goto(target.toString(), { waitUntil: "domcontentloaded" });
       const status = response?.status() ?? null;
       // En-tête de vérification anti-robot (lu seulement pour s'arrêter, jamais pour le contourner).
@@ -617,18 +649,21 @@ export class PlaywrightRunner implements BrowserRunner, PageFetcher, PageOpener 
       // Signal de Vinted dès le chargement (CAPTCHA, « trop de requêtes »…) : arrêt immédiat, aucune attente.
       const signaled = challenge || (status !== null && status >= 400) || detectBlock(await page.content(), page.url(), { status, expectMember: false }) !== null;
       if (!signaled && input.waitForSelectors && input.waitForSelectors.length > 0) {
-        // Attente courte de la grille (rendu côté client) ; son absence est constatée par l'adaptateur.
-        await page
-          .locator(input.waitForSelectors.join(", "))
-          .first()
-          .waitFor({ state: "attached", timeout: Math.min(5_000, lease.remaining()) })
-          .catch(() => {});
+        // Attente de la grille (rendu côté client) OU de la liste d'annonces chargée par la page ; leur absence
+        // est constatée par l'adaptateur. Puis un court délai pour que la grille finisse de se dessiner.
+        const wait = Math.min(CATALOG_WAIT_MS, lease.remaining());
+        await Promise.race([
+          page.locator(input.waitForSelectors.join(", ")).first().waitFor({ state: "attached", timeout: wait }),
+          firstPayload,
+          new Promise<void>((resolve) => setTimeout(resolve, wait)),
+        ]).catch(() => {});
+        await page.waitForTimeout(Math.min(CATALOG_SETTLE_MS, Math.max(0, lease.remaining() - 1_000))).catch(() => {});
       }
       const html = await page.content();
       const finalUrl = page.url();
       // Page publique : aucune session relue ni rendue (les cookies posés par Vinted restent dans le contexte jeté).
       const after = publicPage ? null : await readSession(context);
-      return { ok: true, html, finalUrl, status, ...(challenge ? { challenge: true } : {}), durationMs: Date.now() - started, ...(after ? { session: after } : {}) };
+      return { ok: true, html, finalUrl, status, ...(challenge ? { challenge: true } : {}), ...(catalogPayloads.length ? { catalogPayloads: [...catalogPayloads] } : {}), durationMs: Date.now() - started, ...(after ? { session: after } : {}) };
     } catch (err) {
       const page = lease.page;
       if (!lease.timedOut && page && !page.isClosed()) {

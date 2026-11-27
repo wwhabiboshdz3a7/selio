@@ -50,6 +50,12 @@ export type FetchPageOutcome =
        * `cf-mitigated: challenge`) : la page est une vérification, quel que soit son contenu ou son statut.
        */
       challenge?: boolean;
+      /**
+       * Réponses JSON de la liste d'annonces que la page de Vinted a chargées ELLE-MÊME pour s'afficher
+       * (`/api/v2/catalog/items`, même domaine) : aucune requête n'est ajoutée par Selio. Texte brut borné,
+       * lu par `parseCatalogApiPayload` ; jamais journalisé.
+       */
+      catalogPayloads?: string[];
       durationMs: number;
       /** Session relue et filtrée avant la fermeture (Vinted a pu la renouveler). */
       session?: StorageState;

@@ -1,8 +1,13 @@
 import {
   CATALOG_ADAPTER_VERSION,
   CATALOG_GRID_SELECTORS,
+  CATALOG_WAIT_SELECTORS_V2,
+  catalogPageDiagnostic,
   filterCatalogItems,
+  parseCatalogApiPayload,
+  parseCatalogDocumentLoose,
   parseCatalogPage,
+  parseHtmlDocument,
   type CatalogBlockDetector,
   type CatalogItem,
   type CatalogSearchCriteria,
@@ -156,7 +161,7 @@ export class RadarReader {
       session: input.session,
       url: input.url,
       timeoutMs: input.pageBudgetMs ?? this.pageBudgetMs,
-      waitForSelectors: CATALOG_GRID_SELECTORS,
+      waitForSelectors: [...CATALOG_GRID_SELECTORS, ...CATALOG_WAIT_SELECTORS_V2],
       ...(input.publicPage ? { publicPage: true } : {}),
       ...(input.profileDir ? { profileDir: input.profileDir } : {}),
     });
@@ -204,7 +209,34 @@ export class RadarReader {
       return base({ ...page, outcome: "error", message: `Vinted a répondu avec le statut ${fetched.status}.`, warnings: parsed.warnings });
     }
     if (!parsed.pageOk) {
-      this.logger.warn("radar.read.page_changed", { missing: parsed.missing.join(",") });
+      // Adaptateur v2 : liste d'annonces chargée par la page elle-même, puis lecture souple du HTML.
+      const v2Options = { now: observedAt, url: fetched.finalUrl, maxItems: this.maxItems };
+      const fromApi = (fetched.catalogPayloads ?? []).map((p) => parseCatalogApiPayload(p, v2Options)).find((r) => r !== null && r.items.length > 0) ?? null;
+      let recovered = fromApi;
+      if (!recovered) {
+        try {
+          recovered = parseCatalogDocumentLoose(parseHtmlDocument(fetched.html), v2Options);
+        } catch {
+          recovered = null;
+        }
+      }
+      if (recovered) {
+        const items = input.criteria ? filterCatalogItems(recovered.items, input.criteria) : recovered.items;
+        this.logger.info("radar.read.v2", { source: recovered.source, seen: recovered.items.length });
+        return base({
+          ...page,
+          outcome: "ok",
+          items,
+          seenCount: recovered.items.length,
+          pageOk: true,
+          measure: "ok",
+          adapterVersion: recovered.adapterVersion,
+          warnings: recovered.warnings,
+          message: `${recovered.items.length} annonce(s) lue(s), ${items.length} retenue(s).`,
+        });
+      }
+      // Toujours rien : diagnostic de STRUCTURE seulement (comptes, préfixes de data-testid), aucun texte de la page.
+      this.logger.warn("radar.read.page_changed", { missing: parsed.missing.join(","), ...catalogPageDiagnostic(fetched.html, fetched.catalogPayloads?.length ?? 0) });
       return base({
         ...page,
         outcome: "page_changed",

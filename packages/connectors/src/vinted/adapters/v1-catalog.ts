@@ -251,6 +251,11 @@ function parseDecimal(raw: string): number | null {
   return Number.isFinite(v) ? v : null;
 }
 
+/** Lit une carte d'annonce (exportée pour l'adaptateur v2, qui l'applique à d'autres conteneurs). */
+export function readCatalogCard(card: MinimalElement, base: string, now: Date, warnings: string[]): CatalogItem | null {
+  return readCard(card, base, now, warnings);
+}
+
 function readCard(card: MinimalElement, base: string, now: Date, warnings: string[]): CatalogItem | null {
   const link = first(card, CARD.link);
   const url = itemUrl(attr(link, "href"), base);
