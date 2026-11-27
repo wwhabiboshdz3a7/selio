@@ -17,6 +17,8 @@ COPY --from=build /out /app
 COPY --from=build /repo/apps/api/dist /app/dist
 COPY --from=build /repo/packages/db/migrations /app/migrations
 ENV MIGRATIONS_DIR=/app/migrations
+# Dossier des photos (stockage local) : appartient à l'utilisateur sans privilège qui fait tourner l'API.
+RUN mkdir -p /var/lib/selio-photos && chown node:node /var/lib/selio-photos && chmod 700 /var/lib/selio-photos
 USER node
 EXPOSE 8787
 CMD ["node", "dist/main.js"]

@@ -24,7 +24,7 @@ RUN node /app/node_modules/playwright-core/cli.js install --with-deps chromium \
  && CHROME="$(ls -d /ms-playwright/chromium-*/chrome-linux*/chrome | head -n 1)" \
  && test -x "$CHROME" \
  && ln -s "$CHROME" /usr/local/bin/selio-chromium \
- && mkdir -p /var/lib/selio-cloud && chown node:node /var/lib/selio-cloud && chmod 700 /var/lib/selio-cloud
+ && mkdir -p /var/lib/selio-cloud /var/lib/selio-photos && chown node:node /var/lib/selio-cloud /var/lib/selio-photos && chmod 700 /var/lib/selio-cloud /var/lib/selio-photos
 # Jamais root : le bac à sable de Chromium s'appuie sur les espaces de noms utilisateur
 # (profil seccomp deploy/chromium-seccomp.json, voir docker-compose.prod.yml).
 USER node

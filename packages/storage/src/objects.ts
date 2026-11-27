@@ -1,3 +1,4 @@
+import { open } from "node:fs/promises";
 import type { StorageClient } from "./client";
 
 /**
@@ -28,13 +29,25 @@ export class StorageObjectStore {
   private readonly timeoutMs: number;
   private readonly maxBytes: number;
 
-  constructor(private readonly storage: Pick<StorageClient, "presignDownload"> & Partial<Pick<StorageClient, "deleteObject">>, opts: StorageObjectStoreOptions = {}) {
+  constructor(private readonly storage: Pick<StorageClient, "presignDownload"> & Partial<Pick<StorageClient, "deleteObject" | "isLocal" | "localPath">>, opts: StorageObjectStoreOptions = {}) {
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.timeoutMs = opts.timeoutMs ?? 10_000;
     this.maxBytes = opts.maxBytes ?? STORAGE_READ_MAX_BYTES;
   }
 
   async read(key: string): Promise<{ data: Uint8Array; contentType: string }> {
+    const ext = key.slice(key.lastIndexOf(".") + 1).toLowerCase();
+    // Stockage local : lecture directe sur le disque (volume partagé), bornée comme la lecture HTTP.
+    if (this.storage.isLocal && typeof this.storage.localPath === "function") {
+      const file = await open(this.storage.localPath(key), "r");
+      try {
+        const buf = new Uint8Array(this.maxBytes + 1);
+        const { bytesRead } = await file.read(buf, 0, buf.length, 0);
+        return { data: buf.subarray(0, bytesRead), contentType: CONTENT_TYPES[ext] ?? "application/octet-stream" };
+      } finally {
+        await file.close();
+      }
+    }
     const { url } = this.storage.presignDownload({ key });
     const res = await this.fetchImpl(url, { method: "GET", redirect: "error", signal: AbortSignal.timeout(this.timeoutMs) });
     if (!res.ok) {
@@ -43,7 +56,6 @@ export class StorageObjectStore {
     }
     const data = await readCapped(res, this.maxBytes + 1);
     const declared = (res.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
-    const ext = key.slice(key.lastIndexOf(".") + 1).toLowerCase();
     const contentType = Object.values(CONTENT_TYPES).includes(declared) ? declared : CONTENT_TYPES[ext] ?? "application/octet-stream";
     return { data, contentType };
   }

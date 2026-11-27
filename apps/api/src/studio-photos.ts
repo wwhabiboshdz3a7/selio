@@ -13,7 +13,7 @@ import { StorageObjectStore, type StorageClient, type StorageObjectStoreOptions 
 export type StoragePhotoStoreOptions = StorageObjectStoreOptions;
 
 export class StoragePhotoStore extends StorageObjectStore implements StudioPhotoStore {
-  constructor(storage: Pick<StorageClient, "presignDownload"> & Partial<Pick<StorageClient, "deleteObject">>, opts: StoragePhotoStoreOptions = {}) {
+  constructor(storage: Pick<StorageClient, "presignDownload"> & Partial<Pick<StorageClient, "deleteObject" | "isLocal" | "localPath">>, opts: StoragePhotoStoreOptions = {}) {
     super(storage, { maxBytes: studio.STUDIO_RECEIVED_MAX_BYTES, ...opts });
   }
 }

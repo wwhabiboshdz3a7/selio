@@ -40,6 +40,8 @@ services:
       COOKIE_SECURE: "true"
       NODE_ENV: production
     ports: ["127.0.0.1:8787:8787"]
+    # Photos (stockage local, STORAGE_LOCAL_DIR) : volume partagé avec le worker.
+    volumes: [photos:/var/lib/selio-photos]
     depends_on: { migrate: { condition: service_completed_successfully }, redis: { condition: service_started } }
 
   worker:
@@ -57,6 +59,7 @@ services:
     shm_size: "1gb"
     tmpfs:
       - /var/lib/selio-cloud:size=2g,uid=1000,gid=1000,mode=0700
+    volumes: [photos:/var/lib/selio-photos]
     env_file: [.env]
     environment:
       DATABASE_URL: postgres://selio_app:${APP_DB_PASSWORD}@postgres:5432/selio
@@ -67,3 +70,4 @@ services:
 volumes:
   pg:
   redis:
+  photos:

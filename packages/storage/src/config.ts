@@ -26,6 +26,14 @@ export const storageConfigSchema = z.object({
   STORAGE_FORCE_PATH_STYLE: bool(true),
   /** Durée de vie des URLs signées, en secondes (15 minutes par défaut ; une semaine au plus, limite S3). */
   STORAGE_PRESIGN_TTL_SECONDS: z.coerce.number().int().min(60).max(604_800).default(900),
+  /**
+   * Stockage LOCAL (sans S3) : dossier où l'API écrit les photos (volume Docker partagé avec le worker).
+   * Utilisé quand STORAGE_ENDPOINT est vide. Les photos passent alors par l'API (`/api/storage/…`), avec des
+   * liens signés et datés comme en S3 : rien d'autre que l'API n'est ouvert sur Internet.
+   */
+  STORAGE_LOCAL_DIR: z.string().optional().transform((v) => (v && v.trim() ? v.trim() : undefined)),
+  /** Adresse publique du site qui relaie /api/* vers l'API (ex. https://seliovprod.netlify.app) : base des liens signés. */
+  STORAGE_PUBLIC_URL: z.string().optional().transform((v) => (v && v.trim() ? v.trim() : undefined)),
 });
 
 export type StorageEnv = z.infer<typeof storageConfigSchema>;
@@ -39,6 +47,8 @@ export interface StorageConfig {
   secretKey: string;
   forcePathStyle: boolean;
   presignTtlSeconds: number;
+  /** Stockage local : dossier des photos et adresse publique (liens `/api/storage/…` signés par HMAC). */
+  local?: { dir: string; publicUrl: URL };
 }
 
 const BUCKET_RE = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/;
@@ -56,6 +66,7 @@ export function loadStorageConfig(env: Record<string, unknown> = process.env): S
     throw new Error(`Configuration du stockage invalide : ${issues}`);
   }
   const cfg = parsed.data;
+  if (!cfg.STORAGE_ENDPOINT && cfg.STORAGE_LOCAL_DIR) return loadLocalStorageConfig(cfg);
   if (!cfg.STORAGE_ENDPOINT) return null;
   let endpoint: URL;
   try {
@@ -76,5 +87,31 @@ export function loadStorageConfig(env: Record<string, unknown> = process.env): S
     secretKey: cfg.STORAGE_SECRET_KEY!,
     forcePathStyle: cfg.STORAGE_FORCE_PATH_STYLE,
     presignTtlSeconds: cfg.STORAGE_PRESIGN_TTL_SECONDS,
+  };
+}
+
+/** Stockage local : dossier absolu, adresse publique http(s), clé de signature d'au moins 32 caractères. */
+function loadLocalStorageConfig(cfg: StorageEnv): StorageConfig {
+  const dir = cfg.STORAGE_LOCAL_DIR!;
+  if (!dir.startsWith("/")) throw new Error("Configuration du stockage invalide : STORAGE_LOCAL_DIR doit être un chemin absolu (ex. /var/lib/selio-photos).");
+  if (!cfg.STORAGE_PUBLIC_URL) throw new Error("Configuration du stockage invalide : STORAGE_LOCAL_DIR est défini mais STORAGE_PUBLIC_URL manque (adresse publique du site, ex. https://seliovprod.netlify.app).");
+  let publicUrl: URL;
+  try {
+    publicUrl = new URL(cfg.STORAGE_PUBLIC_URL);
+  } catch {
+    throw new Error("Configuration du stockage invalide : STORAGE_PUBLIC_URL doit être une URL (ex. https://seliovprod.netlify.app).");
+  }
+  if (publicUrl.protocol !== "http:" && publicUrl.protocol !== "https:") throw new Error("Configuration du stockage invalide : STORAGE_PUBLIC_URL doit être en http ou https.");
+  if (!cfg.STORAGE_SECRET_KEY || cfg.STORAGE_SECRET_KEY.length < 32) throw new Error("Configuration du stockage invalide : en stockage local, STORAGE_SECRET_KEY (clé de signature des liens) doit faire au moins 32 caractères.");
+  const base = new URL(publicUrl.origin);
+  return {
+    endpoint: new URL("/api/storage/", base),
+    region: cfg.STORAGE_REGION,
+    bucket: "local",
+    accessKey: "local",
+    secretKey: cfg.STORAGE_SECRET_KEY,
+    forcePathStyle: false,
+    presignTtlSeconds: cfg.STORAGE_PRESIGN_TTL_SECONDS,
+    local: { dir: dir.replace(/\/+$/, ""), publicUrl: base },
   };
 }

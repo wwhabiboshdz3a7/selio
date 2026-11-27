@@ -34,6 +34,7 @@ import extRoutes from "./routes/ext";
 import studioRoutes from "./routes/studio";
 import helpRoutes from "./routes/help";
 import uploadsRoutes from "./routes/uploads";
+import storageLocalRoutes from "./routes/storage-local";
 import cloudRoutes from "./routes/cloud";
 import botRoutes from "./routes/bot";
 import pushRoutes from "./routes/push";
@@ -184,6 +185,8 @@ export async function buildServer(env: ApiEnv, overrides: Partial<Services> = {}
   await app.register(studioRoutes);
   await app.register(helpRoutes);
   await app.register(uploadsRoutes, { storage });
+  // Stockage local (sans S3) : photos reçues et servies par l'API, liens signés (/api/storage/…).
+  await app.register(storageLocalRoutes, { storage });
   // Selio Cloud : la fenêtre de connexion exige CLOUD_ENABLED et Redis (relais vers le worker).
   const loginQueue = queues.queues.get(CLOUD_LOGIN_QUEUE);
   const cloudRelay = env.CLOUD_ENABLED && env.REDIS_URL && loginQueue ? createRedisCloudRelay(env.REDIS_URL, loginQueue, { warn: (m) => app.log.warn(m) }) : null;

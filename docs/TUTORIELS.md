@@ -289,7 +289,19 @@ Le worker vérifie chaque minute `/api/health` et `/api/ai/health` ; après 3 é
 
 ---
 
-## 10. Photos : stockage S3 (MinIO)
+## 10. Photos : stockage local (recommandé) ou S3
+
+**Stockage local, sur le PC (recommandé, 2 minutes).** Les photos sont écrites dans le volume Docker `photos`, partagé par l'API et le worker, et servies par l'API sous `/api/storage/…` avec des liens signés et datés. Aucun service en plus, rien d'autre d'ouvert sur Internet.
+
+1. Générer une clé : `openssl rand -hex 32`.
+2. `deploy/.env` : `STORAGE_ENDPOINT=` (vide), `STORAGE_LOCAL_DIR=/var/lib/selio-photos`, `STORAGE_PUBLIC_URL=https://seliovprod.netlify.app`, `STORAGE_SECRET_KEY=<la clé>`.
+3. `docker compose -f docker-compose.prod.yml up -d --build api worker`.
+4. **Vérifier** : dans l'application, Studio › « Choisir des photos » : la photo s'affiche, et `docker compose -f docker-compose.prod.yml exec api ls /var/lib/selio-photos/org` liste un dossier.
+5. **Sauvegarde** : le volume `photos` s'ajoute aux sauvegardes (tutoriel 12) : `docker run --rm -v deploy_photos:/p -v "$PWD":/b alpine tar czf /b/photos.tgz -C /p .`
+
+**Revenir en arrière** : vider `STORAGE_LOCAL_DIR` et relancer (l'envoi de photos répond de nouveau « indisponible », les photos déjà envoyées restent dans le volume).
+
+### Variante : stockage S3 (MinIO)
 
 Aujourd'hui, sans stockage, `/api/uploads` répond 503 et les photos restent des URL en base. Le stockage sert surtout à Selio Studio (préparation par clés de stockage, photos portées).
 
