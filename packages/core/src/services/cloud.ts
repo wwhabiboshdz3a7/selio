@@ -3,7 +3,7 @@ import {
   CLOUD_ACTION_KINDS, CLOUD_ACTION_LEVEL_BY_KIND, CLOUD_ACTIVE_HOURS_DEFAULT, CLOUD_CIRCUIT_BREAKER_MINUTES, CLOUD_CONSENT_TEXT, CLOUD_CONSENT_VERSION, CLOUD_JITTER_MAX_MINUTES, CLOUD_JOB_MAX_AGE_HOURS,
   CLOUD_MAX_LOGIN_WINDOWS_PER_ORG,
   CLOUD_JOURNAL_RETENTION_DAYS, CLOUD_LOCK_STALE_MINUTES, CLOUD_LOGIN_TTL_MINUTES, CLOUD_MAX_ACCOUNTS_PER_ORG_DEFAULT, CLOUD_MAX_ACTIONS_PER_HOUR, CLOUD_MAX_BROWSERS_DEFAULT,
-  CLOUD_MIN_MINUTES_BETWEEN_ACTIONS, CLOUD_INBOX_MAX_CONVERSATIONS_DEFAULT, CLOUD_INBOX_SYNC_MINUTES_DEFAULT, CLOUD_INBOX_SYNC_MINUTES_MIN, CLOUD_ACTION_KIND_LABELS, CLOUD_ACTION_LEVEL_LABELS, CLOUD_ACTION_STATUS_LABELS, CLOUD_PAUSE_REASON_LABELS, CLOUD_RUN_CODES, CLOUD_RUN_CODE_LABELS,
+  CLOUD_MIN_MINUTES_BETWEEN_ACTIONS, CLOUD_INBOX_MAX_CONVERSATIONS_DEFAULT, CLOUD_INBOX_SYNC_MINUTES_DEFAULT, CLOUD_INBOX_SYNC_MINUTES_MIN, CLOUD_ACTION_KIND_LABELS, CLOUD_ACTION_SOURCE_LABELS, CLOUD_ACTION_LEVEL_LABELS, CLOUD_ACTION_STATUS_LABELS, CLOUD_PAUSE_REASON_LABELS, CLOUD_RUN_CODES, CLOUD_RUN_CODE_LABELS,
   PLAN_LABELS, cloudAcceptConsentInput, cloudEnableAccountInput, cloudJournalQuery, cloudResumeInput, cloudUpdateSettingsInput, filterVintedStorageState, isPlan, isStorageStateEmpty,
   isVintedPauseReason, normalizeVintedHost, quotasForPlan,
   type CloudAccount, type CloudAction, type CloudActionDetail, type CloudActionKind, type CloudActionLevel, type CloudAvailability, type CloudConsent, type CloudConsentView,
@@ -479,12 +479,14 @@ export async function exportJournal(ctx: OrgContext, raw: unknown = {}): Promise
   if (!q.success) throw new AppError("validation", "Filtres invalides", 400, q.error.flatten());
   return withOrg(ctx, async (tx) => {
     const labels = new Map((await accountViews(tx, ctx.services.now())).map((a) => [a.id, a.connectionLabel]));
+    const connectionLabels = new Map((await repos.connections.list(tx)).map((c) => [c.id, c.label]));
     const rows = await repos.cloudActions.listAll(tx, { kind: q.data.kind, status: q.data.status, accountId: q.data.accountId });
     const header = ["Date", "Compte", "Action", "Niveau", "Statut", "Résultat", "Durée (s)", "Conversation", "Longueur du message"];
     const body = rows.map((r) => [
       r.createdAt,
-      labels.get(r.accountId) ?? r.accountId,
-      CLOUD_ACTION_KIND_LABELS[r.kind],
+      r.accountId ? labels.get(r.accountId) ?? r.accountId : r.connectionId ? connectionLabels.get(r.connectionId) ?? r.connectionId : "",
+      // Action faite par l'extension, dans le navigateur du vendeur (D64).
+      r.source === "browser" ? `${CLOUD_ACTION_KIND_LABELS[r.kind]} (${CLOUD_ACTION_SOURCE_LABELS.browser.toLowerCase()})` : CLOUD_ACTION_KIND_LABELS[r.kind],
       CLOUD_ACTION_LEVEL_LABELS[r.level],
       CLOUD_ACTION_STATUS_LABELS[r.status],
       r.detail.code ? CLOUD_RUN_CODE_LABELS[r.detail.code] : r.detail.reason ?? "",
@@ -901,14 +903,22 @@ async function ownerEmails(services: Services, orgId: string): Promise<string[]>
   return owners.length ? owners : members.slice(0, 1).map((m) => m.user.email);
 }
 
-async function notifyPaused(services: Services, orgId: string, label: string, code: CloudRunCode): Promise<void> {
+/** Email aux propriétaires : compte mis en pause par un signal de Vinted (Cloud ou extension). */
+export async function notifyPaused(services: Services, orgId: string, label: string, code: CloudRunCode, where: "cloud" | "browser" = "cloud"): Promise<void> {
   const what = { captcha: "un CAPTCHA", warning: "un avertissement", blocked: "un blocage", rate_limited: "un message « trop de requêtes »" }[code as "captcha"] ?? "un signal";
-  const rendered = alertEmail({
-    title: `Selio Cloud : le compte « ${label} » est en pause`,
-    body: `Vinted a affiché ${what} sur le compte « ${label} ». Selio Cloud a mis ce compte en pause et n'a rien retenté.\n\nOuvrez Vinted depuis votre navigateur habituel pour vérifier le compte. Quand tout est en ordre, vous pourrez reprendre le Cloud en confirmant avoir pris connaissance de l'avertissement. Vous pouvez aussi l'arrêter et supprimer la session en un clic.`,
-    link: webLink(services, "/cloud"),
-    linkLabel: "Ouvrir Selio Cloud",
-  });
+  const rendered = where === "browser"
+    ? alertEmail({
+        title: `Selio : automatisation complète en pause sur « ${label} »`,
+        body: `Vinted a affiché ${what} sur le compte « ${label} » pendant l'automatisation complète de l'extension Selio, dans votre navigateur. L'extension a mis l'automatisation de ce compte en pause et n'a rien retenté.\n\nOuvrez Vinted dans votre navigateur pour vérifier le compte. Quand tout est en ordre, reprenez depuis les options de l'extension en confirmant avoir pris connaissance de l'avertissement.`,
+        link: webLink(services, "/cloud/journal"),
+        linkLabel: "Voir le journal",
+      })
+    : alertEmail({
+        title: `Selio Cloud : le compte « ${label} » est en pause`,
+        body: `Vinted a affiché ${what} sur le compte « ${label} ». Selio Cloud a mis ce compte en pause et n'a rien retenté.\n\nOuvrez Vinted depuis votre navigateur habituel pour vérifier le compte. Quand tout est en ordre, vous pourrez reprendre le Cloud en confirmant avoir pris connaissance de l'avertissement. Vous pouvez aussi l'arrêter et supprimer la session en un clic.`,
+        link: webLink(services, "/cloud"),
+        linkLabel: "Ouvrir Selio Cloud",
+      });
   for (const to of await ownerEmails(services, orgId)) await sendEmail(services, { to, ...rendered });
 }
 
@@ -1083,7 +1093,7 @@ export async function runDueCloudJobs(services: Services, orgId: string, executo
     if (kind === "sync_inbox" && code === "ok" && outcome.ok) {
       summary.inboxSyncs++;
       try {
-        const r = await processInboxSnapshot(services, orgId, { accountId, connectionId: account.connectionId, jobId: job.id }, outcome.inbox);
+        const r = await processInboxSnapshot(services, orgId, { source: "cloud", accountId, connectionId: account.connectionId, jobId: job.id }, outcome.inbox);
         summary.messagesIn += r.messagesIn;
         summary.messagesOut += r.messagesOut;
         summary.jobsCreated += r.jobsCreated;

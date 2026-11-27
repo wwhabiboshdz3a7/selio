@@ -45,6 +45,10 @@ export const toBackground = z.discriminatedUnion("type", [
   z.object({ type: z.literal("pair"), apiBaseUrl: z.string().url().max(300).refine((u) => /^https?:\/\//i.test(u), "URL http(s) requise"), token: z.string().min(20).max(200) }),
   z.object({ type: z.literal("unpair") }),
   z.object({ type: z.literal("getDiagnostics") }),
+  /** Automatisation complète (pages de l'extension seulement) : état, interrupteur, reprise après une pause. */
+  z.object({ type: z.literal("autoState") }),
+  z.object({ type: z.literal("autoSet"), connectionId: z.string().min(1).max(100), enabled: z.boolean() }),
+  z.object({ type: z.literal("autoResume"), connectionId: z.string().min(1).max(100), acknowledge: z.boolean() }),
 ]);
 export type ToBackground = z.infer<typeof toBackground>;
 
@@ -61,8 +65,17 @@ export type BackgroundResponse =
   | { ok: true; data: unknown }
   | { ok: false; code: string; message: string };
 
-/** Messages du popup vers le content script de l'onglet actif. */
-export const toContent = z.discriminatedUnion("type", [z.object({ type: z.literal("runDiagnostic") }), z.object({ type: z.literal("togglePanel") })]);
+/**
+ * Messages vers le content script : popup (onglet actif) et service worker (automatisation complète, dans
+ * l'onglet en arrière-plan qu'il a ouvert lui-même) — lire la messagerie, lire une conversation, envoyer.
+ */
+export const toContent = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("runDiagnostic") }),
+  z.object({ type: z.literal("togglePanel") }),
+  z.object({ type: z.literal("autoReadInbox"), max: z.number().int().min(1).max(20) }),
+  z.object({ type: z.literal("autoReadConversation"), ref: z.string().regex(/^\d{1,20}$/) }),
+  z.object({ type: z.literal("autoSend"), text: z.string().trim().min(1).max(2000) }),
+]);
 export type ToContent = z.infer<typeof toContent>;
 
 export function isSupportedUrl(url: string | undefined): boolean {

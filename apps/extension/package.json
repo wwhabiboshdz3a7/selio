@@ -1,6 +1,6 @@
 {
   "name": "@selio/extension",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",
+    "@selio/cloud": "workspace:*",
     "@selio/connectors": "workspace:*",
     "@selio/contracts": "workspace:*",
     "@selio/domain": "workspace:*",

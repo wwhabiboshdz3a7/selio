@@ -89,7 +89,7 @@ Documentation : [CLOUD.md](CLOUD.md) ; décisions D25 à D31 ; sauvegarde et res
 - Pare-feu de la machine pour l'utilisateur ou le cgroup de Chromium (plages privées), à poser au déploiement.
 
 **Bloqué (décisions ou matériel)**
-- Avis de l'avocat favorable (26 novembre 2026) ; ouverture progressive, compte de test de l'équipe d'abord (texte d'accord `2026-11-27.1` depuis D63 : lecture de la messagerie et réponses automatiques sans validation préalable).
+- Avis de l'avocat favorable (26 novembre 2026) ; ouverture progressive, compte de test de l'équipe d'abord (texte d'accord `2026-11-27.2` : D63, lecture de la messagerie et réponses automatiques sans validation préalable ; D64, même chose par l'extension).
 - Décisions d'Ibrahim : actions lourdes (`CLOUD_HEAVY_ACTIONS`), adresse fixe par client, prix de l'option Pro et sort de l'option Starter du prompt, décompte d'un CAPTCHA dans le quota, coupe-circuit (principe et durée de 60 min), règle stricte « CAPTCHA pendant la connexion = fenêtre fermée sans session ».
 - Machine de Marseille : bac à sable (utilisateur non root, espaces de noms), Chromium de la version attendue par `playwright-core` (le conteneur de développement a la révision 1194, Chromium 141).
 

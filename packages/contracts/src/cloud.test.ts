@@ -12,14 +12,14 @@ describe("Selio Cloud : contrats", () => {
   it("texte d'accord honnête : règles de Vinted, adresse partagée, pause, responsabilité, suppression, aucun mot de passe", () => {
     const lines = CLOUD_CONSENT_TEXT.split("\n");
     expect(lines.length).toBeGreaterThanOrEqual(8);
-    expect(lines.length).toBeLessThanOrEqual(14);
+    expect(lines.length).toBeLessThanOrEqual(15);
     expect(CLOUD_CONSENT_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
     for (const needle of [/conditions d'utilisation de Vinted/, /adresse IP/, /mis en pause/, /responsable/, /supprimer à tout moment/, /mot de passe Vinted n'est jamais enregistré/, /ni affilié, ni approuvé, ni sponsorisé/, /90 jours/]) {
       expect(CLOUD_CONSENT_TEXT).toMatch(needle);
     }
     // Lecture de la messagerie et envoi automatique sans validation préalable, écrits noir sur blanc.
-    expect(CLOUD_CONSENT_VERSION).toBe("2026-11-27.1");
-    for (const needle of [/lit votre messagerie Vinted/, /intervalles réguliers/, /sans que vous les validiez avant/, /dans vos marges/, /Validation avant envoi/, /mettre en pause ou arrêter le Cloud à tout moment/]) {
+    expect(CLOUD_CONSENT_VERSION).toBe("2026-11-27.2");
+    for (const needle of [/Automatisation complète dans votre navigateur/, /Aucun cookie n'est lu ni transmis/, /lit votre messagerie Vinted/, /intervalles réguliers/, /sans que vous les validiez avant/, /dans vos marges/, /Validation avant envoi/, /mettre en pause ou arrêter le Cloud à tout moment/]) {
       expect(CLOUD_CONSENT_TEXT).toMatch(needle);
     }
     // Jamais de promesse impossible.

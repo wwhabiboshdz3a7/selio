@@ -422,6 +422,21 @@ describe("API Selio (mode connecté, base réelle)", () => {
     expect(rules.json.offerCheck.ok).toBe(false);
     const noScope = await call("GET", "/api/items", undefined, "none", bearer);
     expect(noScope.status).toBe(401);
+    // Automatisation complète (D64) : désactivée par défaut, le serveur répond « attendre » ; un compte rendu
+    // inattendu est refusé ; l'interrupteur exige l'accord courant.
+    const state = await call("GET", "/api/ext/auto/state", undefined, "none", bearer);
+    expect(state.status).toBe(200);
+    expect(state.json.connections.every((c: { enabled: boolean }) => !c.enabled)).toBe(true);
+    const next = await call("GET", "/api/ext/auto/next", undefined, "none", bearer);
+    expect(next.json).toMatchObject({ action: "wait", reason: "disabled" });
+    const stray = await call("POST", "/api/ext/auto/report", { jobId: "11111111-1111-4111-8111-111111111111", code: "ok" }, "none", bearer);
+    expect(stray.status).toBe(409);
+    const anon = await call("GET", "/api/ext/auto/next", undefined, "none");
+    expect(anon.status).toBe(401);
+    if (!state.json.consentCurrent && state.json.connections[0]) {
+      const refused = await call("POST", "/api/ext/auto/enable", { connectionId: state.json.connections[0].connectionId, enabled: true }, "none", bearer);
+      expect(refused.status).toBe(409);
+    }
     const rev = await call("DELETE", `/api/extension-tokens/${tok.json.token.id}`);
     expect(rev.status).toBe(204);
     const after = await call("GET", "/api/ext/ping", undefined, "none", bearer);

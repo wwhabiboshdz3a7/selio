@@ -3,7 +3,7 @@ import {
   type ItemCategory, type PriceModelMetrics, type PriceModelRecord, type PriceReference, type PriceReferenceInput, type PriceReferenceSource, type TrackAlertEvent, type TrackAlertRule, type TrackAlertRules, type TrackCriteria, type TrackFilter, type TrackPhotoSearch, type TrackScan, type TrackSnapshot, type TrackSource,
   referral as referralSchema, subscriptionCredit as subscriptionCreditSchema, type Referral, type ReferralStatus, type SubscriptionCredit,
   commercialOfferRow as commercialOfferSchema, offerRedemptionRow as offerRedemptionSchema, type CommercialOffer, type OfferInput, type OfferRedemption, type PublicOffer, offerBannerText,
-  aiRequest, auditLog, cloudAccount as cloudAccountSchema, cloudAction as cloudActionSchema, cloudConsent as cloudConsentSchema, cloudLoginSession as cloudLoginSessionSchema, automationRule, conversation as conversationSchema, customer as customerSchema, extensionToken, inventoryEvent, inventoryItem, invoice as invoiceSchema, job as jobSchema, marketplaceConnection, membership as membershipSchema, message as messageSchema, opportunity as opportunitySchema, order as orderSchema, organization as organizationSchema, paymentOrder as paymentOrderSchema, purchaseRequest as purchaseSchema, radarSearch as radarSchema, radarRead as radarReadSchema, radarAlert as radarAlertSchema, pushSubscription as pushSubscriptionSchema, RADAR_BLOCK_OUTCOMES, shipment as shipmentSchema, subscription as subscriptionSchema, usageEvent, user as userSchema, quotasForPlan, isLegacyQuotas, resolveQuotas,
+  aiRequest, auditLog, cloudAccount as cloudAccountSchema, cloudAction as cloudActionSchema, cloudConsent as cloudConsentSchema, cloudLoginSession as cloudLoginSessionSchema, extensionAuto as extensionAutoSchema, type ExtensionAuto, automationRule, conversation as conversationSchema, customer as customerSchema, extensionToken, inventoryEvent, inventoryItem, invoice as invoiceSchema, job as jobSchema, marketplaceConnection, membership as membershipSchema, message as messageSchema, opportunity as opportunitySchema, order as orderSchema, organization as organizationSchema, paymentOrder as paymentOrderSchema, purchaseRequest as purchaseSchema, radarSearch as radarSchema, radarRead as radarReadSchema, radarAlert as radarAlertSchema, pushSubscription as pushSubscriptionSchema, RADAR_BLOCK_OUTCOMES, shipment as shipmentSchema, subscription as subscriptionSchema, usageEvent, user as userSchema, quotasForPlan, isLegacyQuotas, resolveQuotas,
   type AiRequest, type AuditLog, type AutomationRule, type CloudAccount, type CloudAction, type CloudActionDetail, type CloudConsent, type CloudJournalQuery, type CloudLoginSession, type Conversation, type ConversationQuery, type Customer, type CustomerQuery, type ExtensionToken, type InventoryEvent, type InventoryItem, type InventoryQuery, type Invoice, type Job, type JobQuery, type MarketplaceConnection, type Membership, type Message, type Opportunity, type Order, type OrderQuery, type Organization, type Page, type PaymentOrder, type PurchaseRequest, type RadarSearch, type RadarRead, type RadarReadOutcome, type RadarSourceKind, type RadarAlert, type RadarAlertKind, type RadarAlertPayload, type PushSubscription, type Shipment, type Subscription, type UsageEvent, type User,
 } from "@selio/contracts";
 import type { ZodType, ZodTypeDef } from "zod";
@@ -894,6 +894,33 @@ export const jobs = {
   async markAiTried(tx: Tx, id: string, reason: string): Promise<void> {
     await tx.query("update jobs set payload = payload || jsonb_build_object('aiTried', true, 'aiSkipped', $3::text), updated_at = now() where org_id = $1 and id = $2 and status = 'queued'", [tx.orgId, id, reason.slice(0, 60)]);
   },
+  /** Automatisation complète par l'extension : envois en file pour un compte Vinted, dans l'ordre d'échéance. */
+  async dueBrowserAuto(tx: Tx, connectionId: string, now: string, limit = 20): Promise<Job[]> {
+    return (await tx.query("select * from jobs where org_id = $1 and runs_in = 'browser' and status = 'queued' and payload->>'extAuto' = 'true' and payload->>'connectionId' = $2 and scheduled_for <= $3 order by scheduled_for, created_at, id limit $4", [tx.orgId, connectionId, now, limit])).map((r) => parse(jobSchema, r));
+  },
+  /** Tâches de l'extension prises et pas encore rendues (une à la fois par compte Vinted). */
+  async runningBrowserAuto(tx: Tx, connectionId: string): Promise<Job[]> {
+    return (await tx.query("select * from jobs where org_id = $1 and runs_in = 'browser' and status = 'running' and payload->>'extAuto' = 'true' and payload->>'connectionId' = $2 order by started_at", [tx.orgId, connectionId])).map((r) => parse(jobSchema, r));
+  },
+  /** Dernière lecture de la messagerie par l'extension pour un compte Vinted (fin, ou création). */
+  async lastBrowserSyncAt(tx: Tx, connectionId: string): Promise<string | null> {
+    const r = await tx.maybeOne<{ at: string | Date | null }>("select coalesce(finished_at, started_at, created_at) as at from jobs where org_id = $1 and runs_in = 'browser' and payload->>'extAuto' = 'true' and payload->>'cloudKind' = 'sync_inbox' and payload->>'connectionId' = $2 order by created_at desc limit 1", [tx.orgId, connectionId]);
+    return r?.at ? (r.at instanceof Date ? r.at.toISOString() : new Date(r.at).toISOString()) : null;
+  },
+  /** Prise d'une tâche de l'extension (UPDATE conditionnel) : null si elle n'est plus en file. */
+  async claimBrowserAuto(tx: Tx, id: string, now: string): Promise<Job | null> {
+    const r = await tx.maybeOne("update jobs set status = 'running', started_at = $3, attempts = attempts + 1, updated_at = now() where org_id = $1 and id = $2 and status = 'queued' and runs_in = 'browser' and payload->>'extAuto' = 'true' returning *", [tx.orgId, id, now]);
+    return r ? parse(jobSchema, r) : null;
+  },
+  /** Réponses de l'extension en file, sans texte ni brouillon, pas encore proposées à l'IA (comme `cloudRepliesWithoutText`). */
+  async browserRepliesWithoutText(tx: Tx, connectionId: string, ruleIds: readonly string[]): Promise<Job[]> {
+    if (ruleIds.length === 0) return [];
+    return (await tx.query("select * from jobs where org_id = $1 and runs_in = 'browser' and status = 'queued' and payload->>'extAuto' = 'true' and payload->>'connectionId' = $2 and rule_id = any($3::text[]) and payload->>'body' is null and payload->>'draftMessageId' is null and payload->>'aiTried' is null and coalesce(payload->>'handoff', 'false') <> 'true' order by created_at limit 20", [tx.orgId, connectionId, [...ruleIds]])).map((r) => parse(jobSchema, r));
+  },
+  /** Interrupteur coupé : les envois automatiques encore en file redeviennent des tâches à valider. */
+  async browserAutoToApproval(tx: Tx, connectionId: string): Promise<number> {
+    return (await tx.query("update jobs set status = 'awaiting_approval', payload = payload - 'extAuto', updated_at = now() where org_id = $1 and runs_in = 'browser' and status = 'queued' and payload->>'extAuto' = 'true' and coalesce(payload->>'cloudKind', '') <> 'sync_inbox' and payload->>'connectionId' = $2 returning id", [tx.orgId, connectionId])).length;
+  },
   /** Annule les tâches Cloud pas encore exécutées d'un compte (arrêt du Cloud). */
   async cancelCloudForAccount(tx: Tx, cloudAccountId: string): Promise<number> {
     return (await tx.query("update jobs set status = 'cancelled', updated_at = now() where org_id = $1 and runs_in = 'cloud' and status in ('queued','awaiting_approval') and payload->>'cloudAccountId' = $2 returning id", [tx.orgId, cloudAccountId])).length;
@@ -1491,8 +1518,13 @@ function cloudJournalWhere(tx: Tx, q: CloudJournalFilters): { where: string[]; p
 
 /** Journal des actions Cloud (visible du client, conservé 90 jours). `detail` ne porte jamais de secret. */
 export const cloudActions = {
-  async add(tx: Tx, input: { accountId: string; kind: CloudAction["kind"]; level: CloudAction["level"]; status: CloudAction["status"]; detail?: CloudActionDetail; jobId?: string | null; startedAt?: string | null; finishedAt?: string | null; createdAt?: string }): Promise<CloudAction> {
-    return parse(cloudActionSchema, await tx.insert("cloud_actions", { ...input, detail: input.detail ?? {}, orgId: tx.orgId }));
+  /** Action du Cloud (`accountId`) ou de l'extension (`source: "browser"`, `connectionId`). */
+  async add(tx: Tx, input: { accountId: string | null; source?: CloudAction["source"]; connectionId?: string | null; kind: CloudAction["kind"]; level: CloudAction["level"]; status: CloudAction["status"]; detail?: CloudActionDetail; jobId?: string | null; startedAt?: string | null; finishedAt?: string | null; createdAt?: string }): Promise<CloudAction> {
+    return parse(cloudActionSchema, await tx.insert("cloud_actions", { ...input, source: input.source ?? "cloud", connectionId: input.connectionId ?? null, detail: input.detail ?? {}, orgId: tx.orgId }));
+  },
+  /** Actions de l'extension (source « browser ») qui ont ouvert un onglet depuis `since`, pour un compte Vinted. */
+  async countBrowserSince(tx: Tx, since: string, connectionId: string, opts: { excludeKinds?: readonly CloudAction["kind"][] } = {}): Promise<number> {
+    return tx.count("select count(*) from cloud_actions where org_id = $1 and source = 'browser' and connection_id = $2 and started_at >= $3 and status = any($4) and not (kind = any($5::text[]))", [tx.orgId, connectionId, since, CLOUD_STARTED_STATUSES, [...(opts.excludeKinds ?? [])]]);
   },
   async update(tx: Tx, id: string, patch: Partial<Pick<CloudAction, "status" | "detail" | "startedAt" | "finishedAt">>): Promise<CloudAction> {
     const { columns, values } = objectToColumns(patch);
@@ -1541,6 +1573,31 @@ export const cloudActions = {
   async purgeOlderThan(tx: Tx, days: number, now: Date = new Date()): Promise<number> {
     const before = new Date(now.getTime() - days * 86_400_000).toISOString();
     return (await tx.query("delete from cloud_actions where org_id = $1 and created_at < $2 returning id", [tx.orgId, before])).length;
+  },
+};
+
+/** Automatisation complète par l'extension (D64) : un réglage par compte Vinted, sous RLS. */
+export const extensionAutos = {
+  async list(tx: Tx): Promise<ExtensionAuto[]> {
+    return (await tx.query("select * from extension_autos where org_id = $1 order by created_at", [tx.orgId])).map((r) => parse(extensionAutoSchema, r));
+  },
+  async byConnection(tx: Tx, connectionId: string): Promise<ExtensionAuto | null> {
+    const r = await tx.maybeOne("select * from extension_autos where org_id = $1 and connection_id = $2", [tx.orgId, connectionId]);
+    return r ? parse(extensionAutoSchema, r) : null;
+  },
+  /** Ligne relue sous verrou (compte rendu de l'extension, pause). */
+  async lockedByConnection(tx: Tx, connectionId: string): Promise<ExtensionAuto | null> {
+    const r = await tx.maybeOne("select * from extension_autos where org_id = $1 and connection_id = $2 for update", [tx.orgId, connectionId]);
+    return r ? parse(extensionAutoSchema, r) : null;
+  },
+  async upsert(tx: Tx, connectionId: string, patch: Partial<Pick<ExtensionAuto, "enabled" | "enabledAt" | "enabledBy" | "pausedReason" | "pausedAt" | "lastSeenAt" | "lastActionAt" | "nextActionAt" | "warningsCount">>): Promise<ExtensionAuto> {
+    const existing = await this.byConnection(tx, connectionId);
+    if (!existing) return parse(extensionAutoSchema, await tx.insert("extension_autos", { ...patch, connectionId, orgId: tx.orgId }));
+    return parse(extensionAutoSchema, await tx.update("extension_autos", existing.id, patch, "Automatisation de l'extension"));
+  },
+  /** Pause au premier signal de Vinted : raison, date, compteur ; jamais levée automatiquement. */
+  async pauseForSignal(tx: Tx, connectionId: string, reason: NonNullable<ExtensionAuto["pausedReason"]>, at: string): Promise<ExtensionAuto> {
+    return parse(extensionAutoSchema, await tx.one("update extension_autos set paused_reason = $3, paused_at = $4, warnings_count = warnings_count + case when $3 in ('captcha','warning','blocked','rate_limited') then 1 else 0 end, updated_at = now() where org_id = $1 and connection_id = $2 returning *", [tx.orgId, connectionId, reason, at], "Automatisation de l'extension"));
   },
 };
 

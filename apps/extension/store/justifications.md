@@ -6,12 +6,15 @@ Réponses à coller dans l'onglet « Pratiques de confidentialité » du tableau
 
 Aider un revendeur, depuis la page Vinted qu'il a ouverte, à capturer un article vers son stock Selio, à voir les prix comparables et ses règles de prix, et à préparer une réponse conforme à ces règles, avec sa confirmation avant chaque action. Rien n'est envoyé à Selio sans un clic sur un bouton du panneau.
 
+**Automatisation complète (version 0.2.0, désactivée par défaut)** : si l'utilisateur l'active lui-même dans les options (après avoir accepté le texte d'accord dans Selio), l'extension lit sa messagerie Vinted et envoie les réponses automatiques décidées par Selio, depuis son navigateur ouvert, dans un onglet en arrière-plan qu'elle ouvre puis referme. Chaque action est inscrite dans le journal de Selio ; au premier CAPTCHA ou avertissement de Vinted, tout s'arrête.
+
 ## Permissions
 
 | Permission | Pourquoi | Ce qui n'est pas fait |
 |---|---|---|
 | `storage` | Garder dans l'extension le jeton d'association à Selio, l'adresse de l'API, le nom de l'organisation et l'historique des diagnostics. | Aucune donnée de navigation, aucun cookie, aucun mot de passe. |
 | `activeTab` | Quand l'utilisateur ouvre le popup, savoir si l'onglet actif est une page Vinted prise en charge et y lancer le diagnostic ou ouvrir le panneau. | Pas d'accès aux autres onglets ; pas de permission `tabs`. |
+| `alarms` | Automatisation complète (désactivée par défaut) : se réveiller à l'heure indiquée par le serveur Selio pour demander la prochaine action, sans processus permanent. | Aucun réveil tant que l'utilisateur n'a pas activé l'automatisation complète ; aucun accès aux cookies ni à l'historique. |
 
 ## Domaines du script de contenu
 

@@ -1,5 +1,5 @@
 import { counterOfferWording } from "@selio/ai";
-import { CLOUD_RULE_ACTIONS, automationRuleCreate, jobQuery, negotiationAutomation, type AutomationRule, type CloudAccount, type InventoryItem, type Job, type Message, type RunLocation, type RuleKind } from "@selio/contracts";
+import { CLOUD_RULE_ACTIONS, EXTENSION_AUTO_SEEN_MINUTES, automationRuleCreate, jobQuery, negotiationAutomation, type AutomationRule, type CloudAccount, type InventoryItem, type Job, type Message, type RunLocation, type RuleKind } from "@selio/contracts";
 import { repos, type Tx } from "@selio/db";
 import {
   PERSONAL_ACCOUNT_SKIP, applyLimits, applyLimitsToDecision, checkMessageDelay, followUpTemplateAllowed, applySituationOverride, bundleMessage, daysInStock, decideFollowUp, evaluateOffer, fillTemplate, followUp24hDedupeKey, gateRule, isAutomatable, jobDedupeKey, localDayKey, recheckFollowUp, renderTemplate, retryDelayMs, situationTemplateReply,
@@ -81,10 +81,28 @@ async function personalAccountIds(tx: Tx): Promise<Set<string>> {
  * ou extension). Les autres règles ne passent jamais par le Cloud (actions légères seulement sur
  * l'adresse partagée). Le statut (en file ou à valider) reste celui de la règle (« Validation avant envoi »).
  */
-export function decideRunsIn(input: { ruleKind: RuleKind; ruleRunsIn: RunLocation; cloudAccount: Pick<CloudAccount, "status" | "hasSession"> | null | undefined }): RunLocation {
+export function decideRunsIn(input: { ruleKind: RuleKind; ruleRunsIn: RunLocation; cloudAccount: Pick<CloudAccount, "status" | "hasSession"> | null | undefined; extensionAuto?: boolean }): RunLocation {
   if (CLOUD_RULE_ACTIONS[input.ruleKind] && input.cloudAccount?.status === "active" && input.cloudAccount.hasSession) return "cloud";
+  // Sans Cloud actif : automatisation complète par l'extension (interrupteur activé, extension vue récemment).
+  if (input.extensionAuto && EXTENSION_AUTO_RULES.includes(input.ruleKind)) return "browser";
   // Une règle ne se déclare jamais « cloud » : sans compte actif, la tâche part vers l'extension.
   return input.ruleRunsIn === "cloud" ? "browser" : input.ruleRunsIn;
+}
+
+/**
+ * Règles que l'extension exécute en automatisation complète (D64) : réponses par message (réponse générique,
+ * négociation, situation avec gabarit). Les relances restent au Cloud ou à la validation dans Messages.
+ */
+export const EXTENSION_AUTO_RULES: readonly RuleKind[] = ["reply_on_new_message", "auto_negotiate", "keyword_situation"];
+
+/**
+ * Comptes Vinted dont l'extension fait l'automatisation complète : interrupteur activé, pas en pause, et
+ * extension vue depuis moins de EXTENSION_AUTO_SEEN_MINUTES (sinon, le navigateur est sans doute fermé :
+ * la tâche suit le chemin habituel, à valider).
+ */
+export async function extensionAutoConnectionsTx(tx: Tx, now: Date): Promise<Set<string>> {
+  const since = now.getTime() - EXTENSION_AUTO_SEEN_MINUTES * 60_000;
+  return new Set((await repos.extensionAutos.list(tx)).filter((a) => a.enabled && !a.pausedReason && a.lastSeenAt && new Date(a.lastSeenAt).getTime() >= since).map((a) => a.connectionId));
 }
 
 /** Exécute une tâche (serveur). Les tâches « navigateur » ne sont exécutables que par l'extension, les tâches « cloud » par Selio Cloud. */
@@ -306,6 +324,7 @@ export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): 
   const targets: RuleTarget[] = [];
   const personal = await personalAccountIds(tx);
   const cloudByConnection = CLOUD_RULE_ACTIONS[rule.kind] ? new Map((await repos.cloudAccounts.list(tx)).map((a) => [a.connectionId, a])) : new Map<string, CloudAccount>();
+  const extensionAuto = EXTENSION_AUTO_RULES.includes(rule.kind) ? await extensionAutoConnectionsTx(tx, now) : new Set<string>();
   if (CONVERSATION_RULES.includes(rule.kind)) {
     const negotiation = org.settings.automation.negotiation;
     const limits = rule.kind === "auto_negotiate" ? (await effectiveLimitsTx(tx, org)).limits : null;
@@ -447,8 +466,14 @@ export async function runRuleTx(ctx: OrgContext, tx: Tx, rule: AutomationRule): 
     const dedupeKey = t.dedupeKey ?? jobDedupeKey(rule, t.targetId, now);
     if (await repos.jobs.byDedupe(tx, dedupeKey)) { skip(t.dedupeKey ? "Déjà traité (idempotence)" : "Déjà planifié aujourd'hui (idempotence)"); continue; }
     const cloudAccount = t.connectionId ? cloudByConnection.get(t.connectionId) : undefined;
-    const runsIn = t.runsIn ?? decideRunsIn({ ruleKind: rule.kind, ruleRunsIn: rule.runsIn, cloudAccount });
-    let payload = runsIn === "cloud" && cloudAccount ? { ...t.payload, cloudAccountId: cloudAccount.id, cloudKind: CLOUD_RULE_ACTIONS[rule.kind] } : t.payload;
+    const autoBrowser = !t.runsIn && !!t.connectionId && extensionAuto.has(t.connectionId);
+    const runsIn = t.runsIn ?? decideRunsIn({ ruleKind: rule.kind, ruleRunsIn: rule.runsIn, cloudAccount, extensionAuto: autoBrowser });
+    let payload = runsIn === "cloud" && cloudAccount
+      ? { ...t.payload, cloudAccountId: cloudAccount.id, cloudKind: CLOUD_RULE_ACTIONS[rule.kind] }
+      : runsIn === "browser" && autoBrowser
+        // Automatisation complète par l'extension : la tâche attend que l'extension la demande (`/api/ext/auto/next`).
+        ? { ...t.payload, extAuto: true, connectionId: t.connectionId, cloudKind: "reply" }
+        : t.payload;
     if (t.draftBody !== undefined && typeof t.payload.conversationId === "string") {
       const draft = await repos.messages.create(tx, { conversationId: t.payload.conversationId, direction: "outbound", source: "automation", status: "draft", body: t.draftBody.slice(0, 4000), offerCents: null, ruleId: rule.id });
       payload = { ...payload, draftMessageId: draft.id };

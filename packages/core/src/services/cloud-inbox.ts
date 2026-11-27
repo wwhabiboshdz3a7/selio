@@ -130,7 +130,10 @@ async function ingestConversationTx(ctx: OrgContext, tx: Tx, connectionId: strin
  * l'IA les réponses génériques créées pour ce compte. Chaque étape a sa propre transaction ; la ligne de
  * journal de la lecture reçoit les comptes (clés fermées du contrat).
  */
-export async function processInboxSnapshot(services: Services, orgId: string, target: { accountId: string; connectionId: string; jobId: string }, raw: unknown): Promise<InboxProcessResult> {
+/** Lecture faite par Selio Cloud (compte Cloud) ou par l'extension dans le navigateur du vendeur (D64). */
+export type InboxTarget = { source: "cloud"; accountId: string; connectionId: string; jobId: string } | { source: "browser"; connectionId: string; jobId: string };
+
+export async function processInboxSnapshot(services: Services, orgId: string, target: InboxTarget, raw: unknown): Promise<InboxProcessResult> {
   const ctx = systemContext(services, orgId);
   const result: InboxProcessResult = { listSource: "invalid", conversationsRead: 0, messagesIn: 0, messagesOut: 0, jobsCreated: 0, aiReplies: 0 };
   const parsed = cloudInboxSnapshot.safeParse(raw ?? { conversations: [], listSource: "none" });
@@ -157,10 +160,16 @@ export async function processInboxSnapshot(services: Services, orgId: string, ta
 
   // 1. Messages, dans une transaction (tout ou rien).
   await services.db.withOrg(orgId, async (tx) => {
-    const account = await repos.cloudAccounts.byId(tx, target.accountId).catch(() => null);
     const connection = await repos.connections.byId(tx, target.connectionId).catch(() => null);
-    // Compte arrêté pendant la lecture, connexion changée ou passée en Perso : rien n'est enregistré.
-    if (!account || account.status === "stopped" || account.connectionId !== target.connectionId || !connection || !isAutomatable(connection)) return;
+    if (!connection || !isAutomatable(connection)) return;
+    // Compte arrêté pendant la lecture, connexion changée, interrupteur coupé : rien n'est enregistré.
+    if (target.source === "cloud") {
+      const account = await repos.cloudAccounts.byId(tx, target.accountId).catch(() => null);
+      if (!account || account.status === "stopped" || account.connectionId !== target.connectionId) return;
+    } else {
+      const auto = await repos.extensionAutos.byConnection(tx, target.connectionId);
+      if (!auto?.enabled) return;
+    }
     for (const c of parsed.data.conversations) {
       const counts = await ingestConversationTx(ctx, tx, target.connectionId, c, now);
       result.messagesIn += counts.messagesIn;
@@ -181,7 +190,9 @@ export async function processInboxSnapshot(services: Services, orgId: string, ta
     }
     // 3. Réponses génériques rédigées par l'IA (sinon gabarit de la règle au moment d'envoyer).
     const replyRuleIds = rules.filter((r) => r.kind === "reply_on_new_message").map((r) => r.id);
-    const pending = await services.db.withOrg(orgId, (tx) => repos.jobs.cloudRepliesWithoutText(tx, target.accountId, replyRuleIds));
+    const pending = await services.db.withOrg(orgId, (tx) =>
+      target.source === "cloud" ? repos.jobs.cloudRepliesWithoutText(tx, target.accountId, replyRuleIds) : repos.jobs.browserRepliesWithoutText(tx, target.connectionId, replyRuleIds),
+    );
     for (const job of pending) if (await aiReplyForJob(ctx, job)) result.aiReplies++;
   }
   await writeDetail();

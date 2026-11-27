@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Download, ListChecks } from "lucide-react";
-import { CLOUD_ACTION_KINDS, CLOUD_ACTION_KIND_LABELS, CLOUD_ACTION_STATUSES, CLOUD_ACTION_STATUS_LABELS, CLOUD_JOURNAL_RETENTION_DAYS, type CloudActionKind, type CloudActionStatus } from "@selio/contracts";
+import { CLOUD_ACTION_KINDS, CLOUD_ACTION_KIND_LABELS, CLOUD_ACTION_SOURCE_LABELS, CLOUD_ACTION_STATUSES, CLOUD_ACTION_STATUS_LABELS, CLOUD_JOURNAL_RETENTION_DAYS, type CloudActionKind, type CloudActionStatus } from "@selio/contracts";
 import { Button, EmptyState, ErrorState, Field, PageHeader, Pagination, Select, SkeletonRows, Table, TableWrap, Td, Th, Tr, formatDateTime, useToast } from "@selio/ui";
 import { useClient } from "../../../lib/data/provider";
 import { downloadFile } from "../../../lib/download";
@@ -22,6 +22,10 @@ export default function CloudJournal() {
   const query = { ...filters, page, pageSize: JOURNAL_PAGE_SIZE };
   const journal = useQuery({ queryKey: ["cloud-journal", query], queryFn: () => client.cloudJournal(query) });
   const labels = new Map((accounts.data ?? []).map((a) => [a.id, a.connectionLabel]));
+  // Actions faites par l'extension (source « navigateur ») : rattachées au compte Vinted, pas à un compte Cloud.
+  const connections = useQuery({ queryKey: ["connections"], queryFn: () => client.listConnections() });
+  const connectionLabels = new Map((connections.data ?? []).map((c) => [c.id, c.label]));
+  const accountLabel = (a: { accountId: string | null; connectionId?: string | null }) => (a.accountId ? labels.get(a.accountId) : a.connectionId ? connectionLabels.get(a.connectionId) : undefined) ?? "Compte supprimé";
   const filtered = Boolean(filters.accountId || filters.kind || filters.status);
 
   const setFilter = <K extends keyof typeof filters>(key: K, value: (typeof filters)[K] | "") => {
@@ -104,8 +108,8 @@ export default function CloudJournal() {
                 {journal.data.items.map((a) => (
                   <Tr key={a.id}>
                     <Td className="num whitespace-nowrap text-text-muted">{formatDateTime(a.createdAt)}</Td>
-                    <Td className="max-w-40 truncate">{labels.get(a.accountId) ?? "Compte supprimé"}</Td>
-                    <Td className="whitespace-nowrap">{CLOUD_ACTION_KIND_LABELS[a.kind]}</Td>
+                    <Td className="max-w-40 truncate">{accountLabel(a)}</Td>
+                    <Td className="whitespace-nowrap">{CLOUD_ACTION_KIND_LABELS[a.kind]}{a.source === "browser" ? <span className="block text-xs text-text-muted">{CLOUD_ACTION_SOURCE_LABELS.browser}</span> : null}</Td>
                     <Td><CloudActionStatusBadge status={a.status} /></Td>
                     <Td className="min-w-56 py-2 text-text-muted">{actionResult(a)}{a.detail.sideEffects === "unknown" ? <span className="block text-xs">Rien n'est renvoyé automatiquement.</span> : null}</Td>
                     <Td numeric className="whitespace-nowrap text-text-muted">{actionDuration(a)}</Td>

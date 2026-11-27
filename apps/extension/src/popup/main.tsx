@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { ExternalLink, RefreshCw, Settings } from "lucide-react";
 import { Button, StatusBadge, Wordmark, formatRelative } from "@selio/ui";
 import { isSupportedUrl, type ExtensionStatus } from "../shared/messages";
-import { activeTab, getStatus, sendToContent } from "../shared/runtime";
+import { activeTab, getStatus, sendToBackground, sendToContent } from "../shared/runtime";
 import "../styles.css";
 
 function Popup() {
@@ -11,7 +11,19 @@ function Popup() {
   const [tab, setTab] = useState<chrome.tabs.Tab | null>(null);
   const [diag, setDiag] = useState<{ pageKind: string; ok: boolean; missing: string[]; warnings: string[]; adapterVersion: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { void getStatus().then(setStatus); void activeTab().then(setTab); }, []);
+  const [auto, setAuto] = useState<{ enabled: boolean; pausedLabel: string | null; lastOutcome: string | null; lastTickAt: string | null } | null>(null);
+  useEffect(() => {
+    void getStatus().then((s) => {
+      setStatus(s);
+      if (s.paired) void sendToBackground({ type: "autoState" }).then((r) => {
+        if (!r.ok) return;
+        const d = r.data as { server: { connections: { enabled: boolean; pausedLabel: string | null }[] }; local: { lastOutcome: string | null; lastTickAt: string | null } };
+        const on = d.server.connections.find((c) => c.enabled);
+        setAuto({ enabled: Boolean(on), pausedLabel: on?.pausedLabel ?? null, lastOutcome: d.local.lastOutcome, lastTickAt: d.local.lastTickAt });
+      });
+    });
+    void activeTab().then(setTab);
+  }, []);
   const supported = isSupportedUrl(tab?.url);
   const runDiag = async () => {
     if (!tab?.id) return;
@@ -34,6 +46,13 @@ function Popup() {
         {status?.orgName ? <p className="mt-1 font-medium">{status.orgName}</p> : null}
         {status?.lastPingAt ? <p className="text-xs text-text-muted">Dernier contact {formatRelative(status.lastPingAt)}</p> : null}
         {status?.lastError ? <p className="mt-1 text-xs text-danger">{status.lastError}</p> : null}
+        {auto ? (
+          <div className="mt-2 flex items-center justify-between gap-2" data-testid="auto-status">
+            <span className="text-text-muted">Automatisation complète</span>
+            <StatusBadge tone={!auto.enabled ? "muted" : auto.pausedLabel ? "danger" : "success"}>{!auto.enabled ? "désactivée" : auto.pausedLabel ? `en pause (${auto.pausedLabel})` : "active"}</StatusBadge>
+          </div>
+        ) : null}
+        {auto?.enabled && auto.lastTickAt ? <p className="text-xs text-text-muted">Dernier réveil {formatRelative(auto.lastTickAt)}{auto.lastOutcome ? ` · ${auto.lastOutcome}` : ""}</p> : null}
       </div>
       <div className="card p-3 text-sm">
         <div className="flex items-center justify-between">
@@ -55,7 +74,7 @@ function Popup() {
           </div>
         ) : null}
       </div>
-      <p className="text-[11px] text-text-muted">Aucune action n'est déclenchée sans votre confirmation. L'extension ne stocke ni mot de passe ni cookie Vinted. Selio est indépendant de Vinted et n'est ni affilié, ni approuvé, ni sponsorisé par Vinted.</p>
+      <p className="text-[11px] text-text-muted">{auto?.enabled ? "Automatisation complète active : réponses et négociation partent automatiquement depuis ce navigateur, au rythme décidé par Selio." : "Aucune action n'est déclenchée sans votre confirmation."} L'extension ne stocke ni mot de passe ni cookie Vinted. Selio est indépendant de Vinted et n'est ni affilié, ni approuvé, ni sponsorisé par Vinted.</p>
       {status?.apiBaseUrl ? <a className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-text" href={status.apiBaseUrl.replace(/\/api.*$/, "")} target="_blank" rel="noreferrer"><ExternalLink className="size-3" /> Ouvrir Selio</a> : null}
     </div>
   );

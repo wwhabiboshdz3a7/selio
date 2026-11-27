@@ -2590,7 +2590,7 @@ export class DemoClient implements DataClient {
       // La suppression de la connexion supprime le compte Cloud et son journal (cascade côté serveur).
       const removed = new Set(cloud.accounts.filter((a) => a.connectionId === id).map((a) => a.id));
       cloud.accounts = cloud.accounts.filter((a) => !removed.has(a.id));
-      cloud.actions = cloud.actions.filter((a) => !removed.has(a.accountId));
+      cloud.actions = cloud.actions.filter((a) => !(a.accountId && removed.has(a.accountId)) && a.connectionId !== id);
       cloud.logins = cloud.logins.filter((l) => !removed.has(l.accountId));
     }
     this.s.connections = this.s.connections.filter((c) => c.id !== id);
@@ -3379,8 +3379,8 @@ export class DemoClient implements DataClient {
     const header = ["Date", "Compte", "Action", "Niveau", "Statut", "Résultat", "Durée (s)", "Conversation", "Longueur du message"];
     const body = rows.map((r) => [
       r.createdAt,
-      labels.get(r.accountId) ?? r.accountId,
-      CLOUD_ACTION_KIND_LABELS[r.kind],
+      (r.accountId ? labels.get(r.accountId) ?? r.accountId : r.connectionId ?? ""),
+      r.source === "browser" ? `${CLOUD_ACTION_KIND_LABELS[r.kind]} (navigateur)` : CLOUD_ACTION_KIND_LABELS[r.kind],
       CLOUD_ACTION_LEVEL_LABELS[r.level],
       CLOUD_ACTION_STATUS_LABELS[r.status],
       r.detail.code ? CLOUD_RUN_CODE_LABELS[r.detail.code] : r.detail.reason ? CLOUD_SKIP_REASON_LABELS[r.detail.reason as CloudSkipReason] ?? r.detail.reason : "",

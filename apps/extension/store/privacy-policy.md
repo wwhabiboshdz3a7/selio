@@ -28,6 +28,8 @@ Voir les comparables (bouton du panneau, sur une page article) : le titre, la ma
 
 Voir les règles de prix (bouton du panneau, sur une page conversation) : la référence de l'article quand elle figure dans l'adresse, son prix affiché et le montant de l'offre détectée dans le dernier message de l'acheteur, pour afficher votre prix plancher et vos règles. Rien n'est enregistré.
 
+Automatisation complète dans ce navigateur (désactivée par défaut, seulement si vous l'activez dans les options après avoir accepté le texte d'accord dans Selio) : à intervalles réguliers, l'extension ouvre en arrière-plan votre messagerie Vinted et les conversations qui ont de nouveaux messages, et envoie à Selio, pour chacune, les 50 derniers messages au plus (texte, sens, heure), le pseudo de l'acheteur et la référence de la conversation, ou, si la page n'est pas reconnue, un diagnostic fait de comptes et de noms de structure (jamais de texte). Elle envoie aussi les réponses automatiques décidées par Selio dans la conversation concernée, puis referme l'onglet. Chaque action est inscrite dans votre journal Selio.
+
 Les données partent uniquement vers l'adresse de l'API Selio que vous avez autorisée en associant l'extension, par une connexion chiffrée, avec un jeton propre à votre organisation.
 
 ## Ce qui reste dans votre navigateur
@@ -40,7 +42,7 @@ Le jeton expire après 90 jours et se révoque depuis Selio ; « Dissocier » da
 
 Elle ne collecte ni mot de passe, ni cookie, ni session, ni historique de navigation.
 
-Elle ne contourne aucun CAPTCHA, n'envoie aucun message et ne clique sur rien à votre place.
+Elle ne contourne aucun CAPTCHA. Sans l'automatisation complète, elle n'envoie aucun message et ne clique sur rien à votre place ; avec elle (activée par vous), elle n'envoie que les réponses décidées par Selio, et s'arrête au premier CAPTCHA ou avertissement de Vinted.
 
 Elle ne charge aucun code distant : tout son code est inclus dans le paquet publié.
 

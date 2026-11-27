@@ -19,7 +19,8 @@ describe("extension — contrat de messages et manifeste", () => {
   it("déclare des permissions minimales", () => {
     const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
     expect(manifest.manifest_version).toBe(3);
-    expect(manifest.permissions).toEqual(["storage", "activeTab"]);
+    // « alarms » : réveils de l'automatisation complète (D64), désactivée par défaut ; aucun processus permanent.
+    expect(manifest.permissions).toEqual(["storage", "activeTab", "alarms"]);
     expect(manifest.host_permissions).toEqual([]);
     expect(manifest.content_scripts[0].matches.every((m: string) => m.startsWith("https://www.vinted."))).toBe(true);
     expect(manifest.permissions).not.toContain("cookies");

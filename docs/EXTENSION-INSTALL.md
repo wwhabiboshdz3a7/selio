@@ -1,6 +1,6 @@
 # Extension navigateur — installation non empaquetée
 
-_Mis à jour le 26 novembre 2026 : téléchargement et installation guidée depuis le site._
+_Mis à jour le 27 novembre 2026 : version 0.2.0, automatisation complète dans le navigateur (désactivée par défaut, D64)._
 
 État : **construite et testée sur fixtures, expérimentale**. Les adaptateurs de page doivent être validés sur le site réel avant toute annonce de compatibilité.
 
@@ -42,11 +42,29 @@ L'extension exige un serveur Selio (mode connecté) : elle appelle `/api/ext/*` 
   - **Ce qui part vers Selio** : le titre, la marque, la taille, l'état et le prix de l'article, rien d'autre (la catégorie n'est pas lue par l'adaptateur v1 et part vide : les comparables sont alors cherchés dans toutes les catégories). Jamais le pseudo du vendeur, les photos, la description, l'adresse ni la référence de l'annonce. Rien n'est enregistré.
   - **États** : « Recherche des ventes comparables… » ; **hors ligne** (Selio injoignable, bouton « Réessayer ») ; **non relié** (extension sans jeton : rien n'est envoyé) ; **« Track est compris à partir de Pro »** (offre Free ou Starter) ; erreur (trop de demandes, réponse inattendue) avec « Réessayer ».
 - Page **conversation** : « Règles de prix » (plancher, marge, vérification de l'offre détectée) et « Préparer une réponse » (brouillon validé par vos règles). **Insérer dans le champ de réponse** ne fait qu'insérer : vous relisez et cliquez vous-même sur Envoyer.
-- Popup : état de l'association, page prise en charge ou non, **Diagnostic** (adaptateur, champs reconnus/manquants) ; l'historique des diagnostics est visible dans les Options.
+- **Automatisation complète dans ce navigateur** (version 0.2.0, **désactivée par défaut**, D64) : voir la section suivante.
+- Popup : état de l'association, « Automatisation complète : active / en pause (raison) / désactivée », page prise en charge ou non, **Diagnostic** (adaptateur, champs reconnus/manquants) ; l'historique des diagnostics est visible dans les Options.
+
+## Automatisation complète dans ce navigateur (sans Selio Cloud)
+
+Décision d'Ibrahim du 27 novembre 2026 ([DECISIONS.md](DECISIONS.md) D64) : le plein automatique de Selio Cloud (lecture de la messagerie, réponses et négociation sans validation) marche aussi **sans Cloud**, par l'extension, **tant que le Chrome du vendeur est ouvert**.
+
+**Activer** : accepter d'abord le texte d'accord dans Selio (Selio Cloud › Accord, version `2026-11-27.2`, qui décrit ce mode), puis Options de l'extension › « Automatisation complète dans ce navigateur » › activer le compte Vinted connecté dans ce navigateur (un seul compte par navigateur). L'interrupteur est **enregistré sur le serveur** (table `extension_autos`) : c'est ce qui fait router les réponses vers ce navigateur.
+
+**Fonctionnement** (`apps/extension/src/background/auto.ts`, `src/content/auto.ts`, `packages/core/src/services/extension-auto.ts`) :
+1. Le service worker se réveille par `chrome.alarms` (aucun processus permanent) et demande au serveur **`GET /api/ext/auto/next`**. **Le serveur décide** : interrupteur, accord courant, arrêt global, pause venue de Vinted, coupe-circuit, heures actives, une action à la fois, plafond horaire (12), délai humain (3 min + 0 à 4 min), plafond du jour de l'offre. Il répond « attendre » (avec la raison et le délai du prochain réveil), « lire la messagerie » ou « envoyer » (texte déjà préparé et revérifié par le serveur).
+2. Pour agir, l'extension ouvre un **onglet inactif** (`chrome.tabs.create({ active: false })`) sur la messagerie ou la conversation (vinted.fr/.be/.com seulement, adresse revérifiée), son script de page lit le DOM (liste : adaptateur `v1-inbox` ; conversation : `parseConversationPage`), puis l'onglet est refermé. **Aucun `fetch()` vers Vinted, aucun cookie lu.**
+3. Envoi : la conversation doit être **reconnue avant d'écrire** (aucun clic à l'aveugle), le texte est mis dans le champ de réponse, clic sur « Envoyer », **confirmation** quand le message apparaît (même logique que `PlaywrightRunner.sendMessage`). Sans confirmation : effets « inconnus », **jamais renvoyé**. Un seul envoi par onglet ; un message non remis au script est réessayé, un message remis sans réponse ne l'est jamais.
+4. `detectBlock` (partagé avec le Cloud par `@selio/cloud/browser`) sur chaque page : au **premier** CAPTCHA, avertissement, blocage ou « trop de requêtes », arrêt et compte rendu ; le serveur **met l'automatisation du compte en pause**, prévient les propriétaires par email, ne retente rien ; reprise dans les Options en confirmant avoir vérifié le compte.
+5. Compte rendu `POST /api/ext/auto/report` : même enregistrement que la lecture du Cloud (messages sans doublon, règles lancées aussitôt, réponse rédigée par l'IA sinon gabarit). Journal de Selio Cloud, source **« Navigateur »**.
+
+**Routage** : compte actif dans Selio Cloud → le Cloud ; sinon, automatisation complète activée et extension vue depuis moins de 30 min → tâche « navigateur » **en file** (sauf règle « Validation avant envoi ») ; sinon, comportement habituel (à valider). Couper l'interrupteur remet les envois en file à valider.
+
+**Limites** : comme pour le Cloud, les pages de la messagerie n'ont pas été observées en réel (adaptateur sur données synthétiques). L'extension ne lit que le HTML (pas de JSON de Vinted) ; ouvrir une conversation peut la marquer comme lue. Navigateur fermé ou en veille : rien ne se passe (Selio Cloud prend le relais s'il est actif).
 
 ## Permissions et sécurité
-- `storage`, `activeTab`, content script limité à `vinted.fr/.be/.com`, origine API autorisée explicitement (`optional_host_permissions`).
-- Aucun mot de passe, cookie ou session Vinted n'est lu ni stocké ; aucun CAPTCHA n'est contourné ; aucun clic n'est effectué à votre place.
+- `storage`, `activeTab`, `alarms` (réveils de l'automatisation complète, seulement si elle est activée), content script limité à `vinted.fr/.be/.com`, origine API autorisée explicitement (`optional_host_permissions`). Pas de `tabs`, `cookies`, `webRequest`.
+- Aucun mot de passe, cookie ou session Vinted n'est lu ni stocké ; aucun CAPTCHA n'est contourné. Sans l'automatisation complète, aucun clic n'est effectué à votre place ; avec elle (activée par vous), seuls les envois décidés par le serveur Selio sont faits, dans l'onglet ouvert par l'extension.
 - Le jeton reste dans le stockage de l'extension (service worker) ; révocable depuis Selio ; expiration 90 jours.
 - Comparables : le content script n'envoie au service worker que les six champs de l'article (schéma strict, toute autre donnée est refusée) ; le service worker, seul détenteur du jeton, les revalide avant d'appeler `POST /api/ext/comparables` (côté API, livré en parallèle : portée `capture:items`, 30 appels par minute et par membre ; voir BUILD_STATUS.md) et revalide la réponse ; le panneau l'affiche en texte seulement. Le panneau suit la charte (rôles de `tokens.css`, clair et sombre selon le système).
 

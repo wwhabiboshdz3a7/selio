@@ -30,6 +30,7 @@ export const EXTENSION_PRIVACY: readonly { h: string; p: string[] }[] = [
       "Préparer une réponse : les 30 derniers messages au plus de la conversation (texte, sens et heure), le pseudo de l'acheteur, le titre et le prix affiché de l'article, l'adresse et la référence de la conversation, la référence de l'article quand elle figure dans l'adresse, si le champ de réponse a été trouvé et la version de l'adaptateur de page, pour rédiger un brouillon selon vos règles de prix. Le brouillon est inséré dans le champ de réponse ; c'est vous qui cliquez sur Envoyer.",
       "Voir les comparables (bouton du panneau, sur une page article) : le titre, la marque, la taille, l'état et le prix de l'article, rien d'autre. Rien n'est enregistré.",
       "Voir les règles de prix (bouton du panneau, sur une page conversation) : la référence de l'article quand elle figure dans l'adresse, son prix affiché et le montant de l'offre détectée dans le dernier message de l'acheteur, pour afficher votre prix plancher et vos règles. Rien n'est enregistré.",
+      "Automatisation complète dans ce navigateur (désactivée par défaut, seulement si vous l'activez dans les options après avoir accepté le texte d'accord dans Selio) : à intervalles réguliers, l'extension ouvre en arrière-plan votre messagerie Vinted et les conversations qui ont de nouveaux messages, et envoie à Selio, pour chacune, les 50 derniers messages au plus (texte, sens, heure), le pseudo de l'acheteur et la référence de la conversation, ou, si la page n'est pas reconnue, un diagnostic fait de comptes et de noms de structure (jamais de texte). Elle envoie aussi les réponses automatiques décidées par Selio dans la conversation concernée, puis referme l'onglet. Chaque action est inscrite dans votre journal Selio.",
       "Les données partent uniquement vers l'adresse de l'API Selio que vous avez autorisée en associant l'extension, par une connexion chiffrée, avec un jeton propre à votre organisation.",
     ],
   },
@@ -44,7 +45,7 @@ export const EXTENSION_PRIVACY: readonly { h: string; p: string[] }[] = [
     h: "Ce que l'extension ne fait jamais",
     p: [
       "Elle ne collecte ni mot de passe, ni cookie, ni session, ni historique de navigation.",
-      "Elle ne contourne aucun CAPTCHA, n'envoie aucun message et ne clique sur rien à votre place.",
+      "Elle ne contourne aucun CAPTCHA. Sans l'automatisation complète, elle n'envoie aucun message et ne clique sur rien à votre place ; avec elle (activée par vous), elle n'envoie que les réponses décidées par Selio, et s'arrête au premier CAPTCHA ou avertissement de Vinted.",
       "Elle ne charge aucun code distant : tout son code est inclus dans le paquet publié.",
       "Les données ne sont ni vendues, ni utilisées pour de la publicité, ni transmises à des tiers, hors de l'hébergement du service Selio.",
     ],

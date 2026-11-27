@@ -355,7 +355,7 @@ Aucun repère n'existe : les 60 s et 30 s sont des cibles du prompt, pas des mes
 ### 8.1 Avant toute activation pour un client
 
 - **Avis de l'avocat : favorable (26 novembre 2026, D62)** à la lecture en direct (par Selio Cloud) et au bot d'achat (Radar Auto). Ouverture progressive : Radar en direct et Radar Auto d'abord sur des comptes de l'équipe (§10) ; Radar Auto reste réservé aux organisations de `RADAR_AUTO_ORG_IDS` (§8.2).
-- **Texte de l'accord Cloud** : il ne parle aujourd'hui que de lire la messagerie, répondre, négocier et relancer (`CLOUD_CONSENT_TEXT`, version `2026-11-27.1`). Avant d'ouvrir Radar en direct à un client, il faut l'étendre à la lecture des recherches (et à l'achat automatique pour Radar Auto), le faire relire par l'avocat et incrémenter `CLOUD_CONSENT_VERSION` : chacun relit et accepte de nouveau.
+- **Texte de l'accord Cloud** : il ne parle aujourd'hui que de lire la messagerie, répondre, négocier et relancer (`CLOUD_CONSENT_TEXT`, version `2026-11-27.2`). Avant d'ouvrir Radar en direct à un client, il faut l'étendre à la lecture des recherches (et à l'achat automatique pour Radar Auto), le faire relire par l'avocat et incrémenter `CLOUD_CONSENT_VERSION` : chacun relit et accepte de nouveau.
 - On ne promet jamais « zéro risque » ni « 100 % légal ». Selio est présenté comme indépendant de Vinted : ni affilié, ni approuvé, ni sponsorisé.
 
 ### 8.2 Adresse partagée

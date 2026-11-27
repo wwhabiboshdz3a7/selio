@@ -17,6 +17,7 @@ export * from "./help";
 export * from "./spaces";
 export * from "./vinted-domains";
 export * from "./cloud";
+export * from "./extension-auto";
 export * from "./pricing";
 export * from "./track";
 export * from "./migration";

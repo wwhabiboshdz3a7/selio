@@ -6,7 +6,8 @@ Selio Cloud agit sur un compte Vinted depuis notre machine de Marseille quand l'
 
 ## En bref
 
-- **Plein automatique (D63, 27 novembre 2026)** : à intervalles réguliers (`CLOUD_INBOX_SYNC_MINUTES`, 10 min), aux heures actives, le Cloud **lit la messagerie Vinted** du compte (sans rien y cliquer) ; les nouveaux messages déclenchent les **réponses rédigées par l'IA** et la **négociation dans les marges du vendeur**, envoyées par le Cloud **sans validation préalable**, sauf sur les règles réglées « Validation avant envoi ». Le client l'a accepté dans le texte d'accord (`2026-11-27.1`). Voir §1.8.
+- **Sans Cloud (D64)** : le même plein automatique par l'extension, tant que le Chrome du vendeur est ouvert (§1.9).
+- **Plein automatique (D63, 27 novembre 2026)** : à intervalles réguliers (`CLOUD_INBOX_SYNC_MINUTES`, 10 min), aux heures actives, le Cloud **lit la messagerie Vinted** du compte (sans rien y cliquer) ; les nouveaux messages déclenchent les **réponses rédigées par l'IA** et la **négociation dans les marges du vendeur**, envoyées par le Cloud **sans validation préalable**, sauf sur les règles réglées « Validation avant envoi ». Le client l'a accepté dans le texte d'accord (`2026-11-27.2`). Voir §1.8.
 
 - Le client donne son **accord écrit** (écran d'accord versionné), puis **se connecte lui-même** à Vinted dans une fenêtre sécurisée. Selio ne voit, ne garde et ne journalise **jamais** son mot de passe.
 - Seule la **session** du compte (cookies et stockage local des domaines vinted.\*) est gardée, **chiffrée**, une par compte, supprimable en un clic.
@@ -124,14 +125,14 @@ Aucune de ces valeurs n'est mesurée : ce sont des valeurs prudentes, à revoir 
 
 ### 1.7 Écran d'accord versionné
 
-- Texte dans `CLOUD_CONSENT_TEXT`, version dans `CLOUD_CONSENT_VERSION` (`2026-11-27.1`, D63 : lecture de la messagerie à intervalles réguliers, réponses de l'IA et réponses de négociation dans les marges envoyées sans validation préalable, validation exigeable règle par règle, pause et arrêt à tout moment) : règles de Vinted contre les outils automatisés, adresse IP partagée (un compte sanctionné peut faire bloquer l'adresse pour tous), pause au premier avertissement, aucun mot de passe gardé, session seule gardée, chiffrée et supprimable, journal de 90 jours, responsabilité du titulaire du compte, indépendance vis-à-vis de Vinted. Jamais « zéro risque ».
+- Texte dans `CLOUD_CONSENT_TEXT`, version dans `CLOUD_CONSENT_VERSION` (`2026-11-27.2` ; D64 : automatisation complète par l'extension dans le navigateur du vendeur ; D63 : lecture de la messagerie à intervalles réguliers, réponses de l'IA et réponses de négociation dans les marges envoyées sans validation préalable, validation exigeable règle par règle, pause et arrêt à tout moment) : règles de Vinted contre les outils automatisés, adresse IP partagée (un compte sanctionné peut faire bloquer l'adresse pour tous), pause au premier avertissement, aucun mot de passe gardé, session seule gardée, chiffrée et supprimable, journal de 90 jours, responsabilité du titulaire du compte, indépendance vis-à-vis de Vinted. Jamais « zéro risque ».
 - L'accord exige une case cochée (`accepted: true`) et la version affichée. Sont enregistrés (`cloud_consents`) : version, **empreinte SHA-256 du texte**, date, utilisateur, adresse IP.
 - **Sans accord valide pour la version courante (version et empreinte), aucune activation ni aucune action Cloud** (`no_consent`). Changer le texte oblige à changer la version : tout le monde doit relire et accepter à nouveau.
 - Permissions : `cloud.read` pour tous les rôles ; `cloud.manage` (accepter l'accord, activer, mettre en pause, arrêter, effacer une session, ouvrir la fenêtre de connexion) pour propriétaire et administrateur.
 
 ### 1.8 Lecture de la messagerie et réponses automatiques
 
-Décision d'Ibrahim du 27 novembre 2026 ([DECISIONS.md](DECISIONS.md) D63) : le Cloud fonctionne **en plein automatique**, sans « dernier clic » du vendeur, avec le texte d'accord `2026-11-27.1` accepté par le client.
+Décision d'Ibrahim du 27 novembre 2026 ([DECISIONS.md](DECISIONS.md) D63) : le Cloud fonctionne **en plein automatique**, sans « dernier clic » du vendeur, avec le texte d'accord accepté par le client (`2026-11-27.1`, puis `2026-11-27.2` avec le mode extension, D64).
 
 **Planification.** À chaque passage (`cloud.tick`), pour chaque compte Cloud actif avec session (accord courant, offre compatible, dans le nombre de comptes de l'offre, pas d'arrêt global, aux heures actives, hors coupe-circuit, connexion Vinted non Perso), une tâche « lecture de la messagerie » (`jobs.kind = 'connector.sync'`, `payload.cloudKind = 'sync_inbox'`, `runs_in = 'cloud'`) est mise en file **si aucune n'est déjà en file ou en cours et si la précédente date d'au moins `CLOUD_INBOX_SYNC_MINUTES`** (10 par défaut, 5 au moins, `0` coupe la lecture). Elle passe ensuite par `planAccountRun` comme toute action : une action par compte et par passage, plafond horaire, délai humain, heures actives, coupe-circuit, relecture sous verrou. **Les réponses et négociations dues du même compte passent avant elle.**
 
@@ -154,6 +155,16 @@ Ouvrir une conversation peut la **marquer comme lue sur Vinted**, comme une lect
 - **Au moment d'envoyer**, la conversation est relue : si le dernier message échangé est déjà celui du vendeur, rien ne part (`already_answered`).
 
 **Limites.** L'adaptateur de la messagerie (`v1-inbox`) est construit sur des **fixtures synthétiques** : ni le JSON ni le HTML de la messagerie de Vinted n'ont été observés. Il est à vérifier sur le compte de test de l'équipe (diagnostic `cloud.inbox.unrecognised`). **Accepter une offre par le bouton de la carte d'offre de Vinted n'est pas fait** : la négociation se fait **par message** (« faites l'offre sur l'annonce et je l'accepte »).
+
+### 1.9 Sans Cloud : automatisation complète par l'extension (D64)
+
+Le même plein automatique marche **sans Selio Cloud**, par l'extension, **tant que le Chrome du vendeur est ouvert** ([EXTENSION-INSTALL.md](EXTENSION-INSTALL.md), section « Automatisation complète dans ce navigateur »). Interrupteur dans les Options de l'extension, désactivé par défaut, activable seulement avec l'accord courant (`2026-11-27.2`, qui décrit ce mode), un seul compte Vinted par navigateur (`extension_autos`, migration 0026).
+
+- **Le serveur décide de tout** (`packages/core/src/services/extension-auto.ts`, `GET /api/ext/auto/next`) : mêmes barrières que le Cloud (arrêt global, accord, pause venue de Vinted, coupe-circuit, heures actives, une action à la fois, 12 par heure, délai humain, plafond du jour de l'offre partagé avec le Cloud ; tâche de plus de 24 h écartée ; dernier message du vendeur → rien envoyé). Compte actif dans le Cloud : l'extension attend (`cloud_active`), jamais deux automatisations sur le même compte.
+- **L'extension exécute** dans un onglet inactif qu'elle ouvre puis referme : lecture du HTML (aucun `fetch()` vers Vinted, aucun cookie), envoi avec reconnaissance de la conversation et confirmation, `detectBlock` partagé (`@selio/cloud/browser`).
+- **Compte rendu** (`POST /api/ext/auto/report`) : même enregistrement que la lecture du Cloud (`processInboxSnapshot`, source « browser ») ; signal de Vinted → pause de l'automatisation du compte, email aux propriétaires, rien de retenté, reprise acquittée.
+- **Routage** (`decideRunsIn`) : Cloud actif → `cloud` ; sinon extension activée et vue depuis moins de 30 min (`EXTENSION_AUTO_SEEN_MINUTES`) → `browser` en file (`payload.extAuto`) ; sinon comportement habituel.
+- **Journal** : mêmes lignes `cloud_actions`, `source = 'browser'`, compte Vinted (`connection_id`) à la place du compte Cloud ; affichées « Navigateur » dans `/cloud/journal`.
 
 ## 2. Ce qui est interdit, et pourquoi
 

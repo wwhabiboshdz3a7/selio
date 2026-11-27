@@ -121,6 +121,8 @@ export function seedDemoCloud(orgId: string, connections: MarketplaceConnection[
       id: `cloud-action-${String(30 - k).padStart(2, "0")}`,
       orgId,
       accountId: account.id,
+      source: "cloud",
+      connectionId: null,
       kind,
       level: CLOUD_ACTION_LEVEL_BY_KIND[kind],
       status: planned.status,

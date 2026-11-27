@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./fake": "./src/runner/fake.ts"
+    "./fake": "./src/runner/fake.ts",
+    "./browser": "./src/browser.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",

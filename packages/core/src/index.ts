@@ -32,6 +32,7 @@ export * as aiHealth from "./services/ai-health";
 export * as market from "./services/market";
 export * as help from "./services/help";
 export * as cloud from "./services/cloud";
+export * as extensionAuto from "./services/extension-auto";
 export * as radarAlerts from "./services/alerts";
 export * as radarSources from "./services/radar-sources";
 export type { CloudExecutor, CloudExecutorAction, CloudExecutorInput, CloudRunOutcome, CloudRunSummary, PlanAccountRunInput, PlanAccountRunResult } from "./services/cloud";

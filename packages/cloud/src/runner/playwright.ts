@@ -12,9 +12,9 @@ import {
   parseInboxApiPayload,
   parseInboxDocumentLoose,
   selectConversationsToOpen,
-  type CapturedConversation,
   type InboxListResult,
 } from "@selio/connectors/vinted-adapter";
+import { countSentCopies } from "../browser";
 import { CLOUD_DEFAULTS } from "../config";
 import { detectBlock, type BlockSignal, type DetectOptions } from "../guard";
 import { launchLoginWindow } from "../login-window";
@@ -207,14 +207,8 @@ export async function readConversation(page: Page) {
   }
 }
 
-const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
-
-/** Nombre de messages sortants dont le corps est le texte envoyé. */
-export function countSentCopies(conversation: CapturedConversation | null, text: string): number {
-  if (!conversation) return 0;
-  const wanted = collapse(text);
-  return conversation.messages.filter((m) => m.direction === "outbound" && collapse(m.body) === wanted).length;
-}
+/** Même confirmation d'envoi que l'extension (`browser.ts`, sans dépendance à Playwright). */
+export { countSentCopies };
 
 type Step = { clicked: boolean };
 type Failure = { ok: false; code: RunFailureCode; message: string; sideEffects: "none" | "unknown"; launched?: boolean };

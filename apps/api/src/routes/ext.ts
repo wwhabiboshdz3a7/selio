@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { ITEM_CATEGORIES, TRACK_UNAVAILABLE_MESSAGE, itemCondition, quotasForPlan, type PriceEstimate } from "@selio/contracts";
 import { repos } from "@selio/db";
-import { AppError, connections, items, messaging, pricing, requireAction, withOrg } from "@selio/core";
+import { AppError, connections, extensionAuto, items, messaging, pricing, requireAction, withOrg } from "@selio/core";
 import { checkPrice, suggestFloorPrice } from "@selio/domain";
 
 /**
@@ -149,6 +149,39 @@ export default async function extRoutes(app: FastifyInstance) {
       estimate = pricing.publicEstimate(est!);
     }
     return { ...estimate, priceCheck: { priceCents: c.priceCents ?? null, position: pricePosition(c.priceCents, estimate) } };
+  });
+
+  /**
+   * Automatisation complète par l'extension (D64), jeton « sync:conversations ». Le serveur décide de tout
+   * (heures actives, pause, coupe-circuit, plafonds, délai humain) ; l'extension exécute puis rend compte.
+   * Journal du serveur : identifiants et codes seulement, jamais un texte de message.
+   */
+  app.get("/api/ext/auto/state", async (req) => {
+    const ctx = app.requireCtx(req);
+    requireScope(req, "sync:conversations");
+    return extensionAuto.autoState(ctx);
+  });
+  app.post("/api/ext/auto/enable", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req) => {
+    const ctx = app.requireCtx(req);
+    requireScope(req, "sync:conversations");
+    return extensionAuto.setAuto(ctx, req.body ?? {});
+  });
+  app.post("/api/ext/auto/resume", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req) => {
+    const ctx = app.requireCtx(req);
+    requireScope(req, "sync:conversations");
+    return extensionAuto.resumeAuto(ctx, req.body ?? {});
+  });
+  app.get("/api/ext/auto/next", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req) => {
+    const ctx = app.requireCtx(req);
+    requireScope(req, "sync:conversations");
+    return extensionAuto.nextAction(ctx);
+  });
+  // Messagerie lue : quelques conversations (50 messages au plus chacune côté extension), 2 Mo au plus.
+  app.post("/api/ext/auto/report", { bodyLimit: 2 * 1024 * 1024, config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req) => {
+    const ctx = app.requireCtx(req);
+    requireScope(req, "sync:conversations");
+    const r = await extensionAuto.reportAction(ctx, req.body ?? {});
+    return { status: r.status, code: r.code, paused: r.paused, inbox: r.inbox ? { messagesIn: r.inbox.messagesIn, messagesOut: r.inbox.messagesOut, jobsCreated: r.inbox.jobsCreated, listSource: r.inbox.listSource } : null };
   });
 
   /** Tâches « navigateur » en attente pour cette organisation (exécution par l'extension, expérimental). */

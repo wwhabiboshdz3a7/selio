@@ -4,6 +4,7 @@ import { toContent, type BackgroundResponse, type CapturedConversation, type Cap
 import { COMPARABLES_MESSAGES, ITEM_CONDITION_LABELS, buildComparablesRequest, comparablesView, formatEuros, type ComparablesView } from "../shared/comparables";
 import { renderComparables } from "./comparables-panel";
 import { PANEL_CSS } from "./panel-css";
+import { readConversation, readInbox, sendMessage, type AutoEnv } from "./auto";
 
 /**
  * Content script Selio (monde isolé). Lit la page visible via les adaptateurs
@@ -225,11 +226,27 @@ function extractOffer(text: string): number | null {
   return Number.isFinite(v) && v > 0 ? Math.round(v * 100) : null;
 }
 
-// Messages du popup (diagnostic, ouverture du panneau).
+let autoSendUsed = false;
+const autoEnv: AutoEnv = { doc: document, url: () => location.href, wait: (ms) => new Promise((r) => setTimeout(r, ms)), now: () => Date.now() };
+
+// Messages du popup (diagnostic, ouverture du panneau) et du service worker (automatisation complète).
 chrome.runtime.onMessage.addListener((raw, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return;
   const parsed = toContent.safeParse(raw);
   if (!parsed.success) return;
+  // Automatisation complète : seulement depuis le service worker (jamais depuis une autre page ni un onglet).
+  if (parsed.data.type === "autoReadInbox" || parsed.data.type === "autoReadConversation" || parsed.data.type === "autoSend") {
+    if (sender.tab) return;
+    const m = parsed.data;
+    // Un seul envoi par page : une seconde demande (jamais attendue) n'est pas exécutée.
+    if (m.type === "autoSend") {
+      if (autoSendUsed) { sendResponse({ ok: false, code: "error", sideEffects: "unknown" }); return; }
+      autoSendUsed = true;
+    }
+    const run = m.type === "autoReadInbox" ? readInbox(autoEnv, m.max) : m.type === "autoReadConversation" ? readConversation(autoEnv, m.ref) : sendMessage(autoEnv, m.text);
+    run.then(sendResponse, () => sendResponse({ ok: false, code: "error", sideEffects: m.type === "autoSend" ? "unknown" : "none" }));
+    return true;
+  }
   if (parsed.data.type === "togglePanel") { open = !open; void render(); sendResponse({ ok: true }); return; }
   if (parsed.data.type === "runDiagnostic") {
     const url = location.href;

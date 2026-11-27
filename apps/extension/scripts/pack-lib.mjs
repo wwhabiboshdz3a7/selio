@@ -10,7 +10,7 @@ export const CWS_LIMITS = { nameMax: 75, shortNameMax: 12, descriptionMax: 132 }
  * Permissions autorisées, chacune justifiée dans store/justifications.md. Toute autre
  * permission fait échouer le paquet : l'ajouter exige d'abord sa justification.
  */
-export const ALLOWED_PERMISSIONS = ["storage", "activeTab"];
+export const ALLOWED_PERMISSIONS = ["storage", "activeTab", "alarms"];
 
 /** Domaines où le script de contenu peut s'exécuter (pages Vinted lues à la demande). */
 export const ALLOWED_CONTENT_HOSTS = ["https://www.vinted.fr/*", "https://www.vinted.be/*", "https://www.vinted.com/*"];

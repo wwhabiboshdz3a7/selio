@@ -14,7 +14,7 @@ import { isAntiBotCookie, isVintedHost, isVintedOrigin } from "./vinted-domains"
 // ---------------------------------------------------------------- constantes et réglages
 
 /** Version du texte d'accord : à incrémenter dès que le texte change (un accord n'est valable que pour sa version). */
-export const CLOUD_CONSENT_VERSION = "2026-11-27.1";
+export const CLOUD_CONSENT_VERSION = "2026-11-27.2";
 
 /**
  * Texte d'accord affiché avant toute activation (≈ 10 lignes, honnête). L'empreinte SHA-256 de
@@ -24,6 +24,7 @@ export const CLOUD_CONSENT_TEXT = [
   "Selio Cloud agit sur votre compte Vinted depuis notre machine, quand votre ordinateur est éteint : il lit votre messagerie Vinted, répond aux messages, négocie les offres et relance les acheteurs après 24 h.",
   "Lecture de la messagerie : Selio ouvre à intervalles réguliers (toutes les 10 minutes par défaut, aux heures actives) la messagerie du compte connecté et les conversations qui ont de nouveaux messages, sans rien y cliquer. Les messages lus sont enregistrés dans Selio comme ceux que vous voyez dans Messages ; ouvrir une conversation peut la marquer comme lue sur Vinted, comme quand vous la lisez vous-même.",
   "Envoi automatique, sans validation préalable : les réponses rédigées par l'IA de Selio (ou, à défaut, par vos gabarits) et les réponses de négociation décidées dans vos marges et vos limites sont envoyées automatiquement, sans que vous les validiez avant. Vous pouvez exiger une validation avant envoi règle par règle (« Validation avant envoi »), mettre en pause ou arrêter le Cloud à tout moment. Une situation que vous avez réglée « transmettre au vendeur » ne reçoit jamais de réponse automatique.",
+  "Automatisation complète dans votre navigateur (extension Selio, si vous l'activez dans ses options) : tant que votre Chrome est ouvert, l'extension fait les mêmes lectures et les mêmes envois automatiques depuis votre propre navigateur et votre propre connexion, dans un onglet en arrière-plan qu'elle ouvre puis referme, avec les mêmes garde-fous (rythme humain, heures actives, pause au premier signal de Vinted). Aucun cookie n'est lu ni transmis.",
   "Les conditions d'utilisation de Vinted interdisent l'accès au service par des robots ou d'autres moyens automatisés. En activant le Cloud, vous acceptez ce risque : votre compte peut recevoir un avertissement, être limité ou suspendu. Selio ne peut pas l'exclure et ne promet pas « zéro risque ».",
   "Au lancement, tous les comptes Cloud partagent l'adresse IP de notre machine. Si un compte est sanctionné, Vinted peut bloquer cette adresse, donc gêner les autres comptes qui l'utilisent.",
   "Vous vous connectez vous-même dans un navigateur isolé, réservé à ce compte. Votre mot de passe Vinted n'est jamais enregistré, jamais journalisé, jamais transmis à l'IA ni à quiconque.",
@@ -286,10 +287,23 @@ export const cloudActionDetail = z
   .strict();
 export type CloudActionDetail = z.infer<typeof cloudActionDetail>;
 
+/**
+ * Source d'une action du journal : Selio Cloud (navigateur isolé sur notre machine) ou l'extension, dans le
+ * navigateur du vendeur ouvert (automatisation complète, D64).
+ */
+export const CLOUD_ACTION_SOURCES = ["cloud", "browser"] as const;
+export const cloudActionSource = z.enum(CLOUD_ACTION_SOURCES);
+export type CloudActionSource = z.infer<typeof cloudActionSource>;
+export const CLOUD_ACTION_SOURCE_LABELS: Record<CloudActionSource, string> = { cloud: "Selio Cloud", browser: "Navigateur" };
+
 export const cloudAction = z.object({
   id,
   orgId: id,
-  accountId: id,
+  /** Compte Cloud (source « cloud ») ; null pour une action faite par l'extension. */
+  accountId: id.nullable(),
+  source: cloudActionSource.default("cloud"),
+  /** Compte Vinted (connexion) d'une action faite par l'extension (source « browser »). */
+  connectionId: id.nullable().default(null),
   kind: cloudActionKind,
   level: cloudActionLevel,
   status: cloudActionStatus,

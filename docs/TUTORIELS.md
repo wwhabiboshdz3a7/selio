@@ -525,7 +525,7 @@ Les trois modèles doivent être « présent » (la ligne OCR peut rester « non
 
 ### 17 bis. Plein automatique : lecture de la messagerie et réponses sans validation
 
-Décision d'Ibrahim du 27 novembre 2026 ([DECISIONS.md](DECISIONS.md) D63) : le Cloud lit la messagerie Vinted et répond seul, sans dernier clic. Le client l'accepte dans le texte d'accord `2026-11-27.1` (tout le monde doit l'accepter de nouveau). Détails : [CLOUD.md](CLOUD.md) §1.8.
+Décision d'Ibrahim du 27 novembre 2026 ([DECISIONS.md](DECISIONS.md) D63) : le Cloud lit la messagerie Vinted et répond seul, sans dernier clic. Le client l'accepte dans le texte d'accord `2026-11-27.2` (tout le monde doit l'accepter de nouveau ; il couvre aussi le mode extension, D64). Détails : [CLOUD.md](CLOUD.md) §1.8.
 
 **Ouvrir (sur le PC de production)**
 1. Dans `deploy/.env` :
@@ -552,6 +552,8 @@ Décision d'Ibrahim du 27 novembre 2026 ([DECISIONS.md](DECISIONS.md) D63) : le 
 - `cloud.inbox.read` : source de la liste (`api` ou `dom`), conversations listées, ouvertes, lues.
 - `cloud.inbox.unrecognised` : la messagerie n'a pas été reconnue. La ligne ne contient que des comptes et des noms de structure (`testids`, `inboxLinks`, `payloads`…) : la copier telle quelle pour corriger l'adaptateur `packages/connectors/src/vinted/adapters/v1-inbox.ts`. Rien n'est envoyé tant que rien n'est lu.
 - « messagerie non reconnue » dans le journal `/cloud` : même cause.
+
+**Sans Cloud, par l'extension (D64)** : le même plein automatique marche depuis le navigateur du vendeur ouvert. Rien à régler sur le PC (l'API et le worker reconstruits suffisent ; `CLOUD_INBOX_SYNC_MINUTES` fixe aussi le rythme de lecture de l'extension). Côté vendeur : extension 0.2.0 (zip du site, reconstruit au build Netlify), accord accepté dans Selio, puis Options de l'extension › « Automatisation complète dans ce navigateur » › activer le compte. Tester d'abord sur le compte de l'équipe : écrire au compte depuis un autre compte, laisser Chrome ouvert, attendre 10 à 20 min ; le journal `/cloud/journal` montre « Lecture de la messagerie » puis « Réponse à un message », source « Navigateur ». Couper : l'interrupteur des Options (les réponses en attente redeviennent à valider).
 
 **Revenir en arrière** : `CLOUD_INBOX_SYNC_MINUTES=0` coupe la lecture (les réponses aux messages déjà connus continuent) ; `CLOUD_ENABLED=false` arrête tout le Cloud. Pour un client : « Validation avant envoi » sur la règle, ou Pause du compte.
 

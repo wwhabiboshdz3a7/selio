@@ -24,17 +24,18 @@ Français.
 
 ## Description
 
-Selio est un outil de gestion pour les revendeurs Vinted. Son extension vous aide depuis la page Vinted que vous avez ouverte, sans jamais agir à votre place.
+Selio est un outil de gestion pour les revendeurs Vinted. Son extension vous aide depuis la page Vinted que vous avez ouverte, sans agir à votre place (sauf si vous activez vous-même l'automatisation complète).
 
 Ce que fait l'extension :
 - Sur une page article : un panneau « Selio · article » montre ce que l'extension a lu (titre, marque, taille, état, prix) ; vous pouvez capturer l'article vers votre stock Selio, avec votre prix d'achat.
 - Sur une page article, « Comparables Selio » (offres Pro et Agence) : une fourchette de prix tirée de ventes comparables, la position du prix affiché et un délai de vente estimé. C'est une estimation, rien n'est modifié sur la page.
 - Sur une page conversation : vos règles de prix (plancher, marge) et un brouillon de réponse conforme à ces règles, inséré dans le champ de réponse. Vous relisez, et c'est vous qui cliquez sur Envoyer.
 - Un diagnostic indique si la page est prise en charge et quels champs ont été reconnus.
+- Automatisation complète dans ce navigateur (désactivée par défaut) : si vous l'activez dans les options, tant que votre navigateur est ouvert, l'extension lit votre messagerie Vinted et envoie les réponses et la négociation automatiques décidées par Selio, dans un onglet en arrière-plan, au rythme d'une personne ; au premier CAPTCHA ou avertissement de Vinted, tout s'arrête.
 
 Ce qu'elle ne fait jamais :
 - Elle ne lit ni ne stocke votre mot de passe, vos cookies ou votre session Vinted.
-- Elle ne contourne aucun CAPTCHA, n'envoie aucun message et ne clique sur rien à votre place.
+- Elle ne contourne aucun CAPTCHA ; sans l'automatisation complète, elle n'envoie aucun message et ne clique sur rien à votre place.
 - Elle ne suit pas votre navigation : elle ne s'exécute que sur vinted.fr, vinted.be et vinted.com.
 - Elle ne charge aucun code distant.
 
